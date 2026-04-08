@@ -1,0 +1,47 @@
+# State-Definitionen (Gesprächszustände)
+# Der Bot wechselt zwischen States basierend auf der Klassifikation.
+
+states:
+  - id: state-1
+    label: Orientation
+    description: "Erster Kontakt. Nutzer:in orientiert sich, Bot klärt Bedarf."
+
+  - id: state-2
+    label: Context Building
+    description: "Bot sammelt Kontext: Fach, Stufe, Thema, Medientyp."
+
+  - id: state-3
+    label: Information
+    description: "Bot liefert Informationen über WLO oder Bildungsmaterialien."
+
+  - id: state-4
+    label: Navigation/Discovery
+    description: "Nutzer:in erkundet Themenseiten und Sammlungen."
+
+  - id: state-5
+    label: Search
+    description: "Aktive Suche nach konkreten Materialien."
+
+  - id: state-6
+    label: Result Curation
+    description: "Ergebnisse werden kuratiert und präsentiert."
+
+  - id: state-7
+    label: Refinement
+    description: "Suchergebnisse werden verfeinert oder angepasst."
+
+  - id: state-8
+    label: Learning
+    description: "Nutzer:in arbeitet mit gefundenen Materialien."
+
+  - id: state-9
+    label: Evaluation/Feedback
+    description: "Bot fragt nach Zufriedenheit, Nutzer:in gibt Feedback."
+
+  - id: state-10
+    label: Redaktions-Recherche
+    description: "Redakteur:in recherchiert systematisch Fachgebiete."
+
+  - id: state-11
+    label: System/Meta
+    description: "Meta-Fragen zum Bot, System oder zur Plattform."

@@ -1,0 +1,52 @@
+# Intent-Definitionen
+# Jeder Intent hat eine ID, ein Label und eine Beschreibung.
+# Diese werden für die LLM-Klassifikation und im Studio verwendet.
+
+intents:
+  - id: INT-W-01
+    label: WLO kennenlernen
+    description: "Nutzer:in möchte erfahren, was WirLernenOnline ist und was es bietet."
+
+  - id: INT-W-02
+    label: Soft Probing
+    description: "Bot klärt aktiv Bedarf, Rolle oder Kontext der Nutzer:in."
+
+  - id: INT-W-03a
+    label: Themenseite entdecken
+    description: "Nutzer:in sucht eine Themenseite oder Sammlung zu einem Fachgebiet."
+
+  - id: INT-W-03b
+    label: Unterrichtsmaterial suchen
+    description: "Lehrkraft sucht konkretes Unterrichtsmaterial (Arbeitsblätter, Aufgaben, etc.)."
+
+  - id: INT-W-03c
+    label: Lerninhalt suchen
+    description: "Schüler:in oder Eltern suchen Lerninhalte (Videos, Übungen, Erklärungen)."
+
+  - id: INT-W-04
+    label: Feedback
+    description: "Nutzer:in gibt Feedback zu Ergebnissen oder zum Bot selbst."
+
+  - id: INT-W-05
+    label: Routing Redaktion
+    description: "Anfrage wird an die Redaktion weitergeleitet (Inhaltslücken, Fehler, Wünsche)."
+
+  - id: INT-W-06
+    label: Faktenfragen
+    description: "Nutzer:in stellt Faktenfragen über WLO, edu-sharing oder Metaventis."
+
+  - id: INT-W-07
+    label: Material herunterladen
+    description: "Nutzer:in möchte ein konkretes Material herunterladen oder öffnen."
+
+  - id: INT-W-08
+    label: Inhalte evaluieren
+    description: "Nutzer:in möchte Qualität, Lizenz oder Eignung von Materialien prüfen."
+
+  - id: INT-W-09
+    label: Analyse & Reporting
+    description: "Verwaltung/Berater:in braucht Zahlen, Statistiken oder Übersichten."
+
+  - id: INT-W-10
+    label: Unterrichtsplanung
+    description: "Lehrkraft plant eine Unterrichtseinheit und braucht strukturierte Materialzusammenstellung."

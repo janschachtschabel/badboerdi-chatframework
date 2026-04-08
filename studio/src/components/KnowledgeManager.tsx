@@ -1,0 +1,706 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+interface RagArea {
+  area: string;
+  chunks: number;
+  documents: number;
+}
+
+interface RagDoc {
+  title: string;
+  source: string;
+  chunks: number;
+  preview: string;
+}
+
+interface AreaConfig {
+  mode: 'always' | 'on-demand';
+  description: string;
+}
+
+interface McpServer {
+  id: string;
+  name: string;
+  url: string;
+  description: string;
+  enabled: boolean;
+  tools: string[];
+}
+
+/**
+ * KnowledgeManager: Layer 5 - RAG knowledge areas + MCP server registry.
+ */
+export default function KnowledgeManager() {
+  const [areas, setAreas] = useState<RagArea[]>([]);
+  const [areaConfigs, setAreaConfigs] = useState<Record<string, AreaConfig>>({});
+  const areaConfigsRef = useRef(areaConfigs);
+  // Keep ref in sync so onBlur always has latest value
+  useEffect(() => { areaConfigsRef.current = areaConfigs; }, [areaConfigs]);
+  const [selectedArea, setSelectedArea] = useState<string | null>(null);
+  const [docs, setDocs] = useState<RagDoc[]>([]);
+  const [tab, setTab] = useState<'areas' | 'upload' | 'mcp'>('areas');
+
+  // Upload state
+  const [uploadArea, setUploadArea] = useState('general');
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadUrl, setUploadUrl] = useState('');
+  const [uploadText, setUploadText] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // MCP server state
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpEditing, setMcpEditing] = useState<McpServer | null>(null);
+  const [mcpDiscovering, setMcpDiscovering] = useState(false);
+  const [mcpDiscoverUrl, setMcpDiscoverUrl] = useState('');
+  const [mcpDiscoveredTools, setMcpDiscoveredTools] = useState<{ name: string; description: string }[]>([]);
+  const [mcpStatus, setMcpStatus] = useState<string | null>(null);
+
+  useEffect(() => { loadAreas(); loadAreaConfigs(); loadMcpServers(); }, []);
+
+  // ── RAG Areas ──────────────────────────────────────────────
+
+  const loadAreas = async () => {
+    try {
+      const resp = await fetch('/api/rag/areas');
+      if (resp.ok) setAreas(await resp.json());
+    } catch { /* ignore */ }
+  };
+
+  const loadAreaConfigs = async () => {
+    try {
+      const resp = await fetch('/api/config/file?path=05-knowledge/rag-config.yaml');
+      if (resp.ok) {
+        const data = await resp.json();
+        const content = data.content || '';
+        const configs: Record<string, AreaConfig> = {};
+        let currentArea = '';
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('# ') || !trimmed) continue;
+          if (!line.startsWith(' ') && !line.startsWith('\t') && trimmed.endsWith(':')) {
+            const key = trimmed.slice(0, -1);
+            if (key === 'areas') continue;
+            currentArea = key;
+            configs[currentArea] = { mode: 'on-demand', description: '' };
+          } else if (currentArea && trimmed.startsWith('mode:')) {
+            const val = trimmed.split(':')[1]?.trim().replace(/['"]/g, '');
+            configs[currentArea] = { ...configs[currentArea], mode: val === 'always' ? 'always' : 'on-demand' };
+          } else if (currentArea && trimmed.startsWith('description:')) {
+            configs[currentArea] = { ...configs[currentArea], description: trimmed.split(':').slice(1).join(':').trim().replace(/['"]/g, '') };
+          }
+        }
+        setAreaConfigs(configs);
+      }
+    } catch { /* no config yet */ }
+  };
+
+  const saveAreaConfigs = async (configs: Record<string, AreaConfig>) => {
+    const lines = ['# RAG-Bereichskonfiguration', '# mode: always = immer im Kontext, on-demand = nur bei Bedarf', ''];
+    for (const [area, cfg] of Object.entries(configs)) {
+      lines.push(`${area}:`);
+      lines.push(`  mode: ${cfg.mode}`);
+      if (cfg.description) lines.push(`  description: "${cfg.description}"`);
+      lines.push('');
+    }
+    try {
+      await fetch('/api/config/file', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: '05-knowledge/rag-config.yaml', content: lines.join('\n'), file_type: 'yaml' }),
+      });
+    } catch { /* ignore */ }
+  };
+
+  const toggleAreaMode = async (area: string) => {
+    const current = areaConfigs[area]?.mode || 'on-demand';
+    const newMode = current === 'always' ? 'on-demand' : 'always';
+    const updated = { ...areaConfigs, [area]: { ...areaConfigs[area] || { description: '' }, mode: newMode as 'always' | 'on-demand' } };
+    setAreaConfigs(updated);
+    await saveAreaConfigs(updated);
+  };
+
+  const loadDocs = async (area: string) => {
+    setSelectedArea(area);
+    try {
+      const resp = await fetch(`/api/rag/area/${encodeURIComponent(area)}`);
+      if (resp.ok) setDocs(await resp.json());
+    } catch { /* ignore */ }
+  };
+
+  const deleteArea = async (area: string) => {
+    if (!confirm(`Wirklich alle Dokumente in "${area}" loeschen?`)) return;
+    await fetch(`/api/rag/area/${encodeURIComponent(area)}`, { method: 'DELETE' });
+    const updated = { ...areaConfigs };
+    delete updated[area];
+    setAreaConfigs(updated);
+    await saveAreaConfigs(updated);
+    await loadAreas();
+    if (selectedArea === area) { setSelectedArea(null); setDocs([]); }
+  };
+
+  // Upload handlers
+  const doUpload = async (method: 'file' | 'url' | 'text') => {
+    setUploading(true);
+    setUploadResult(null);
+    const form = new FormData();
+    form.append('area', uploadArea);
+    form.append('title', uploadTitle || 'Dokument');
+
+    try {
+      let endpoint = '';
+      if (method === 'file') {
+        const file = fileRef.current?.files?.[0];
+        if (!file) { setUploading(false); return; }
+        form.append('file', file);
+        form.set('title', uploadTitle || file.name);
+        endpoint = '/api/rag/ingest/file';
+      } else if (method === 'url') {
+        form.append('url', uploadUrl);
+        form.set('title', uploadTitle || uploadUrl);
+        endpoint = '/api/rag/ingest/url';
+      } else {
+        form.append('content', uploadText);
+        form.set('title', uploadTitle || 'Manueller Eintrag');
+        endpoint = '/api/rag/ingest/text';
+      }
+
+      // Large PDFs can take 60-120s to chunk + embed — use generous timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180_000); // 3 min
+      const resp = await fetch(endpoint, { method: 'POST', body: form, signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!resp.ok) throw new Error('Failed');
+      const data = await resp.json();
+      setUploadResult(`${data.chunks} Chunks erstellt`);
+
+      if (!areaConfigs[uploadArea]) {
+        const updated = { ...areaConfigs, [uploadArea]: { mode: 'on-demand' as const, description: '' } };
+        setAreaConfigs(updated);
+        await saveAreaConfigs(updated);
+      }
+      await loadAreas();
+      setUploadTitle('');
+      setUploadUrl('');
+      setUploadText('');
+    } catch {
+      setUploadResult('Fehler beim Import');
+    }
+    setUploading(false);
+  };
+
+  // ── MCP Servers ─────────────────────────────────────────────
+
+  const loadMcpServers = async () => {
+    try {
+      const resp = await fetch('/api/config/mcp-servers');
+      if (resp.ok) setMcpServers(await resp.json());
+    } catch { /* ignore */ }
+  };
+
+  const saveMcpServers = async (servers: McpServer[]) => {
+    try {
+      await fetch('/api/config/mcp-servers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ servers }),
+      });
+      setMcpServers(servers);
+    } catch { /* ignore */ }
+  };
+
+  const toggleMcpServer = async (id: string) => {
+    const updated = mcpServers.map(s =>
+      s.id === id ? { ...s, enabled: !s.enabled } : s
+    );
+    await saveMcpServers(updated);
+  };
+
+  const deleteMcpServer = async (id: string) => {
+    if (!confirm('MCP-Server wirklich entfernen?')) return;
+    const updated = mcpServers.filter(s => s.id !== id);
+    await saveMcpServers(updated);
+  };
+
+  const discoverTools = async () => {
+    if (!mcpDiscoverUrl) return;
+    setMcpDiscovering(true);
+    setMcpStatus(null);
+    setMcpDiscoveredTools([]);
+    try {
+      const resp = await fetch(`/api/config/mcp-servers/discover?url=${encodeURIComponent(mcpDiscoverUrl)}`, {
+        method: 'POST',
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: 'Verbindung fehlgeschlagen' }));
+        setMcpStatus(err.detail || 'Fehler');
+        setMcpDiscovering(false);
+        return;
+      }
+      const data = await resp.json();
+      setMcpDiscoveredTools(data.tools || []);
+      setMcpStatus(`${data.tools?.length || 0} Tools gefunden`);
+    } catch {
+      setMcpStatus('Verbindungsfehler');
+    }
+    setMcpDiscovering(false);
+  };
+
+  const registerDiscoveredServer = async () => {
+    if (!mcpEditing) return;
+    const server: McpServer = {
+      ...mcpEditing,
+      tools: mcpDiscoveredTools.map(t => t.name),
+    };
+    const exists = mcpServers.find(s => s.id === server.id);
+    const updated = exists
+      ? mcpServers.map(s => s.id === server.id ? server : s)
+      : [...mcpServers, server];
+    await saveMcpServers(updated);
+    setMcpEditing(null);
+    setMcpDiscoveredTools([]);
+    setMcpDiscoverUrl('');
+    setMcpStatus('Server registriert!');
+  };
+
+  const startNewServer = () => {
+    setMcpEditing({
+      id: '',
+      name: '',
+      url: '',
+      description: '',
+      enabled: true,
+      tools: [],
+    });
+    setMcpDiscoveredTools([]);
+    setMcpDiscoverUrl('');
+    setMcpStatus(null);
+  };
+
+  const alwaysOnCount = Object.values(areaConfigs).filter(c => c.mode === 'always').length;
+  const enabledServers = mcpServers.filter(s => s.enabled).length;
+
+  return (
+    <div>
+      <div className="page-header">
+        <div className="page-title">Wissen</div>
+        <div className="page-subtitle">
+          Schicht 5: RAG-Wissensbereiche und MCP-Server-Anbindungen.
+          {alwaysOnCount > 0 && (
+            <span className="tag tag-green" style={{ marginLeft: 8 }}>
+              {alwaysOnCount} RAG-Bereich{alwaysOnCount > 1 ? 'e' : ''} immer aktiv
+            </span>
+          )}
+          {enabledServers > 0 && (
+            <span className="tag tag-blue" style={{ marginLeft: 8 }}>
+              {enabledServers} MCP-Server aktiv
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="tabs">
+        <button className={`tab ${tab === 'areas' ? 'active' : ''}`} onClick={() => setTab('areas')}>
+          Wissensbereiche<span className="tab-count">{areas.length}</span>
+        </button>
+        <button className={`tab ${tab === 'upload' ? 'active' : ''}`} onClick={() => setTab('upload')}>
+          Dokument hinzufuegen
+        </button>
+        <button className={`tab ${tab === 'mcp' ? 'active' : ''}`} onClick={() => setTab('mcp')}>
+          MCP-Server<span className="tab-count">{mcpServers.length}</span>
+        </button>
+      </div>
+
+      {/* ── Areas view ───────────────────────────────────── */}
+      {tab === 'areas' && (
+        <div>
+          {areas.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">&#x1F4DA;</div>
+              <div className="empty-state-text">Noch keine Wissensbereiche</div>
+              <div className="empty-state-hint">Fuege Dokumente hinzu, um Wissensbereiche zu erstellen.</div>
+            </div>
+          ) : (
+            <div className="grid-2">
+              {/* Area cards */}
+              <div>
+                {areas.map(a => {
+                  const cfg = areaConfigs[a.area];
+                  const mode = cfg?.mode || 'on-demand';
+                  return (
+                    <div
+                      key={a.area}
+                      className={`area-card ${selectedArea === a.area ? 'selected' : ''}`}
+                      onClick={() => loadDocs(a.area)}
+                      style={{ marginBottom: 10 }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1 }}>
+                          <div className="area-name">{a.area}</div>
+                          <div className="area-meta">
+                            <span>{a.documents} Dok.</span>
+                            <span>{a.chunks} Chunks</span>
+                          </div>
+                        </div>
+                        <button
+                          className="btn btn-danger btn-sm btn-icon"
+                          onClick={(e) => { e.stopPropagation(); deleteArea(a.area); }}
+                          title="Bereich loeschen"
+                        >
+                          &#x1F5D1;
+                        </button>
+                      </div>
+
+                      {/* Editable description */}
+                      <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
+                        <input
+                          className="form-input form-input-sm"
+                          value={cfg?.description || ''}
+                          onChange={e => {
+                            const updated = {
+                              ...areaConfigs,
+                              [a.area]: { ...areaConfigs[a.area] || { mode: 'on-demand' }, description: e.target.value },
+                            };
+                            setAreaConfigs(updated);
+                          }}
+                          onBlur={() => saveAreaConfigs(areaConfigsRef.current)}
+                          placeholder="Beschreibung: Was findet man hier? (z.B. Rechtspruefung, Strafrecht, Jugendschutz...)"
+                          style={{
+                            width: '100%',
+                            fontSize: '.8rem',
+                            color: cfg?.description ? '#1F2937' : '#9CA3AF',
+                            background: 'transparent',
+                            border: '1px dashed var(--border)',
+                            borderRadius: 4,
+                            padding: '4px 8px',
+                          }}
+                        />
+                        <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                          Diese Beschreibung hilft dem LLM zu entscheiden, wann dieser Bereich relevant ist.
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                          className={`toggle ${mode === 'always' ? 'active' : ''}`}
+                          onClick={(e) => { e.stopPropagation(); toggleAreaMode(a.area); }}
+                        />
+                        <span className={`area-mode ${mode}`}>
+                          {mode === 'always' ? 'Immer verfuegbar' : 'Bei Bedarf (on-demand)'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Documents in selected area */}
+              <div>
+                {selectedArea ? (
+                  <>
+                    <h3 style={{ fontSize: '.92rem', fontWeight: 600, marginBottom: 12 }}>
+                      Dokumente in &bdquo;{selectedArea}&ldquo;
+                    </h3>
+                    {docs.length === 0 ? (
+                      <div className="text-sm text-muted">Keine Dokumente gefunden.</div>
+                    ) : docs.map((d, i) => (
+                      <div key={i} className="card" style={{ marginBottom: 8 }}>
+                        <div style={{ fontWeight: 600, fontSize: '.88rem', marginBottom: 4 }}>{d.title}</div>
+                        <div className="text-xs text-muted mb-2">
+                          Quelle: {d.source} &middot; {d.chunks} Chunks
+                        </div>
+                        <div className="text-sm text-muted" style={{ maxHeight: 60, overflow: 'hidden' }}>
+                          {d.preview}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="empty-state">
+                    <div className="empty-state-text">Bereich auswaehlen</div>
+                    <div className="empty-state-hint">Klicke links auf einen Bereich, um die Dokumente zu sehen.</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="card mt-4" style={{ background: 'var(--primary-lt)', border: 'none' }}>
+            <div style={{ fontSize: '.85rem', fontWeight: 600, marginBottom: 6 }}>Wie funktionieren die Modi?</div>
+            <div className="text-sm">
+              <strong>Immer verfuegbar:</strong> Der Bereich wird bei jeder Nachricht automatisch als RAG-Kontext einbezogen.<br />
+              <strong>Bei Bedarf:</strong> Der Bereich wird nur genutzt, wenn das aktive Pattern &bdquo;rag&ldquo; als Quelle definiert hat.
+              Patterns koennen gezielt einzelne Bereiche aktivieren.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Upload view ──────────────────────────────────── */}
+      {tab === 'upload' && (
+        <div style={{ maxWidth: 640 }}>
+          <div className="form-row mb-4">
+            <div className="form-group">
+              <label className="form-label">Wissensbereich</label>
+              <input className="form-input" value={uploadArea} onChange={e => setUploadArea(e.target.value)}
+                placeholder="z.B. wlo-hilfe, didaktik, faq" />
+              <div className="form-hint">Neuer Name = neuer Bereich wird automatisch angelegt.</div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Titel (optional)</label>
+              <input className="form-input" value={uploadTitle} onChange={e => setUploadTitle(e.target.value)}
+                placeholder="Dokumenttitel" />
+            </div>
+          </div>
+
+          <div className="card mb-4">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '.88rem' }}>Datei hochladen</div>
+                <div className="text-xs text-muted">PDF, DOCX, PPTX, HTML, TXT, MD, CSV, XLSX</div>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={() => doUpload('file')} disabled={uploading}>
+                {uploading ? 'Verarbeite...' : 'Hochladen'}
+              </button>
+            </div>
+            <input type="file" ref={fileRef} accept=".pdf,.docx,.pptx,.html,.htm,.txt,.md,.csv,.xlsx" />
+          </div>
+
+          <div className="card mb-4">
+            <div style={{ fontWeight: 600, fontSize: '.88rem', marginBottom: 8 }}>Webseite importieren</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input className="form-input" value={uploadUrl} onChange={e => setUploadUrl(e.target.value)}
+                placeholder="https://example.com/page" style={{ flex: 1 }} />
+              <button className="btn btn-primary btn-sm" onClick={() => doUpload('url')} disabled={uploading || !uploadUrl}>
+                Importieren
+              </button>
+            </div>
+          </div>
+
+          <div className="card mb-4">
+            <div style={{ fontWeight: 600, fontSize: '.88rem', marginBottom: 8 }}>Text / Markdown direkt eingeben</div>
+            <textarea className="form-textarea" value={uploadText} onChange={e => setUploadText(e.target.value)}
+              placeholder="Markdown oder Text hier einfuegen..." style={{ minHeight: 120, marginBottom: 8 }} />
+            <button className="btn btn-primary btn-sm" onClick={() => doUpload('text')} disabled={uploading || !uploadText}>
+              Text importieren
+            </button>
+          </div>
+
+          {uploadResult && (
+            <div className="card" style={{ background: uploadResult.includes('Fehler') ? '#FEF2F2' : '#F0FDF4' }}>
+              {uploadResult}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── MCP Server view ──────────────────────────────── */}
+      {tab === 'mcp' && (
+        <div>
+          {/* Registered servers list */}
+          {mcpServers.length === 0 && !mcpEditing ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">&#x1F50C;</div>
+              <div className="empty-state-text">Keine MCP-Server registriert</div>
+              <div className="empty-state-hint">
+                MCP-Server stellen Tools bereit, die der Chatbot in Patterns nutzen kann.
+              </div>
+              <button className="btn btn-primary mt-4" onClick={startNewServer}>
+                + MCP-Server hinzufuegen
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                <button className="btn btn-primary btn-sm" onClick={startNewServer}>
+                  + MCP-Server hinzufuegen
+                </button>
+              </div>
+
+              {mcpServers.map(server => (
+                <div key={server.id} className="card mb-3" style={{
+                  opacity: server.enabled ? 1 : 0.6,
+                  borderLeft: `3px solid ${server.enabled ? 'var(--green)' : 'var(--border)'}`,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: '.95rem' }}>{server.name || server.id}</span>
+                        <span className={`tag ${server.enabled ? 'tag-green' : 'tag-muted'}`}>
+                          {server.enabled ? 'Aktiv' : 'Deaktiviert'}
+                        </span>
+                      </div>
+                      <div className="text-sm text-muted" style={{ marginBottom: 4 }}>{server.description}</div>
+                      <div className="text-xs text-muted" style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        {server.url}
+                      </div>
+                      {server.tools.length > 0 && (
+                        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {server.tools.map(t => (
+                            <span key={t} className="tag tag-sm">{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => toggleMcpServer(server.id)}
+                        title={server.enabled ? 'Deaktivieren' : 'Aktivieren'}
+                      >
+                        {server.enabled ? 'Deaktivieren' : 'Aktivieren'}
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => {
+                          setMcpEditing({ ...server });
+                          setMcpDiscoverUrl(server.url);
+                          setMcpDiscoveredTools(server.tools.map(t => ({ name: t, description: '' })));
+                        }}
+                      >
+                        Bearbeiten
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => deleteMcpServer(server.id)}
+                      >
+                        &#x1F5D1;
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* Add/Edit server dialog */}
+          {mcpEditing && (
+            <div className="dialog-overlay" onClick={() => setMcpEditing(null)}>
+              <div className="dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
+                <div className="dialog-title">
+                  {mcpEditing.id && mcpServers.find(s => s.id === mcpEditing.id)
+                    ? 'MCP-Server bearbeiten'
+                    : 'Neuen MCP-Server registrieren'}
+                </div>
+
+                <div className="form-group mb-3">
+                  <label className="form-label">Server-URL</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      className="form-input"
+                      value={mcpDiscoverUrl}
+                      onChange={e => setMcpDiscoverUrl(e.target.value)}
+                      placeholder="https://example.com/mcp"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={discoverTools}
+                      disabled={mcpDiscovering || !mcpDiscoverUrl}
+                    >
+                      {mcpDiscovering ? 'Verbinde...' : 'Tools erkennen'}
+                    </button>
+                  </div>
+                  <div className="form-hint">
+                    MCP-Server-Endpunkt (JSON-RPC 2.0 / SSE). Klicke &quot;Tools erkennen&quot; um verfuegbare Tools abzufragen.
+                  </div>
+                </div>
+
+                {mcpStatus && (
+                  <div className="card mb-3" style={{
+                    background: mcpStatus.includes('Fehler') || mcpStatus.includes('fehlgeschlagen')
+                      ? '#FEF2F2' : '#F0FDF4',
+                    fontSize: '.85rem',
+                  }}>
+                    {mcpStatus}
+                  </div>
+                )}
+
+                {mcpDiscoveredTools.length > 0 && (
+                  <div className="mb-3">
+                    <div className="form-label">Erkannte Tools ({mcpDiscoveredTools.length})</div>
+                    <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6, padding: 8 }}>
+                      {mcpDiscoveredTools.map(t => (
+                        <div key={t.name} style={{ padding: '4px 0', borderBottom: '1px solid var(--border-lt)' }}>
+                          <span style={{ fontFamily: 'monospace', fontSize: '.82rem', fontWeight: 600 }}>{t.name}</span>
+                          {t.description && (
+                            <div className="text-xs text-muted" style={{ marginTop: 2 }}>{t.description}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-row mb-3">
+                  <div className="form-group">
+                    <label className="form-label">Server-ID</label>
+                    <input
+                      className="form-input"
+                      value={mcpEditing.id}
+                      onChange={e => setMcpEditing({ ...mcpEditing, id: e.target.value })}
+                      placeholder="z.B. my-server"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Name</label>
+                    <input
+                      className="form-input"
+                      value={mcpEditing.name}
+                      onChange={e => setMcpEditing({ ...mcpEditing, name: e.target.value })}
+                      placeholder="Anzeigename"
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group mb-3">
+                  <label className="form-label">Beschreibung</label>
+                  <input
+                    className="form-input"
+                    value={mcpEditing.description}
+                    onChange={e => setMcpEditing({ ...mcpEditing, description: e.target.value })}
+                    placeholder="Was stellt dieser Server bereit?"
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button className="btn" onClick={() => setMcpEditing(null)}>Abbrechen</button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      const server: McpServer = {
+                        ...mcpEditing,
+                        url: mcpDiscoverUrl || mcpEditing.url,
+                        tools: mcpDiscoveredTools.length > 0
+                          ? mcpDiscoveredTools.map(t => t.name)
+                          : mcpEditing.tools,
+                      };
+                      registerDiscoveredServer();
+                    }}
+                    disabled={!mcpEditing.id || !mcpDiscoverUrl}
+                  >
+                    Speichern
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Explanation */}
+          <div className="card mt-4" style={{ background: 'var(--primary-lt)', border: 'none' }}>
+            <div style={{ fontSize: '.85rem', fontWeight: 600, marginBottom: 6 }}>Was sind MCP-Server?</div>
+            <div className="text-sm">
+              <strong>MCP (Model Context Protocol)</strong> ist ein Standard, ueber den LLMs auf externe Tools zugreifen.<br />
+              Registrierte Server stellen Tools bereit (z.B. Suche, Metadaten-Abfragen), die in <strong>Patterns</strong> referenziert werden.<br />
+              Beim Hinzufuegen eines Servers werden die verfuegbaren Tools automatisch erkannt.<br /><br />
+              <strong>Beispiele:</strong> OER-Repositorien, Curriculum-Datenbanken, Schulbuch-Verlage, interne Wikis
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

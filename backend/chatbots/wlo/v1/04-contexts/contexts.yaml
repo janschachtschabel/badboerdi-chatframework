@@ -1,0 +1,31 @@
+# Context-Layer (Triple-Schema v2 — T-04/05)
+#
+# Definiert benannte Konversations-Kontexte. Der ContextSnapshot wird zur
+# Laufzeit pro Request gebaut; diese Datei dient als Referenz/Doku für die
+# erwarteten Felder und für UI-gestützte Filterung im Studio.
+
+contexts:
+  - id: ctx-search-page
+    label: "Suchergebnis-Seite"
+    description: "User befindet sich auf /suche oder /startseite mit aktiver Suchanfrage."
+    triggers:
+      page: ["/suche", "/startseite", "/"]
+
+  - id: ctx-collection-detail
+    label: "Sammlungs-Detailseite"
+    description: "User betrachtet eine konkrete WLO-Sammlung."
+    triggers:
+      page_pattern: "/sammlung/.*"
+
+  - id: ctx-material-detail
+    label: "Material-Detailseite"
+    description: "User betrachtet ein einzelnes Lernmaterial."
+    triggers:
+      page_pattern: "/material/.*"
+
+  - id: ctx-mobile-quick
+    label: "Mobile Schnellinteraktion"
+    description: "Mobiles Endgerät, kurze Sessiondauer — knappe Antworten bevorzugt."
+    triggers:
+      device: "mobile"
+      max_session_duration: 60

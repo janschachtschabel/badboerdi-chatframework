@@ -1,0 +1,19 @@
+# Geräte-Konfiguration
+# Max. angezeigte Ergebnisse pro Gerätetyp
+
+device_max_items:
+  desktop: 4
+  tablet: 4
+  mobile: 4
+
+# Persona-Ansprache (du/Sie/neutral)
+persona_formality:
+  P-W-LK: Sie
+  P-W-SL: du
+  P-W-POL: Sie
+  P-W-PRESSE: Sie
+  P-W-RED: du
+  P-BER: Sie
+  P-VER: Sie
+  P-ELT: Sie
+  P-AND: neutral

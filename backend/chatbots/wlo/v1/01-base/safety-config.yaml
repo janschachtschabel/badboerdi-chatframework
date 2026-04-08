@@ -1,0 +1,135 @@
+# Safety-Layer (Triple-Schema v2 — T-12/19)
+#
+# Risiko-basiertes Gating, das VOR der Pattern-Selektion läuft.
+# Konzeptionell auf derselben Ebene wie die Guardrails: unbedingte,
+# nicht überschreibbare Schutzschicht — nur eben durchgesetzt im Code
+# (Stufen-Gate vor jedem LLM-Call) statt im System-Prompt.
+# Editierbar im Studio unter "1 — Identität & Schutz".
+
+# ── Sicherheitslevel (Preset-Wahl) ──────────────────────────────────
+# Bestimmt, welche Stages laufen. Im Studio per Dropdown wählbar.
+security_level: standard
+
+presets:
+  off:
+    description: "Nur harte Regex-Blocks (Suizid). Keine LLM-Calls."
+    moderation: never
+    legal_classifier: never
+    prompt_injection: false
+  basic:
+    description: "Regex + OpenAI Moderation immer (gratis, ~150ms)."
+    moderation: always
+    legal_classifier: smart
+    prompt_injection: false
+  standard:
+    description: "Basic + Legal-Classifier bei Verdacht + Injection-Schutz."
+    moderation: always
+    legal_classifier: smart
+    prompt_injection: true
+  strict:
+    description: "Alles immer. Legal-Classifier auch bei low. Höhere Latenz + Kosten."
+    moderation: always
+    legal_classifier: always
+    prompt_injection: true
+  paranoid:
+    description: "Strict + halbierte Schwellwerte + Output-Review."
+    moderation: always
+    legal_classifier: always
+    prompt_injection: true
+    threshold_multiplier: 0.5
+    double_check: true
+
+# ── Stufe 1: Regex-Gate (immer aktiv, ~1 ms) ────────────────────────
+extra_crisis_terms: []     # zusätzlich zu den Code-Defaults
+extra_pii_terms: []
+
+# Tools, die im Crisis-Fall blockiert werden
+crisis_blocked_tools:
+  - search_wlo_collections
+  - search_wlo_content
+  - get_collection_contents
+
+crisis_pattern: PAT-CRISIS
+
+# ── Stufe 2: LLM-Moderation (eskaliert nur bei Verdacht) ────────────
+escalation:
+  mode: smart                  # off | smart | always
+  # off    = nur Regex-Gate
+  # smart  = LLM nur wenn Regex risk=medium liefert (95% sparen Latenz)
+  # always = LLM bei jedem Turn (max. Sicherheit, +100ms überall)
+
+  provider: openai             # openai | none
+  # openai → omni-moderation-latest, KOSTENLOS, ~50–150ms
+  # OpenAI deckt Strafrecht (illicit/violent) und Jugendschutz
+  # (sexual/minors, self-harm) sehr gut ab.
+
+  legal_classifier: true       # zusätzlicher GPT-mini Classifier für
+                               # Persönlichkeitsrechte + Datenschutz
+                               # (deutsche Rechtskategorien, ~150ms)
+
+  # Schwellwerte (0..1) — überschreitet die Antwort-Confidence den Wert,
+  # gilt die Kategorie als "flagged"
+  thresholds:
+    self_harm: 0.50            # niedrig — Schutz hat Vorrang
+    self_harm/intent: 0.40
+    sexual: 0.70
+    sexual/minors: 0.20        # sehr niedrig (Jugendschutz!)
+    violence: 0.80
+    violence/graphic: 0.70
+    hate: 0.80
+    hate/threatening: 0.60
+    harassment: 0.85
+    harassment/threatening: 0.60
+    illicit: 0.70              # Strafrecht
+    illicit/violent: 0.50
+
+  # Welche Kategorien blockieren komplett (sonst nur Warnung im Log)
+  hard_block_categories:
+    - self_harm
+    - self_harm/intent
+    - sexual/minors
+    - illicit/violent
+
+  # Wenn LLM-Stage Regex als false positive entlarvt → Risiko herabstufen
+  downgrade_false_positives: true
+
+# ── Stufe 3: Confidence-Anpassung aus Tool-Outcomes ─────────────────
+confidence_adjustments:
+  error: -0.20
+  empty: -0.10
+  timeout: -0.15
+  success: 0.05
+
+# ── Rate Limits ─────────────────────────────────────────────────────
+# Defaults sind so kalibriert, dass ~50 parallele Nutzer komfortabel arbeiten
+# können (≈ 3 Anfragen/min pro Person → 150/min insgesamt, plus Puffer).
+# Pro Limit gilt: 0 = unlimited.
+rate_limits:
+  enabled: true
+
+  per_session:
+    enabled: true
+    requests_per_minute: 30      # einzelne Person, kurzfristig
+    requests_per_hour: 600       # einzelne Person, mittelfristig
+
+  per_ip:
+    enabled: true                # auf false setzen, falls hinter NAT/Schul-Proxy
+    requests_per_minute: 300     # 50 User × 6 Anfragen/min = 300
+    requests_per_hour: 3000      # 50 User × 60 Anfragen/h  = 3000
+
+  # IPs, die das per_ip-Limit komplett überspringen (z.B. Schul-Gateways)
+  ip_whitelist: []
+  # Beispiel:
+  #   ip_whitelist:
+  #     - "192.168.1.0/24"   # NICHT als CIDR — exakte IPs, eine pro Zeile
+  #     - "10.0.0.5"
+
+  blocked_message: |
+    Du hast aktuell zu viele Anfragen gestellt. Bitte warte einen Moment
+    und versuche es gleich nochmal.
+
+# ── Logging ─────────────────────────────────────────────────────────
+logging:
+  enabled: true
+  log_all_turns: false         # true = jeder Turn, false = nur risk>=medium
+  retention_days: 90

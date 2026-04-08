@@ -1,0 +1,63 @@
+# Entity-/Slot-Definitionen
+# Diese Entities werden aus der Nutzernachricht extrahiert und akkumuliert.
+
+entities:
+  - id: fach
+    label: Fach / Fachgebiet
+    type: string
+    description: "Schulfach oder Fachgebiet (z.B. Mathematik, Deutsch, Biologie)"
+    examples:
+      - Mathematik
+      - Deutsch
+      - Biologie
+      - Informatik
+      - Geschichte
+
+  - id: stufe
+    label: Bildungsstufe
+    type: string
+    description: "Bildungsstufe oder Klassenstufe (z.B. Grundschule, Sek I, Klasse 7)"
+    examples:
+      - Grundschule
+      - Sekundarstufe I
+      - Sekundarstufe II
+      - Klasse 5
+      - Berufliche Bildung
+
+  - id: thema
+    label: Thema
+    type: string
+    description: "Konkretes Thema oder Lerngegenstand (z.B. Bruchrechnung, Fotosynthese)"
+    examples:
+      - Bruchrechnung
+      - Fotosynthese
+      - Lyrik der Romantik
+
+  - id: medientyp
+    label: Medientyp
+    type: string
+    description: "Art des gesuchten Materials (z.B. Video, Arbeitsblatt, Simulation)"
+    examples:
+      - Video
+      - Arbeitsblatt
+      - Simulation
+      - Podcast
+      - Interaktive Übung
+
+  - id: lizenz
+    label: Lizenz
+    type: string
+    description: "Gewünschte Lizenz (z.B. CC BY, CC BY-SA, CC0)"
+    examples:
+      - CC BY
+      - CC BY-SA
+      - CC0
+      - Alle OER
+
+# Akkumulations-Regeln pro Turn-Typ:
+accumulation_rules:
+  initial: "keep+extend"
+  follow_up: "keep+extend"
+  clarification: "keep+extend"
+  correction: "overwrite"
+  topic_switch: "reset all"

@@ -1,0 +1,128 @@
+# Signal-Modulationstabelle (Phase 3)
+# Jedes Signal definiert deterministische IF-THEN Regeln für den Output.
+# Felder: tone, length, skip_intro, one_option, add_sources, show_more, show_overview
+
+signals:
+  # D1: Zeit & Druck
+  zeitdruck:
+    dimension: "D1-Zeit"
+    label: "Zeitdruck"
+    tone: sachlich
+    length: kurz
+    skip_intro: true
+
+  ungeduldig:
+    dimension: "D1-Zeit"
+    label: "Ungeduldig"
+    tone: sachlich
+    length: kurz
+    skip_intro: true
+
+  gestresst:
+    dimension: "D1-Zeit"
+    label: "Gestresst"
+    tone: beruhigend
+    length: kurz
+    skip_intro: true
+
+  effizient:
+    dimension: "D1-Zeit"
+    label: "Effizient"
+    tone: sachlich
+    length: kurz
+    skip_intro: true
+
+  # D2: Sicherheit
+  unsicher:
+    dimension: "D2-Sicherheit"
+    label: "Unsicher"
+    tone: empathisch
+    length: mittel
+    one_option: true
+
+  ueberfordert:
+    dimension: "D2-Sicherheit"
+    label: "Überfordert"
+    tone: empathisch
+    length: kurz
+    one_option: true
+
+  unerfahren:
+    dimension: "D2-Sicherheit"
+    label: "Unerfahren"
+    tone: niedrigschwellig
+    length: mittel
+    one_option: true
+
+  erfahren:
+    dimension: "D2-Sicherheit"
+    label: "Erfahren"
+    tone: sachlich
+    length: kurz
+    skip_intro: true
+
+  entscheidungsbereit:
+    dimension: "D2-Sicherheit"
+    label: "Entscheidungsbereit"
+    tone: sachlich
+    length: kurz
+    skip_intro: true
+
+  # D3: Haltung
+  neugierig:
+    dimension: "D3-Haltung"
+    label: "Neugierig"
+    tone: spielerisch
+    length: mittel
+    show_more: true
+
+  zielgerichtet:
+    dimension: "D3-Haltung"
+    label: "Zielgerichtet"
+    tone: sachlich
+    length: kurz
+
+  skeptisch:
+    dimension: "D3-Haltung"
+    label: "Skeptisch"
+    tone: transparent
+    length: mittel
+    add_sources: true
+
+  vertrauend:
+    dimension: "D3-Haltung"
+    label: "Vertrauend"
+    tone: empfehlend
+    length: mittel
+
+  # D4: Kontext
+  orientierungssuchend:
+    dimension: "D4-Kontext"
+    label: "Orientierungssuchend"
+    tone: orientierend
+    length: mittel
+    show_overview: true
+
+  vergleichend:
+    dimension: "D4-Kontext"
+    label: "Vergleichend"
+    tone: analytisch
+    length: mittel
+
+  validierend:
+    dimension: "D4-Kontext"
+    label: "Validierend"
+    tone: belegend
+    length: mittel
+    add_sources: true
+
+  delegierend:
+    dimension: "D4-Kontext"
+    label: "Delegierend"
+    tone: proaktiv
+    length: mittel
+
+# Signale die max_items reduzieren
+reduce_items_signals:
+  - ungeduldig
+  - gestresst

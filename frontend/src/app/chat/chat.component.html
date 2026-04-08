@@ -1,0 +1,189 @@
+<div class="chat-wrapper">
+  <!-- Header -->
+  <div class="chat-header">
+    <div class="header-bot">
+      <span class="header-avatar">🦉</span>
+      <div class="header-text">
+        <span class="header-name">Boerdi</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-icon" (click)="toggleAutoSpeak()" [title]="autoSpeak ? 'Sprachausgabe aus' : 'Sprachausgabe an'">
+        {{ autoSpeak ? '🔊' : '🔇' }}
+      </button>
+      <button class="btn-icon" (click)="toggleDebug()" title="Debug">🔍</button>
+      <button class="btn-icon" (click)="restart()" title="Neuer Chat">🔄</button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="messages-area" #messagesContainer>
+    <div *ngFor="let msg of messages()" [id]="'msg-' + msg.id" class="message-row" [class.bot-row]="msg.sender === 'bot'" [class.user-row]="msg.sender === 'user'">
+
+      <!-- Bot avatar -->
+      <span *ngIf="msg.sender === 'bot'" class="msg-avatar">🦉</span>
+
+      <div class="msg-bubble" [class.bot-bubble]="msg.sender === 'bot'" [class.user-bubble]="msg.sender === 'user'">
+        <!-- Loading dots -->
+        <div *ngIf="msg.isLoading" class="typing-dots">
+          <span></span><span></span><span></span>
+        </div>
+
+        <!-- Content -->
+        <div *ngIf="!msg.isLoading && msg.content" [innerHTML]="renderMarkdown(msg.content)" class="msg-content"></div>
+
+        <!-- Cards -->
+        <div *ngIf="msg.cards && msg.cards.length" class="cards-list">
+          <div *ngFor="let card of getVisibleCards(msg)" class="wlo-card-wrapper">
+            <a class="wlo-card"
+               [href]="card.wlo_url || card.url || '#'"
+               target="_blank"
+               rel="noopener noreferrer"
+               (click)="$event.stopPropagation()">
+              <div class="card-thumb">
+                <img *ngIf="card.preview_url" [src]="card.preview_url" [alt]="card.title" loading="lazy" class="card-img">
+                <span *ngIf="!card.preview_url" class="card-icon">{{ getCardIcon(card) }}</span>
+              </div>
+              <div class="card-info">
+                <div class="card-title">{{ card.title }}</div>
+                <div class="card-meta">
+                  <span *ngFor="let d of card.disciplines" class="chip chip-fach">{{ d }}</span>
+                  <span *ngFor="let e of card.educational_contexts" class="chip chip-stufe">{{ e }}</span>
+                  <ng-container *ngFor="let t of card.learning_resource_types">
+                    <span *ngIf="t !== 'Sammlung' && t !== 'collection'" class="chip chip-typ">{{ t }}</span>
+                  </ng-container>
+                  <span *ngIf="card.license" class="chip chip-lizenz">{{ card.license }}</span>
+                  <span *ngIf="card.node_type === 'collection'" class="chip chip-sammlung">Sammlung</span>
+                </div>
+                <div class="card-desc" *ngIf="card.description">{{ card.description | slice:0:120 }}{{ card.description && card.description.length > 120 ? '...' : '' }}</div>
+              </div>
+              <span class="card-arrow">›</span>
+            </a>
+            <!-- Collection action buttons -->
+            <div *ngIf="card.node_type === 'collection' && card.node_id" class="card-actions">
+              <button class="card-btn card-btn--primary"
+                      [disabled]="isLoading"
+                      (click)="browseCollection(card.node_id, card.title)">
+                📋 Inhalte
+              </button>
+              <button class="card-btn card-btn--secondary"
+                      [disabled]="isLoading"
+                      (click)="generateLearningPath(card.node_id, card.title)">
+                🗺️ Lernpfad
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pagination: count + show more / load more -->
+        <div *ngIf="msg.cards && msg.cards.length > 1" class="pagination-bar">
+          <span class="pagination-info">
+            {{ getVisibleCards(msg).length }} von {{ msg.cards.length }} Ergebnissen
+          </span>
+          <!-- Client-side: reveal already-loaded hidden cards -->
+          <button *ngIf="hasHiddenCards(msg)"
+                  class="btn-load-more"
+                  (click)="showMoreCards(msg.id)">
+            Mehr anzeigen ▼
+          </button>
+          <!-- Server-side: load next page from collection -->
+          <button *ngIf="!hasHiddenCards(msg) && msg.pagination?.has_more && msg.pagination?.collection_id"
+                  class="btn-load-more"
+                  [disabled]="isLoading"
+                  (click)="loadMore(msg.id)">
+            {{ isLoading ? 'Lade…' : 'Weitere laden ▼' }}
+          </button>
+        </div>
+
+        <!-- TTS button for bot messages -->
+        <button *ngIf="msg.sender === 'bot' && !msg.isLoading && msg.content" class="btn-speak" (click)="speakText(msg.content)" [title]="isSpeaking ? 'Stop' : 'Vorlesen'">
+          {{ isSpeaking ? '⏹️' : '🔈' }}
+        </button>
+
+        <!-- Quick replies -->
+        <div *ngIf="msg.quickReplies && msg.quickReplies.length" class="quick-replies">
+          <button *ngFor="let qr of msg.quickReplies" class="qr-btn" (click)="onQuickReply(qr)">{{ qr }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Debug Panel -->
+  <div *ngIf="showDebug && latestDebug" class="debug-panel">
+    <div class="debug-row"><span class="debug-label">Persona:</span> {{ latestDebug.persona }}</div>
+    <div class="debug-row"><span class="debug-label">Intent:</span> {{ latestDebug.intent }}</div>
+    <div class="debug-row"><span class="debug-label">State:</span> {{ latestDebug.state }}</div>
+    <div class="debug-row"><span class="debug-label">Signale:</span> {{ latestDebug.signals.join(', ') || '–' }}</div>
+    <div class="debug-row"><span class="debug-label">Pattern:</span> {{ latestDebug.pattern }}</div>
+    <div class="debug-row"><span class="debug-label">Tools:</span> {{ latestDebug.tools_called.join(', ') || '–' }}</div>
+    <div class="debug-row"><span class="debug-label">Entities:</span> <code>{{ latestDebug.entities | json }}</code></div>
+    <div class="debug-row">
+      <span class="debug-label">Phase 3:</span>
+      Ton={{ latestDebug.phase3_modulations['tone'] }},
+      Länge={{ latestDebug.phase3_modulations['length'] }},
+      Max={{ latestDebug.phase3_modulations['max_items'] }}
+    </div>
+    <!-- Triple-Schema v2 -->
+    <div class="debug-row" *ngIf="latestDebug.confidence !== undefined">
+      <span class="debug-label">Confidence:</span> {{ (latestDebug.confidence ?? 0) | number:'1.2-2' }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.safety">
+      <span class="debug-label">Safety:</span>
+      Risk={{ latestDebug.safety.risk_level }}
+      <span *ngIf="latestDebug.safety.stages_run?.length"> · stages={{ latestDebug.safety.stages_run!.join('→') }}</span>
+      <span *ngIf="latestDebug.safety.escalated"> · 🤖 escalated</span>
+      <span *ngIf="latestDebug.safety.flagged_categories?.length"> · flagged={{ latestDebug.safety.flagged_categories!.join(',') }}</span>
+      <span *ngIf="latestDebug.safety.legal_flags?.length"> · legal={{ latestDebug.safety.legal_flags!.join(',') }}</span>
+      <span *ngIf="latestDebug.safety.enforced_pattern"> · enforced={{ latestDebug.safety.enforced_pattern }}</span>
+      <span *ngIf="latestDebug.safety.blocked_tools?.length"> · blocked={{ latestDebug.safety.blocked_tools.join(', ') }}</span>
+      <span *ngIf="latestDebug.safety.reasons?.length"> · {{ latestDebug.safety.reasons.join(', ') }}</span>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.outcomes && latestDebug.outcomes.length">
+      <span class="debug-label">Outcomes:</span>
+      <div *ngFor="let o of latestDebug.outcomes" class="debug-sub">
+        · {{ o.tool }} → {{ o.status }} ({{ o.item_count }} items, {{ o.latency_ms }}ms)<span *ngIf="o.error"> – {{ o.error }}</span>
+      </div>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.policy">
+      <span class="debug-label">Policy:</span>
+      {{ latestDebug.policy.allowed ? 'allowed' : 'BLOCKED' }}
+      <span *ngIf="latestDebug.policy.matched_rules?.length"> · rules={{ latestDebug.policy.matched_rules.join(', ') }}</span>
+      <span *ngIf="latestDebug.policy.blocked_tools?.length"> · blocked={{ latestDebug.policy.blocked_tools.join(', ') }}</span>
+      <span *ngIf="latestDebug.policy.required_disclaimers?.length"> · disclaimers={{ latestDebug.policy.required_disclaimers.length }}</span>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.context">
+      <span class="debug-label">Context:</span>
+      page={{ latestDebug.context.page }}, device={{ latestDebug.context.device }}, turn={{ latestDebug.context.turn_count }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.trace && latestDebug.trace.length">
+      <span class="debug-label">Trace:</span>
+      <div *ngFor="let t of latestDebug.trace" class="debug-sub">
+        · [{{ t.step }}] {{ t.label }} – {{ t.duration_ms }}ms
+      </div>
+    </div>
+  </div>
+
+  <!-- Input Footer -->
+  <div class="chat-footer">
+    <button class="btn-mic" [class.recording]="isRecording" (click)="toggleRecording()"
+            [title]="isRecording ? 'Aufnahme stoppen' : 'Spracheingabe starten'">
+      <span *ngIf="!isRecording">🎤</span>
+      <span *ngIf="isRecording" class="recording-indicator">
+        <span class="rec-dot"></span>
+        {{ recordingSeconds }}s
+      </span>
+    </button>
+    <input
+      #inputField
+      type="text"
+      class="chat-input"
+      [(ngModel)]="userInput"
+      (keydown)="onKeydown($event)"
+      [placeholder]="isRecording ? 'Aufnahme laeuft… Klicke ⏹ zum Stoppen' : (isLoading ? 'Boerdi denkt nach…' : 'Nachricht eingeben…')"
+      [disabled]="isLoading || isRecording"
+    >
+    <button class="btn-send" (click)="sendMessage()" [disabled]="isLoading || !userInput.trim()" title="Senden">
+      ➤
+    </button>
+  </div>
+</div>

@@ -1,0 +1,10 @@
+# RAG-Bereichskonfiguration
+# mode: always = immer im Kontext, on-demand = nur bei Bedarf
+
+recht:
+  mode: always
+  description: "Rechtsprüfung von OER-Inhalten: Strafrecht, Jugendschutz, Persönlichkeitsrechte, Datenschutz, Quality Gates"
+
+general:
+  mode: always
+  description: "Details zur Wirlernenonline Webseite"

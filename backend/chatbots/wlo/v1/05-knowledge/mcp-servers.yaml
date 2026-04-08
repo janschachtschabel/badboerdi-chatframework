@@ -1,0 +1,21 @@
+# MCP-Server-Registry
+# Registrierte MCP-Server fuer den Chatbot.
+# Jeder Server stellt Tools bereit, die in Patterns referenziert werden koennen.
+
+servers:
+  - id: wlo-mcp
+    name: WLO edu-sharing
+    url: https://wlo-mcp-server.vercel.app/mcp
+    description: WirLernenOnline MCP-Server mit Such- und Metadaten-Tools
+    enabled: true
+    tools:
+      - search_wlo_collections
+      - search_wlo_content
+      - get_collection_contents
+      - get_node_details
+      - lookup_wlo_vocabulary
+      - get_wirlernenonline_info
+      - get_edu_sharing_network_info
+      - get_edu_sharing_product_info
+      - get_metaventis_info
+      - search_wlo_topic_pages
