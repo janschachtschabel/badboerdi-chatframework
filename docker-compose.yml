@@ -1,0 +1,58 @@
+services:
+  backend:
+    image: ${DOCKERHUB_USER:-janschachtschabel}/badboerdi-backend:latest
+    build:
+      context: ./backend
+    container_name: badboerdi-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - B_API_KEY=${B_API_KEY:-}
+      - B_API_BASE_URL=${B_API_BASE_URL:-}
+      - LLM_CHAT_MODEL=${LLM_CHAT_MODEL:-}
+      - LLM_EMBED_MODEL=${LLM_EMBED_MODEL:-}
+      - STUDIO_API_KEY=${STUDIO_API_KEY:-}
+      - DATABASE_PATH=/data/badboerdi.db
+    volumes:
+      - backend_data:/data
+      - ./backend/chatbots:/app/chatbots
+      - ./backend/knowledge:/app/knowledge
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  studio:
+    image: ${DOCKERHUB_USER:-janschachtschabel}/badboerdi-studio:latest
+    build:
+      context: ./studio
+    container_name: badboerdi-studio
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - STUDIO_API_KEY=${STUDIO_API_KEY:-}
+      - STUDIO_PASSWORD=${STUDIO_PASSWORD:-}
+    depends_on:
+      - backend
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: badboerdi-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_POLL_INTERVAL:-300}
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+      # Optional: Benachrichtigungen (z. B. Slack/Email) via WATCHTOWER_NOTIFICATIONS
+
+volumes:
+  backend_data:
