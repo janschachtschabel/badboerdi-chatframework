@@ -8,7 +8,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps (sqlite, build tools for sqlite-vec/tiktoken wheels if needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
       curl \
@@ -17,12 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
-# App code + chatbot config tree
+# App code + chatbot config tree + pre-built widget bundle
 COPY app ./app
 COPY chatbots ./chatbots
+COPY widget_dist ./widget_dist
 COPY run.py ./
 
-# Runtime data dirs (mount as volumes in production)
 RUN mkdir -p /data /app/knowledge
 ENV DATABASE_PATH=/data/badboerdi.db
 

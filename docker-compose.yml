@@ -40,6 +40,23 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
+  chatbot:
+    image: ${DOCKERHUB_USER:-jschachtschabel}/badboerdi-chatbot:latest
+    build:
+      context: ./chatbot
+    container_name: badboerdi-chatbot
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      # Browser-accessible URL of the backend — must be reachable from the
+      # end-user's browser, NOT the docker-internal hostname.
+      - BACKEND_URL=${CHATBOT_BACKEND_URL:-http://localhost:8000}
+    depends_on:
+      - backend
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
   watchtower:
     image: containrrr/watchtower:latest
     container_name: badboerdi-watchtower

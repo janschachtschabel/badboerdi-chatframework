@@ -10,6 +10,7 @@ env:
   REGISTRY: docker.io
   BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/badboerdi-backend
   STUDIO_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/badboerdi-studio
+  CHATBOT_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/badboerdi-chatbot
 
 jobs:
   build:
@@ -22,10 +23,16 @@ jobs:
         include:
           - name: backend
             context: ./backend
+            dockerfile: ./backend/Dockerfile
             image_env: BACKEND_IMAGE
           - name: studio
             context: ./studio
+            dockerfile: ./studio/Dockerfile
             image_env: STUDIO_IMAGE
+          - name: chatbot
+            context: ./chatbot
+            dockerfile: ./chatbot/Dockerfile
+            image_env: CHATBOT_IMAGE
     steps:
       - uses: actions/checkout@v5
 
@@ -62,6 +69,7 @@ jobs:
         uses: docker/build-push-action@v6.9.0
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
