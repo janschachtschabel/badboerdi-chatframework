@@ -131,6 +131,14 @@ export default function KnowledgeManager() {
     } catch { /* ignore */ }
   };
 
+  const removeOrphanArea = async (area: string) => {
+    if (!confirm(`Konfig-Eintrag "${area}" entfernen? (enthaelt keine Dokumente)`)) return;
+    const updated = { ...areaConfigs };
+    delete updated[area];
+    setAreaConfigs(updated);
+    await saveAreaConfigs(updated);
+  };
+
   const deleteArea = async (area: string) => {
     if (!confirm(`Wirklich alle Dokumente in "${area}" loeschen?`)) return;
     await fetch(`/api/rag/area/${encodeURIComponent(area)}`, { method: 'DELETE' });
@@ -280,6 +288,7 @@ export default function KnowledgeManager() {
     setMcpStatus(null);
   };
 
+  const orphanAreas = Object.keys(areaConfigs).filter(k => !areas.some(a => a.area === k));
   const alwaysOnCount = Object.values(areaConfigs).filter(c => c.mode === 'always').length;
   const enabledServers = mcpServers.filter(s => s.enabled).length;
 
@@ -317,6 +326,30 @@ export default function KnowledgeManager() {
       {/* ── Areas view ───────────────────────────────────── */}
       {tab === 'areas' && (
         <div>
+          {orphanAreas.length > 0 && (
+            <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid #f59e0b', background: '#fffbeb' }}>
+              <div style={{ fontWeight: 600, color: '#92400e', marginBottom: 4 }}>
+                Verwaiste Konfig-Eintraege
+              </div>
+              <div style={{ fontSize: 13, color: '#78350f', marginBottom: 12 }}>
+                Diese Bereiche sind in <code>rag-config.yaml</code> definiert, enthalten aber
+                keine indexierten Dokumente. Du kannst sie entfernen oder Dokumente hinzufuegen.
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {orphanAreas.map(a => (
+                  <div key={a} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#fff', border: '1px solid #fde68a', borderRadius: 6 }}>
+                    <span style={{ fontWeight: 500 }}>{a}</span>
+                    <span className={`area-mode ${areaConfigs[a]?.mode || 'on-demand'}`} style={{ fontSize: 11 }}>
+                      {areaConfigs[a]?.mode === 'always' ? 'immer' : 'on-demand'}
+                    </span>
+                    <button className="btn-ghost" style={{ fontSize: 12, padding: '2px 8px' }} onClick={() => removeOrphanArea(a)}>
+                      Entfernen
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {areas.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">&#x1F4DA;</div>
