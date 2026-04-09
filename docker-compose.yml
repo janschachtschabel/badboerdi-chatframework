@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ${DOCKERHUB_USER:-janschachtschabel}/badboerdi-backend:latest
+    image: ${DOCKERHUB_USER:-jschachtschabel}/badboerdi-backend:latest
     build:
       context: ./backend
     container_name: badboerdi-backend
@@ -24,7 +24,7 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
 
   studio:
-    image: ${DOCKERHUB_USER:-janschachtschabel}/badboerdi-studio:latest
+    image: ${DOCKERHUB_USER:-jschachtschabel}/badboerdi-studio:latest
     build:
       context: ./studio
     container_name: badboerdi-studio
