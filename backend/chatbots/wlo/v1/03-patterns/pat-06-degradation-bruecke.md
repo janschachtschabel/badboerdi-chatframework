@@ -17,6 +17,7 @@ response_type: answer
 sources: ["mcp"]
 format_primary: text
 format_follow_up: quick_replies
+card_text_mode: minimal
 tools: ["search_wlo_collections", "search_wlo_topic_pages", "search_wlo_content", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 

@@ -44,6 +44,7 @@ export interface PatternData {
   rag_areas?: string[];
   format_primary?: string;
   format_follow_up?: string;
+  card_text_mode?: string;
   tools?: string[];
   core_rule?: string;
   file?: string;

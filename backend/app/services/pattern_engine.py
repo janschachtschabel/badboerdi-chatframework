@@ -38,6 +38,7 @@ class PatternDef(BaseModel):
     rag_areas: list[str] = Field(default_factory=list)
     format_primary: str = "text"
     format_follow_up: str = "quick_replies"
+    card_text_mode: str = "minimal"  # minimal | reference | highlight
     tools: list[str] = Field(default_factory=list)
     core_rule: str = ""
 
@@ -201,6 +202,7 @@ def phase3_modulate(
         "sources": pattern.sources,
         "format_primary": pattern.format_primary,
         "format_follow_up": pattern.format_follow_up,
+        "card_text_mode": pattern.card_text_mode,
         "max_items": device_max.get(device, 6),
         "tools": list(pattern.tools),
         "core_rule": pattern.core_rule,

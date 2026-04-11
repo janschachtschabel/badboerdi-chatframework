@@ -324,6 +324,45 @@ Signale: {', '.join(classification.get('signals', []))}
 State: {classification.get('next_state', 'state-1')}""",
     ]
 
+    # Card-text-mode: how to handle overlap between text and material cards
+    _card_mode = pattern_output.get("card_text_mode", "minimal")
+    if _card_mode == "minimal":
+        system_parts.append("""
+## Darstellungsregel: Materialien als Kacheln (Modus: minimal)
+Gefundene Materialien werden dem Nutzer automatisch als interaktive Kacheln angezeigt
+(Titel, Beschreibung, Vorschau, Metadaten, Links). Du musst diese Informationen
+NICHT im Text wiederholen.
+- Schreibe eine kurze kontextuelle Einleitung (1-2 Saetze): Was wurde gefunden, warum passt es.
+- Nenne KEINE einzelnen Titel, Beschreibungen oder Metadaten im Text.
+- RICHTIG: "Hier sind 4 Materialien zur Bruchrechnung, darunter Videos und interaktive Uebungen."
+- FALSCH: "1. **Bruchrechnung leicht gemacht** — Ein Video das erklaert..."
+- Die Kacheln liefern alle Details — dein Text liefert den Kontext.""")
+    elif _card_mode == "reference":
+        system_parts.append("""
+## Darstellungsregel: Materialien im Text referenzieren (Modus: reference)
+Gefundene Materialien werden dem Nutzer auch als Kacheln angezeigt, aber du DARFST
+und SOLLST sie im Text namentlich nennen und didaktisch einordnen.
+- Nutze die Materialtitel im Text fuer Struktur (Reihenfolge, Lernziele, Zeitangaben).
+- Verlinke genannte Materialien als Markdown-Link: [Titel](URL)
+  Nutze die URL aus den Tool-Ergebnissen (wlo_url oder url).
+- Wiederhole NICHT die vollstaendige Beschreibung oder Metadaten — die stehen in den Kacheln.
+- RICHTIG: "Schritt 2 (15 Min.): Mit [Brueche addieren](https://wirlernenonline.de/...) ueben die SuS..."
+- FALSCH: "Schritt 2: **Brueche addieren** — Ein Arbeitsblatt fuer Klasse 6 mit CC BY-SA..."
+- Dein Text liefert die didaktische Struktur, die Kacheln liefern die Material-Details.""")
+    elif _card_mode == "highlight":
+        system_parts.append("""
+## Darstellungsregel: Ausgewaehlte Materialien hervorheben (Modus: highlight)
+Gefundene Materialien werden dem Nutzer als Kacheln angezeigt. Du darfst 1-2 Materialien
+im Text kurz hervorheben und begruenden, warum sie besonders passen.
+- Hebe maximal 1-2 Materialien namentlich hervor — nicht alle einzeln auflisten.
+- Verlinke hervorgehobene Materialien als Markdown-Link: [Titel](URL)
+  Nutze die URL aus den Tool-Ergebnissen (wlo_url oder url).
+- Begruende kurz WARUM (z.B. "besonders gut fuer den Einstieg", "interaktiv und motivierend").
+- Die restlichen Materialien stehen in den Kacheln — nicht im Text beschreiben.
+- RICHTIG: "Besonders empfehlenswert ist [Fotosynthese verstehen](https://wirlernenonline.de/...), weil es anschaulich erklaert."
+- FALSCH: "1. *Fotosynthese verstehen* — Video, CC BY... 2. *Arbeitsblatt Fotosynthese* — PDF..."
+- Dein Text liefert die Empfehlung, die Kacheln liefern den Ueberblick.""")
+
     # Signal-driven modulation rules
     if pattern_output.get("skip_intro"):
         system_parts.append("\n## Regel: Keine Einleitung. Direkt zur Sache.")
@@ -564,8 +603,8 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     # "on-demand" areas: only queried when LLM explicitly calls query_knowledge
     knowledge_prefetched = False
     always_areas: list[str] = []  # tracked for redundant-call guard in tool loop
-    _RAG_TOP_K = 8  # global budget for pre-fetched RAG chunks
-    _RAG_MIN_SCORE = 0.25  # drop chunks below this relevance threshold
+    _RAG_TOP_K = 15  # global budget for pre-fetched RAG chunks
+    _RAG_MIN_SCORE = 0.20  # drop chunks below this relevance threshold
     if available_rag_areas and rag_config:
         always_areas = [a for a in available_rag_areas if rag_config.get(a, {}).get("mode") == "always"]
 
@@ -601,7 +640,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     "tool_call_id": "prefetch_knowledge",
                     "content": (
                         f"[Bereits durchsuchte Bereiche: {areas_label}]\n\n"
-                        + prefetch_ctx[:6000]
+                        + prefetch_ctx[:12000]
                     ),
                 })
 

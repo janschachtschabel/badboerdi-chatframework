@@ -17,6 +17,7 @@ response_type: answer
 sources: ["rag", "mcp"]
 format_primary: text
 format_follow_up: inline
+card_text_mode: minimal
 tools: ["get_wirlernenonline_info", "get_edu_sharing_network_info", "get_metaventis_info"]
 ---
 

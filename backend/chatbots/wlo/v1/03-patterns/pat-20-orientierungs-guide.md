@@ -17,6 +17,7 @@ response_type: suggestion
 sources: []
 format_primary: text
 format_follow_up: quick_replies
+card_text_mode: minimal
 tools: []
 ---
 

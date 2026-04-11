@@ -42,6 +42,7 @@ function patternToFileContent(p: PatternData, body: string): string {
     ['rag_areas', p.rag_areas ?? []],
     ['format_primary', p.format_primary ?? 'text'],
     ['format_follow_up', p.format_follow_up ?? 'none'],
+    ['card_text_mode', p.card_text_mode ?? 'minimal'],
     ['tools', p.tools ?? []],
     ['core_rule', p.core_rule ?? ''],
   ];
@@ -138,6 +139,7 @@ const DETAIL_OPTIONS = ['standard', 'detail', 'overview'];
 const RESPONSE_TYPE_OPTIONS = ['answer', 'question', 'suggestion'];
 const FORMAT_OPTIONS = ['text', 'cards', 'list'];
 const FOLLOW_UP_OPTIONS = ['quick_replies', 'inline', 'none'];
+const CARD_TEXT_MODE_OPTIONS = ['minimal', 'reference', 'highlight'];
 const SOURCE_OPTIONS = ['mcp', 'rag'];
 
 // ── Props ────────────────────────────────────────────────────────────
@@ -577,6 +579,15 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                       {FOLLOW_UP_OPTIONS.map(o => <option key={o}>{o}</option>)}
                     </select>
                   </div>
+                  <div className="form-group">
+                    <label className="form-label">Kachel-Text-Modus</label>
+                    <select className="form-select" value={editData.card_text_mode ?? 'minimal'}
+                      onChange={e => update('card_text_mode', e.target.value)}>
+                      {CARD_TEXT_MODE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Quellen</label>
                     <div className="checkbox-group">

@@ -114,6 +114,9 @@ $radius:     14px;
   font-size: .875rem;
   line-height: 1.65;
   position: relative;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
 }
 
 .bot-bubble {
@@ -131,11 +134,16 @@ $radius:     14px;
 }
 
 .msg-content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+
   a {
     color: $text-link;
     text-decoration: underline;
     text-decoration-thickness: 1px;
     text-underline-offset: 2px;
+    word-break: break-all;
     &:hover { text-decoration-thickness: 2px; }
   }
 
@@ -499,10 +507,13 @@ $radius:     14px;
   font-family: monospace;
   max-height: 180px;
   overflow-y: auto;
+  overflow-x: hidden;
   line-height: 1.5;
+  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
-.debug-row { margin-bottom: 2px; }
+.debug-row { margin-bottom: 2px; max-width: 100%; }
 .debug-label { font-weight: 600; color: $primary; }
 
 // ── Input Footer ─────────────────────────────────────────────────────────────

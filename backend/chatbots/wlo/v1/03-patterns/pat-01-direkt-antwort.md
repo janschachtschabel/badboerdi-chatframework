@@ -17,6 +17,7 @@ response_type: answer
 sources: ["mcp"]
 format_primary: text
 format_follow_up: inline
+card_text_mode: minimal
 tools: []
 ---
 
