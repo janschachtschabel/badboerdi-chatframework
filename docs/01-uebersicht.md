@@ -16,8 +16,8 @@ Das Backend ist das Herzstueck — es verarbeitet Chat-Nachrichten, klassifizier
 - **Chat-Pipeline** — 7-phasige Verarbeitung jeder Nachricht (Eingabe, Klassifikation, Steuerung, Modulation, Ausfuehrung, Feedback, Observability)
 - **5-Schichten-Architektur** — YAML/Markdown-basierte Chatbot-Konfiguration in `chatbots/wlo/v1/` (Identitaet, Domain, Patterns, Dimensionen, Wissen)
 - **Safety-Pipeline** — 3-stufige Sicherheitspruefung (Regex, OpenAI Moderation, LLM-Rechtsklassifikator)
-- **MCP-Tool-Integration** — Anbindung an externe Datenquellen (WLO edu-sharing: Sammlungen, Materialien, Themenseiten)
-- **RAG-Wissensbereiche** — Vektorbasierte Wissensdatenbank mit Always-On und On-Demand-Bereichen
+- **MCP-Tool-Integration** — Anbindung an externe Datenquellen (WLO edu-sharing: Sammlungen, Materialien, Themenseiten mit zielgruppenspezifischen Varianten)
+- **RAG-Wissensbereiche** — Vektorbasierte Wissensdatenbank mit Always-On und On-Demand-Bereichen, inkl. Seed-System fuer initiale Wissensbasis bei Neuinstallation
 - **Spekulative Vorab-Abfragen** — Parallelisierte Safety/Classify-Ausfuehrung + vorausschauende MCP-Tool-Calls fuer reduzierte Latenz
 - **Multi-Provider LLM-Abstraktion** — OpenAI nativ, B-API-OpenAI, B-API-AcademicCloud
 - **Session-Management** — SQLite-basiert mit Gespraechsverlauf und State-Tracking

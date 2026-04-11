@@ -17,7 +17,7 @@ response_type: answer
 sources: ["mcp"]
 format_primary: cards
 format_follow_up: none
-tools: ["search_wlo_collections", "get_collection_contents", "lookup_wlo_vocabulary", "get_node_details"]
+tools: ["search_wlo_collections", "search_wlo_topic_pages", "get_collection_contents", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 
 # PAT-07: Ergebnis-Kuratierung

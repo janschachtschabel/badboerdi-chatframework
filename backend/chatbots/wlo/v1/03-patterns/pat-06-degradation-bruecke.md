@@ -17,7 +17,7 @@ response_type: answer
 sources: ["mcp"]
 format_primary: text
 format_follow_up: none
-tools: ["search_wlo_collections", "search_wlo_content", "lookup_wlo_vocabulary", "get_node_details"]
+tools: ["search_wlo_collections", "search_wlo_topic_pages", "search_wlo_content", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 
 # PAT-06: Degradation-Brücke

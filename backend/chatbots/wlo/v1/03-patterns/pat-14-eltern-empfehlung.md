@@ -17,7 +17,7 @@ response_type: answer
 sources: ["mcp"]
 format_primary: cards
 format_follow_up: none
-tools: []
+tools: ["search_wlo_collections", "search_wlo_topic_pages", "search_wlo_content", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 
 # PAT-14: Eltern-Empfehlung

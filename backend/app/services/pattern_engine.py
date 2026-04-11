@@ -97,15 +97,29 @@ def phase1_gate(
     persona_id: str,
     state_id: str,
     intent_id: str,
+    entities: dict[str, Any] | None = None,
 ) -> tuple[list[PatternDef], list[str]]:
-    """Phase 1: Binary elimination. Returns (candidates, eliminated_ids)."""
+    """Phase 1: Binary elimination. Returns (candidates, eliminated_ids).
+
+    Patterns are eliminated when:
+    - persona/state/intent gates don't match, OR
+    - precondition_slots are defined but NOT ALL filled (hard gate).
+      This prevents patterns like PAT-19 (needs fach+stufe+thema) from
+      firing when only fach+stufe are known — the fallback (PAT-18 or
+      PAT-06) will catch the request instead.
+    """
+    _ents = entities or {}
     candidates = []
     eliminated = []
     for p in patterns:
         persona_ok = "*" in p.gate_personas or persona_id in p.gate_personas
         state_ok = "*" in p.gate_states or state_id in p.gate_states
         intent_ok = "*" in p.gate_intents or intent_id in p.gate_intents
-        if persona_ok and state_ok and intent_ok:
+        # Hard gate: all precondition_slots must be filled
+        precond_ok = True
+        if p.precondition_slots:
+            precond_ok = all(_ents.get(s) for s in p.precondition_slots)
+        if persona_ok and state_ok and intent_ok and precond_ok:
             candidates.append(p)
         else:
             eliminated.append(p.id)
@@ -238,7 +252,7 @@ def select_pattern(
 ) -> tuple[PatternDef, dict[str, Any], dict[str, float], list[str]]:
     """Run all 3 phases and return (winner, modulated_output, scores, eliminated)."""
     patterns = get_patterns()
-    candidates, eliminated = phase1_gate(patterns, persona_id, state_id, intent_id)
+    candidates, eliminated = phase1_gate(patterns, persona_id, state_id, intent_id, entities)
 
     if not candidates:
         # Fallback: use PAT-17 (Sanfter Einstieg)

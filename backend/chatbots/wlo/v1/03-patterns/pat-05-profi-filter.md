@@ -17,7 +17,7 @@ response_type: answer
 sources: ["mcp"]
 format_primary: text
 format_follow_up: none
-tools: ["lookup_wlo_vocabulary", "search_wlo_content", "get_node_details"]
+tools: ["search_wlo_collections", "lookup_wlo_vocabulary", "search_wlo_content", "get_node_details"]
 ---
 
 # PAT-05: Profi-Filter

@@ -40,7 +40,7 @@ Das BadBoerdi-Framework arbeitet mit **7 Kernelementen** (aktiv bei jeder Nachri
 |----|-------|-----------------|
 | INT-W-01 | WLO kennenlernen | Plattform-Info aus RAG |
 | INT-W-02 | Soft Probing | Bot fragt nach Bedarf |
-| INT-W-03a | Themenseite entdecken | `search_wlo_collections` |
+| INT-W-03a | Themenseite entdecken | `search_wlo_collections` + `search_wlo_topic_pages` |
 | INT-W-03b | Unterrichtsmaterial suchen | `search_wlo_content` |
 | INT-W-03c | Lerninhalt suchen | `search_wlo_content` |
 | INT-W-04 | Feedback | Kein Tool, Dank/Weiterleitung |
@@ -144,6 +144,11 @@ state-11 System/Meta          → Meta-Fragen zum Bot
 
 **Datei:** `03-patterns/*.md` (20 Patterns)
 
+**Pattern-Engine (3 Phasen):**
+1. **Gate-Pruefung** — Passt Persona, State, Intent? UND: Sind alle `precondition_slots` gefuellt? (`precondition_slots` ist ein **Hard Gate** — fehlt ein geforderter Slot, wird das Pattern eliminiert, nicht nur schlechter bewertet)
+2. **Scoring** — Signal-Fit-Gewichte + Page-Bonus + Entity-Vollstaendigkeit → gewichteter Score
+3. **Modulation** — Signale ueberschreiben Defaults (Ton, Laenge, skip_intro)
+
 | ID | Label | Typischer Einsatz |
 |----|-------|--------------------|
 | PAT-01 | Direkt-Antwort | Schnelle, knappe Antworten |
@@ -163,8 +168,8 @@ state-11 System/Meta          → Meta-Fragen zum Bot
 | PAT-15 | Analyse-Ueberblick | Statistiken und Uebersichten |
 | PAT-16 | Themen-Exploration | Breite Themen-Erkundung |
 | PAT-17 | Sanfter Einstieg | Behutsamer Erstkontakt |
-| PAT-18 | Unterrichts-Paket | Materialzusammenstellung |
-| PAT-19 | Unterrichts-Lernpfad | Strukturierter Lernpfad |
+| PAT-18 | Unterrichts-Paket | Materialzusammenstellung (precondition: fach+stufe+thema) |
+| PAT-19 | Unterrichts-Lernpfad | Strukturierter Lernpfad (precondition: fach+stufe+thema) |
 | PAT-20 | Orientierungs-Guide | Reine Text-Orientierung (kein MCP!) |
 
 **Wirkung:**

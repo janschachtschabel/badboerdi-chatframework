@@ -16,7 +16,24 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+    import logging
+
     await init_db()
+
+    # Background: generate embeddings for seed chunks (non-blocking)
+    async def _embed_seed_chunks():
+        try:
+            from app.routers.rag import embed_missing
+            result = await embed_missing()
+            if result.get("embedded", 0) > 0:
+                logging.getLogger("startup").info(
+                    "Generated embeddings for %d seed chunks", result["embedded"]
+                )
+        except Exception as e:
+            logging.getLogger("startup").warning("Seed embedding skipped: %s", e)
+
+    asyncio.create_task(_embed_seed_chunks())
     yield
 
 

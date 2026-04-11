@@ -127,3 +127,51 @@ async def delete_area(area: str):
         await db.execute("DELETE FROM rag_chunks WHERE area = ?", (area,))
         await db.commit()
     return {"status": "deleted", "area": area}
+
+
+@router.post("/embed")
+async def embed_missing():
+    """Generate embeddings for all chunks that don't have one yet.
+
+    Called automatically after seed import, or manually via API.
+    Returns the number of chunks that were embedded.
+    """
+    import struct
+    import aiosqlite
+    from app.services.database import DB_PATH, EMBED_DIM, _connect_vec
+    from app.services.rag_service import get_embedding, embedding_to_bytes
+
+    # Find chunks without embeddings
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, content FROM rag_chunks WHERE embedding IS NULL"
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+
+    if not rows:
+        return {"status": "ok", "embedded": 0, "message": "All chunks already have embeddings"}
+
+    # Generate embeddings and store
+    count = 0
+    async with _connect_vec() as db:
+        for row in rows:
+            try:
+                emb = await get_embedding(row["content"])
+                emb_bytes = embedding_to_bytes(emb)
+                await db.execute(
+                    "UPDATE rag_chunks SET embedding = ? WHERE id = ?",
+                    (emb_bytes, row["id"]),
+                )
+                if len(emb_bytes) == EMBED_DIM * 4:
+                    await db.execute(
+                        "INSERT OR REPLACE INTO rag_vec (chunk_id, embedding) VALUES (?, ?)",
+                        (row["id"], emb_bytes),
+                    )
+                count += 1
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("Embedding failed for chunk %d: %s", row["id"], e)
+        await db.commit()
+
+    return {"status": "ok", "embedded": count, "total": len(rows)}

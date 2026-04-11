@@ -1,5 +1,5 @@
 import {
-  Component, ElementRef, NgZone, ViewChild, AfterViewChecked, OnInit, signal, Input,
+  Component, ElementRef, HostListener, NgZone, ViewChild, AfterViewChecked, OnInit, signal, Input,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -23,6 +23,9 @@ export class ChatComponent implements OnInit, AfterViewChecked {
   sessionId = '';
   showDebug = false;
   latestDebug: DebugInfo | null = null;
+
+  // Topic page dropdown
+  openTopicDropdown: string | null = null;
 
   // Speech
   isRecording = false;
@@ -378,6 +381,14 @@ export class ChatComponent implements OnInit, AfterViewChecked {
   }
 
   // ── Collection Actions ─────────────────────────────────────
+  @HostListener('document:click')
+  closeTopicDropdown() { this.openTopicDropdown = null; }
+
+  toggleTopicDropdown(event: Event, nodeId: string) {
+    event.stopPropagation();
+    this.openTopicDropdown = this.openTopicDropdown === nodeId ? null : nodeId;
+  }
+
   async browseCollection(nodeId: string, title: string) {
     if (this.isLoading) return;
     this.isLoading = true;

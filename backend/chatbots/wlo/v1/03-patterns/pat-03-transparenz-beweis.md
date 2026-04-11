@@ -17,7 +17,7 @@ response_type: answer
 sources: ["mcp"]
 format_primary: text
 format_follow_up: none
-tools: []
+tools: ["search_wlo_collections", "search_wlo_content", "get_node_details"]
 ---
 
 # PAT-03: Transparenz-Beweis

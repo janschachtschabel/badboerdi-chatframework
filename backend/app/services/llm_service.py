@@ -435,6 +435,8 @@ durch internes Wissen beantwortet werden kann (z.B. Prozesse, Konzepte, Richtlin
 ### B) MCP-Tools (externe Suche & Datenquellen)
 - search_wlo_collections: Kuratierte WLO-Sammlungen nach Thema suchen
 - search_wlo_content: Einzelne Lernmaterialien suchen (Arbeitsblaetter, Videos, etc.)
+- search_wlo_topic_pages: Themenseiten suchen oder pruefen ob eine Sammlung eine hat
+  (per query ODER per collectionId; filtert nach targetGroup: teacher/learner/general)
 - get_collection_contents: Inhalte einer Sammlung per nodeId abrufen
 - get_node_details: Metadaten eines WLO-Knotens abrufen
 - lookup_wlo_vocabulary: Filter-Werte nachschlagen (Faecher, Bildungsstufen)
@@ -469,7 +471,14 @@ SCHRITT 2 — REGELN:
 3. lookup_wlo_vocabulary nur fuer Filter-Werte, NIE als Ersatz fuer Suche.
 4. Bei Sammlungs-Suche: ZUERST search_wlo_collections (kuratiert).
    search_wlo_content nur bei explizitem Wunsch nach Einzelmaterialien.
-5. Frage NIE "Fuer welches Fach suchst du?" — hoechstens nach dem Thema.
+   NACH search_wlo_collections: Pruefe mit search_wlo_topic_pages(collectionId=...)
+   ob die Top-Sammlungen Themenseiten haben. Liefere die URL wenn vorhanden.
+5. DIREKTE Themenseiten-Suche: Wenn der User explizit nach "Themenseite",
+   "Themenseiten" oder "Topic Page" fragt, rufe DIREKT search_wlo_topic_pages(query=...)
+   auf — NICHT erst search_wlo_collections. Zeige die gefundenen Themenseiten mit URL.
+   Wenn keine Themenseiten gefunden werden, sage das ehrlich und biete stattdessen
+   eine Sammlungs-Suche an.
+6. Frage NIE "Fuer welches Fach suchst du?" ��� hoechstens nach dem Thema.
 6. Wenn query_knowledge Ergebnisse liefert, nutze diese als Hauptquelle.
    Du kannst zusaetzlich MCP-Tools aufrufen um ergaenzende Materialien zu finden.
 
@@ -499,8 +508,8 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     elif has_mcp_source:
         active_tools = TOOL_DEFINITIONS
     else:
-        # Fallback: always offer search + all info tools
-        fallback_tools = {"search_wlo_collections"} | INFO_TOOLS
+        # Fallback: always offer search + topic pages + all info tools
+        fallback_tools = {"search_wlo_collections", "search_wlo_topic_pages"} | INFO_TOOLS
         active_tools = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in fallback_tools]
 
     # ── Add RAG knowledge areas as virtual tools ──────────────────
@@ -726,6 +735,20 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                 if tool_name == "search_wlo_collections":
                     for c in cards:
                         c.setdefault("node_type", "collection")
+                # Merge topic_pages from search_wlo_topic_pages into existing cards
+                if tool_name == "search_wlo_topic_pages":
+                    existing_by_id = {c["node_id"]: c for c in all_cards if c.get("node_id")}
+                    for c in cards:
+                        nid = c.get("node_id", "")
+                        tp_list = c.get("topic_pages", [])
+                        if nid and nid in existing_by_id and tp_list:
+                            existing = existing_by_id[nid]
+                            existing_vids = {
+                                v.get("variant_id") for v in existing.get("topic_pages", [])
+                            }
+                            for v in tp_list:
+                                if v.get("variant_id") not in existing_vids:
+                                    existing.setdefault("topic_pages", []).append(v)
                 # Deduplicate by node_id
                 existing_ids = {c.get("node_id") for c in all_cards if c.get("node_id")}
                 for c in cards:

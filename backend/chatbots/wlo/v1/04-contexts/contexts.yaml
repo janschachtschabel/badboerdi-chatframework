@@ -1,8 +1,12 @@
 # Context-Layer (Triple-Schema v2 — T-04/05)
 #
 # Definiert benannte Konversations-Kontexte. Der ContextSnapshot wird zur
-# Laufzeit pro Request gebaut; diese Datei dient als Referenz/Doku für die
-# erwarteten Felder und für UI-gestützte Filterung im Studio.
+# Laufzeit pro Request gebaut; diese Datei dient als Referenz/Doku fuer die
+# erwarteten Felder und fuer UI-gestuetzte Filterung im Studio.
+#
+# Die page_bonus-Felder in den Patterns referenzieren die hier definierten
+# Seiten-Pfade fuer die Scoring-Gewichtung.
+# Das behavior-Feld beschreibt wie der Bot auf den jeweiligen Kontext reagieren soll.
 
 contexts:
   - id: ctx-search-page
@@ -10,22 +14,50 @@ contexts:
     description: "User befindet sich auf /suche oder /startseite mit aktiver Suchanfrage."
     triggers:
       page: ["/suche", "/startseite", "/"]
+    behavior: |
+      Suchbegriff aus page_context.search_query aufgreifen.
+      Ergebnisse eingrenzen oder erweitern anbieten.
+      Nie fragen "Was suchst du?" — der User sucht gerade aktiv.
 
   - id: ctx-collection-detail
     label: "Sammlungs-Detailseite"
     description: "User betrachtet eine konkrete WLO-Sammlung."
     triggers:
       page_pattern: "/sammlung/.*"
+    behavior: |
+      Auf die angezeigte Sammlung Bezug nehmen.
+      get_collection_contents nutzen, wenn collection_id vorhanden.
+      Aehnliche Sammlungen oder vertiefende Materialien anbieten.
+      Kontext: User hat bereits ein Interesse an diesem Thema.
 
   - id: ctx-material-detail
     label: "Material-Detailseite"
     description: "User betrachtet ein einzelnes Lernmaterial."
     triggers:
       page_pattern: "/material/.*"
+    behavior: |
+      Auf das angezeigte Material Bezug nehmen.
+      get_node_details nutzen, wenn node_id vorhanden.
+      Lizenz, Bildungsstufe, aehnliche Materialien anbieten.
+      Kontext: User interessiert sich fuer dieses spezifische Material.
 
   - id: ctx-mobile-quick
     label: "Mobile Schnellinteraktion"
-    description: "Mobiles Endgerät, kurze Sessiondauer — knappe Antworten bevorzugt."
+    description: "Mobiles Endgeraet, kurze Sessiondauer — knappe Antworten bevorzugt."
     triggers:
       device: "mobile"
       max_session_duration: 60
+    behavior: |
+      Antworten maximal kurz halten.
+      Weniger Karten (max. 3).
+      Quick-Replies bevorzugen statt Freitext-Fragen.
+
+  - id: ctx-fachportal
+    label: "Fachportal-Seite"
+    description: "User befindet sich auf einer Fachportal-Einstiegsseite."
+    triggers:
+      page_pattern: "/fach/.*"
+    behavior: |
+      Das Fach aus dem Seitenpfad ableiten (z.B. /fach/mathematik = Mathematik).
+      Fach als bekannt voraussetzen — nicht nochmal fragen.
+      Themenseiten und Sammlungen fuer dieses Fach anbieten.

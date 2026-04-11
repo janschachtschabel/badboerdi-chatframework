@@ -23,6 +23,7 @@ export interface WloCard {
   license: string;
   publisher: string;
   node_type: string;
+  topic_pages: { url: string; target_group: string; label: string; variant_id: string }[];
 }
 
 export interface ToolOutcome {

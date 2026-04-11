@@ -5,7 +5,8 @@
 1. [Lokales Setup (Windows + Docker Desktop)](#1-lokales-setup)
 2. [Produktions-Deployment](#2-produktions-deployment)
 3. [Chat-Widget einbinden](#3-chat-widget-einbinden)
-4. [B-API statt OpenAI](#4-b-api-statt-openai)
+4. [RAG-Wissensbasis (Seed-System)](#4-rag-wissensbasis-seed-system)
+5. [B-API statt OpenAI](#5-b-api-statt-openai)
 
 ---
 
@@ -341,7 +342,62 @@ Alternativ zur `api-url`-Property kann die Backend-URL global gesetzt werden:
 
 ---
 
-## 4. B-API statt OpenAI
+## 4. RAG-Wissensbasis (Seed-System)
+
+Das Backend liefert eine **initiale Wissensbasis** als JSON-Seed-Datei mit (`knowledge/rag-seed.json`). So funktioniert bei jeder Neuinstallation der Chatbot sofort mit Grundwissen, ohne dass zuerst Dokumente im Studio hochgeladen werden muessen.
+
+### Automatischer Import beim Start
+
+Beim Start prueft das Backend die Seed-Version (Datumsformat, z.B. `2026-04-11`) gegen die in der Datenbank gespeicherte Version (`meta`-Tabelle):
+
+| Situation | Verhalten |
+|-----------|-----------|
+| Leere Datenbank (Neuinstallation) | Alle Seed-Chunks werden importiert |
+| Gleiche Seed-Version wie in DB | Skip — nichts passiert |
+| Neuere Seed-Version mit **neuen Areas** | Nur die neuen Areas werden importiert, bestehende (evtl. via Studio editierte) bleiben unberuehrt |
+| Neuere Seed-Version ohne neue Areas | Nur der Version-Marker wird aktualisiert |
+
+Nach dem Import werden Embeddings im Hintergrund generiert (benoetigt LLM-API-Key).
+
+**Aktueller Seed (Version `2026-04-11`):** 348 Chunks in 4 Bereichen:
+
+| Bereich | Chunks | Beschreibung |
+|---------|--------|--------------|
+| `edu-sharing-com-webseite` | 54 | edu-sharing als Open-Source-Loesung fuer Bildungscloud, E-Learning, Suche und Content-Management |
+| `edu-sharing-net-webseite` | 37 | edu-sharing.net e.V. — gemeinnuetziges Netzwerk fuer digitale Bildungsclouds und OER |
+| `wirlernenonline.de-webseite` | 106 | WirLernenOnline — offene Bildungsplattform mit Suchmaschine, Fachportalen und Community |
+| `wissenlebtonline-webseite` | 151 | WLO-Oekosystem — KI-gestuetzte Infrastruktur fuer Bildungsinhalte |
+
+### Seed aktualisieren (Entwickler-Workflow)
+
+1. Im Studio die RAG-Wissensbereiche bearbeiten (Dokumente hochladen/loeschen)
+2. Datenbank aus dem Docker-Container kopieren:
+   ```bash
+   docker cp badboerdi-backend:/data/badboerdi.db badboerdi-docker.db
+   ```
+3. Export ausfuehren (Version wird automatisch auf das aktuelle Datum gesetzt):
+   ```bash
+   cd backend
+   python scripts/rag_export.py --db badboerdi-docker.db
+   ```
+   Optional mit expliziter Version:
+   ```bash
+   python scripts/rag_export.py --db badboerdi-docker.db --version 2026-05-01
+   ```
+4. Die aktualisierte `knowledge/rag-seed.json` committen und pushen
+5. Bestehende Deployments erhalten die neuen Areas automatisch beim naechsten Container-Restart (via Watchtower oder manuell)
+
+### Embeddings manuell generieren
+
+Falls Embeddings nach dem Import fehlen (z.B. wegen fehlendem API-Key beim Start):
+
+```bash
+curl -X POST http://localhost:8000/api/rag/embed
+```
+
+---
+
+## 5. B-API statt OpenAI
 
 Das Framework unterstuetzt neben OpenAI auch die **B-API** (Bildungs-API) als LLM-Provider. Die B-API ist ein Proxy-Dienst, der verschiedene Modelle (inkl. Open-Source) ueber eine OpenAI-kompatible Schnittstelle bereitstellt.
 

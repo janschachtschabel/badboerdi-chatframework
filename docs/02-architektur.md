@@ -37,7 +37,7 @@ Chatbot-Prompts werden schnell lang und unstrukturiert. BadBoerdi loest das durc
 **Dateien:**
 | Datei | Zweck |
 |-------|-------|
-| `domain-rules.md` | Plattform-spezifische Regeln (z.B. "Sammlungen immer zuerst", Inhaltsstruktur, Such-Strategie) |
+| `domain-rules.md` | Plattform-spezifische Regeln (Such-Strategie, Themenseiten-Integration, Disambiguierung, Seitenkontext-Reaktionen, Vollstaendigkeitspruefung) |
 | `policy.yaml` | Strukturelle Berechtigungen: Tool-Blockaden pro Persona/Intent, Disclaimer-Texte, Regex-basierte Sperren |
 | `wlo-plattform-wissen.md` | Faktenwissen ueber WLO (Struktur, Angebote, Zielgruppen) |
 
@@ -63,8 +63,8 @@ Chatbot-Prompts werden schnell lang und unstrukturiert. BadBoerdi loest das durc
 **20 Patterns** (PAT-01 bis PAT-20) definieren, *wie* der Bot auf verschiedene Situationen reagiert. Jedes Pattern ist eine Markdown-Datei mit YAML-Frontmatter.
 
 **Auswahl-Mechanismus (Pattern-Engine, 3 Phasen):**
-1. **Gate-Pruefung** — Passt Persona, State, Intent? (z.B. PAT-09 nur fuer Redaktion)
-2. **Scoring** — Signal-Fit-Gewichte + Page-Bonus + Precondition-Slots → gewichteter Score
+1. **Gate-Pruefung** — Passt Persona, State, Intent? UND: Sind alle `precondition_slots` gefuellt? (Hard Gate — z.B. PAT-19 braucht fach+stufe+thema; fehlt eines, wird das Pattern eliminiert, nicht nur schlechter bewertet)
+2. **Scoring** — Signal-Fit-Gewichte + Page-Bonus + Entity-Vollstaendigkeit → gewichteter Score
 3. **Modulation** — Signale ueberschreiben Defaults (Ton, Laenge, skip_intro)
 
 **Pattern-Anatomie (Beispiel PAT-01 Direkt-Antwort):**
@@ -125,16 +125,20 @@ Schicht 4 besteht aus **6 Element-Typen**, die zur Laufzeit dynamisch gefiltert 
 | `rag-config.yaml` | RAG-Bereichskonfiguration (mode: always/on-demand, Beschreibung) |
 | `mcp-servers.yaml` | MCP-Server-Registry mit Tool-Definitionen |
 
+**Seed-System:**
+Das Backend liefert eine initiale Wissensbasis als `knowledge/rag-seed.json` mit (aktuell 348 Chunks in 4 Bereichen). Bei einer Neuinstallation (leere Datenbank) werden die Chunks automatisch importiert und Embeddings im Hintergrund generiert. Export/Re-Export ueber `python scripts/rag_export.py --db <pfad>`.
+
 **Zwei Wissensquellen:**
 
 ### RAG-Wissensbereiche
-- **Always-On** (z.B. `recht`, `general`): Werden bei jeder Nachricht automatisch als Kontext eingebunden
+- **Always-On** (z.B. `wirlernenonline.de-webseite`, `edu-sharing-com-webseite`): Werden bei jeder Nachricht automatisch als Kontext eingebunden
 - **On-Demand**: Werden nur geladen, wenn das aktive Pattern `sources: ["rag"]` hat und der LLM das Tool `query_knowledge` aufruft
 - Dokumente werden per Studio hochgeladen (Datei/URL/Freitext), in Chunks zerlegt und als Vektoren in SQLite-Vec gespeichert
 
 ### MCP-Server (externe Tools)
-- Derzeit 1 Server: **WLO edu-sharing** (10 Tools)
-- Tools: `search_wlo_collections`, `search_wlo_content`, `get_collection_contents`, `get_node_details`, `lookup_wlo_vocabulary`, `search_wlo_topic_pages`, u.a.
+- Derzeit 1 Server: **WLO edu-sharing** (11 Tools)
+- Tools: `search_wlo_collections`, `search_wlo_content`, `get_collection_contents`, `get_node_details`, `lookup_wlo_vocabulary`, `search_wlo_topic_pages`, `get_wirlernenonline_info`, `get_edu_sharing_product_info`, `get_edu_sharing_network_info`, `get_metaventis_info`, u.a.
+- `search_wlo_topic_pages` unterstuetzt zielgruppenspezifische Varianten (teacher/learner/general) und wird persona-basiert sortiert
 - Server werden per Studio registriert (URL eingeben → automatische Tool-Discovery)
 
 **Im Prompt:** RAG-Kontext wird als synthetisches Tool-Call/Result-Paar injiziert. MCP-Tools werden als OpenAI-Function-Definitions bereitgestellt und vom LLM bei Bedarf aufgerufen.

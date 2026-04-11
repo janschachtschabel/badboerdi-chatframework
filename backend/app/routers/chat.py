@@ -54,9 +54,43 @@ def _release_session_lock(session_id: str) -> None:
 
 
 # ── Helper: build WloCard list from raw dicts ─────────────────────
-def _build_cards(raw: list[dict]) -> list[WloCard]:
+# Persona → preferred topic-page target group
+_PERSONA_TO_TARGET = {
+    "P-W-LK": "teacher",
+    "P-W-RED": "teacher",
+    "P-BER": "teacher",
+    "P-VER": "general",
+    "P-W-SL": "learner",
+    "P-ELT": "learner",
+    "P-W-POL": "general",
+    "P-W-PRESSE": "general",
+    "P-AND": "general",
+}
+
+
+def _sort_topic_pages(pages: list[dict], persona_id: str) -> list[dict]:
+    """Sort topic-page variants so the best match for the persona comes first."""
+    if not pages or len(pages) <= 1:
+        return pages
+    preferred = _PERSONA_TO_TARGET.get(persona_id, "general")
+
+    def _rank(tp: dict) -> int:
+        tg = tp.get("target_group", "").lower()
+        if tg == preferred:
+            return 0  # exact match first
+        if tg == "general":
+            return 1  # general as fallback
+        if not tg:
+            return 2  # unset
+        return 3  # other
+
+    return sorted(pages, key=_rank)
+
+
+def _build_cards(raw: list[dict], persona_id: str = "") -> list[WloCard]:
     cards = []
     for c in raw:
+        tp = _sort_topic_pages(c.get("topic_pages", []), persona_id)
         cards.append(WloCard(
             node_id=c.get("node_id", ""),
             title=c.get("title", ""),
@@ -71,6 +105,7 @@ def _build_cards(raw: list[dict]) -> list[WloCard]:
             license=c.get("license", ""),
             publisher=c.get("publisher", ""),
             node_type=c.get("node_type", "content"),
+            topic_pages=tp,
         ))
     return cards
 
@@ -141,7 +176,8 @@ async def _handle_browse_collection(
         # Determine if there are more items
         has_more = len(cards_raw) > PAGE_SIZE
         display_cards_raw = cards_raw[:PAGE_SIZE]
-        cards = _build_cards(display_cards_raw)
+        persona = session_state.get("persona_id", "")
+        cards = _build_cards(display_cards_raw, persona)
 
         # Build pagination info
         total = total_from_mcp if total_from_mcp > 0 else (
@@ -278,7 +314,8 @@ async def _handle_generate_learning_path(
         # Mark these node_ids as used so the next LP varies
         _add_used_lp_ids(session_state, [c.get("node_id", "") for c in cards_raw])
 
-        cards = _build_cards(cards_raw)
+        persona = session_state.get("persona_id", "")
+        cards = _build_cards(cards_raw, persona)
 
     except Exception as e:
         logger.error("generate_learning_path error: %s", e)
@@ -902,7 +939,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
 
     # 7. Build WloCard objects — send all, frontend limits display
     all_cards_raw = wlo_cards_raw
-    cards = _build_cards(all_cards_raw)
+    cards = _build_cards(all_cards_raw, classification.persona_id)
 
     # Build pagination info so frontend knows to limit display
     pagination = None

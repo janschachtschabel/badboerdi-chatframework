@@ -17,7 +17,7 @@ response_type: answer
 sources: ["mcp"]
 format_primary: text
 format_follow_up: none
-tools: ["get_wirlernenonline_info", "get_metaventis_info"]
+tools: ["get_wirlernenonline_info", "get_edu_sharing_network_info", "get_metaventis_info"]
 ---
 
 # PAT-10: Fakten-Bulletin

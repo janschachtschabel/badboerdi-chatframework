@@ -100,6 +100,12 @@ CREATE TABLE IF NOT EXISTS safety_logs (
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_memory_session ON memory(session_id);
 CREATE INDEX IF NOT EXISTS idx_rag_area ON rag_chunks(area);
+CREATE TABLE IF NOT EXISTS meta (
+    key          TEXT PRIMARY KEY,
+    value        TEXT NOT NULL,
+    updated_at   TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_safety_logs_session ON safety_logs(session_id);
 CREATE INDEX IF NOT EXISTS idx_safety_logs_created ON safety_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_safety_logs_risk ON safety_logs(risk_level);
@@ -134,6 +140,121 @@ async def init_db():
 
         # Migrate existing embeddings from rag_chunks.embedding BLOB → rag_vec
         await _migrate_embeddings_to_vec(db)
+
+    # Import RAG seed if database is empty
+    await _import_rag_seed_if_empty()
+
+
+import logging as _logging
+
+_db_logger = _logging.getLogger(__name__)
+
+# Seed file paths (checked in order)
+_SEED_PATHS = [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "knowledge", "rag-seed.json"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "chatbots", "wlo", "v1", "05-knowledge", "rag-seed.json"),
+]
+
+
+async def _get_meta(db: aiosqlite.Connection, key: str) -> str | None:
+    """Read a value from the meta table."""
+    cursor = await db.execute("SELECT value FROM meta WHERE key = ?", (key,))
+    row = await cursor.fetchone()
+    return row[0] if row else None
+
+
+async def _set_meta(db: aiosqlite.Connection, key: str, value: str):
+    """Write a value to the meta table."""
+    await db.execute(
+        "INSERT OR REPLACE INTO meta (key, value, updated_at) VALUES (?, ?, ?)",
+        (key, value, datetime.utcnow().isoformat()),
+    )
+
+
+async def _import_rag_seed_if_empty():
+    """Import RAG seed data — version-aware with area-level diffing.
+
+    Behaviour:
+    - Empty DB → full import of all seed chunks.
+    - DB has data but seed version is newer → import only NEW areas
+      (areas that exist in the seed but not yet in the DB). Existing areas
+      that the user may have edited via Studio are never overwritten.
+    - DB seed version matches → skip (nothing to do).
+
+    Chunks are imported without embeddings; embeddings are generated in a
+    background task after startup (requires LLM API key).
+    """
+    # Find seed file
+    seed_path = None
+    for p in _SEED_PATHS:
+        if os.path.isfile(p):
+            seed_path = p
+            break
+
+    if not seed_path:
+        _db_logger.info("No RAG seed file found, starting with empty knowledge base")
+        return
+
+    # Load seed data
+    with open(seed_path, "r", encoding="utf-8") as f:
+        seed = json.load(f)
+
+    seed_version = seed.get("version", "0")
+    chunks = seed.get("chunks", [])
+    if not chunks:
+        return
+
+    # Compare versions
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        stored_version = await _get_meta(db, "seed_version")
+
+        if stored_version == seed_version:
+            _db_logger.info("Seed version %s already imported, skipping", seed_version)
+            return
+
+        # Find which areas already exist in DB
+        cursor = await db.execute("SELECT DISTINCT area FROM rag_chunks")
+        existing_areas = {row[0] for row in await cursor.fetchall()}
+
+        # Determine which seed areas are new
+        seed_areas = {c["area"] for c in chunks}
+        new_areas = seed_areas - existing_areas
+
+        if not new_areas and existing_areas:
+            _db_logger.info(
+                "Seed version %s → %s: all %d areas already exist, updating version marker only",
+                stored_version or "(none)", seed_version, len(seed_areas),
+            )
+            await _set_meta(db, "seed_version", seed_version)
+            await db.commit()
+            return
+
+        # Filter chunks to only new areas
+        chunks_to_import = [c for c in chunks if c["area"] in new_areas] if existing_areas else chunks
+
+        _db_logger.info(
+            "Seed version %s → %s: importing %d chunks in %d new area(s): %s",
+            stored_version or "(none)", seed_version,
+            len(chunks_to_import), len(new_areas) if existing_areas else len(seed_areas),
+            ", ".join(sorted(new_areas) if existing_areas else sorted(seed_areas)),
+        )
+
+        for c in chunks_to_import:
+            await db.execute(
+                "INSERT INTO rag_chunks (area, title, source, chunk_index, content, embedding, created_at) "
+                "VALUES (?, ?, ?, ?, ?, NULL, ?)",
+                (c["area"], c.get("title", ""), c.get("source", ""),
+                 c.get("chunk_index", 0), c["content"], datetime.utcnow().isoformat()),
+            )
+
+        await _set_meta(db, "seed_version", seed_version)
+        await db.commit()
+
+    _db_logger.info(
+        "Seed import complete: %d chunks (embeddings will be generated in background)",
+        len(chunks_to_import),
+    )
 
 
 async def _migrate_embeddings_to_vec(db: aiosqlite.Connection):

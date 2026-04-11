@@ -16,13 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
-# App code + chatbot config tree + pre-built widget bundle
+# App code + chatbot config tree + pre-built widget bundle + knowledge seed
 COPY app ./app
 COPY chatbots ./chatbots
 COPY widget_dist ./widget_dist
 COPY run.py ./
+COPY knowledge ./knowledge
 
-RUN mkdir -p /data /app/knowledge
+RUN mkdir -p /data
 ENV DATABASE_PATH=/data/badboerdi.db
 
 EXPOSE 8000

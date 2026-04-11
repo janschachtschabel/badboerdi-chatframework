@@ -17,7 +17,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.models.schemas import (
-    SearchWloArgs, CollectionContentsArgs, NodeDetailsArgs,
+    SearchWloArgs, SearchTopicPagesArgs, CollectionContentsArgs, NodeDetailsArgs,
     InfoQueryArgs, LookupVocabularyArgs,
 )
 
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 _TOOL_ARG_MODELS: dict[str, type] = {
     "search_wlo_collections": SearchWloArgs,
     "search_wlo_content": SearchWloArgs,
+    "search_wlo_topic_pages": SearchTopicPagesArgs,
     "get_collection_contents": CollectionContentsArgs,
     "get_node_details": NodeDetailsArgs,
     "get_wirlernenonline_info": InfoQueryArgs,
@@ -251,6 +252,23 @@ TOOL_DEFINITIONS = [
                     "license": {"type": "string", "description": "License filter"},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_wlo_topic_pages",
+            "description": "Themenseiten suchen oder pruefen ob eine Sammlung eine Themenseite hat. Themenseiten sind kuratierte Seiten-Layouts mit Swimlanes, zugeschnitten auf Zielgruppen (Lehrkraefte, Lernende, Allgemein). Nutze per query fuer Themen-Suche oder per collectionId um eine konkrete Sammlung zu pruefen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Thematische Suchanfrage, z.B. 'Physik' oder 'Farben'. Leer lassen um alle aufzulisten."},
+                    "collectionId": {"type": "string", "description": "NodeId einer Sammlung, um direkt zu pruefen ob sie eine Themenseite hat."},
+                    "targetGroup": {"type": "string", "enum": ["teacher", "learner", "general"], "description": "Zielgruppe: teacher (Lehrkraefte), learner (Lernende), general (Allgemein)"},
+                    "educationalContext": {"type": "string", "description": "Bildungsstufe, z.B. 'Grundschule', 'Sekundarstufe I'"},
+                    "maxResults": {"type": "integer", "description": "Max. Ergebnisse (1-20, Standard 5)"},
+                },
             },
         },
     },
@@ -546,6 +564,24 @@ def parse_wlo_cards(mcp_text: str) -> list[dict]:
         elif ll.startswith("anbieter:") or ll.startswith("herausgeber:") or ll.startswith("publisher:") or ll.startswith("- **herausgeber") or ll.startswith("- **publisher"):
             current["publisher"] = _val(line)
 
+        # Themenseite URL (from search_wlo_topic_pages)
+        elif ll.startswith("themenseite:") or ll.startswith("themenseiten-url:") or ll.startswith("topic page:") or ll.startswith("topicpageurl:") or ll.startswith("- **themenseite"):
+            current["_tp_url"] = _val(line)
+
+        # Sammlung-nodeId (from search_wlo_topic_pages — links variant to collection)
+        elif ll.startswith("sammlung-nodeid:") or ll.startswith("sammlung nodeid:"):
+            current["_tp_collection_id"] = _val(line)
+
+        # Variante-ID (from search_wlo_topic_pages)
+        elif ll.startswith("variante-id:") or ll.startswith("variante id:"):
+            current["_tp_variant_id"] = _val(line)
+
+        # Zielgruppe (from search_wlo_topic_pages)
+        elif ll.startswith("zielgruppe:"):
+            val = _val(line)
+            if val and val != "nicht gesetzt":
+                current["_tp_target_group"] = val
+
         # Sammlung / Collection markers
         elif ll.startswith("- **sammlung") or ll.startswith("- **collection") or ll.startswith("sammlung:"):
             current["node_type"] = "collection"
@@ -553,7 +589,68 @@ def parse_wlo_cards(mcp_text: str) -> list[dict]:
     if current.get("title"):
         cards.append(current)
 
-    return cards
+    # ── Post-process: convert topic-page fields into topic_pages list ──
+    # Topic-page results have _tp_* fields. Group variants by collection.
+    tp_by_collection: dict[str, list[dict[str, str]]] = {}
+    regular_cards = []
+    for c in cards:
+        if c.get("_tp_url"):
+            # This is a topic-page variant, not a regular card
+            coll_id = c.get("_tp_collection_id", "")
+            tg_raw = c.get("_tp_target_group", "")
+            label = _tp_label(tg_raw)
+            variant = {
+                "url": c["_tp_url"],
+                "target_group": tg_raw,
+                "label": label,
+                "variant_id": c.get("_tp_variant_id", ""),
+            }
+            if coll_id:
+                tp_by_collection.setdefault(coll_id, []).append(variant)
+            # Also emit as a card so the LLM can reference it
+            card = {
+                "node_id": coll_id,
+                "title": c.get("title", ""),
+                "description": c.get("description", ""),
+                "node_type": "collection",
+                "topic_pages": [variant],
+                "wlo_url": c.get("wlo_url", ""),
+                "url": c.get("url", ""),
+            }
+            # Deduplicate: only add if not already in regular_cards with same node_id
+            if not any(rc.get("node_id") == coll_id and rc.get("node_id") for rc in regular_cards):
+                regular_cards.append(card)
+            else:
+                # Merge variant into existing card
+                for rc in regular_cards:
+                    if rc.get("node_id") == coll_id:
+                        existing_vids = {v.get("variant_id") for v in rc.get("topic_pages", [])}
+                        if variant["variant_id"] not in existing_vids:
+                            rc.setdefault("topic_pages", []).append(variant)
+                        break
+        else:
+            # Clean up any stray _tp_ keys from regular cards
+            for k in list(c.keys()):
+                if k.startswith("_tp_"):
+                    del c[k]
+            regular_cards.append(c)
+
+    return regular_cards
+
+
+# Target-group label mapping for topic-page variants
+_TARGET_GROUP_LABELS = {
+    "teacher": "Lehrkräfte",
+    "learner": "Lernende",
+    "general": "Allgemein",
+}
+
+
+def _tp_label(target_group: str) -> str:
+    """Human-readable label for a topic-page target group."""
+    if not target_group:
+        return "Themenseite"
+    return _TARGET_GROUP_LABELS.get(target_group.lower(), target_group.title())
 
 
 # ── Multi-server support ─────────────────────────────────────────

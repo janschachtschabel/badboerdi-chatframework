@@ -321,7 +321,74 @@ $radius:     14px;
     &:disabled { opacity: .45; cursor: default; }
   }
 
+  &--tertiary {
+    background: #fef3c7;
+    color: #92400e;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    &:hover { background: #fde68a; }
+  }
+
   &:disabled { opacity: .45; cursor: default; }
+}
+
+// Topic page smart button + dropdown
+.tp-wrapper {
+  display: inline-flex;
+  align-items: stretch;
+  position: relative;
+
+  .card-btn--tertiary {
+    border-radius: 8px 0 0 8px;
+  }
+
+  // When no dropdown toggle, keep full rounded corners
+  &:not(:has(.tp-dropdown-wrap)) .card-btn--tertiary {
+    border-radius: 8px;
+  }
+}
+
+.tp-toggle {
+  font-size: .65rem;
+  padding: 2px 5px;
+  border: none;
+  cursor: pointer;
+  background: #fef3c7;
+  color: #92400e;
+  border-left: 1px solid rgba(0,0,0,.1);
+  border-radius: 0 8px 8px 0;
+  line-height: 1;
+  &:hover { background: #fde68a; }
+}
+
+.tp-dropdown-wrap {
+  position: relative;
+}
+
+.tp-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  margin-top: 2px;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
+  min-width: 130px;
+  overflow: hidden;
+}
+
+.tp-dropdown-item {
+  display: block;
+  padding: 5px 10px;
+  font-size: .65rem;
+  color: #92400e;
+  text-decoration: none;
+  white-space: nowrap;
+  &:hover { background: #fef3c7; }
+  &.tp-active { font-weight: 700; }
 }
 
 // Adjust card border-radius when actions are present

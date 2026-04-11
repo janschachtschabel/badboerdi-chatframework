@@ -53,6 +53,9 @@ class WloCard(BaseModel):
     license: str = ""
     publisher: str = ""
     node_type: str = "content"
+    topic_pages: list[dict[str, str]] = Field(default_factory=list)
+    # Each entry: {url, target_group, label}
+    # e.g. [{url: "https://...", target_group: "teacher", label: "Lehrkräfte"}]
 
 
 class ToolOutcome(BaseModel):
@@ -239,6 +242,15 @@ class NodeDetailsArgs(BaseModel):
 class InfoQueryArgs(BaseModel):
     """Arguments for info tools (get_wirlernenonline_info, get_edu_sharing_*, get_metaventis_info)."""
     query: str
+
+
+class SearchTopicPagesArgs(BaseModel):
+    """Arguments for search_wlo_topic_pages."""
+    query: str = ""
+    collectionId: str = ""
+    targetGroup: str = ""  # teacher | learner | general
+    educationalContext: str = ""
+    maxResults: int = Field(default=5, ge=1, le=20)
 
 
 class LookupVocabularyArgs(BaseModel):
