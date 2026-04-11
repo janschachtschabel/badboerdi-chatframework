@@ -1,5 +1,7 @@
 # Deployment-Anleitung
 
+> **Google Colab Notebook:** [BadBoerdi im Browser ausprobieren](https://drive.google.com/file/d/1BFZpEEogOYJa50k7NRxuUVA12Hb89x96/view?usp=sharing) — komplettes Setup ohne lokale Installation.
+
 ## Inhalt
 
 1. [Lokales Setup (Windows + Docker Desktop)](#1-lokales-setup)
@@ -7,6 +9,7 @@
 3. [Chat-Widget einbinden](#3-chat-widget-einbinden)
 4. [RAG-Wissensbasis (Seed-System)](#4-rag-wissensbasis-seed-system)
 5. [B-API statt OpenAI](#5-b-api-statt-openai)
+6. [Google Colab Notebook](#6-google-colab-notebook)
 
 ---
 
@@ -468,3 +471,13 @@ Beim Wechsel zwischen Providern mit unterschiedlichen Embedding-Modellen werden 
 | Volle Funktionalitaet | `openai` |
 | Kosten senken, B-API verfuegbar | `b-api-openai` + `OPENAI_API_KEY` fuer Moderation |
 | Datenschutz-Anforderungen (EU-Hosting) | `b-api-academiccloud` (mit Einschraenkungen) |
+
+---
+
+## 6. Google Colab Notebook
+
+Fuer einen schnellen Einstieg ohne lokale Installation steht ein Google Colab Notebook bereit:
+
+**[BadBoerdi im Google Colab oeffnen](https://drive.google.com/file/d/1BFZpEEogOYJa50k7NRxuUVA12Hb89x96/view?usp=sharing)**
+
+Das Notebook startet Backend, Studio und Chat-Widget komplett in der Cloud. Nur ein OpenAI-API-Key (oder B-API-Key) wird benoetigt.

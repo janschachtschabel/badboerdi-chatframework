@@ -4,6 +4,8 @@ Python-Service mit Chat-API, Pattern-Engine, mehrstufiger Safety-Pipeline, RAG, 
 und Auslieferung des `<boerdi-chat>`-Widgets. Konfiguration ausschliesslich ueber Dateien unter
 `chatbots/wlo/v1/` — kein Code-Deploy fuer inhaltliche Aenderungen noetig.
 
+> **Google Colab Notebook:** [BadBoerdi im Browser ausprobieren](https://drive.google.com/file/d/1BFZpEEogOYJa50k7NRxuUVA12Hb89x96/view?usp=sharing) — komplettes Setup ohne lokale Installation.
+
 ## 1. Setup
 
 ```bash

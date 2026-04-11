@@ -78,21 +78,59 @@ export default function KnowledgeManager() {
         const content = data.content || '';
         const configs: Record<string, AreaConfig> = {};
         let currentArea = '';
+        let collectingDesc = false;
+        let descLines: string[] = [];
+
+        const flushDesc = () => {
+          if (currentArea && descLines.length > 0) {
+            configs[currentArea] = {
+              ...configs[currentArea],
+              description: descLines.join(' ').trim(),
+            };
+          }
+          descLines = [];
+          collectingDesc = false;
+        };
+
         for (const line of content.split('\n')) {
           const trimmed = line.trim();
-          if (trimmed.startsWith('# ') || !trimmed) continue;
+          if (trimmed.startsWith('# ') || trimmed === '') {
+            // Blank line ends a block scalar continuation
+            if (collectingDesc && descLines.length > 0) flushDesc();
+            continue;
+          }
+
+          // Top-level key (area name) — no leading whitespace, ends with ':'
           if (!line.startsWith(' ') && !line.startsWith('\t') && trimmed.endsWith(':')) {
+            flushDesc();
             const key = trimmed.slice(0, -1);
             if (key === 'areas') continue;
             currentArea = key;
             configs[currentArea] = { mode: 'on-demand', description: '' };
           } else if (currentArea && trimmed.startsWith('mode:')) {
+            flushDesc();
             const val = trimmed.split(':')[1]?.trim().replace(/['"]/g, '');
             configs[currentArea] = { ...configs[currentArea], mode: val === 'always' ? 'always' : 'on-demand' };
           } else if (currentArea && trimmed.startsWith('description:')) {
-            configs[currentArea] = { ...configs[currentArea], description: trimmed.split(':').slice(1).join(':').trim().replace(/['"]/g, '') };
+            flushDesc();
+            const afterColon = trimmed.split(':').slice(1).join(':').trim().replace(/['"]/g, '');
+            if (afterColon === '>' || afterColon === '|') {
+              // YAML block scalar — collect following indented lines
+              collectingDesc = true;
+            } else if (afterColon) {
+              configs[currentArea] = { ...configs[currentArea], description: afterColon };
+            } else {
+              collectingDesc = true;
+            }
+          } else if (collectingDesc && (line.startsWith('  ') || line.startsWith('\t'))) {
+            // Continuation line of block scalar description
+            descLines.push(trimmed);
+          } else if (collectingDesc) {
+            flushDesc();
           }
         }
+        flushDesc(); // flush last area's description
+
         setAreaConfigs(configs);
       }
     } catch { /* no config yet */ }
@@ -103,7 +141,26 @@ export default function KnowledgeManager() {
     for (const [area, cfg] of Object.entries(configs)) {
       lines.push(`${area}:`);
       lines.push(`  mode: ${cfg.mode}`);
-      if (cfg.description) lines.push(`  description: "${cfg.description}"`);
+      if (cfg.description) {
+        // Use YAML block scalar (>) for longer descriptions to preserve readability
+        if (cfg.description.length > 80) {
+          lines.push('  description: >');
+          // Word-wrap at ~90 chars per line, indented by 4 spaces
+          const words = cfg.description.split(/\s+/);
+          let currentLine = '    ';
+          for (const word of words) {
+            if (currentLine.length + word.length + 1 > 95 && currentLine.trim()) {
+              lines.push(currentLine.trimEnd());
+              currentLine = '    ' + word;
+            } else {
+              currentLine += (currentLine.trim() ? ' ' : '') + word;
+            }
+          }
+          if (currentLine.trim()) lines.push(currentLine.trimEnd());
+        } else {
+          lines.push(`  description: "${cfg.description}"`);
+        }
+      }
       lines.push('');
     }
     try {
@@ -389,7 +446,7 @@ export default function KnowledgeManager() {
 
                       {/* Editable description */}
                       <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
-                        <input
+                        <textarea
                           className="form-input form-input-sm"
                           value={cfg?.description || ''}
                           onChange={e => {
@@ -400,7 +457,8 @@ export default function KnowledgeManager() {
                             setAreaConfigs(updated);
                           }}
                           onBlur={() => saveAreaConfigs(areaConfigsRef.current)}
-                          placeholder="Beschreibung: Was findet man hier? (z.B. Rechtspruefung, Strafrecht, Jugendschutz...)"
+                          placeholder="Beschreibung: Was findet man hier? (z.B. WLO als Bildungsplattform mit Suchmaschine, Fachportalen...)"
+                          rows={3}
                           style={{
                             width: '100%',
                             fontSize: '.8rem',
@@ -408,7 +466,10 @@ export default function KnowledgeManager() {
                             background: 'transparent',
                             border: '1px dashed var(--border)',
                             borderRadius: 4,
-                            padding: '4px 8px',
+                            padding: '6px 8px',
+                            resize: 'vertical',
+                            lineHeight: 1.5,
+                            fontFamily: 'inherit',
                           }}
                         />
                         <div className="text-xs text-muted" style={{ marginTop: 2 }}>
