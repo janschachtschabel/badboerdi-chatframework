@@ -16,7 +16,7 @@ default_detail: standard
 response_type: answer
 sources: ["mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: inline
 tools: ["search_wlo_collections", "lookup_wlo_vocabulary", "search_wlo_content", "get_node_details"]
 ---
 
@@ -26,10 +26,15 @@ tools: ["search_wlo_collections", "lookup_wlo_vocabulary", "search_wlo_content",
 lookup_wlo_vocabulary vorab. Filteroptionen: Lizenz, Bildungsstufe, Typ.
 
 ## Wann aktiv
-- Lehrkräfte oder Berater:innen im Search-State
+- Lehrkraefte oder Berater:innen im Search-State
 - Erfahren, zielgerichtet, effizient
 
 ## Verhalten
 - Immer erst Vokabular nachschlagen
 - Dann gefilterte Suche
 - Filteroptionen anbieten
+- Nach Ergebnissen kurz anbieten: "Soll ich weiter filtern, z.B. nur CC-BY-Materialien oder nur Videos?"
+- Bei guten Treffern: "Daraus kann ich auch ein Unterrichtspaket oder einen Lernpfad bauen."
+
+## Nicht tun
+- Nicht ungefragt alle Filter auflisten — nur die relevanten anbieten

@@ -33,7 +33,7 @@ class Environment(BaseModel):
 # ── Chat request / response ────────────────────────────────────────
 class ChatRequest(BaseModel):
     session_id: str
-    message: str
+    message: str = Field(..., max_length=10000)
     environment: Environment = Field(default_factory=Environment)
     action: str | None = None  # browse_collection | generate_learning_path | None
     action_params: dict[str, Any] = Field(default_factory=dict)  # e.g. {collection_id, title}

@@ -172,7 +172,8 @@ volumes:
 
 **Wichtige Unterschiede zum lokalen Setup:**
 - Ports binden an `127.0.0.1` (nicht von aussen erreichbar — Reverse-Proxy davor!)
-- `STUDIO_API_KEY` und `STUDIO_PASSWORD` sind gesetzt
+- `STUDIO_API_KEY` und `STUDIO_PASSWORD` sind gesetzt (fehlt `STUDIO_API_KEY`, loggt das Backend eine Warnung beim Start)
+- `CORS_ORIGINS` auf spezifische Domains beschraenkt (nicht `*`)
 - `chatbots/` als Bind-Mount (Config-Aenderungen ueber Studio bleiben bei Container-Updates erhalten)
 - Watchtower fuer automatische Image-Updates
 
@@ -186,6 +187,9 @@ OPENAI_API_KEY=sk-DEIN-PRODUKTIONS-KEY
 # Studio-Sicherheit
 STUDIO_API_KEY=LANGER-ZUFALLS-STRING-HIER
 STUDIO_PASSWORD=SICHERES-PASSWORT-HIER
+
+# CORS — nur die tatsaechlich verwendeten Origins erlauben
+CORS_ORIGINS=https://wirlernenonline.de,https://studio.meinedomain.de,https://api.meinedomain.de
 ```
 
 **Keys generieren:**

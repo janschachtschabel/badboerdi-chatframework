@@ -19,6 +19,13 @@ async def lifespan(app: FastAPI):
     import asyncio
     import logging
 
+    # Warn if Studio API key is not configured (all admin endpoints unprotected)
+    if not (os.getenv("STUDIO_API_KEY") or "").strip():
+        logging.getLogger("startup").warning(
+            "⚠ STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. "
+            "Set STUDIO_API_KEY in your environment for production deployments."
+        )
+
     await init_db()
 
     # Background: generate embeddings for seed chunks (non-blocking)
@@ -43,10 +50,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=("*" not in _cors_origins),  # credentials only with specific origins
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -79,7 +87,7 @@ async def health():
     }
 
 
-@app.get("/api/debug/mcp-test")
+@app.get("/api/debug/mcp-test", dependencies=[Depends(require_studio_key)])
 async def mcp_test():
     """Test MCP connection directly."""
     from app.services.mcp_client import call_mcp_tool, parse_wlo_cards, _session_id, _initialized

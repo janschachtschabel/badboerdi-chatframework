@@ -81,9 +81,22 @@ def list_config_files() -> list[dict]:
     return files
 
 
+def _validate_config_path(rel_path: str) -> Path:
+    """Validate and resolve a relative config path, preventing path traversal.
+
+    Raises ValueError if the resolved path escapes CHATBOT_DIR.
+    """
+    path = (CHATBOT_DIR / rel_path).resolve()
+    try:
+        path.relative_to(CHATBOT_DIR.resolve())
+    except ValueError:
+        raise ValueError(f"Path traversal blocked: {rel_path}")
+    return path
+
+
 def read_config_file(rel_path: str) -> str:
     """Read a config file by relative path."""
-    path = CHATBOT_DIR / rel_path
+    path = _validate_config_path(rel_path)
     if path.exists():
         return path.read_text(encoding="utf-8")
     return ""
@@ -91,7 +104,7 @@ def read_config_file(rel_path: str) -> str:
 
 def write_config_file(rel_path: str, content: str):
     """Write a config file by relative path."""
-    path = CHATBOT_DIR / rel_path
+    path = _validate_config_path(rel_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     # Invalidate YAML cache so Studio edits are visible immediately,

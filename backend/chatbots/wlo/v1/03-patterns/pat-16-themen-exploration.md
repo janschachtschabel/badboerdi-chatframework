@@ -16,20 +16,29 @@ default_detail: standard
 response_type: answer
 sources: ["mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: quick_replies
 tools: ["search_wlo_collections", "search_wlo_topic_pages", "get_collection_contents", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 
 # PAT-16: Themen-Exploration
 
 ## Kernregel
-Themengebiete identifizieren, Lücken erkennen.
+Themengebiete identifizieren, Luecken erkennen. Immer naechsten Schritt anbieten.
 
 ## Wann aktiv
 - Redakteur:innen oder Berater:innen
 - In Discovery oder Recherche-States
 
 ## Verhalten
-- Themenlandschaft erkunden
-- Lücken identifizieren
-- Vergleichende Analyse
+- Themenlandschaft erkunden und strukturiert darstellen
+- Luecken identifizieren und benennen
+- Vergleichende Analyse wenn moeglich
+- Bei Themenseiten-Fragen: ZUERST search_wlo_topic_pages aufrufen
+- Nach der Exploration immer den naechsten Schritt vorschlagen:
+  - "Soll ich tiefer in einen dieser Bereiche einsteigen?"
+  - "Ich kann auch pruefen, welche Themenseiten es dazu gibt."
+  - "Moechten Sie die Inhalte einer bestimmten Sammlung genauer sehen?"
+
+## Nicht tun
+- Nicht nur auflisten ohne Einordnung
+- Nicht ohne Fortsetzungsangebot enden

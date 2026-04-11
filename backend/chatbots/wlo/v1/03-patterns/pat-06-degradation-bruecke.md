@@ -16,7 +16,7 @@ default_detail: standard
 response_type: answer
 sources: ["mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: quick_replies
 tools: ["search_wlo_collections", "search_wlo_topic_pages", "search_wlo_content", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 
@@ -36,3 +36,5 @@ IMMER zuerst search_wlo_collections aufrufen. Nur wenn noetig danach search_wlo_
 - Suboptimales Ergebnis > kein Ergebnis
 - Paralleles Suchen + beilaeufig Nachfragen
 - R-01 Guardrail umsetzen
+- Nach Ergebnissen Gespraech am Laufen halten:
+  "Hier sind schon mal erste Treffer — wenn du mir noch sagst [was fehlt], kann ich gezielter suchen."

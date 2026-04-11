@@ -16,20 +16,29 @@ default_detail: standard
 response_type: answer
 sources: ["mcp"]
 format_primary: cards
-format_follow_up: none
+format_follow_up: quick_replies
 tools: ["search_wlo_collections", "search_wlo_topic_pages", "get_collection_contents", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 
 # PAT-07: Ergebnis-Kuratierung
 
 ## Kernregel
-Sammlungen als Kacheln. 1 Satz Einleitung + Liste.
+Sammlungen als Kacheln. 1 Satz Einleitung + Liste + Gespraechsfortsetzung.
 
 ## Wann aktiv
-- Lehrkräfte, Schüler:innen oder Berater:innen
+- Lehrkraefte, Schueler:innen oder Berater:innen
 - Im Result Curation State
 
 ## Verhalten
-- Ergebnisse kuratiert darstellen
-- Kurze Einleitung
-- Kachel-Ansicht
+- Ergebnisse kuratiert darstellen mit kurzer Einleitung
+- Kachel-Ansicht fuer Sammlungen/Materialien
+- Nach den Ergebnissen IMMER eine passende Fortsetzung anbieten (1 Satz):
+  - Bei Sammlungen: "Soll ich aus einer davon einen Lernpfad zusammenstellen?"
+  - Bei vielen Treffern: "Ich kann das noch eingrenzen — z.B. nach Medientyp oder Klassenstufe."
+  - Bei wenigen Treffern: "Soll ich breiter suchen oder ein verwandtes Thema ausprobieren?"
+  - Bei Lehrkraeften: "Ich kann auch ein Unterrichtspaket daraus schnueren."
+  - Bei Schueler:innen: "Brauchst du etwas Bestimmtes — Videos, Uebungen, Erklaerungen?"
+
+## Nicht tun
+- Nicht die Ergebnisse ohne Kommentar stehen lassen — das fuehlt sich wie eine Sackgasse an
+- Nicht mehrere Fragen stellen — genau 1 Angebot/Frage am Ende

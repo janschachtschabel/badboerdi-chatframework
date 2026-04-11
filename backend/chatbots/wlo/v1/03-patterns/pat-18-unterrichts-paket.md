@@ -16,7 +16,7 @@ default_detail: standard
 response_type: answer
 sources: ["mcp"]
 format_primary: cards
-format_follow_up: none
+format_follow_up: quick_replies
 tools: ["search_wlo_collections", "search_wlo_topic_pages", "search_wlo_content", "get_collection_contents", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 
@@ -33,3 +33,6 @@ search_wlo_collections(Fach+Klasse+Thema) → best match → search_wlo_content.
 - Erst Sammlungen suchen, dann Inhalte
 - 3-5 kuratierte Treffer
 - Bei fehlenden Slots: Degradation (PAT-06)
+- Nach dem Paket Fortsetzung anbieten:
+  - "Soll ich daraus einen strukturierten Lernpfad mit Zeitangaben bauen?"
+  - "Brauchst du aehnliche Materialien fuer ein anderes Thema?"

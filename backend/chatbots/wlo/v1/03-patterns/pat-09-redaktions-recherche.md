@@ -16,7 +16,7 @@ default_detail: standard
 response_type: answer
 sources: ["mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: inline
 tools: ["search_wlo_collections", "search_wlo_topic_pages", "get_collection_contents", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 
@@ -32,3 +32,5 @@ Fachgebiet erkunden, redaktionell.
 - Systematisches Fachgebiet-Erkunden
 - Sammlungen durchsuchen
 - Inhalte evaluieren
+- Nach Recherche naechsten Schritt anbieten:
+  "Soll ich einen anderen Bereich durchleuchten oder tiefer in eine Sammlung einsteigen?"

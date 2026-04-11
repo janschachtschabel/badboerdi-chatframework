@@ -2,7 +2,7 @@
 id: PAT-15
 label: Analyse-Überblick
 priority: 400
-gate_personas: ["P-VER", "P-BER", "P-AND", "P-W-LK", "P-W-POL", "P-W-PRESSE"]
+gate_personas: ["P-VER", "P-BER", "P-AND", "P-W-LK", "P-W-POL", "P-W-PRESSE", "P-W-SL", "P-ELT"]
 gate_states: ["*"]
 gate_intents: ["INT-W-01", "INT-W-06", "INT-W-09"]
 signal_high_fit: ["zielgerichtet", "effizient", "vergleichend"]
@@ -14,9 +14,9 @@ default_tone: sachlich
 default_length: mittel
 default_detail: standard
 response_type: answer
-sources: ["mcp"]
+sources: ["rag", "mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: inline
 tools: ["get_wirlernenonline_info", "get_edu_sharing_network_info", "get_metaventis_info"]
 ---
 
@@ -30,6 +30,12 @@ Strukturierte Übersicht, Daten+Zahlen zuerst.
 - In Evaluation oder System/Meta-States
 
 ## Verhalten
+- ZUERST RAG-Kontext nutzen (Plattform- und Projektwissen ist vorab geladen)
+- MCP-Info-Tools nur ergaenzend aufrufen wenn RAG nicht ausreicht
 - Daten und Zahlen priorisieren
 - Strukturierte Darstellung
 - Vergleichende Informationen
+- Nach der Uebersicht Fortsetzung anbieten:
+  - "Soll ich einen bestimmten Aspekt vertiefen oder die Daten anders aufbereiten?"
+  - "Moechten Sie einen Vergleich mit einem anderen Bereich?"
+  - "Ich kann auch Details zu einzelnen Projekten oder Partnern liefern."

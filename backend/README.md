@@ -28,7 +28,8 @@ Health-Check: `GET http://localhost:8000/api/health`
 | `LLM_EMBED_MODEL` | provider-spezifisch | Override für das Embedding-Modell. Defaults: `text-embedding-3-small` (openai, b-api-openai), `e5-mistral-7b-instruct` (b-api-academiccloud). |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | _Legacy_, weiterhin gültig wenn `LLM_PROVIDER=openai` und `LLM_CHAT_MODEL` nicht gesetzt ist. |
 | `MCP_SERVER_URL` | `https://wlo-mcp-server.vercel.app/mcp` | Default-Ziel des WLO-MCP-Clients. Einzelne Server können zusätzlich in `05-knowledge/mcp-servers.yaml` definiert werden. |
-| `STUDIO_API_KEY` | _leer_ | Schützt `/api/config/*`, `/api/rag/*`, `/api/safety/*` und die geschützten `/api/sessions/*`-Routen. Leer = API offen (Dev-Default). Siehe Abschnitt 9. |
+| `STUDIO_API_KEY` | _leer_ | Schützt `/api/config/*`, `/api/rag/*`, `/api/safety/*`, `/api/debug/*` und die geschützten `/api/sessions/*`-Routen. Leer = API offen (Dev-Default, Startup-Warnung). Siehe Abschnitt 9. |
+| `CORS_ORIGINS` | `*` | Komma-separierte Liste erlaubter Origins für CORS. Bei `*` (Default) werden keine Credentials erlaubt. Für Produktion spezifische Origins setzen (z.B. `https://wirlernenonline.de,https://studio.meinedomain.de`), dann werden auch Credentials unterstuetzt. |
 | `DATABASE_PATH` | `badboerdi.db` | Pfad zur SQLite-Datenbank (Sessions, Messages, Safety-Logs). |
 
 ## 2. Endpunkt-Inventar
@@ -41,6 +42,7 @@ Schutzstatus: **offen** = immer erreichbar · **Studio** = braucht Header `X-Stu
 | Methode | Pfad | Schutz | Beschreibung |
 |---------|------|--------|--------------|
 | `GET` | `/api/health` | offen | Health-Check mit aktivem OpenAI-Modell. |
+| `GET` | `/api/debug/mcp-test` | Studio | MCP-Verbindungstest (nur mit API-Key). |
 
 ### Chat (`/api/chat`)
 
@@ -241,13 +243,26 @@ export STUDIO_API_KEY=geheim123          # Linux/macOS
 $env:STUDIO_API_KEY="geheim123"          # PowerShell
 ```
 
-Ist `STUDIO_API_KEY` leer oder ungesetzt, bleibt die API **offen** (Dev-Default). Ist sie gesetzt,
+Ist `STUDIO_API_KEY` leer oder ungesetzt, bleibt die API **offen** (Dev-Default). Beim Start wird
+eine **Warnung** geloggt, damit dieser Zustand in Produktion nicht unbemerkt bleibt. Ist sie gesetzt,
 verlangen folgende Routen den Header `X-Studio-Key: <wert>` (oder alternativ `?key=<wert>`):
 
-* `GET/PUT /api/config/*`
+* `GET/PUT/DELETE /api/config/*`
 * `GET/PUT /api/rag/*`
 * `GET/PUT /api/safety/*`
+* `GET /api/debug/mcp-test`
 * alle `/api/sessions/*`-Routen **außer** `GET /{id}/messages` — also `GET /sessions/`, `GET /{id}`, `GET/POST /{id}/memory`
+
+### Sicherheitsmassnahmen
+
+| Massnahme | Beschreibung |
+|-----------|-------------|
+| **Path-Traversal-Schutz** | Alle Config-Dateioperationen (lesen/schreiben/loeschen/import) validieren relative Pfade gegen `CHATBOT_DIR` via `path.resolve().relative_to()`. `../`-Escapes werden blockiert. |
+| **SSRF-Schutz** | Der MCP-Server-Discovery-Endpoint (`POST /mcp-servers/discover`) blockiert private, loopback und link-local IP-Adressen. |
+| **CORS-Konfiguration** | `CORS_ORIGINS=*` (Default) deaktiviert `allow_credentials`. Fuer Produktion spezifische Origins setzen. |
+| **Chat-Nachrichtenlimit** | `ChatRequest.message` ist auf 10.000 Zeichen begrenzt (Pydantic-Validierung). |
+| **ZIP-Restore-Schutz** | `/api/config/restore` prueft ZIP-Eintraege auf absolute Pfade und `..`-Segmente. |
+| **Startup-Warnung** | Fehlt `STUDIO_API_KEY`, loggt das Backend beim Start eine deutliche Warnung. |
 
 **Bewusst offen** bleiben auch mit gesetztem Key:
 

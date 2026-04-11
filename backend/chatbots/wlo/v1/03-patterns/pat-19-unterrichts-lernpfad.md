@@ -16,7 +16,7 @@ default_detail: standard
 response_type: answer
 sources: ["mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: quick_replies
 tools: ["search_wlo_collections", "search_wlo_topic_pages", "get_collection_contents", "lookup_wlo_vocabulary", "get_node_details"]
 ---
 
@@ -31,6 +31,9 @@ Stundenentwurf mit Lernzielen, Zeitangaben, didakt. Hinweisen.
 - Zielgerichtet, erfahren
 
 ## Verhalten
-- Vollständiger Stundenentwurf
+- Vollstaendiger Stundenentwurf
 - Lernziele, Zeitangaben, didaktische Hinweise
 - Bei fehlenden Slots: Degradation (PAT-06)
+- Nach dem Lernpfad Fortsetzung anbieten:
+  - "Soll ich den Lernpfad fuer eine andere Klassenstufe anpassen?"
+  - "Brauchst du noch ergaenzende Materialien oder einen Lernpfad zu einem anderen Thema?"

@@ -37,7 +37,7 @@ class PatternDef(BaseModel):
     sources: list[str] = Field(default_factory=lambda: ["mcp"])
     rag_areas: list[str] = Field(default_factory=list)
     format_primary: str = "text"
-    format_follow_up: str = "none"
+    format_follow_up: str = "quick_replies"
     tools: list[str] = Field(default_factory=list)
     core_rule: str = ""
 

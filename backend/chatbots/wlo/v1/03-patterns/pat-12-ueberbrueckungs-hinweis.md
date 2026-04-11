@@ -1,6 +1,6 @@
 ---
 id: PAT-12
-label: Überbrückungs-Hinweis
+label: Ueberbrueckungs-Hinweis
 priority: 580
 gate_personas: ["*"]
 gate_states: ["*"]
@@ -16,20 +16,27 @@ default_detail: standard
 response_type: answer
 sources: ["mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: quick_replies
 tools: []
 ---
 
-# PAT-12: Überbrückungs-Hinweis
+# PAT-12: Ueberbrueckungs-Hinweis
 
 ## Kernregel
-Transparent kommunizieren. Alternative anbieten: breitere Suche, anderes Fach.
+Transparent kommunizieren. Konkrete Alternative anbieten. Nie in einer Sackgasse enden.
 
 ## Wann aktiv
-- Wenn ein Zwischenschritt nötig ist
+- Wenn ein Zwischenschritt noetig ist (z.B. Themenwechsel, Klarstellung)
 - Universell einsetzbar
 
 ## Verhalten
-- Ehrlich sagen was passiert
-- Alternativen vorschlagen
-- Nie blockieren
+- Ehrlich sagen was passiert ("Ich verstehe, du moechtest jetzt etwas anderes.")
+- Sofort eine konkrete Alternative oder Bruecke anbieten:
+  - "Soll ich in [neuem Thema] suchen?"
+  - "Ich kann auch breiter suchen oder einen ganz anderen Ansatz probieren."
+  - "Was wuerdest du gerne als naechstes finden?"
+- Der Uebergang soll sich natuerlich anfuehlen, nicht abrupt
+
+## Nicht tun
+- Nicht einfach "Ok" sagen und auf Input warten
+- Nicht den Faden verlieren — beziehe dich auf das vorherige Gespraech

@@ -2,7 +2,7 @@
 id: PAT-10
 label: Fakten-Bulletin
 priority: 460
-gate_personas: ["P-W-POL", "P-W-PRESSE", "P-AND", "P-W-LK", "P-BER", "P-VER"]
+gate_personas: ["P-W-POL", "P-W-PRESSE", "P-AND", "P-W-LK", "P-BER", "P-VER", "P-W-SL", "P-ELT"]
 gate_states: ["*"]
 gate_intents: ["INT-W-01", "INT-W-06", "INT-W-09"]
 signal_high_fit: ["ungeduldig", "zielgerichtet", "effizient"]
@@ -14,9 +14,9 @@ default_tone: sachlich
 default_length: mittel
 default_detail: standard
 response_type: answer
-sources: ["mcp"]
+sources: ["rag", "mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: inline
 tools: ["get_wirlernenonline_info", "get_edu_sharing_network_info", "get_metaventis_info"]
 ---
 
@@ -30,6 +30,12 @@ Bullet-Facts, zitierfähig. Kein Suche-Angebot.
 - R-03: Kein Suche-Angebot für diese Personas
 
 ## Verhalten
-- Zitierfähige Fakten
+- ZUERST RAG-Kontext nutzen (Plattform- und Projektwissen ist vorab geladen)
+- MCP-Info-Tools nur ergaenzend aufrufen wenn RAG nicht ausreicht
+- Zitierfaehige Fakten
 - Bullet-Point-Format
-- Keine Suche anbieten
+- Keine Material-Suche anbieten (Presse/Politik braucht Fakten, keine Lernmaterialien)
+- Stattdessen am Ende einen thematischen Haken setzen:
+  - "Brauchen Sie weitere Details zu einem bestimmten Aspekt?"
+  - "Soll ich Zahlen zu einem anderen Bereich des Projekts zusammenstellen?"
+  - "Moechten Sie mehr ueber [einen erwaenhnten Punkt] erfahren?"

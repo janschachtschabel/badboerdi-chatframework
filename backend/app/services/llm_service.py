@@ -452,9 +452,14 @@ SCHRITT 1 — RICHTIGES WERKZEUG WAEHLEN (IN DIESER REIHENFOLGE PRUEFEN!):
 
 1. ZUERST pruefen: Passt die Frage zu einem Wissensbereich in query_knowledge?
    Wenn ja → query_knowledge aufrufen! Beispiele:
-   - "Wie macht ihr Rechtspruefung?" → query_knowledge(area="recht", ...)
-   - "Was sind eure Qualitaetsrichtlinien?" → query_knowledge(area=..., ...)
+   - "Was ist WirLernenOnline?" → query_knowledge(area="wirlernenonline.de-webseite", ...)
+   - "Was macht edu-sharing?" → query_knowledge(area="edu-sharing-com-webseite", ...)
    - Jede Frage zu internen Prozessen, Konzepten, Dokumenten → query_knowledge
+   WICHTIG: Die "always"-Bereiche werden beim Start AUTOMATISCH vorab durchsucht.
+   Wenn du ein query_knowledge-Ergebnis mit "[Bereits durchsuchte Bereiche: ...]"
+   siehst, sind diese Bereiche SCHON abgefragt — rufe query_knowledge fuer diese
+   Bereiche NICHT nochmal auf! Nur fuer andere Bereiche oder bei einer ganz
+   anderen Suchanfrage darfst du query_knowledge erneut aufrufen.
 
 2. DANN: Frage nach Lernmaterialien, Sammlungen, OER-Inhalten?
    → search_wlo_collections oder search_wlo_content
@@ -478,8 +483,8 @@ SCHRITT 2 — REGELN:
    auf — NICHT erst search_wlo_collections. Zeige die gefundenen Themenseiten mit URL.
    Wenn keine Themenseiten gefunden werden, sage das ehrlich und biete stattdessen
    eine Sammlungs-Suche an.
-6. Frage NIE "Fuer welches Fach suchst du?" ��� hoechstens nach dem Thema.
-6. Wenn query_knowledge Ergebnisse liefert, nutze diese als Hauptquelle.
+6. Frage NIE "Fuer welches Fach suchst du?" -- hoechstens nach dem Thema.
+7. Wenn query_knowledge Ergebnisse liefert, nutze diese als Hauptquelle.
    Du kannst zusaetzlich MCP-Tools aufrufen um ergaenzende Materialien zu finden.
 
 Antworte auf Deutsch. Formatiere mit Markdown.""")
@@ -558,16 +563,23 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     # "always" areas: pre-fetched and injected (guaranteed to be available)
     # "on-demand" areas: only queried when LLM explicitly calls query_knowledge
     knowledge_prefetched = False
+    always_areas: list[str] = []  # tracked for redundant-call guard in tool loop
+    _RAG_TOP_K = 8  # global budget for pre-fetched RAG chunks
+    _RAG_MIN_SCORE = 0.25  # drop chunks below this relevance threshold
     if available_rag_areas and rag_config:
         always_areas = [a for a in available_rag_areas if rag_config.get(a, {}).get("mode") == "always"]
 
         if always_areas:
             from app.services.rag_service import get_rag_context as _get_rag_ctx
-            prefetch_ctx = await _get_rag_ctx(message, areas=always_areas, top_k=4)
+            prefetch_ctx = await _get_rag_ctx(
+                message, areas=always_areas, top_k=_RAG_TOP_K,
+                min_score=_RAG_MIN_SCORE,
+            )
             _logger.info("RAG pre-fetch for areas %s: %d chars", always_areas, len(prefetch_ctx) if prefetch_ctx else 0)
             if prefetch_ctx:
                 knowledge_prefetched = True
-                # Inject as a completed tool call
+                # Inject as a completed tool call — tell the LLM ALL always-areas were searched
+                areas_label = ", ".join(always_areas)
                 messages.append({"role": "user", "content": message})
                 messages.append({
                     "role": "assistant",
@@ -587,7 +599,10 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                 messages.append({
                     "role": "tool",
                     "tool_call_id": "prefetch_knowledge",
-                    "content": prefetch_ctx[:6000],
+                    "content": (
+                        f"[Bereits durchsuchte Bereiche: {areas_label}]\n\n"
+                        + prefetch_ctx[:6000]
+                    ),
                 })
 
     if not knowledge_prefetched:
@@ -693,7 +708,23 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     from app.services.rag_service import get_rag_context
                     area = tool_args.get("area", "general")
                     query = tool_args.get("query", message)
-                    result_text = await get_rag_context(query, areas=[area], top_k=4)
+
+                    # Guard: if this area was already covered by the pre-fetch
+                    # and the query is the same, return a short hint instead of
+                    # re-querying the database (saves an embedding API call).
+                    if knowledge_prefetched and area in always_areas and query == message:
+                        _logger.info("query_knowledge(%s): skipped — already pre-fetched", area)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": (
+                                f"Bereich '{area}' wurde bereits vorab durchsucht. "
+                                "Die Ergebnisse findest du in der vorherigen query_knowledge-Antwort."
+                            ),
+                        })
+                        continue
+
+                    result_text = await get_rag_context(query, areas=[area], top_k=_RAG_TOP_K)
                     if not result_text:
                         result_text = f"Keine relevanten Informationen im Bereich '{area}' gefunden."
                     _logger.info("query_knowledge(%s): %d chars", area, len(result_text))
@@ -814,27 +845,42 @@ Kontext:
 - State: {state_id}
 - Erkannte Entities: {json.dumps(entities)}
 
+WICHTIG — Perspektive:
+Die Vorschlaege sind Saetze, die der NUTZER sagen wuerde — NICHT der Bot!
+Schreibe aus ICH-Perspektive des Nutzers. Der Nutzer spricht den Bot an.
+FALSCH (Bot-Perspektive): "Weitere Materialien zeigen", "Suche eingrenzen"
+RICHTIG (User-Perspektive): "Zeig mir mehr davon", "Ich will das eingrenzen"
+
 Regeln:
 1. Genau 4 Vorschlaege, einer pro Zeile
-2. Jeder Vorschlag max 5-6 Woerter
+2. Jeder Vorschlag max 6-8 Woerter
 3. Vorschlaege muessen zur Persona und zum aktuellen Gespraechskontext passen
-4. Mindestens 1 Vorschlag soll eine Vertiefung/Weitersuche ermoeglichen
-5. Mindestens 1 Vorschlag soll ein neues Thema/eine neue Richtung eroeffnen
-6. Die Vorschlaege sollen natuerlich klingen, wie echte Nutzer-Eingaben
-7. KEINE Nummerierung, KEINE Aufzaehlungszeichen, nur der reine Text
-8. Sprache: Deutsch, passend zur Persona (du/Sie)
+4. Mix aus diesen Typen:
+   a) 1x Vertiefung (mehr zum aktuellen Thema, z.B. "Gibt es Videos dazu?")
+   b) 1x Richtungswechsel (neues Thema/anderer Blickwinkel, z.B. "Was gibt es zu Physik?")
+   c) 1x Weiterverarbeitung (Lernpfad, Unterrichtspaket, z.B. "Mach mir einen Lernpfad daraus")
+   d) 1x offene Frage oder Orientierung (z.B. "Was kannst du noch?")
+5. Natuerlich klingen, wie echte Nutzer-Eingaben — keine Bot-Kommandos
+6. KEINE Nummerierung, KEINE Aufzaehlungszeichen, nur der reine Text
+7. Sprache: Deutsch, passend zur Persona (du/Sie)
 
-Beispiele fuer Lehrkraefte:
-Mehr Mathe-Materialien
-Gibt es Videos dazu?
-Was fuer die Oberstufe
-Neues Thema: Physik
+Beispiele fuer Lehrkraefte (Sie):
+Haben Sie auch Videos dazu?
+Erstellen Sie mir einen Lernpfad
+Was gibt es zur Oberstufe?
+Anderes Thema: Klimawandel
 
-Beispiele fuer Schueler:
-Noch mehr davon
+Beispiele fuer Schueler (du):
+Hast du noch mehr davon?
 Erklaer mir das genauer
-Was anderes suchen
-Gibt es Uebungen?"""
+Ich suche was zu Mathe
+Mach mir einen Lernpfad daraus
+
+Beispiele fuer Eltern (Sie):
+Gibt es das auch als Video?
+Was empfehlen Sie fuer Klasse 5?
+Ich suche etwas anderes
+Wie kann mein Kind damit lernen?"""
 
     messages = [
         {"role": "system", "content": system},

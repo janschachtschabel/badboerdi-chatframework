@@ -977,13 +977,21 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             content_refs[:15]
         )
 
-    # 8. Generate AI quick replies (always, 4 context-aware suggestions)
-    quick_replies = await generate_quick_replies(
-        message=req.message,
-        response_text=response_text,
-        classification=classification_dict,
-        session_state=session_state,
-    )
+    # 8. Generate AI quick replies based on format_follow_up
+    #    - "quick_replies": always generate (pattern expects clickable options)
+    #    - "inline": pattern has conversational hooks in text, still generate
+    #      quick replies as additional options
+    #    - "none": skip quick replies (rare — only for terminal patterns)
+    follow_up_mode = pattern_output.get("format_follow_up", "quick_replies")
+    if follow_up_mode != "none":
+        quick_replies = await generate_quick_replies(
+            message=req.message,
+            response_text=response_text,
+            classification=classification_dict,
+            session_state=session_state,
+        )
+    else:
+        quick_replies = []
 
     # 9. Build page_action for host page integration
     page_action = None
@@ -1045,7 +1053,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         session_id=req.session_id,
         content=response_text,
         cards=cards,
-        follow_up=pattern_output.get("format_follow_up", "none"),
+        follow_up=pattern_output.get("format_follow_up", "quick_replies"),
         quick_replies=quick_replies,
         debug=debug,
         page_action=page_action,

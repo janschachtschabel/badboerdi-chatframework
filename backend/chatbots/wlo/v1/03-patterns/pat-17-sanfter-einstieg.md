@@ -14,9 +14,9 @@ default_tone: spielerisch
 default_length: mittel
 default_detail: standard
 response_type: suggestion
-sources: ["mcp"]
+sources: ["rag", "mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: quick_replies
 tools: ["get_wirlernenonline_info"]
 ---
 
@@ -30,6 +30,8 @@ WLO-Infofragen. Einladend. Persona weiter klären.
 - Universell für alle Personas
 
 ## Verhalten
+- ZUERST RAG-Kontext nutzen fuer WLO-Infos (vorab geladen, kein Tool-Call noetig)
+- MCP-Info-Tool nur ergaenzend wenn RAG nicht ausreicht
 - Einladend und freundlich
 - WLO vorstellen
-- Persona durch Soft Probing klären
+- Persona durch Soft Probing klaeren

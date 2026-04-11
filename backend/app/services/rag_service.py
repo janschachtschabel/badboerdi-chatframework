@@ -158,8 +158,23 @@ async def query_rag(query: str, area: str = "general", top_k: int = 3) -> list[d
     return results
 
 
-async def get_rag_context(query: str, areas: list[str] | None = None, top_k: int = 3) -> str:
-    """Get RAG context string for injection into LLM prompt."""
+async def get_rag_context(query: str, areas: list[str] | None = None, top_k: int = 3,
+                          min_score: float = 0.25) -> str:
+    """Get RAG context string for injection into LLM prompt.
+
+    Queries all given areas, merges results, filters by relevance threshold,
+    and returns the top-k chunks sorted by score.  Because all areas share the
+    same embedding model and distance metric, scores are directly comparable
+    across areas — no per-area guarantees needed.
+
+    Args:
+        query: Search query.
+        areas: List of knowledge areas to search.
+        top_k: Maximum total chunks to return.
+        min_score: Minimum similarity score (0-1). Chunks below this threshold
+                   are dropped even if top_k is not yet reached. This prevents
+                   irrelevant chunks from diluting the context.
+    """
     if not areas:
         areas = ["general"]
 
@@ -168,8 +183,12 @@ async def get_rag_context(query: str, areas: list[str] | None = None, top_k: int
         results = await query_rag(query, area, top_k)
         all_results.extend(results)
 
+    if not all_results:
+        return ""
+
+    # Sort by score globally across all areas, then filter by relevance threshold
     all_results.sort(key=lambda x: x["score"], reverse=True)
-    top = all_results[:top_k]
+    top = [r for r in all_results[:top_k] if r["score"] >= min_score]
 
     if not top:
         return ""

@@ -124,19 +124,20 @@ function parseFrontmatterAndBody(raw: string): { meta: Record<string, any>; body
   return { meta, body: match[2].trim() };
 }
 
-// ── MCP tools ────────────────────────────────────────────────────────
-const ALL_MCP_TOOLS = [
-  'search_wlo_collections', 'search_wlo_content', 'get_collection_contents',
-  'get_node_details', 'get_wirlernenonline_info', 'get_edu_sharing_network_info',
-  'get_edu_sharing_product_info', 'get_metaventis_info', 'lookup_wlo_vocabulary',
+// ── MCP tools (fallback if backend unavailable) ─────────────────────
+const FALLBACK_MCP_TOOLS = [
+  'search_wlo_collections', 'search_wlo_content', 'search_wlo_topic_pages',
+  'get_collection_contents', 'get_node_details', 'lookup_wlo_vocabulary',
+  'get_wirlernenonline_info', 'get_edu_sharing_network_info',
+  'get_edu_sharing_product_info', 'get_metaventis_info',
 ];
 
-const TONE_OPTIONS = ['sachlich', 'empathisch', 'transparent', 'einladend', 'spielerisch'];
+const TONE_OPTIONS = ['sachlich', 'empathisch', 'transparent', 'einladend', 'spielerisch', 'empfehlend', 'niedrigschwellig', 'beruhigend', 'orientierend', 'belegend'];
 const LENGTH_OPTIONS = ['kurz', 'mittel', 'lang'];
 const DETAIL_OPTIONS = ['standard', 'detail', 'overview'];
 const RESPONSE_TYPE_OPTIONS = ['answer', 'question', 'suggestion'];
 const FORMAT_OPTIONS = ['text', 'cards', 'list'];
-const FOLLOW_UP_OPTIONS = ['none', 'quick_replies'];
+const FOLLOW_UP_OPTIONS = ['quick_replies', 'inline', 'none'];
 const SOURCE_OPTIONS = ['mcp', 'rag'];
 
 // ── Props ────────────────────────────────────────────────────────────
@@ -262,6 +263,27 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newPatternId, setNewPatternId] = useState('');
   const [newPatternLabel, setNewPatternLabel] = useState('');
+
+  // Dynamically load available MCP tools from backend
+  const [mcpTools, setMcpTools] = useState<string[]>(FALLBACK_MCP_TOOLS);
+  useEffect(() => {
+    (async () => {
+      try {
+        const resp = await fetch('/api/config/mcp-servers');
+        if (resp.ok) {
+          const data = await resp.json();
+          const tools = new Set<string>();
+          const servers = Array.isArray(data) ? data : data?.servers ?? [];
+          for (const srv of servers) {
+            if (srv.enabled !== false && Array.isArray(srv.tools)) {
+              for (const t of srv.tools) tools.add(t);
+            }
+          }
+          if (tools.size > 0) setMcpTools(Array.from(tools).sort());
+        }
+      } catch { /* use fallback */ }
+    })();
+  }, []);
 
   const patterns = elements.patterns || [];
   const selected = patterns.find(p => p.id === selectedId);
@@ -594,7 +616,8 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
               <div className="section">
                 <div className="section-title"><span className="section-icon">&#x1F527;</span> MCP Tools</div>
                 <div className="checkbox-group">
-                  {ALL_MCP_TOOLS.map(t => (
+                  {/* Merge dynamic tools with any already-selected tools (in case they aren't in the server list) */}
+                  {Array.from(new Set([...mcpTools, ...(editData.tools ?? [])])).map(t => (
                     <label key={t} className={`checkbox-item ${(editData.tools ?? []).includes(t) ? 'checked' : ''}`}
                       onClick={() => {
                         const cur = editData.tools ?? [];

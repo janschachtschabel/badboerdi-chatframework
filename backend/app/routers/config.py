@@ -49,8 +49,11 @@ async def update_config_file(file: ConfigFile):
 async def delete_config_file(path: str):
     """Delete a config file."""
     import os
-    from app.services.config_loader import CHATBOT_DIR
-    full_path = CHATBOT_DIR / path
+    from app.services.config_loader import _validate_config_path
+    try:
+        full_path = _validate_config_path(path)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
     if full_path.exists():
         os.remove(full_path)
         return {"status": "deleted", "path": path}
@@ -187,6 +190,26 @@ async def discover_mcp_tools(url: str = ""):
     if not url:
         raise HTTPException(status_code=400, detail="URL required")
 
+    # SSRF protection: block private/internal network ranges
+    from urllib.parse import urlparse
+    import ipaddress
+    import socket
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    if not hostname:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    # Block common internal hostnames
+    if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or hostname.endswith(".local"):
+        raise HTTPException(status_code=400, detail="Internal URLs not allowed")
+    try:
+        resolved = socket.getaddrinfo(hostname, None)
+        for _, _, _, _, addr in resolved:
+            ip = ipaddress.ip_address(addr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise HTTPException(status_code=400, detail="Internal network URLs not allowed")
+    except socket.gaierror:
+        raise HTTPException(status_code=400, detail=f"Cannot resolve hostname: {hostname}")
+
     from app.services.mcp_client import discover_server_tools
     try:
         tools = await discover_server_tools(url)
@@ -203,11 +226,16 @@ class ConfigImport(BaseModel):
 @router.post("/import")
 async def import_config(data: ConfigImport):
     """Batch import: write multiple config files at once from an export JSON."""
+    from app.services.config_loader import _validate_config_path
     written = []
     for path, entry in data.files.items():
         content = entry.get("content", "")
         if not content:
             continue
+        try:
+            _validate_config_path(path)
+        except ValueError:
+            continue  # skip unsafe paths silently
         write_config_file(path, content)
         written.append(path)
     return {"status": "imported", "files": written, "count": len(written)}

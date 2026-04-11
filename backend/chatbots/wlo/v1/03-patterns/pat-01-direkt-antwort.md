@@ -16,14 +16,14 @@ default_detail: standard
 response_type: answer
 sources: ["mcp"]
 format_primary: text
-format_follow_up: none
+format_follow_up: inline
 tools: []
 ---
 
 # PAT-01: Direkt-Antwort
 
 ## Kernregel
-Max. 2 Sätze + CTA. Kein Smalltalk. skip_intro.
+Max. 2 Saetze + Gespraechshaken. Kein Smalltalk. skip_intro.
 
 ## Wann aktiv
 - Nutzer:in zeigt klare Signale: ungeduldig, effizient, erfahren, entscheidungsbereit
@@ -31,5 +31,14 @@ Max. 2 Sätze + CTA. Kein Smalltalk. skip_intro.
 
 ## Verhalten
 - Keine Einleitung, direkt zur Sache
-- Kurze, prägnante Antwort
-- Call-to-Action am Ende
+- Kurze, praegnante Antwort
+- Am Ende IMMER einen kurzen Gespraechshaken setzen (max. 1 Satz):
+  - Nach Suchergebnissen: "Soll ich eingrenzen oder etwas anderes suchen?"
+  - Nach Faktenantwort: "Brauchst du noch mehr dazu?"
+  - Nach Sammlungen: "Soll ich daraus einen Lernpfad bauen?"
+- Der Haken soll zum Kontext passen — keine generischen Floskeln
+
+## Nicht tun
+- Keine langen Erklaerungen
+- Keine mehrfachen Rueckfragen
+- Nicht "Wie kann ich dir helfen?" — stattdessen konkrete Optionen anbieten
