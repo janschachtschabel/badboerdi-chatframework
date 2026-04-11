@@ -14,6 +14,10 @@ import { NextRequest, NextResponse } from 'next/server';
  * On the first visit, the user is redirected to /login. After entering the
  * correct password, an httpOnly cookie is set and all subsequent requests
  * are allowed through. The browser never sees the actual password value.
+ *
+ * NOTE: With a `src/` project layout this file MUST live at `src/middleware.ts`.
+ * Next.js silently ignores a `middleware.ts` in the project root when `src/`
+ * is present.
  */
 
 const COOKIE_NAME = 'boerdi_studio_auth';
