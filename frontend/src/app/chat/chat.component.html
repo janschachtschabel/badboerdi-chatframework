@@ -125,7 +125,7 @@
     </div>
     <!-- Triple-Schema v2 -->
     <div class="debug-row" *ngIf="latestDebug.confidence !== undefined">
-      <span class="debug-label">Confidence:</span> {{ (latestDebug.confidence ?? 0) | number:'1.2-2' }}
+      <span class="debug-label">Confidence:</span> {{ (latestDebug.confidence || 0) | number:'1.2-2' }}
     </div>
     <div class="debug-row" *ngIf="latestDebug.safety">
       <span class="debug-label">Safety:</span>
@@ -135,8 +135,8 @@
       <span *ngIf="latestDebug.safety.flagged_categories?.length"> · flagged={{ latestDebug.safety.flagged_categories!.join(',') }}</span>
       <span *ngIf="latestDebug.safety.legal_flags?.length"> · legal={{ latestDebug.safety.legal_flags!.join(',') }}</span>
       <span *ngIf="latestDebug.safety.enforced_pattern"> · enforced={{ latestDebug.safety.enforced_pattern }}</span>
-      <span *ngIf="latestDebug.safety.blocked_tools?.length"> · blocked={{ latestDebug.safety.blocked_tools.join(', ') }}</span>
-      <span *ngIf="latestDebug.safety.reasons?.length"> · {{ latestDebug.safety.reasons.join(', ') }}</span>
+      <span *ngIf="latestDebug.safety.blocked_tools && latestDebug.safety.blocked_tools.length"> · blocked={{ latestDebug.safety.blocked_tools.join(', ') }}</span>
+      <span *ngIf="latestDebug.safety.reasons && latestDebug.safety.reasons.length"> · {{ latestDebug.safety.reasons.join(', ') }}</span>
     </div>
     <div class="debug-row" *ngIf="latestDebug.outcomes && latestDebug.outcomes.length">
       <span class="debug-label">Outcomes:</span>
