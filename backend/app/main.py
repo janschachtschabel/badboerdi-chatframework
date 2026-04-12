@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.services.auth import require_studio_key
 from app.services.database import init_db
-from app.routers import chat, config, rag, speech, sessions, safety, widget
+from app.routers import chat, config, rag, speech, sessions, safety, quality, widget
 
 load_dotenv()
 
@@ -71,12 +71,19 @@ app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
 # Studio-only routers — protected when STUDIO_API_KEY is set in the env.
 # Without the env var, the dependency is a no-op (open by default).
 _studio_deps = [Depends(require_studio_key)]
-app.include_router(config.router, prefix="/api/config", tags=["config"], dependencies=_studio_deps)
-app.include_router(rag.router,    prefix="/api/rag",    tags=["rag"],    dependencies=_studio_deps)
-app.include_router(safety.router, prefix="/api/safety", tags=["safety"], dependencies=_studio_deps)
+app.include_router(config.router,  prefix="/api/config",  tags=["config"],  dependencies=_studio_deps)
+app.include_router(rag.router,     prefix="/api/rag",     tags=["rag"],     dependencies=_studio_deps)
+app.include_router(safety.router,  prefix="/api/safety",  tags=["safety"],  dependencies=_studio_deps)
+app.include_router(quality.router, prefix="/api/quality", tags=["quality"], dependencies=_studio_deps)
 
 
-@app.get("/api/health")
+@app.api_route("/", methods=["GET", "HEAD"])
+async def root():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/api/health")
+
+
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
     from app.services.llm_provider import get_chat_model, get_embed_model, get_provider
     return {

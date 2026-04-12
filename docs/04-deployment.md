@@ -175,7 +175,7 @@ volumes:
 
 **Wichtige Unterschiede zum lokalen Setup:**
 - Ports binden an `127.0.0.1` (nicht von aussen erreichbar — Reverse-Proxy davor!)
-- `STUDIO_API_KEY` und `STUDIO_PASSWORD` sind gesetzt (fehlt `STUDIO_API_KEY`, loggt das Backend eine Warnung beim Start)
+- `STUDIO_API_KEY` und `STUDIO_PASSWORD` sind gesetzt (fehlt `STUDIO_API_KEY`, loggt das Backend eine Warnung beim Start). Schuetzt `/api/config`, `/api/rag`, `/api/safety`, `/api/quality`
 - `CORS_ORIGINS` auf spezifische Domains beschraenkt (nicht `*`)
 - `chatbots/` als Bind-Mount (Config-Aenderungen ueber Studio bleiben bei Container-Updates erhalten)
 - Watchtower fuer automatische Image-Updates

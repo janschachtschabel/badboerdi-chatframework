@@ -30,9 +30,9 @@ Health-Check: `GET http://localhost:8000/api/health`
 | `LLM_EMBED_MODEL` | provider-spezifisch | Override fuer das Embedding-Modell. Defaults: `text-embedding-3-small` (openai, b-api-openai), `e5-mistral-7b-instruct` (b-api-academiccloud). |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | _Legacy_, weiterhin gueltig wenn `LLM_PROVIDER=openai` und `LLM_CHAT_MODEL` nicht gesetzt ist. |
 | `MCP_SERVER_URL` | `https://wlo-mcp-server.vercel.app/mcp` | Default-Ziel des WLO-MCP-Clients. Weitere Server koennen in `05-knowledge/mcp-servers.yaml` definiert werden. |
-| `STUDIO_API_KEY` | _leer_ | Schuetzt `/api/config/*`, `/api/rag/*`, `/api/safety/*`, `/api/debug/*` und die geschuetzten `/api/sessions/*`-Routen. Leer = API offen (Dev-Default, Startup-Warnung). Siehe Abschnitt 9. |
+| `STUDIO_API_KEY` | _leer_ | Schuetzt `/api/config/*`, `/api/rag/*`, `/api/safety/*`, `/api/quality/*`, `/api/debug/*` und die geschuetzten `/api/sessions/*`-Routen. Leer = API offen (Dev-Default, Startup-Warnung). Siehe Abschnitt 9. |
 | `CORS_ORIGINS` | `*` | Komma-separierte Liste erlaubter Origins fuer CORS. Bei `*` (Default) werden keine Credentials erlaubt. Fuer Produktion spezifische Origins setzen (z.B. `https://wirlernenonline.de,https://studio.meinedomain.de`), dann werden auch Credentials unterstuetzt. |
-| `DATABASE_PATH` | `badboerdi.db` | Pfad zur SQLite-Datenbank (Sessions, Messages, Safety-Logs, RAG). |
+| `DATABASE_PATH` | `badboerdi.db` | Pfad zur SQLite-Datenbank (Sessions, Messages, Safety-Logs, Quality-Logs, RAG). |
 
 ---
 
@@ -112,8 +112,18 @@ Alle Routen unter `/api/safety/*` sind **Studio**-geschuetzt.
 
 | Methode | Pfad | Beschreibung |
 |---------|------|--------------|
-| `GET` | `/api/safety/logs` | Geloggte Risk-Events. |
+| `GET` | `/api/safety/logs` | Geloggte Risk-Events (filterbar: `risk_min`, `session_id`). |
 | `GET` | `/api/safety/stats` | Aggregierte Safety-Statistiken fuer das Studio-Dashboard. |
+
+### Quality (`/api/quality`) — Qualitaets-Logging
+
+Alle Routen unter `/api/quality/*` sind **Studio**-geschuetzt.
+Jeder Chat-Turn wird automatisch protokolliert (konfigurierbar via `01-base/quality-log-config.yaml`).
+
+| Methode | Pfad | Beschreibung |
+|---------|------|--------------|
+| `GET` | `/api/quality/logs` | Quality-Logs (filterbar: `session_id`, `pattern_id`, `intent_id`, `limit`). |
+| `GET` | `/api/quality/stats` | Aggregierte Metriken: Pattern-Verteilung, Intent-Verteilung, avg. Confidence, Score-Gap, Degradation-Rate, Empty-Entity-Rate, Tight Races. |
 
 ### Widget (`/widget`)
 
@@ -136,6 +146,7 @@ chatbots/wlo/v1/
 │   ├── base-persona.md                ←   Wer ist BOERDi? (Name, Rolle, Tonalitaet)
 │   ├── guardrails.md                  ←   Harte Regeln R-01 bis R-10 (LETZTER Block im Prompt)
 │   ├── safety-config.yaml             ←   Presets off/basic/standard/strict/paranoid + Rate-Limits
+│   ├── quality-log-config.yaml        ←   Quality-Logging: an/aus, Retention, Alert-Schwellwerte
 │   └── device-config.yaml             ←   Geraete-Limits (max_items) + Persona-Anrede (Sie/du)
 │
 ├── 02-domain/                         ← Schicht 2: Domain & Regeln
@@ -725,11 +736,11 @@ SQLite (`badboerdi.db`) mit folgenden Tabellen:
 | Tabelle | Zweck |
 |---------|-------|
 | `sessions` | Session-State (Persona, State, Entities, Signals, Turn-Count) |
-| `messages` | Nachrichtenverlauf pro Session |
+| `messages` | Nachrichtenverlauf pro Session (inkl. `debug_json` und `cards_json`) |
 | `memory` | Key-Value-Speicher pro Session (short/long) |
-| `safety_log` | Geloggte Risk-Events |
-| `rag_documents` | RAG-Dokument-Metadaten (Area, Titel, Quelle) |
-| `rag_chunks` | RAG-Text-Chunks mit Embeddings (sqlite-vec) |
+| `safety_logs` | Geloggte Risk-Events (Risk-Level, Stages, Legal-Flags, Escalation) |
+| `quality_logs` | Qualitaets-Metriken pro Turn (Pattern, Scores, Confidence, Degradation, Entities, Tool-Outcomes) |
+| `rag_chunks` | RAG-Text-Chunks mit Embeddings (sqlite-vec, 1536 Dimensionen) |
 | `meta` | Key-Value fuer System-Metadaten (z.B. Seed-Version) |
 
 Init in `app/services/database.py`. Beim ersten Start werden Seed-Chunks aus
@@ -741,13 +752,64 @@ Init in `app/services/database.py`. Beim ersten Start werden Seed-Chunks aus
 
 Jede `/api/chat`-Antwort enthaelt ein `debug`-Objekt mit:
 
-* `persona`, `intent`, `state`, `pattern`, `signals`, `entities` — erkannte Dimensionen
-* `phase1_eliminated`, `phase2_scores`, `phase3_modulations` — Pattern-Engine-Trace
+* `persona` — z.B. `P-W-LK (Lehrkraft)` — ID mit Label in Klammern
+* `intent` — z.B. `INT-W-06 (Faktenfragen)` — ID mit Label
+* `state` — z.B. `state-3 (Information)` — ID mit Label
+* `turn_type` — `initial`, `follow_up`, `topic_switch`, `correction`, `clarification`
+* `signals` — erkannte Signale (z.B. `["zielgerichtet", "Faktenfrage"]`)
+* `pattern` — z.B. `PAT-10 (Fakten-Bulletin)` — Gewinner-Pattern
+* `entities` — extrahierte Slots (interne `_`-Keys werden gefiltert)
+* `tools_called` — tatsaechlich aufgerufene Tools (inkl. prefetch)
+* `phase1_eliminated` — durch Gate eliminierte Patterns
+* `phase2_scores` — Score pro Kandidat-Pattern
+* `phase3_modulations` — vollstaendiger Output der Modulations-Phase:
+  - `tone`, `formality`, `length`, `detail_level`, `max_items`, `card_text_mode`
+  - `response_type`, `format_primary`, `format_follow_up`, `sources`
+  - `tools` (Pattern-definierte Tools), `rag_areas`, `core_rule`
+  - `skip_intro`, `one_option`, `add_sources` (Boolean-Flags)
+  - `degradation`, `missing_slots`, `blocked_patterns`
 * `outcomes` — Tool-Outcomes mit Status, Item-Count und Latenz
 * `safety` — Stages, Risk-Level, Categories, Legal-Flags, Escalated
 * `policy` — Allowed/Blocked-Tools/Disclaimers
-* `context` — ContextSnapshot (Page, Device, Entities, Memory-Keys)
+* `context` — ContextSnapshot (Page, Device, Turn-Count)
 * `confidence` — Finale Confidence nach allen Adjustments
 * `trace` — Phase-Trace mit Dauer pro Schritt
 
-Das Frontend rendert dieses Objekt im Debug-Panel; das Studio nutzt es fuer Sessions-Inspektion.
+Das Frontend rendert dieses Objekt im Debug-Panel (Toggle via 🔍 im Header);
+das Studio nutzt es fuer Sessions-Inspektion. Zusaetzlich wird jeder Turn
+automatisch in die `quality_logs`-Tabelle geschrieben (siehe Abschnitt 15).
+
+---
+
+## 15. Quality-Logging
+
+Jeder Chat-Turn wird automatisch in `quality_logs` protokolliert (non-blocking, fire-and-forget).
+Steuerung ueber `01-base/quality-log-config.yaml`:
+
+```yaml
+logging:
+  enabled: true              # An/Aus (Standard: true)
+  retention_days: 180
+```
+
+**Gespeicherte Metriken pro Turn:**
+
+| Feld | Beschreibung |
+|------|-------------|
+| `pattern_id` | Gewaehltes Pattern |
+| `phase2_winner_score` | Score des Gewinners |
+| `phase2_score_gap` | Abstand zum Zweitplatzierten (niedrig = ambig) |
+| `intent_id`, `persona_id` | Klassifikationsergebnis |
+| `final_confidence` | Finale Confidence nach Outcome-Adjustments |
+| `turn_type` | initial / follow_up / topic_switch / correction |
+| `signals`, `entities` | Erkannte Signale und Slots |
+| `tools_called`, `tool_outcomes` | Aufgerufene Tools mit Status |
+| `response_length`, `cards_count` | Antwortlaenge und Kartenanzahl |
+| `degradation`, `missing_slots` | Ob Degradation aktiv war |
+| `debug_json` | Vollstaendiges Debug-Objekt fuer Deep-Dive |
+
+**Aggregierte Statistiken** ueber `GET /api/quality/stats`:
+- Pattern-Verteilung, Intent-Verteilung
+- Durchschnittliche Confidence und Score-Gap
+- Degradation-Rate, Empty-Entity-Rate
+- Anzahl Tight Races (Score-Gap < 0.02 — Pattern-Entscheidung war knapp)

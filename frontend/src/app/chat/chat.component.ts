@@ -285,6 +285,10 @@ export class ChatComponent implements OnInit, AfterViewChecked {
     this.recordingSeconds = 0;
   }
 
+  // Audio queue for sentence-chunked OpenAI TTS
+  private audioQueue: Blob[] = [];
+  private audioAbort: AbortController | null = null;
+
   speakText(text: string) {
     if (this.isSpeaking) {
       this.stopSpeaking();
@@ -292,54 +296,107 @@ export class ChatComponent implements OnInit, AfterViewChecked {
     }
     const plain = this.stripMarkdown(text);
     this.isSpeaking = true;
-    this.speakNative(plain);
+    this.speakChunked(plain);
   }
 
-  private speakNative(text: string) {
-    const synth = window.speechSynthesis;
-    if (!synth) {
-      this.isSpeaking = false;
-      return;
+  /**
+   * Split text into sentences, fetch OpenAI TTS for each, and play them
+   * in sequence — pre-fetching the next sentence while the current one plays.
+   * Falls back to browser speechSynthesis if the backend TTS fails.
+   */
+  private async speakChunked(text: string) {
+    const sentences = this.splitSentences(text);
+    if (!sentences.length) { this.isSpeaking = false; return; }
+
+    this.audioQueue = [];
+    this.audioAbort = new AbortController();
+    const signal = this.audioAbort.signal;
+
+    // Pre-fetch first sentence
+    let nextFetch: Promise<Blob | null> = this.fetchTTS(sentences[0], signal);
+
+    for (let i = 0; i < sentences.length; i++) {
+      if (signal.aborted) break;
+
+      // Await current sentence audio
+      const blob = await nextFetch;
+      if (signal.aborted || !blob) break;
+
+      // Start pre-fetching next sentence while current one plays
+      if (i + 1 < sentences.length) {
+        nextFetch = this.fetchTTS(sentences[i + 1], signal);
+      }
+
+      // Play current sentence
+      await this.playBlob(blob, signal);
     }
-    synth.cancel();
 
-    const doSpeak = () => {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'de-DE';
-      utterance.rate = 1.0;
+    if (!signal.aborted) {
+      this.zone.run(() => { this.isSpeaking = false; });
+    }
+  }
 
-      // Pick a German voice
-      const voices = synth.getVoices();
-      const deVoice = voices.find(v => v.lang.startsWith('de'));
-      if (deVoice) utterance.voice = deVoice;
+  private async fetchTTS(text: string, signal: AbortSignal): Promise<Blob | null> {
+    try {
+      return await this.api.synthesize(text, signal);
+    } catch {
+      return null;
+    }
+  }
 
-      utterance.onend = () => { this.zone.run(() => { this.isSpeaking = false; }); };
-      utterance.onerror = () => { this.zone.run(() => { this.isSpeaking = false; }); };
-      synth.speak(utterance);
-    };
+  private playBlob(blob: Blob, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      if (signal.aborted) { resolve(); return; }
 
-    // Chrome loads voices async — wait for them if empty
-    if (synth.getVoices().length === 0) {
-      synth.onvoiceschanged = () => {
-        synth.onvoiceschanged = null;
-        doSpeak();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      this.currentAudio = audio;
+
+      const cleanup = () => {
+        URL.revokeObjectURL(url);
+        this.currentAudio = null;
       };
-      // Fallback if event never fires (Firefox)
-      setTimeout(() => {
-        if (this.isSpeaking && !synth.speaking) doSpeak();
-      }, 300);
-    } else {
-      doSpeak();
+
+      audio.onended = () => { cleanup(); resolve(); };
+      audio.onerror = () => { cleanup(); resolve(); };
+
+      // Listen for abort to stop mid-playback
+      const onAbort = () => { audio.pause(); cleanup(); resolve(); };
+      signal.addEventListener('abort', onAbort, { once: true });
+
+      audio.play().catch(() => { cleanup(); resolve(); });
+    });
+  }
+
+  /** Split text into sentence-sized chunks for TTS. */
+  private splitSentences(text: string): string[] {
+    // Split on sentence-ending punctuation followed by space or end
+    const raw = text.match(/[^.!?]+[.!?]+[\s]?|[^.!?]+$/g) || [text];
+    // Merge very short fragments (< 20 chars) with the previous sentence
+    const merged: string[] = [];
+    for (const s of raw) {
+      const trimmed = s.trim();
+      if (!trimmed) continue;
+      if (merged.length > 0 && trimmed.length < 20) {
+        merged[merged.length - 1] += ' ' + trimmed;
+      } else {
+        merged.push(trimmed);
+      }
     }
+    return merged;
   }
 
   private stopSpeaking() {
+    // Abort any in-flight TTS fetches and queued playback
+    if (this.audioAbort) {
+      this.audioAbort.abort();
+      this.audioAbort = null;
+    }
     if (this.currentAudio) {
       this.currentAudio.pause();
       this.currentAudio = null;
     }
-    const synth = window.speechSynthesis;
-    if (synth) synth.cancel();
+    this.audioQueue = [];
     this.isSpeaking = false;
   }
 
@@ -358,9 +415,7 @@ export class ChatComponent implements OnInit, AfterViewChecked {
       }
     } else {
       // When disabling, stop any currently playing audio
-      try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
-      if (this.currentAudio) { this.currentAudio.pause(); this.currentAudio = null; }
-      this.isSpeaking = false;
+      this.stopSpeaking();
     }
   }
 

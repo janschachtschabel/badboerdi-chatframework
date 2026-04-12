@@ -132,7 +132,7 @@ def _build_classify_system_prompt(session_state: dict, environment: dict) -> str
             if desc:
                 line += f": {desc}"
             if hints:
-                line += f"\n  Erkennungshinweise: {', '.join(hints[:12])}"
+                line += f"\n  Erkennungshinweise: {', '.join(hints[:20])}"
             persona_parts.append(line)
         persona_lines = "\n".join(persona_parts)
     elif persona_formality:
@@ -167,8 +167,20 @@ def _build_classify_system_prompt(session_state: dict, environment: dict) -> str
         f"{s['id']} ({s['label']})" for s in states
     ) if states else ""
 
-    # Format entity list
-    entity_lines = ", ".join(e["id"] for e in entities) if entities else "fach, stufe, thema, medientyp, lizenz"
+    # Format entity list with descriptions so the LLM distinguishes fach vs thema
+    if entities:
+        entity_lines = "\n".join(
+            f"- {e['id']}: {e.get('description', e.get('label', ''))}"
+            for e in entities
+        )
+    else:
+        entity_lines = (
+            "- fach: Schulfach oder Fachgebiet (z.B. Mathematik, Deutsch, Biologie)\n"
+            "- stufe: Bildungsstufe oder Klassenstufe (z.B. Grundschule, Sek I, Klasse 7)\n"
+            "- thema: Konkretes Thema oder Lerngegenstand (z.B. Bruchrechnung, Fotosynthese)\n"
+            "- medientyp: Art des Materials (z.B. Video, Arbeitsblatt)\n"
+            "- lizenz: Gewünschte Lizenz (z.B. CC BY, CC0)"
+        )
 
     persona_prompt = ""
     if session_state.get("persona_id"):
@@ -194,6 +206,7 @@ PERSONA-REGELN:
   die zu einer Persona passen, waehle diese Persona auch ohne explizite Selbstidentifikation.
   Beispiele:
   - "Unterricht planen", "fuer meine Klasse", "Arbeitsblatt" → P-W-LK (Lehrkraft)
+  - "Lernpfad erstellen", "Lernplan", "Unterrichtsentwurf", "Stundenentwurf" → P-W-LK (Lehrkraft)
   - "ich verstehe nicht", "erklaer mir", "Hausaufgaben" → P-W-SL (Lerner)
   - "mein Kind", "fuer zu Hause", "Nachhilfe" → P-ELT (Eltern)
   - "Bildungspolitik", "Ministerium" → P-W-POL (Politik)
@@ -208,6 +221,9 @@ PERSONA-REGELN:
 - Bei expliziter Selbstidentifikation: turn_type = "correction" setzen.
 - Im Zweifel: Lieber eine spezifische Persona als P-AND waehlen!
 - Wenn die aktuelle Persona P-AND ist und der Nutzer thematische Signale sendet → SOFORT umklassifizieren!
+- WICHTIG: Wer einen Lernpfad, Lernplan, Unterrichtsentwurf oder Stundenentwurf erstellen will,
+  ist mit hoher Wahrscheinlichkeit P-W-LK (Lehrkraft) — NICHT P-AND oder P-W-SL!
+  Auch Schueler koennen Lernpfade wollen, aber nur wenn sie explizit "ich lerne", "fuer mich" o.ae. sagen.
 
 ## Intents
 {intent_lines}
@@ -227,6 +243,13 @@ INTENT-REGELN:
 
 ## Entities
 {entity_lines}
+
+ENTITY-REGELN:
+- fach und thema sind VERSCHIEDENE Slots! Ein Fach (Mathematik, Deutsch, Biologie) ist KEIN Thema.
+- thema ist ein konkreter Lerngegenstand INNERHALB eines Fachs (z.B. Bruchrechnung, Fotosynthese, Lyrik der Romantik).
+- "Mathe", "Biologie", "Geschichte" → fach setzen, thema LEER lassen.
+- "Bruchrechnung", "Dreisatz", "Zellteilung" → thema setzen (und ggf. fach ableiten).
+- "Mathe Bruchrechnung" → fach="Mathematik", thema="Bruchrechnung".
 
 Rufe classify_input auf mit den erkannten Werten."""
 
@@ -313,7 +336,8 @@ Kernregel: {pattern_output.get('core_rule', '')}
 Response-Typ: {pattern_output.get('response_type', 'answer')}
 Ton: {pattern_output.get('tone', 'sachlich')}
 Formality: {pattern_output.get('formality', 'neutral')}
-Länge: {pattern_output.get('length', 'mittel')}
+Länge: {pattern_output.get('length', 'mittel')} (kurz=2-3 Saetze, mittel=1-2 Absaetze, lang=ausfuehrlich mit Details und Aufzaehlungen)
+Detail: {pattern_output.get('detail_level', 'standard')}
 Max. Ergebnisse: {pattern_output.get('max_items', 5)}""",
         # Layer 5: Conversation context
         f"""## Kontext
@@ -372,9 +396,24 @@ im Text kurz hervorheben und begruenden, warum sie besonders passen.
         system_parts.append("\n## Regel: Quellen und Herkunft explizit nennen.")
     if pattern_output.get("degradation"):
         missing = pattern_output.get("missing_slots", [])
+        blocked = pattern_output.get("blocked_patterns", [])
+        blocked_info = ""
+        if blocked:
+            blocked_info = " Blockierte Patterns: " + ", ".join(
+                f"{b['id']} ({b['label']}, braucht: {', '.join(b['missing'])})"
+                for b in blocked
+            ) + "."
         system_parts.append(
-            f"\n## Degradation aktiv: Fehlende Slots: {missing}. "
-            "Starte breite Suche UND frage gleichzeitig nach fehlenden Infos. Nie blockieren!"
+            f"\n## Degradation aktiv: Fehlende Slots: {missing}.{blocked_info}\n"
+            "PFLICHT-RUECKFRAGE: Dir fehlen Informationen fuer die gewuenschte Aufgabe.\n"
+            "Deine Antwort MUSS eine DIREKTE FRAGE nach den fehlenden Infos enthalten.\n"
+            "- Wenn 'thema' fehlt: Frage EXPLIZIT nach dem konkreten Thema.\n"
+            "  Beispiel: 'Mathe, super! Welches Thema steht an — Bruchrechnung, Geometrie, Gleichungen?'\n"
+            "- Wenn 'stufe' fehlt: Frage nach der Klassenstufe/Bildungsstufe.\n"
+            "- Baue KEINEN Lernpfad oder Unterrichtsentwurf ohne konkretes Thema.\n"
+            "- Die Frage soll am ANFANG deiner Antwort stehen, nicht versteckt am Ende.\n"
+            "- Rufe KEINE Tools auf und zeige KEINE Materialien/Sammlungen an — die Rueckfrage\n"
+            "  ist ein reiner Text-Dialog. Erst NACH der Antwort des Nutzers wird gesucht."
         )
 
     # RAG as tools: knowledge areas are presented as callable functions
@@ -386,15 +425,32 @@ im Text kurz hervorheben und begruenden, warum sie besonders passen.
     # Guardrails (from config file, always last — not overridable)
     system_parts.append(guardrails)
 
-    # Check if pattern explicitly has NO tools
+    # Check if pattern explicitly has NO tools — or degradation blocks tool use
+    _degradation_no_tools = bool(
+        pattern_output.get("degradation")
+        and pattern_output.get("missing_slots")
+        and "thema" in pattern_output.get("missing_slots", [])
+    )
     has_explicit_empty_tools = ("tools" in pattern_output and not pattern_output["tools"])
-    pattern_wants_no_tools = has_explicit_empty_tools and not (
-        pattern_output.get("sources") and "mcp" in pattern_output["sources"]
+    pattern_wants_no_tools = _degradation_no_tools or (
+        has_explicit_empty_tools and not (
+            pattern_output.get("sources") and "mcp" in pattern_output["sources"]
+        )
     )
 
     if pattern_wants_no_tools:
-        # Pattern like PAT-20 Orientierungs-Guide: pure text, no tool calls
-        system_parts.append("""
+        if _degradation_no_tools:
+            # Degradation: ask for missing info, no tool calls
+            system_parts.append("""
+## Antwort-Regeln
+- Antworte NUR mit Text — rufe KEINE Tools auf.
+- Stelle die Rueckfrage nach den fehlenden Informationen.
+- Erfinde KEINE Sammlungen oder Materialien.
+
+Antworte auf Deutsch. Formatiere mit Markdown.""")
+        else:
+            # Pattern like PAT-20 Orientierungs-Guide: pure text, no tool calls
+            system_parts.append("""
 ## Antwort-Regeln
 - Antworte NUR mit Text und Quick Replies.
 - Rufe KEINE Tools auf.
@@ -604,7 +660,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     knowledge_prefetched = False
     always_areas: list[str] = []  # tracked for redundant-call guard in tool loop
     _RAG_TOP_K = 15  # global budget for pre-fetched RAG chunks
-    _RAG_MIN_SCORE = 0.20  # drop chunks below this relevance threshold
+    _RAG_MIN_SCORE = 0.30  # drop chunks below this relevance threshold
     if available_rag_areas and rag_config:
         always_areas = [a for a in available_rag_areas if rag_config.get(a, {}).get("mode") == "always"]
 
@@ -902,6 +958,11 @@ Regeln:
 5. Natuerlich klingen, wie echte Nutzer-Eingaben — keine Bot-Kommandos
 6. KEINE Nummerierung, KEINE Aufzaehlungszeichen, nur der reine Text
 7. Sprache: Deutsch, passend zur Persona (du/Sie)
+8. WICHTIG: Wenn der Bot eine Rueckfrage stellt (z.B. nach Thema, Fach, Stufe),
+   dann muessen die Vorschlaege KONKRETE ANTWORTEN auf diese Frage sein!
+   z.B. bei Frage nach Mathe-Thema: "Bruchrechnung Klasse 6", "Geometrie Grundschule",
+   "Prozentrechnung Klasse 7", "Gleichungen Sek I"
+   NICHT: "Was kannst du noch?", "Zeig mir mehr" — das waeren keine Antworten auf die Frage!
 
 Beispiele fuer Lehrkraefte (Sie):
 Haben Sie auch Videos dazu?

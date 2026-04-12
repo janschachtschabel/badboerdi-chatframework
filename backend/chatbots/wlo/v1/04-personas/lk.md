@@ -13,11 +13,11 @@ version: "1.0.0"
 Kollegial, praktisch, lösungsorientiert. Siezen (Standard) oder Duzen je nach Einstellung.
 
 ## Erkennungshinweise
+- "Lernpfad erstellen", "Lernplan erstellen", "mach mir einen Lernpfad", "Lernpfad fuer"
+- "Unterrichtsentwurf", "Stundenentwurf", "Unterricht planen", "Unterricht vorbereiten"
 - "ich unterrichte", "fuer meine Klasse", "meine Schueler", "Unterrichtsstunde"
-- "Stunde vorbereiten", "Material fuer den Unterricht", "Unterricht planen"
-- "Unterrichtsmaterial", "Arbeitsblatt", "fuer den Unterricht", "Bildungsmaterial"
-- "fuer Klasse [Zahl]", "Lehrplan", "OER fuer Klasse", "fuer Schueler"
-- "Unterricht vorbereiten", "ich bin Lehrer", "ich bin Lehrerin", "als Lehrkraft"
+- "Unterrichtsmaterial", "Arbeitsblatt", "Material fuer den Unterricht", "Bildungsmaterial"
+- "fuer Klasse [Zahl]", "Lehrplan", "ich bin Lehrer", "ich bin Lehrerin", "als Lehrkraft"
 
 ## Primaere Ziele
 - Schnell passendes Material fuer Fach + Klassenstufe finden

@@ -684,12 +684,24 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     _last_contents_json = session_state.get("entities", {}).get("_last_contents", "")
     _last_collections_json = session_state.get("entities", {}).get("_last_collections", "")
     _lp_routed = False
-    print(f"[LP-DEBUG] intent={_has_lp_intent}, msg='{_msg_lower[:60]}', contents={bool(_last_contents_json)}, collections={bool(_last_collections_json)}", flush=True)
 
-    if _has_lp_intent:
+    # Only route to LP builder if a concrete topic is known — fach alone is not enough
+    _thema = session_state.get("entities", {}).get("thema", "")
+    _lp_cards_collected: list[dict] = []  # cards found during LP content gathering
+
+    # Force degradation when LP keywords detected but thema missing
+    if _has_lp_intent and not _thema:
+        _missing = [s for s in ["thema", "stufe"] if not session_state.get("entities", {}).get(s)]
+        if _missing:
+            pattern_output["degradation"] = True
+            pattern_output["missing_slots"] = list(set(
+                pattern_output.get("missing_slots", []) + _missing
+            ))
+
+    if _has_lp_intent and _thema:
         from app.services.llm_service import generate_learning_path_text
         contents_text = ""
-        topic = session_state.get("entities", {}).get("thema", req.message)
+        topic = _thema
         tools_called = []
         _lp_used = _get_used_lp_ids(session_state)
         _lp_new_ids: list[str] = []
@@ -707,7 +719,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 _last_contents_json = ""
                 _last_collections_json = ""
                 topic = _new_thema
-                print(f"[LP-DEBUG] Topic switch detected → fresh search for '{topic}'", flush=True)
+                logger.info("LP topic switch → fresh search for '%s'", topic)
 
         try:
             # Priority 1: Use individual content items from session
@@ -721,6 +733,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                         _lp_reset = True
                     _contents = _filtered
                     _lp_new_ids.extend(c.get("node_id", "") for c in _contents)
+                    _lp_cards_collected.extend(_contents)
                     contents_lines = []
                     for c in _contents:
                         types = ", ".join(c.get("learning_resource_types", [])) or "Material"
@@ -750,6 +763,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                                 all_collection_contents.append(
                                     f"### Aus Sammlung: {col.get('title', 'Unbekannt')}\n{col_contents}"
                                 )
+                                _lp_cards_collected.extend(parse_wlo_cards(col_contents))
                                 tools_called.append(f"get_collection_contents ({col.get('title', '')[:30]})")
                         except Exception as e:
                             logger.warning("Failed to fetch contents for collection %s: %s", col.get("title"), e)
@@ -782,13 +796,13 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 # page through different search results.
                 _topic_key = f"_lp_skip_{topic.lower()[:40]}"
                 _search_skip = int(session_state.get("entities", {}).get(_topic_key, 0) or 0)
-                print(f"[LP-DEBUG] Priority 3: searching topic='{topic}' skip={_search_skip}", flush=True)
+                logger.info("LP search: topic='%s' skip=%d", topic, _search_skip)
                 try:
                     search_result = await call_mcp_tool("search_wlo_collections", {
                         "query": topic, "maxItems": 5, "skipCount": _search_skip,
                     })
                     search_cards = parse_wlo_cards(search_result)
-                    print(f"[LP-DEBUG] Found {len(search_cards)} collections", flush=True)
+                    logger.info("LP found %d collections", len(search_cards))
                     if not search_cards and _search_skip > 0:
                         # Pagination exhausted → reset and refetch
                         _search_skip = 0
@@ -818,6 +832,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                                     fresh_cards = col_cards  # exhausted → use all, will reset later
                                     _lp_reset = True
                                 if fresh_cards:
+                                    _lp_cards_collected.extend(fresh_cards[:8])
                                     all_lines.append(f"### Aus Sammlung: {col_title}")
                                     for c in fresh_cards[:8]:
                                         types = ", ".join(c.get("learning_resource_types", [])) or "Material"
@@ -831,7 +846,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                                             _lp_new_ids.append(c["node_id"])
                                     tools_called.append(f"get_collection_contents ({col_title[:30]})")
                             except Exception as e:
-                                print(f"[LP-DEBUG] FAILED for '{col_title}': {e}", flush=True)
+                                logger.warning("LP fetch failed for '%s': %s", col_title, e)
                         if all_lines:
                             contents_text = "\n".join(all_lines)
                             tools_called.append("generate_learning_path")
@@ -840,7 +855,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 except Exception as e:
                     logger.warning("Failed to search+fetch collections for LP: %s", e)
 
-            print(f"[LP-DEBUG] contents_text={len(contents_text) if contents_text else 0} chars, topic='{topic}'", flush=True)
+            logger.info("LP contents: %d chars, topic='%s'", len(contents_text) if contents_text else 0, topic)
             if contents_text:
                 response_text = await generate_learning_path_text(
                     collection_title=topic,
@@ -854,7 +869,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                     )
                     session_state.setdefault("entities", {})["_lp_used_node_ids"] = "[]"
                 _add_used_lp_ids(session_state, _lp_new_ids)
-                wlo_cards_raw = []
+                wlo_cards_raw = _lp_cards_collected
                 _lp_routed = True
 
         except (json.JSONDecodeError, KeyError) as e:
@@ -877,11 +892,16 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         _pat_wants_no_tools = (
             "tools" in pattern_output and not pattern_output["tools"]
         ) and not (_pat_sources and "mcp" in _pat_sources)
+        _degradation_blocks = (
+            pattern_output.get("degradation")
+            and "thema" in pattern_output.get("missing_slots", [])
+        )
         spec_blocked = (
             spec_tool_name in (safety.blocked_tools or [])
             or _pat_forbids_mcp
             or _pat_wants_no_tools
             or _lp_routed  # LP path ran its own MCP logic, discard spec
+            or _degradation_blocks  # Missing thema → ask first, don't search
         )
         if spec_blocked:
             spec_task.cancel()
@@ -1004,14 +1024,24 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             },
         }
 
-    # 10. Debug info
+    # 10. Debug info — resolve human-readable labels for IDs
+    from app.services.config_loader import load_persona_definitions, load_intents, load_states
+    _persona_labels = {p["id"]: p.get("label", p["id"]) for p in load_persona_definitions()}
+    _intent_labels = {i["id"]: i.get("label", i["id"]) for i in load_intents()}
+    _state_labels = {s["id"]: s.get("label", s["id"]) for s in load_states()}
+
+    _pid = session_state["persona_id"]
+    _iid = classification.intent_id
+
     debug = DebugInfo(
-        persona=session_state["persona_id"],
-        intent=classification.intent_id,
-        state=new_state,
+        persona=f"{_pid} ({_persona_labels.get(_pid, _pid)})",
+        intent=f"{_iid} ({_intent_labels.get(_iid, _iid)})",
+        state=f"{new_state} ({_state_labels.get(new_state, new_state)})",
+        turn_type=classification.turn_type,
         signals=new_signals,
         pattern=f"{winner.id} ({winner.label})",
-        entities=session_state["entities"],
+        entities={k: v for k, v in session_state["entities"].items()
+                  if not k.startswith("_")},
         tools_called=tools_called,
         phase1_eliminated=eliminated,
         phase2_scores=scores,
@@ -1019,9 +1049,22 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             "tone": pattern_output.get("tone"),
             "formality": pattern_output.get("formality"),
             "length": pattern_output.get("length"),
+            "detail_level": pattern_output.get("detail_level"),
             "max_items": pattern_output.get("max_items"),
+            "card_text_mode": pattern_output.get("card_text_mode", "minimal"),
+            "response_type": pattern_output.get("response_type"),
+            "format_primary": pattern_output.get("format_primary"),
+            "format_follow_up": pattern_output.get("format_follow_up"),
+            "sources": pattern_output.get("sources", []),
+            "rag_areas": pattern_output.get("rag_areas", []),
+            "tools": pattern_output.get("tools", []),
             "skip_intro": pattern_output.get("skip_intro"),
+            "one_option": pattern_output.get("one_option", False),
+            "add_sources": pattern_output.get("add_sources", False),
             "degradation": pattern_output.get("degradation", False),
+            "missing_slots": pattern_output.get("missing_slots", []),
+            "blocked_patterns": pattern_output.get("blocked_patterns", []),
+            "core_rule": pattern_output.get("core_rule", ""),
         },
         # Triple-Schema v2
         outcomes=response_outcomes,
@@ -1048,6 +1091,25 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         cards=[c.model_dump() for c in cards],
         debug=debug.model_dump(),
     )
+
+    # 12. Quality logging (non-blocking, fire-and-forget)
+    try:
+        from app.services.config_loader import load_quality_log_config
+        _ql_cfg = (load_quality_log_config().get("logging") or {})
+        if _ql_cfg.get("enabled", True):
+            from app.services.database import log_quality_event
+            asyncio.create_task(log_quality_event(
+                session_id=req.session_id,
+                message=req.message,
+                turn_count=session_state["turn_count"],
+                debug_info=debug.model_dump(),
+                response_length=len(response_text or ""),
+                cards_count=len(cards),
+                page=env.get("page", "/"),
+                device=env.get("device", "desktop"),
+            ))
+    except Exception as _e:
+        logger.warning("quality log failed: %s", _e)
 
     return ChatResponse(
         session_id=req.session_id,

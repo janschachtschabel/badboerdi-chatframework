@@ -141,13 +141,30 @@ Widget auf `/api` (Same-Origin zum Einbettungs-Host) zurück.
 
 Das Attribut `api-url` am Custom-Element hat weiterhin Vorrang, falls gesetzt.
 
-## 6. Debug-Panel
+## 6. Sprachein- und -ausgabe
 
-Im Chat-UI lässt sich (über das Werkzeug-Symbol) ein Debug-Panel einblenden, das den
-`debug`-Block der Backend-Antwort visualisiert: Pattern-Scoring (Phase 1/2/3), Tool-Outcomes,
-Safety-Stages, Policy-Decision, Trace mit Phase-Dauer. Hilfreich beim Tuning der Patterns.
+* **Spracheingabe** (🎤): MediaRecorder → `POST /api/speech/transcribe` (Whisper) → Text ins Eingabefeld
+* **Sprachausgabe** (🔊): Satzweise OpenAI TTS mit Pre-Fetching — waehrend Satz N abgespielt wird, wird Satz N+1 bereits geladen. Abbruch jederzeit via Toggle. Automatik-Modus (Auto-Speak) liest jede Bot-Antwort vor.
+* TTS wird nur bei `LLM_PROVIDER=openai` unterstuetzt.
+* Der Lautsprecher-Button zeigt einen roten Strich (🔊 durchgestrichen) wenn deaktiviert.
 
-## 7. Tipps
+## 7. Debug-Panel
+
+Der 🔍-Button im Header schaltet das Debug-Panel ein/aus (Standard: aus, roter Strich).
+Es zeigt den vollstaendigen `debug`-Block der Backend-Antwort:
+
+* **Klassifikation:** Persona, Intent, State (jeweils mit Label in Klammern), Turn-Type
+* **Pattern-Engine:** Pattern, Signale, Entities, Phase-1-Eliminierung, Phase-2-Scores
+* **Phase 3 Modulation:** Ton, Formalitaet, Laenge, Detail, Max-Items, Card-Text-Mode, Response-Type, Format, Quellen, Pattern-Tools, RAG-Areas, Core-Rule, Boolean-Flags
+* **Degradation:** fehlende Slots, blockierte Patterns
+* **Safety:** Risk-Level, Stages, Eskalation, Legal-Flags, blockierte Tools
+* **Policy:** erlaubt/blockiert, Regeln, Disclaimers
+* **Outcomes:** Tool-Ergebnisse mit Status, Item-Count, Latenz
+* **Confidence:** Finale Confidence nach Outcome-Adjustments
+* **Context:** Seite, Geraet, Turn-Count
+* **Trace:** Phasen-Laufzeiten (Safety, Classify, Pattern, Response)
+
+## 8. Tipps
 
 * Bei Strict-TypeScript-Templates auf `?.length` neben `.join()` achten (NG8107). Siehe
   bestehende `!.`-Assertions in `chat.component.html`.

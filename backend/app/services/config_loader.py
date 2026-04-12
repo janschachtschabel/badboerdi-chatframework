@@ -308,6 +308,11 @@ def load_safety_config() -> dict[str, Any]:
     return _load_yaml("01-base/safety-config.yaml")
 
 
+def load_quality_log_config() -> dict[str, Any]:
+    """Load quality logging configuration from 01-base/quality-log-config.yaml."""
+    return _load_yaml("01-base/quality-log-config.yaml")
+
+
 def load_contexts() -> list[dict[str, Any]]:
     """Load named context definitions (T-04/05) from 04-contexts/contexts.yaml."""
     data = _load_yaml("04-contexts/contexts.yaml")

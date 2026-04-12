@@ -22,6 +22,7 @@ Chatbot-Prompts werden schnell lang und unstrukturiert. BadBoerdi loest das durc
 | `base-persona.md` | Grundlegende Identitaet: Name (BOERDi), Rolle (blaue Eule von WLO), Tonalitaet, Verhalten |
 | `guardrails.md` | Harte Regeln, die nie ueberschrieben werden (z.B. nie blockieren, max. 1 Frage pro Turn) |
 | `safety-config.yaml` | Sicherheits-Presets (off/basic/standard/strict/paranoid) mit Stufenkonfiguration fuer Regex, Moderation, Legal-Classifier |
+| `quality-log-config.yaml` | Quality-Logging: An/Aus, Retention, Alert-Schwellwerte (Score-Gap, Degradation-Rate, Entity-Rate) |
 | `device-config.yaml` | Geraete-spezifische Limits (max_items) und Persona-Anrede (Sie/du/neutral) |
 
 **Im Prompt:** `base-persona.md` steht am Anfang, `guardrails.md` **immer am Ende** (nicht ueberschreibbar).

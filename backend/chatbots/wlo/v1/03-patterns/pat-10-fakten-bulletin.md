@@ -1,18 +1,18 @@
 ---
 id: PAT-10
 label: Fakten-Bulletin
-priority: 460
+priority: 520
 gate_personas: ["P-W-POL", "P-W-PRESSE", "P-AND", "P-W-LK", "P-BER", "P-VER", "P-W-SL", "P-ELT"]
 gate_states: ["*"]
 gate_intents: ["INT-W-01", "INT-W-06", "INT-W-09"]
-signal_high_fit: ["ungeduldig", "zielgerichtet", "effizient"]
-signal_medium_fit: []
-signal_low_fit: []
+signal_high_fit: ["ungeduldig", "zielgerichtet", "effizient", "Faktenfrage", "Statistik"]
+signal_medium_fit: ["neugierig", "orientierungssuchend", "validierend", "skeptisch"]
+signal_low_fit: ["vergleichend"]
 page_bonus: []
 precondition_slots: []
 default_tone: sachlich
-default_length: mittel
-default_detail: standard
+default_length: lang
+default_detail: ausfuehrlich
 response_type: answer
 sources: ["rag", "mcp"]
 format_primary: text

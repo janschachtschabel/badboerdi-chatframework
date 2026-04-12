@@ -269,4 +269,23 @@ def select_pattern(
 
     output = phase3_modulate(winner, signals, device, entities, persona_id)
 
+    # Propagate missing-slot info from patterns with precondition_slots,
+    # but ONLY when the user's intent actually targets complex tasks
+    # (learning paths, lesson plans). Normal search intents should not
+    # trigger degradation just because PAT-18/19 have preconditions.
+    _COMPLEX_INTENTS = {"INT-W-10"}  # Unterrichtsplanung / Lernpfad
+    _ents = entities or {}
+    if intent_id in _COMPLEX_INTENTS:
+        for p in patterns:
+            if p.precondition_slots:
+                missing = [s for s in p.precondition_slots if not _ents.get(s)]
+                if missing:
+                    output.setdefault("degradation", True)
+                    prev = output.get("missing_slots", [])
+                    output["missing_slots"] = list(set(prev + missing))
+                    output.setdefault("blocked_patterns", [])
+                    output["blocked_patterns"].append(
+                        {"id": p.id, "label": p.label, "missing": missing}
+                    )
+
     return winner, output, scores, eliminated

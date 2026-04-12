@@ -21,7 +21,8 @@ Das Backend ist das Herzstueck — es verarbeitet Chat-Nachrichten, klassifizier
 - **Spekulative Vorab-Abfragen** — Parallelisierte Safety/Classify-Ausfuehrung + vorausschauende MCP-Tool-Calls fuer reduzierte Latenz
 - **Multi-Provider LLM-Abstraktion** — OpenAI nativ, B-API-OpenAI, B-API-AcademicCloud
 - **Session-Management** — SQLite-basiert mit Gespraechsverlauf und State-Tracking
-- **Sprache** — Whisper STT + TTS (nur bei OpenAI-Provider)
+- **Sprache** — Whisper STT + satzweise OpenAI TTS mit Pre-Fetching (nur bei OpenAI-Provider)
+- **Quality-Logging** — Automatische Protokollierung jedes Turns (Pattern, Scores, Confidence, Entities, Degradation) fuer Offline-Analyse
 - **Widget-Auslieferung** — Stellt das kompilierte Chat-Widget unter `/widget/` bereit
 - **Config-API** — REST-Endpunkte fuer Studio-Zugriff auf alle YAML/Markdown-Konfigurationen
 - **Backup/Restore** — Sicherung und Wiederherstellung der gesamten Chatbot-Konfiguration
@@ -44,6 +45,7 @@ Das Studio ist die Konfigurations-Oberflaeche. Hier werden alle 5 Architektur-Sc
 - **Schicht 5 — Wissen:** RAG-Wissensbereiche (Dokument-Upload per Datei/URL/Text, Mode-Toggle always/on-demand), MCP-Server-Registry mit Tool-Discovery
 - **Sessions:** Gespraechsverlauf-Einsicht mit Replay
 - **Safety-Logs:** Risiko-Events, Rate-Limit-Uebersicht
+- **Quality-Analytics:** Quality-Logs und aggregierte Metriken (Pattern-Verteilung, Confidence, Degradation-Rate)
 - **Import/Export:** Komplette Konfiguration als JSON, Backup/Restore
 - **Passwortschutz:** Optionaler Login via `STUDIO_PASSWORD` (Cookie-basiert)
 
@@ -105,7 +107,8 @@ Nutzer:in (Browser)
 | Widget-JS-Auslieferung      |    x    |        |         |
 | Chat-Widget-Anzeige         |         |        |    x    |
 | Backup/Restore              |    x    |   x    |         |
+| Quality-Logging/Analytics   |    x    |   x    |         |
 | Passwortschutz              |         |   x    |         |
 | API-Key-Authentifizierung   |    x    |   x    |         |
-| Whisper STT / TTS           |    x    |        |         |
+| Whisper STT / OpenAI TTS    |    x    |        |         |
 | Health-Endpoint             |    x    |        |    x    |

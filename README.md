@@ -79,7 +79,7 @@ nachvollziehbar (siehe Kommentare `# Layer 1: …` bis `# Layer 5: …`).
 
 | # | Schicht | Quelle im Repo | Wann geladen | Inhalt |
 |---|---------|----------------|--------------|--------|
-| **1** | **Identität & Schutz** | `chatbots/wlo/v1/01-base/base-persona.md`, `guardrails.md`, `safety-config.yaml`, `device-config.yaml` | **Immer** — bei jedem Turn als erstes in den Prompt | Wer ist BOERDi, was darf er nie tun (Guardrails als _letzter_ Block, nicht überschreibbar), Sicherheits-Preset (off/basic/standard/strict/paranoid), Geräte-Heuristiken |
+| **1** | **Identität & Schutz** | `chatbots/wlo/v1/01-base/base-persona.md`, `guardrails.md`, `safety-config.yaml`, `quality-log-config.yaml`, `device-config.yaml` | **Immer** — bei jedem Turn als erstes in den Prompt | Wer ist BOERDi, was darf er nie tun (Guardrails als _letzter_ Block, nicht überschreibbar), Sicherheits-Preset (off/basic/standard/strict/paranoid), Quality-Logging, Geräte-Heuristiken |
 | **2** | **Domain & Regeln** | `chatbots/wlo/v1/02-domain/domain-rules.md`, `policy.yaml`, `wlo-plattform-wissen.md` | **Immer** — direkt nach Schicht 1 | Plattform-Wissen (WLO-Sammlungen, Lizenzen, Zielgruppen), Dauerregeln, Policy-Decisions (`policy_service.py`) |
 | **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/pat-01-…pat-20-*.md` | **Nach Bedarf** — nur das _eine_ Pattern, das der Pattern-Engine-Selector gewinnt (`pattern_engine.py → select_pattern()`) | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
 | **4** | **Dimensionen** | Klassifikator-Output aus `llm_service.py → classify_input()` | **Pro Turn neu** | Persona-ID, Intent-ID + Confidence, Signals, Entities, Slots, next_state — strukturierte Werte für genau diesen Turn |
@@ -135,8 +135,8 @@ ohne Code-Deploy.
 badboerdi/
 ├── backend/             # FastAPI-Service
 │   ├── app/
-│   │   ├── routers/     # chat, sessions, safety, config, rag, speech, widget
-│   │   ├── services/    # llm, pattern_engine, safety, policy, rag, rate_limiter, …
+│   │   ├── routers/     # chat, sessions, safety, quality, config, rag, speech, widget
+│   │   ├── services/    # llm, pattern_engine, safety, policy, rag, rate_limiter, trace, …
 │   │   └── main.py
 │   ├── chatbots/wlo/v1/ # ↳ Konfigurations-Bundle (5 Schichten als Verzeichnisse)
 │   │   ├── 01-base/     # Layer 1: Persona, Guardrails, Safety, Device
@@ -206,7 +206,7 @@ im Browser:
 
 | Variable | Komponente | Default | Wirkung |
 |----------|------------|---------|---------|
-| `STUDIO_API_KEY` | Backend | _leer_ | Leer = API offen. Sonst Pflicht-Header `X-Studio-Key` auf `/api/config/*`, `/api/rag/*`, `/api/safety/*` und schreibenden `/api/sessions/*`. `/api/chat`, `/api/speech`, `/widget/*` und `GET /api/sessions/{id}/messages` bleiben bewusst offen. |
+| `STUDIO_API_KEY` | Backend | _leer_ | Leer = API offen. Sonst Pflicht-Header `X-Studio-Key` auf `/api/config/*`, `/api/rag/*`, `/api/safety/*`, `/api/quality/*` und schreibenden `/api/sessions/*`. `/api/chat`, `/api/speech`, `/widget/*` und `GET /api/sessions/{id}/messages` bleiben bewusst offen. |
 | `STUDIO_API_KEY` | Studio (`.env.local`) | _leer_ | Wird vom Studio-Proxy (`src/app/api/[...path]/route.ts`) server-seitig als `X-Studio-Key` an das Backend injiziert. Muss zum Backend-Wert passen. Kein `NEXT_PUBLIC_`-Prefix — der Browser sieht den Key nie. |
 | `STUDIO_PASSWORD` | Studio | _leer_ | Optionales Cookie-basiertes Login-Gate vor dem Studio. |
 | `BACKEND_URL` | Studio | `http://localhost:8000` | Proxy-Ziel des Studios. Zeigt auf das FastAPI-Backend. |

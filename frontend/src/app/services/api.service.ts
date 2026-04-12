@@ -77,6 +77,7 @@ export interface DebugInfo {
   persona: string;
   intent: string;
   state: string;
+  turn_type: string;
   signals: string[];
   pattern: string;
   entities: Record<string, any>;
@@ -217,7 +218,7 @@ export class ApiService {
     return data.text;
   }
 
-  async synthesize(text: string): Promise<Blob> {
+  async synthesize(text: string, signal?: AbortSignal): Promise<Blob> {
     const form = new FormData();
     form.append('text', text);
     form.append('voice', 'nova');
@@ -225,6 +226,7 @@ export class ApiService {
     const resp = await fetch(`${this.baseUrl}/speech/synthesize`, {
       method: 'POST',
       body: form,
+      signal,
     });
 
     if (!resp.ok) throw new Error('Synthesis failed');

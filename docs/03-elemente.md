@@ -250,7 +250,33 @@ Diese Elemente werden nicht in YAML definiert, sondern zur Laufzeit erzeugt:
 
 **Erzeugt von:** `trace_service`
 
-Wird als `DebugInfo`-Objekt in der Chat-Response zurueckgegeben (nur bei aktiviertem Debug-Modus). Enthaelt alle Zwischen-Ergebnisse aller 7 Phasen.
+Wird als `DebugInfo`-Objekt in der Chat-Response zurueckgegeben (nur bei aktiviertem Debug-Modus). Enthaelt alle Zwischen-Ergebnisse aller 7 Phasen. Persona, Intent und State werden mit menschenlesbaren Labels ausgegeben (z.B. `P-W-LK (Lehrkraft)`, `INT-W-06 (Faktenfragen)`, `state-3 (Information)`).
+
+`phase3_modulations` enthaelt alle 19 Modulations-Felder:
+- Stil: `tone`, `formality`, `length`, `detail_level`
+- Response: `response_type`, `format_primary`, `format_follow_up`, `sources`
+- Steuerung: `max_items`, `card_text_mode`, `tools`, `rag_areas`, `core_rule`
+- Flags: `skip_intro`, `one_option`, `add_sources`
+- Degradation: `degradation`, `missing_slots`, `blocked_patterns`
+
+### 12. Quality-Log
+
+**Erzeugt von:** `log_quality_event()` in `database.py`
+
+Jeder Chat-Turn wird automatisch in der `quality_logs`-Tabelle protokolliert (non-blocking, fire-and-forget). Steuerbar ueber `01-base/quality-log-config.yaml`:
+
+```yaml
+logging:
+  enabled: true    # An/Aus (Standard: true)
+  retention_days: 180
+```
+
+**Gespeicherte Metriken:** Pattern-ID, Score-Gap zum Zweitplatzierten, Intent-Confidence, Entities, Degradation, Tool-Outcomes, Antwortlaenge sowie das vollstaendige Debug-JSON fuer Deep-Dive-Analyse.
+
+**Aggregierte Statistiken** ueber `GET /api/quality/stats`:
+- Pattern-Verteilung, Intent-Verteilung
+- Durchschnittliche Confidence und Score-Gap
+- Degradation-Rate, Empty-Entity-Rate, Tight Races
 
 ---
 

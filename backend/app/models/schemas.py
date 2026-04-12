@@ -136,6 +136,7 @@ class DebugInfo(BaseModel):
     persona: str = ""
     intent: str = ""
     state: str = ""
+    turn_type: str = ""  # initial | follow_up | topic_switch | correction | clarification
     signals: list[str] = Field(default_factory=list)
     pattern: str = ""
     entities: dict[str, Any] = Field(default_factory=dict)

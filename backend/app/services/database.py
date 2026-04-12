@@ -109,6 +109,49 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE INDEX IF NOT EXISTS idx_safety_logs_session ON safety_logs(session_id);
 CREATE INDEX IF NOT EXISTS idx_safety_logs_created ON safety_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_safety_logs_risk ON safety_logs(risk_level);
+
+CREATE TABLE IF NOT EXISTS quality_logs (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id        TEXT NOT NULL,
+    turn_count        INTEGER DEFAULT 0,
+    -- Classification
+    persona_id        TEXT DEFAULT '',
+    intent_id         TEXT DEFAULT '',
+    intent_confidence REAL DEFAULT 0.0,
+    final_confidence  REAL DEFAULT 0.0,
+    turn_type         TEXT DEFAULT '',
+    state_id          TEXT DEFAULT '',
+    signals           TEXT DEFAULT '[]',
+    entities          TEXT DEFAULT '{}',
+    -- Pattern selection
+    pattern_id        TEXT DEFAULT '',
+    pattern_label     TEXT DEFAULT '',
+    phase2_winner_score REAL DEFAULT 0.0,
+    phase2_runner_up    TEXT DEFAULT '',
+    phase2_score_gap    REAL DEFAULT 0.0,
+    eliminated_count  INTEGER DEFAULT 0,
+    candidate_count   INTEGER DEFAULT 0,
+    -- Response quality
+    response_length   INTEGER DEFAULT 0,
+    cards_count       INTEGER DEFAULT 0,
+    tools_called      TEXT DEFAULT '[]',
+    tool_outcomes     TEXT DEFAULT '[]',
+    -- Modulations applied
+    length_setting    TEXT DEFAULT '',
+    degradation       INTEGER DEFAULT 0,
+    missing_slots     TEXT DEFAULT '[]',
+    -- Context
+    page              TEXT DEFAULT '',
+    device            TEXT DEFAULT '',
+    message           TEXT DEFAULT '',
+    -- Full debug for deep analysis
+    debug_json        TEXT DEFAULT '{}',
+    created_at        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_quality_logs_session ON quality_logs(session_id);
+CREATE INDEX IF NOT EXISTS idx_quality_logs_created ON quality_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_quality_logs_pattern ON quality_logs(pattern_id);
+CREATE INDEX IF NOT EXISTS idx_quality_logs_intent ON quality_logs(intent_id);
 """
 
 
@@ -391,6 +434,189 @@ async def get_safety_logs(
                     pass
             out.append(d)
         return out
+
+
+# ── Quality log helpers ────────────────────────────────────────
+
+async def log_quality_event(
+    session_id: str,
+    message: str,
+    turn_count: int,
+    debug_info: dict,
+    response_length: int = 0,
+    cards_count: int = 0,
+    page: str = "",
+    device: str = "",
+) -> None:
+    """Persist a quality/analytics row for offline analysis.
+
+    Extracts key metrics from the DebugInfo dict and stores them as
+    indexed columns for fast querying while keeping the full debug JSON
+    for deep-dive analysis.
+    """
+    p3 = debug_info.get("phase3_modulations", {})
+    scores = debug_info.get("phase2_scores", {})
+
+    # Compute winner score and score gap to runner-up
+    winner_score = 0.0
+    runner_up_id = ""
+    score_gap = 0.0
+    if scores:
+        sorted_scores = sorted(scores.items(), key=lambda x: -x[1])
+        winner_score = sorted_scores[0][1] if sorted_scores else 0.0
+        if len(sorted_scores) >= 2:
+            runner_up_id = sorted_scores[1][0]
+            score_gap = round(sorted_scores[0][1] - sorted_scores[1][1], 4)
+
+    # Extract pattern ID from "PAT-10 (Fakten-Bulletin)" format
+    pattern_str = debug_info.get("pattern", "")
+    pattern_id = pattern_str.split(" ")[0] if pattern_str else ""
+    pattern_label = pattern_str
+
+    # Extract outcomes
+    outcomes = debug_info.get("outcomes", [])
+    outcome_dicts = [o if isinstance(o, dict) else (o.model_dump() if hasattr(o, "model_dump") else {})
+                     for o in outcomes]
+
+    eliminated = debug_info.get("phase1_eliminated", [])
+    candidates_count = len(scores)
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO quality_logs ("
+            "  session_id, turn_count, persona_id, intent_id, intent_confidence,"
+            "  final_confidence, turn_type, state_id, signals, entities,"
+            "  pattern_id, pattern_label, phase2_winner_score, phase2_runner_up,"
+            "  phase2_score_gap, eliminated_count, candidate_count,"
+            "  response_length, cards_count, tools_called, tool_outcomes,"
+            "  length_setting, degradation, missing_slots,"
+            "  page, device, message, debug_json, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                session_id, turn_count,
+                debug_info.get("persona", ""),
+                debug_info.get("intent", ""),
+                debug_info.get("confidence", 0.0),  # intent_confidence ≈ final after adjustments
+                debug_info.get("confidence", 0.0),
+                debug_info.get("turn_type", ""),
+                debug_info.get("state", ""),
+                json.dumps(debug_info.get("signals", [])),
+                json.dumps(debug_info.get("entities", {})),
+                pattern_id, pattern_label,
+                winner_score, runner_up_id, score_gap,
+                len(eliminated), candidates_count,
+                response_length, cards_count,
+                json.dumps(debug_info.get("tools_called", [])),
+                json.dumps(outcome_dicts),
+                p3.get("length", ""),
+                1 if p3.get("degradation") else 0,
+                json.dumps(p3.get("missing_slots", [])),
+                page, device,
+                (message or "")[:500],
+                json.dumps(debug_info),
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        await db.commit()
+
+
+async def get_quality_logs(
+    limit: int = 100,
+    session_id: str = "",
+    pattern_id: str = "",
+    intent_id: str = "",
+) -> list[dict]:
+    """Return recent quality log rows with optional filters."""
+    where = []
+    args: list[Any] = []
+    if session_id:
+        where.append("session_id = ?")
+        args.append(session_id)
+    if pattern_id:
+        where.append("pattern_id LIKE ?")
+        args.append(f"{pattern_id}%")
+    if intent_id:
+        where.append("intent_id LIKE ?")
+        args.append(f"{intent_id}%")
+    sql = "SELECT * FROM quality_logs"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(sql, args)
+        rows = await cursor.fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for k in ("signals", "entities", "tools_called", "tool_outcomes",
+                      "missing_slots", "debug_json"):
+                try:
+                    d[k] = json.loads(d.get(k) or ("[]" if k != "entities" and k != "debug_json" else "{}"))
+                except Exception:
+                    pass
+            out.append(d)
+        return out
+
+
+async def get_quality_stats() -> dict:
+    """Aggregate quality metrics for dashboard / offline analysis."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        stats: dict = {}
+
+        # Total turns logged
+        c = await db.execute("SELECT COUNT(*) as cnt FROM quality_logs")
+        stats["total_turns"] = (await c.fetchone())["cnt"]
+
+        # Pattern distribution
+        c = await db.execute(
+            "SELECT pattern_id, COUNT(*) as cnt FROM quality_logs "
+            "GROUP BY pattern_id ORDER BY cnt DESC LIMIT 20"
+        )
+        stats["pattern_distribution"] = {r["pattern_id"]: r["cnt"] for r in await c.fetchall()}
+
+        # Intent distribution
+        c = await db.execute(
+            "SELECT intent_id, COUNT(*) as cnt FROM quality_logs "
+            "GROUP BY intent_id ORDER BY cnt DESC LIMIT 20"
+        )
+        stats["intent_distribution"] = {r["intent_id"]: r["cnt"] for r in await c.fetchall()}
+
+        # Average confidence
+        c = await db.execute("SELECT AVG(final_confidence) as avg_conf FROM quality_logs")
+        stats["avg_confidence"] = round((await c.fetchone())["avg_conf"] or 0, 3)
+
+        # Average score gap (low gap = pattern selection is ambiguous)
+        c = await db.execute("SELECT AVG(phase2_score_gap) as avg_gap FROM quality_logs")
+        stats["avg_score_gap"] = round((await c.fetchone())["avg_gap"] or 0, 4)
+
+        # Degradation rate
+        c = await db.execute(
+            "SELECT COUNT(*) as cnt FROM quality_logs WHERE degradation = 1"
+        )
+        deg_count = (await c.fetchone())["cnt"]
+        stats["degradation_rate"] = round(deg_count / max(stats["total_turns"], 1), 3)
+
+        # Tight races (score_gap < 0.02 — patterns almost tied)
+        c = await db.execute(
+            "SELECT COUNT(*) as cnt FROM quality_logs WHERE phase2_score_gap < 0.02"
+        )
+        stats["tight_races"] = (await c.fetchone())["cnt"]
+
+        # Empty entity rate
+        c = await db.execute(
+            "SELECT COUNT(*) as cnt FROM quality_logs WHERE entities = '{}'"
+        )
+        empty_ent = (await c.fetchone())["cnt"]
+        stats["empty_entity_rate"] = round(empty_ent / max(stats["total_turns"], 1), 3)
+
+        # Average response length
+        c = await db.execute("SELECT AVG(response_length) as avg_len FROM quality_logs")
+        stats["avg_response_length"] = round((await c.fetchone())["avg_len"] or 0, 0)
+
+        return stats
 
 
 # ── Message helpers ────────────────────────────────────────────

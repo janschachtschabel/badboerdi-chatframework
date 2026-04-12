@@ -80,7 +80,7 @@ signals:
     dimension: "D3-Haltung"
     label: "Zielgerichtet"
     tone: sachlich
-    length: kurz
+    skip_intro: true
 
   skeptisch:
     dimension: "D3-Haltung"

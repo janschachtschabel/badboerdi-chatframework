@@ -6,7 +6,7 @@ import os
 import tempfile
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from openai import AsyncOpenAI
 
 router = APIRouter()
@@ -54,12 +54,9 @@ async def synthesize(
             speed=speed,
         )
 
-        async def audio_stream():
-            async for chunk in response.aiter_bytes(1024):
-                yield chunk
-
-        return StreamingResponse(
-            audio_stream(),
+        audio_bytes = response.read()
+        return Response(
+            content=audio_bytes,
             media_type="audio/mpeg",
             headers={"Content-Disposition": "inline; filename=speech.mp3"},
         )
