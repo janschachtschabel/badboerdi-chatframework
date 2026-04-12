@@ -9,9 +9,11 @@ import SafetyLogsView from '@/components/SafetyLogsView';
 import ConfigTextEditor from '@/components/ConfigTextEditor';
 import HomeOverview from '@/components/HomeOverview';
 import SecurityLevelPicker from '@/components/SecurityLevelPicker';
+import QualityView from '@/components/QualityView';
+import InfoView from '@/components/InfoView';
 
 // ── Types ────────────────────────────────────────────────────────────
-type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'knowledge' | 'sessions' | 'safety_logs';
+type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'info';
 
 export interface Elements {
   patterns: PatternData[];
@@ -307,6 +309,27 @@ export default function StudioPage() {
               <div className="layer-desc">Risiko-Events & Rate Limits</div>
             </div>
           </button>
+          <button
+            className={`layer-item ${layer === 'quality' ? 'active' : ''}`}
+            onClick={() => setLayer('quality')}
+          >
+            <span className="layer-badge" style={{ background: '#8B5CF6', color: '#fff' }}>📊</span>
+            <div>
+              <div className="layer-label">Quality</div>
+              <div className="layer-desc">Pattern-Scoring & Analytics</div>
+            </div>
+          </button>
+          <div className="nav-divider" />
+          <button
+            className={`layer-item ${layer === 'info' ? 'active' : ''}`}
+            onClick={() => setLayer('info')}
+          >
+            <span className="layer-badge" style={{ background: '#6B7280', color: '#fff' }}>ℹ️</span>
+            <div>
+              <div className="layer-label">Info</div>
+              <div className="layer-desc">Architektur-Referenz</div>
+            </div>
+          </button>
         </div>
       </aside>
 
@@ -392,6 +415,14 @@ export default function StudioPage() {
 
         {backendOnline && layer === 'safety_logs' && (
           <SafetyLogsView />
+        )}
+
+        {backendOnline && layer === 'quality' && (
+          <QualityView />
+        )}
+
+        {layer === 'info' && (
+          <InfoView />
         )}
       </main>
     </div>

@@ -16,7 +16,11 @@ function serializeYamlValue(value: any, indent: number = 0): string {
   }
   if (Array.isArray(value)) {
     if (value.length === 0) return '[]';
-    return '\n' + value.map(v => `${pad}  - ${serializeYamlValue(v)}`).join('\n');
+    // Use inline JSON format for consistency with pattern files
+    const items = value.map(v =>
+      typeof v === 'string' ? `"${v.replace(/"/g, '\\"')}"` : String(v)
+    );
+    return `[${items.join(', ')}]`;
   }
   return String(value);
 }
@@ -49,12 +53,7 @@ function patternToFileContent(p: PatternData, body: string): string {
 
   const yamlLines = fields.map(([key, val]) => {
     const sv = serializeYamlValue(val);
-    if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean'
-        || (Array.isArray(val) && val.length === 0)) {
-      return `${key}: ${sv}`;
-    }
-    // Array with items
-    return `${key}:${sv}`;
+    return `${key}: ${sv}`;
   });
 
   return `---\n${yamlLines.join('\n')}\n---\n\n${body}`;
@@ -103,6 +102,16 @@ function parseFrontmatterAndBody(raw: string): { meta: Record<string, any>; body
 
     if (val === '[]') {
       meta[key] = [];
+    } else if (val.startsWith('[') && val.endsWith(']')) {
+      // Inline JSON array: ["a", "b", "c"] or ["*"]
+      try {
+        meta[key] = JSON.parse(val);
+      } catch {
+        // Fallback: parse manually – strip brackets, split by comma, unquote
+        meta[key] = val.slice(1, -1).split(',')
+          .map(s => s.trim().replace(/^["']|["']$/g, ''))
+          .filter(Boolean);
+      }
     } else if (val === 'true') {
       meta[key] = true;
     } else if (val === 'false') {
