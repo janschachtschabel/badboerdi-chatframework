@@ -8,34 +8,38 @@
 
 # ── Sicherheitslevel (Preset-Wahl) ──────────────────────────────────
 # Bestimmt, welche Stages laufen. Im Studio per Dropdown wählbar.
+# Stages laufen wo möglich parallel (asyncio.gather) — die Latenz ist
+# also ≈ max(stage_times), nicht die Summe.
 security_level: standard
 
 presets:
   off:
-    description: "Nur harte Regex-Blocks (Suizid). Keine LLM-Calls."
+    description: "Aus. Nur Crisis-/PII-Regex als Minimum-Boden (~1ms)."
     moderation: never
     legal_classifier: never
     prompt_injection: false
-  basic:
-    description: "Regex + OpenAI Moderation immer (gratis, ~150ms)."
-    moderation: always
-    legal_classifier: smart
-    prompt_injection: false
+  regex:
+    description: "Alle Regex-Checks inkl. Prompt-Injection. Keine LLM-Calls (~2ms)."
+    moderation: never
+    legal_classifier: never
+    prompt_injection: true
   standard:
-    description: "Basic + Legal-Classifier bei Verdacht + Injection-Schutz."
+    description: "Regex + OpenAI-Moderation (parallel, ~150ms). Empfohlener Default."
     moderation: always
-    legal_classifier: smart
+    legal_classifier: never
     prompt_injection: true
   strict:
-    description: "Alles immer. Legal-Classifier auch bei low. Höhere Latenz + Kosten."
+    description: "Standard + LLM-Legal-Classifier smart (parallel, ~150-300ms)."
     moderation: always
-    legal_classifier: always
+    legal_classifier: smart
     prompt_injection: true
+    legal_trigger_override: true
   paranoid:
-    description: "Strict + halbierte Schwellwerte + Output-Review."
+    description: "Strict + Legal immer + halbierte Schwellen + Output-Review."
     moderation: always
     legal_classifier: always
     prompt_injection: true
+    legal_trigger_override: true
     threshold_multiplier: 0.5
     double_check: true
 
@@ -50,6 +54,10 @@ crisis_blocked_tools:
   - get_collection_contents
 
 crisis_pattern: PAT-CRISIS
+# Pattern für Drohungen gegen Dritte (Bedrohung §241 StGB) — vom Safety-
+# Gate gesetzt, wenn _THREAT_PATTERNS matcht. Bewusst getrennt von
+# PAT-CRISIS, damit Drohende keine Suizid-Empathie bekommen.
+threat_pattern: PAT-REFUSE-THREAT
 
 # ── Stufe 2: LLM-Moderation (eskaliert nur bei Verdacht) ────────────
 escalation:
@@ -71,7 +79,7 @@ escalation:
   # gilt die Kategorie als "flagged"
   thresholds:
     self_harm: 0.50            # niedrig — Schutz hat Vorrang
-    self_harm/intent: 0.40
+    self_harm/intent: 0.25     # gesenkt von 0.40 → fängt Euphemismen ("Tabletten reichen")
     sexual: 0.70
     sexual/minors: 0.20        # sehr niedrig (Jugendschutz!)
     violence: 0.80
@@ -89,6 +97,8 @@ escalation:
     - self_harm/intent
     - sexual/minors
     - illicit/violent
+    - hate/threatening         # §130 StGB Volksverhetzung
+    - harassment/threatening   # §241 StGB Bedrohung
 
   # Wenn LLM-Stage Regex als false positive entlarvt → Risiko herabstufen
   downgrade_false_positives: true

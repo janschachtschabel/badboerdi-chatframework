@@ -5,7 +5,53 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any
+
+# Matches the header line the LP generator emits, e.g. "> **Lernpfad: Eiszeit**".
+# Used to lift the exact title into the canvas payload when an LP is routed.
+_re_lp_title = re.compile(r"\*\*(Lernpfad:[^*]+)\*\*")
+
+
+def _norm_words(s: str) -> list[str]:
+    """Lower-cased tokenization for title/topic relevance comparisons.
+
+    Strips punctuation and splits on whitespace. Used by
+    _collection_matches_topic to check topic-in-title with word boundaries
+    (plain substring would accept 'eis' in 'eisen' etc.).
+    """
+    if not s:
+        return []
+    s = re.sub(r"[^\w\säöüÄÖÜß-]+", " ", s.lower())
+    return [w for w in s.split() if w]
+
+
+def _collection_matches_topic(cards: list[WloCard], topic: str) -> bool:
+    """True if at least one collection title contains the topic as a word.
+
+    Uses word-boundary matching — 'Eiszeit' would match the title
+    'Eiszeit und Klimawandel', but NOT 'Eisen-Erzeugung'. Multi-word
+    topics require the longest content word to appear as a full token.
+    """
+    if not topic or not cards:
+        return False
+    topic_tokens = _norm_words(topic)
+    # Prefer the longest token (typically the most specific keyword)
+    content = [t for t in topic_tokens if len(t) >= 4]
+    if not content:
+        # Topic was only stopwords / short tokens — accept conservatively
+        return True
+    key = max(content, key=len)
+    for c in cards:
+        title_tokens = _norm_words(getattr(c, "title", "") or "")
+        if key in title_tokens:
+            return True
+        # Also allow morphological neighbours: prefix match ≥5 chars
+        # (e.g. topic 'Eiszeit' ↔ title token 'Eiszeiten' / 'Eiszeitalter')
+        for tt in title_tokens:
+            if len(tt) >= 5 and (tt.startswith(key) or key.startswith(tt)):
+                return True
+    return False
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -19,7 +65,20 @@ from app.services.rate_limiter import check_rate_limit
 from app.services.llm_service import (
     classify_input, generate_response, generate_quick_replies, generate_learning_path_text,
 )
-from app.services.mcp_client import call_mcp_tool, parse_wlo_cards, parse_total_count
+from app.services.canvas_service import (
+    generate_canvas_content, generate_canvas_remix,
+    edit_canvas_content, resolve_material_type, extract_material_type_from_message,
+    looks_like_create_intent, material_type_quick_replies,
+    material_type_quick_replies_for_persona, get_material_type_category,
+    infer_material_type_from_lrt,
+    # Live-reload-freundliche Getter statt Modul-Konstanten:
+    get_material_types, get_type_aliases, get_search_verbs, get_create_triggers,
+)
+from app.services.text_extraction_service import extract_text_from_url
+from app.services.mcp_client import (
+    call_mcp_tool, parse_wlo_cards, parse_wlo_topic_page_cards,
+    parse_total_count, resolve_discipline_labels,
+)
 from app.services.pattern_engine import select_pattern, get_patterns
 from app.services.rag_service import get_rag_context, get_always_on_rag_context
 from app.services.config_loader import get_on_demand_rag_areas
@@ -88,23 +147,67 @@ def _sort_topic_pages(pages: list[dict], persona_id: str) -> list[dict]:
 
 
 def _build_cards(raw: list[dict], persona_id: str = "") -> list[WloCard]:
-    cards = []
+    # ── Metadata inheritance: Themenseiten-Karten aus search_wlo_topic_pages
+    # kommen nur mit Titel + Beschreibung + Varianten zurueck (keine
+    # preview_url, disciplines, educational_contexts). Wenn in derselben
+    # Ergebnis-Liste eine "normale" Sammlungskarte mit derselben node_id
+    # existiert, uebernehmen wir deren reichere Metadaten in die
+    # Themenseiten-Karte. Ergebnis: optisch konsistente Karten mit
+    # Vorschau-Bild, Fach und Bildungsstufen auf Themenseiten-Ebene.
+    by_nid: dict[str, dict] = {}
     for c in raw:
-        tp = _sort_topic_pages(c.get("topic_pages", []), persona_id)
+        nid = c.get("node_id") or ""
+        if nid and nid in by_nid:
+            # Merge: richer fields of one partner fill gaps in the other.
+            existing = by_nid[nid]
+            for k in (
+                "preview_url", "description", "disciplines",
+                "educational_contexts", "keywords",
+                "learning_resource_types", "license", "publisher",
+                "url", "wlo_url",
+            ):
+                if not existing.get(k) and c.get(k):
+                    existing[k] = c[k]
+            # Merge topic_pages by variant_id (no duplicates)
+            existing_tps = existing.setdefault("topic_pages", [])
+            existing_vids = {v.get("variant_id") for v in existing_tps if isinstance(v, dict)}
+            for v in c.get("topic_pages") or []:
+                if isinstance(v, dict) and v.get("variant_id") not in existing_vids:
+                    existing_tps.append(v)
+                    existing_vids.add(v.get("variant_id"))
+            # If the merged card now has topic_pages, ensure it's a collection.
+            if existing_tps:
+                existing["node_type"] = "collection"
+        elif nid:
+            by_nid[nid] = dict(c)
+
+    cards = []
+    seen: set[str] = set()
+    # Emit in original order — first occurrence of each node_id wins position.
+    for c in raw:
+        nid = c.get("node_id") or ""
+        if nid and nid in seen:
+            continue
+        if nid:
+            seen.add(nid)
+            merged = by_nid[nid]
+        else:
+            merged = c
+        tp = _sort_topic_pages(merged.get("topic_pages", []), persona_id)
         cards.append(WloCard(
-            node_id=c.get("node_id", ""),
-            title=c.get("title", ""),
-            description=c.get("description", ""),
-            disciplines=c.get("disciplines", []),
-            educational_contexts=c.get("educational_contexts", []),
-            keywords=c.get("keywords", []),
-            learning_resource_types=c.get("learning_resource_types", []),
-            url=c.get("url", ""),
-            wlo_url=c.get("wlo_url", ""),
-            preview_url=c.get("preview_url", ""),
-            license=c.get("license", ""),
-            publisher=c.get("publisher", ""),
-            node_type=c.get("node_type", "content"),
+            node_id=merged.get("node_id", ""),
+            title=merged.get("title", ""),
+            description=merged.get("description", ""),
+            disciplines=merged.get("disciplines", []),
+            educational_contexts=merged.get("educational_contexts", []),
+            keywords=merged.get("keywords", []),
+            learning_resource_types=merged.get("learning_resource_types", []),
+            url=merged.get("url", ""),
+            wlo_url=merged.get("wlo_url", ""),
+            preview_url=merged.get("preview_url", ""),
+            license=merged.get("license", ""),
+            publisher=merged.get("publisher", ""),
+            node_type=merged.get("node_type", "content"),
             topic_pages=tp,
         ))
     return cards
@@ -129,6 +232,64 @@ def _add_used_lp_ids(session_state: dict, new_ids: list[str]) -> None:
     used.update(i for i in new_ids if i)
     # Keep last 100 to bound size
     session_state.setdefault("entities", {})["_lp_used_node_ids"] = json.dumps(list(used)[-100:])
+
+
+def _filter_cards_used_in_text(cards_raw: list[dict], response_text: str) -> list[dict]:
+    """Keep only cards whose URL, wlo_url, node_id OR title appears in the LP
+    response. The LP prompt asks the LLM for `[Titel](URL)` links, so URL match
+    is the primary signal. Title match is a narrow fallback for cases where the
+    LLM rewrites/truncates the URL.
+
+    De-duplicates by node_id AND url (the same resource can appear under
+    multiple collections with distinct node_ids) and preserves original order.
+
+    Fallback: if *nothing* matches (e.g. LLM error or non-standard formatting),
+    return the original list — it's safer to show too many cards than none.
+    """
+    if not cards_raw or not response_text:
+        return cards_raw
+    text_lower = response_text.lower()
+    used: list[dict] = []
+    seen_ids: set[str] = set()
+    seen_urls: set[str] = set()
+    for c in cards_raw:
+        nid = (c.get("node_id") or "").strip()
+        url = (c.get("url") or "").strip()
+        if nid and nid in seen_ids:
+            continue
+        if url and url in seen_urls:
+            continue
+        wlo = (c.get("wlo_url") or "").strip()
+        matched = False
+        # 1. URL / wlo_url / node_id — exact substring match (primary)
+        if url and url in response_text:
+            matched = True
+        elif wlo and wlo in response_text:
+            matched = True
+        elif nid and nid in response_text:
+            matched = True
+        else:
+            # 2. Title fallback — only for multi-word titles (≥ 3 words after
+            #    stripping common provider suffixes). A single-word match like
+            #    "Photosynthese" is too generic: it matches the LP topic itself
+            #    and produces false positives. The YouTube/provider suffix
+            #    (" | Mathe by Daniel Jung", " – Serlo") gets trimmed first.
+            title = (c.get("title") or "").strip()
+            if title:
+                primary = title
+                for sep in [" | ", " – ", " - "]:
+                    primary = primary.split(sep)[0]
+                primary = primary.strip()
+                words = [w for w in primary.split() if len(w) >= 3]
+                if len(words) >= 3 and len(primary) >= 15 and primary.lower() in text_lower:
+                    matched = True
+        if matched:
+            used.append(c)
+            if nid:
+                seen_ids.add(nid)
+            if url:
+                seen_urls.add(url)
+    return used if used else cards_raw
 
 
 def _filter_unused_cards(cards_raw: list[dict], used: set[str]) -> tuple[list[dict], bool]:
@@ -167,6 +328,7 @@ async def _handle_browse_collection(
             "skipCount": skip_count,
         })
         cards_raw = parse_wlo_cards(result_text)
+        await resolve_discipline_labels(cards_raw)
         total_from_mcp = parse_total_count(result_text)
 
         # Mark as content items (not collections)
@@ -233,6 +395,24 @@ async def _handle_browse_collection(
         debug=debug.model_dump(),
     )
 
+    # Canvas integration: route collection contents into the canvas instead
+    # of duplicating them in the chat stream. The chat bubble gets a short
+    # announcement; the full card grid lives in the canvas card pane.
+    _canvas_title = f"Inhalte: {title}" if title else "Sammlungs-Inhalte"
+    page_action = {
+        "action": "canvas_show_cards",
+        "payload": {
+            "cards": [c.model_dump() for c in cards],
+            "query": title or "",
+            "title": _canvas_title,
+            "source": "collection",
+            "collection_id": collection_id,
+            "pagination": pagination.model_dump() if pagination else None,
+            # append=true when skip_count>0 -> frontend appends instead of replacing
+            "append": skip_count > 0,
+        },
+    }
+
     return ChatResponse(
         session_id=req.session_id,
         content=response_text,
@@ -240,6 +420,7 @@ async def _handle_browse_collection(
         quick_replies=quick_replies,
         debug=debug,
         pagination=pagination,
+        page_action=page_action,
     )
 
 
@@ -270,6 +451,7 @@ async def _handle_generate_learning_path(
         })
 
         cards_raw = parse_wlo_cards(result_text)
+        await resolve_discipline_labels(cards_raw)
         for c in cards_raw:
             c.setdefault("node_type", "content")
 
@@ -311,8 +493,13 @@ async def _handle_generate_learning_path(
         if lp_reset_notice:
             response_text = (response_text or "") + lp_reset_notice
 
-        # Mark these node_ids as used so the next LP varies
+        # Mark these node_ids as used so the next LP varies (based on the
+        # full candidate pool, not the post-filter subset — otherwise the
+        # diversity logic never sees the unused items).
         _add_used_lp_ids(session_state, [c.get("node_id", "") for c in cards_raw])
+
+        # Show only the items the LLM actually referenced in the path.
+        cards_raw = _filter_cards_used_in_text(cards_raw, response_text)
 
         persona = session_state.get("persona_id", "")
         cards = _build_cards(cards_raw, persona)
@@ -320,7 +507,7 @@ async def _handle_generate_learning_path(
     except Exception as e:
         logger.error("generate_learning_path error: %s", e)
         cards = []
-        response_text = f'Fehler beim Erstellen des Lernpfads fuer "{title}": {e}'
+        response_text = f'Fehler beim Erstellen des Lernpfads für "{title}": {e}'
         tools_called.append("error")
 
     # Generate quick replies
@@ -350,18 +537,339 @@ async def _handle_generate_learning_path(
         cards=[c.model_dump() for c in cards],
         debug=debug.model_dump(),
     )
-    # Persist updated entities (incl. _lp_used_node_ids)
+    # Route the LP into the canvas (material pane) and hand the selected
+    # cards as an optional second pane the user can flip to via the tab
+    # switch in the canvas header. The chat bubble keeps only a short
+    # announcement — the full learning-path markdown lives in the canvas
+    # and can be printed / downloaded / edited there.
+    _lp_title = f"Lernpfad: {title}" if title else "Lernpfad"
+    _m = _re_lp_title.search((response_text or "").lstrip().splitlines()[0] if response_text else "")
+    if _m:
+        _lp_title = _m.group(1).strip() or _lp_title
+
+    # Switch session into canvas-edit mode so follow-up messages can be
+    # treated as refinements ("mach ihn fuer Klasse 5 einfacher").
+    session_state["state_id"] = "state-12"
+    session_state.setdefault("entities", {})["_canvas_material_type"] = "lernpfad"
+    session_state["entities"]["_canvas_topic"] = title or ""
     await update_session(
         req.session_id,
+        state_id="state-12",
         entities=json.dumps(session_state.get("entities", {})),
+    )
+
+    short_ack = (
+        f"Ich habe dir einen **Lernpfad zu *{title}*** im Canvas rechts aufgebaut. "
+        "Du kannst ihn dort drucken, als Markdown speichern oder mir sagen, "
+        "was angepasst werden soll (z.B. *\"mach ihn für Klasse 5 einfacher\"* "
+        "oder *\"füge einen Schritt zur Sicherung hinzu\"*)."
+    )
+
+    return ChatResponse(
+        session_id=req.session_id,
+        content=short_ack,
+        cards=cards,
+        quick_replies=quick_replies,
+        debug=debug,
+        page_action={
+            "action": "canvas_open",
+            "payload": {
+                "title": _lp_title,
+                "material_type": "lernpfad",
+                "material_type_label": "🗺️ Lernpfad",
+                "markdown": response_text or "",
+            },
+        },
+    )
+
+
+# ── Canvas action handlers ───────────────────────────────────────
+async def _handle_canvas_create(
+    req: ChatRequest, session_state: dict,
+) -> ChatResponse:
+    """Create a new canvas document from explicit action parameters.
+
+    Triggered from the widget when the user clicks a material-type chip or
+    otherwise sends a structured create request. Returns a short chat text
+    and a `canvas_open` page_action with the full markdown.
+    """
+    topic = (req.action_params.get("topic") or "").strip()
+    raw_type = req.action_params.get("material_type") or ""
+    type_key = resolve_material_type(raw_type) or "auto"
+
+    if not topic:
+        return ChatResponse(
+            session_id=req.session_id,
+            content="Bitte nenne mir ein Thema für den Inhalt.",
+        )
+
+    memories = await get_memory(req.session_id)
+    memory_context = "\n".join(f"- {m['key']}: {m['value']}" for m in (memories or [])[:10])
+
+    title, markdown = await generate_canvas_content(
+        topic=topic,
+        material_type_key=type_key,
+        session_state=session_state,
+        memory_context=memory_context,
+    )
+    _mts = get_material_types()
+    label = _mts[type_key]["label"]
+    emoji = _mts[type_key]["emoji"]
+
+    response_text = (
+        f"Ich habe dir ein **{label}** zum Thema *{topic}* erstellt — "
+        f"schau es dir im Canvas an. Schreib mir einfach, was ich anpassen soll "
+        f"(z.B. \"mach die Aufgaben einfacher\" oder \"füge Lösungen hinzu\")."
+    )
+
+    debug = DebugInfo(
+        persona=session_state.get("persona_id", ""),
+        intent="INT-W-11",
+        state="state-12",
+        pattern="ACTION: canvas_create",
+        tools_called=["canvas_service.generate_canvas_content"],
+        entities=session_state.get("entities", {}),
+    )
+
+    # Mark canvas state in session so follow-up edits know they're in canvas mode
+    session_state["state_id"] = "state-12"
+    session_state.setdefault("entities", {})["_canvas_material_type"] = type_key
+    session_state["entities"]["_canvas_topic"] = topic
+    # Store the last canvas markdown so text-based follow-up edits
+    # ("mach es einfacher") can pick it up without the frontend resending it.
+    session_state["entities"]["_canvas_last_markdown"] = markdown
+
+    await save_message(
+        req.session_id, "assistant", response_text,
+        debug=debug.model_dump(),
+    )
+    await update_session(
+        req.session_id,
+        state_id="state-12",
+        entities=json.dumps(session_state["entities"]),
     )
 
     return ChatResponse(
         session_id=req.session_id,
         content=response_text,
-        cards=cards,
-        quick_replies=quick_replies,
+        quick_replies=[
+            "Mach es einfacher",
+            "Füge Lösungen hinzu",
+            "Mehr Übungen",
+            "Kürzer fassen",
+        ],
         debug=debug,
+        page_action={
+            "action": "canvas_open",
+            "payload": {
+                "title": title,
+                "material_type": type_key,
+                "material_type_label": f"{emoji} {label}",
+                "material_type_category": get_material_type_category(type_key),
+                "markdown": markdown,
+            },
+        },
+    )
+
+
+async def _handle_canvas_remix(
+    req: ChatRequest, session_state: dict,
+) -> ChatResponse:
+    """Remix an existing WLO resource into a new material of the same type.
+
+    action_params:
+      - title       (str)   — original resource title, also used as topic
+      - url         (str)   — page URL for full-text extraction (optional)
+      - description (str)
+      - keywords    (list[str])
+      - disciplines (list[str])
+      - educational_contexts (list[str])
+      - learning_resource_types (list[str])  — used to pick the target type
+      - publisher   (str)
+      - license     (str)
+      - material_type_override (str, optional) — force a specific canvas type
+    """
+    p = req.action_params or {}
+    topic = (p.get("title") or p.get("topic") or "").strip()
+    if not topic:
+        return ChatResponse(
+            session_id=req.session_id,
+            content="Kein Titel für den Remix angegeben.",
+        )
+
+    # Decide on the target material type
+    mt_override = (p.get("material_type_override") or "").strip()
+    mt_key = resolve_material_type(mt_override) if mt_override else None
+    if not mt_key:
+        mt_key = infer_material_type_from_lrt(p.get("learning_resource_types") or [])
+    if not mt_key:
+        mt_key = "auto"
+    _mts = get_material_types()
+    label = _mts[mt_key]["label"]
+    emoji = _mts[mt_key]["emoji"]
+
+    # Try to grab the page's full text. Failures are fine — the LLM still
+    # has metadata to work with.
+    url = (p.get("url") or "").strip()
+    extracted_text = ""
+    extraction_ok = False
+    if url:
+        try:
+            ex = await extract_text_from_url(url, max_chars=4000)
+            if ex and ex.get("text"):
+                extracted_text = ex["text"]
+                extraction_ok = True
+                logger.info(
+                    "remix: extracted %s chars from %s (original %s)",
+                    ex.get("cleaned_length"), url, ex.get("original_length"),
+                )
+        except Exception as e:
+            logger.info("remix: text extraction failed: %s", e)
+
+    source_meta = {
+        "title": p.get("title") or "",
+        "description": p.get("description") or "",
+        "disciplines": p.get("disciplines") or [],
+        "educational_contexts": p.get("educational_contexts") or [],
+        "keywords": p.get("keywords") or [],
+        "publisher": p.get("publisher") or "",
+        "license": p.get("license") or "",
+        "url": url,
+    }
+
+    memories = await get_memory(req.session_id)
+    memory_context = "\n".join(f"- {m['key']}: {m['value']}" for m in (memories or [])[:10])
+
+    title_out, md = await generate_canvas_remix(
+        topic=topic,
+        material_type_key=mt_key,
+        source_meta=source_meta,
+        source_text=extracted_text,
+        session_state=session_state,
+        memory_context=memory_context,
+    )
+
+    short_note = "" if extraction_ok else " *(Volltext war nicht abrufbar — Remix basiert auf Metadaten.)*"
+    response_text = (
+        f"Ich habe dir einen **Remix als {label}** zum Thema *{topic}* im Canvas "
+        f"erstellt.{short_note} Sag mir einfach, was ich anpassen soll "
+        "(z.B. *\"mach es einfacher\"* oder *\"füge Lösungen hinzu\"*)."
+    )
+
+    debug = DebugInfo(
+        persona=session_state.get("persona_id", ""),
+        intent="INT-W-11",
+        state="state-12",
+        pattern="ACTION: canvas_remix",
+        tools_called=[
+            "canvas_service.generate_canvas_remix",
+            *(["text_extraction_service"] if extraction_ok else []),
+        ],
+        entities=session_state.get("entities", {}),
+    )
+
+    session_state["state_id"] = "state-12"
+    session_state.setdefault("entities", {})["_canvas_material_type"] = mt_key
+    session_state["entities"]["_canvas_topic"] = topic
+
+    await save_message(
+        req.session_id, "assistant", response_text,
+        debug=debug.model_dump(),
+    )
+    await update_session(
+        req.session_id,
+        state_id="state-12",
+        entities=json.dumps(session_state["entities"]),
+    )
+
+    return ChatResponse(
+        session_id=req.session_id,
+        content=response_text,
+        quick_replies=[
+            "Mach es einfacher",
+            "Füge Lösungen hinzu",
+            "Mehr Übungen",
+            "Kürzer fassen",
+        ],
+        debug=debug,
+        page_action={
+            "action": "canvas_open",
+            "payload": {
+                "title": title_out,
+                "material_type": mt_key,
+                "material_type_label": f"{emoji} {label} (Remix)",
+                "material_type_category": get_material_type_category(mt_key),
+                "markdown": md,
+            },
+        },
+    )
+
+
+async def _handle_canvas_edit(
+    req: ChatRequest, session_state: dict,
+) -> ChatResponse:
+    """Apply a chat-originated edit instruction to existing canvas markdown."""
+    current_md = req.action_params.get("current_markdown", "")
+    instruction = (req.action_params.get("edit_instruction") or req.message or "").strip()
+
+    if not current_md:
+        return ChatResponse(
+            session_id=req.session_id,
+            content="Kein Canvas-Inhalt uebergeben. Bitte erstelle zuerst ein Material.",
+        )
+    if not instruction:
+        return ChatResponse(
+            session_id=req.session_id,
+            content="Welche Aenderung soll ich am Canvas-Inhalt vornehmen?",
+        )
+
+    new_md = await edit_canvas_content(
+        current_markdown=current_md,
+        edit_instruction=instruction,
+        session_state=session_state,
+    )
+
+    response_text = (
+        "Erledigt. Der Canvas-Inhalt ist jetzt angepasst. "
+        "Sag mir, falls ich noch etwas ändern soll."
+    )
+
+    debug = DebugInfo(
+        persona=session_state.get("persona_id", ""),
+        intent="INT-W-12",
+        state="state-12",
+        pattern="ACTION: canvas_edit",
+        tools_called=["canvas_service.edit_canvas_content"],
+        entities=session_state.get("entities", {}),
+    )
+
+    # Persist the new markdown so subsequent text-based edits
+    # ("nochmal kürzer") can pick it up without frontend passing it.
+    session_state.setdefault("entities", {})["_canvas_last_markdown"] = new_md
+    await update_session(
+        req.session_id,
+        entities=json.dumps(session_state["entities"]),
+    )
+
+    await save_message(
+        req.session_id, "assistant", response_text,
+        debug=debug.model_dump(),
+    )
+
+    return ChatResponse(
+        session_id=req.session_id,
+        content=response_text,
+        quick_replies=[
+            "Noch einfacher",
+            "Mehr Beispiele",
+            "Zurück zum Original",
+            "Als Arbeitsblatt umwandeln",
+        ],
+        debug=debug,
+        page_action={
+            "action": "canvas_update",
+            "payload": {"markdown": new_md},
+        },
     )
 
 
@@ -398,11 +906,25 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
 
     env = req.environment.model_dump()
 
-    # Inject page_context entities (node_id, collection_id, search_query)
+    # Inject page_context entities (node_id, collection_id, search_query,
+    # topic_page_slug, subject_slug, document_title)
     page_ctx = env.get("page_context", {})
-    for key in ("node_id", "collection_id", "search_query"):
+    for key in (
+        "node_id", "collection_id", "search_query",
+        "topic_page_slug", "subject_slug", "document_title", "page_type",
+    ):
         if page_ctx.get(key):
             session_state["entities"][key] = page_ctx[key]
+
+    # ── Resolve page context → structured metadata ────────────────
+    # If the widget was embedded on a theme page (or edu-sharing node
+    # render URL), turn the raw node_id / slug into title/description/
+    # disciplines/stufen via MCP. Cached per-session, TTL 30 min.
+    try:
+        from app.services import page_context_service
+        await page_context_service.resolve_page_context(page_ctx, session_state)
+    except Exception as _pc_err:
+        logger.warning("page_context auto-resolve skipped: %s", _pc_err)
 
     # Save user message
     await save_message(req.session_id, "user", req.message)
@@ -426,6 +948,12 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         return await _handle_browse_collection(req, session_state)
     elif req.action == "generate_learning_path":
         return await _handle_generate_learning_path(req, session_state)
+    elif req.action == "canvas_create":
+        return await _handle_canvas_create(req, session_state)
+    elif req.action == "canvas_edit":
+        return await _handle_canvas_edit(req, session_state)
+    elif req.action == "canvas_remix":
+        return await _handle_canvas_remix(req, session_state)
 
     # 1b. Safety assessment (Triple-Schema T-12/19) — multi-stage gating
     #     Stage 1: regex (always)
@@ -473,7 +1001,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             assess_safety(req.message, session_state.get("signal_history", []))
         )
         classify_task = asyncio.create_task(
-            classify_input(req.message, history, session_state, env)
+            classify_input(req.message, history, session_state, env, req.canvas_state)
         )
         _results = await asyncio.gather(safety_task, classify_task, return_exceptions=True)
         safety, classification = _results
@@ -523,20 +1051,85 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         # Fall back to the raw user message stripped of obvious noise
         return req.message[:120]
 
+    # Extra speculative tasks that run in parallel next to the primary one.
+    # Their results are merged into the cards list after the main response
+    # is generated — this lets us return e.g. collections + content + topic
+    # pages side-by-side when the user asks generically ("etwas zu Optik").
+    extra_spec_tasks: list[tuple[str, asyncio.Task]] = []
+
     if safety.risk_level != "high" and classification.intent_id in _spec_search_intents:
         try:
             spec_query = _spec_query_from_classification()
+            _ents_for_spec = classification.entities or {}
+            _medientyp = _ents_for_spec.get("medientyp")
+            _fach = _ents_for_spec.get("fach")
+            _stufe = _ents_for_spec.get("stufe")
+            _msg_low = (req.message or "").lower()
+            _wants_topic = any(k in _msg_low for k in (
+                "themenseite", "themenseiten", "fachportal", "portalseite",
+            ))
+            _wants_samml = any(k in _msg_low for k in (
+                "sammlung", "sammlungen", "kollektion",
+            ))
+            _wants_content_only = bool(_medientyp) or classification.intent_id == "INT-W-03b"
+
             if spec_query:
-                if classification.intent_id == "INT-W-03b":
+                # 1. Primary tool — always a tool whose output parse_wlo_cards
+                #    understands (topic_pages has its own format and is handled
+                #    as an extra below to enrich collection cards with their
+                #    topic-page URLs).
+                if _wants_content_only:
                     spec_tool_name = "search_wlo_content"
                 else:
+                    # Generic / topic / collection / learning-path intent →
+                    # start with collections (rich cards with preview/desc/chips)
                     spec_tool_name = "search_wlo_collections"
-                spec_tool_args = {"query": spec_query, "maxItems": 5, "skipCount": 0}
+
+                spec_tool_args: dict[str, Any] = {
+                    "query": spec_query, "maxResults": 10,
+                }
+                if _medientyp and spec_tool_name == "search_wlo_content":
+                    spec_tool_args["learningResourceType"] = _medientyp
+                if _fach:
+                    spec_tool_args["discipline"] = _fach
+                if _stufe:
+                    spec_tool_args["educationalContext"] = _stufe
                 spec_task = asyncio.create_task(
                     call_mcp_tool(spec_tool_name, spec_tool_args)
                 )
-                logger.info("speculative %s for intent=%s query=%r",
-                            spec_tool_name, classification.intent_id, spec_query)
+                logger.info("speculative primary=%s for intent=%s args=%s",
+                            spec_tool_name, classification.intent_id, spec_tool_args)
+
+                # 2. Extra tools — fire in parallel to enrich the response.
+                #    Rules:
+                #      - topic-pages query → also run collections
+                #      - generic search (no explicit type preference) → also run
+                #        the complementary search so user sees both types
+                #      - explicit content-search with generic intent → also collections
+                _extras: list[str] = []
+                if _wants_topic:
+                    # User explicitly asked for topic pages → also fetch
+                    # topic_pages-specific listing and merge its URLs onto
+                    # whichever collection cards match (enriches them with
+                    # the /topic-pages? link).
+                    _extras.append("search_wlo_topic_pages")
+                if not _wants_content_only and not _wants_samml \
+                        and classification.intent_id in ("INT-W-03a", "INT-W-03c", "INT-W-10"):
+                    # Truly generic search — also show content alongside collections
+                    _extras.append("search_wlo_content")
+                elif _wants_content_only and classification.intent_id in ("INT-W-03a", "INT-W-03c", "INT-W-10"):
+                    # Content-primary but generic intent → still offer collections as context
+                    _extras.append("search_wlo_collections")
+
+                for extra_name in _extras:
+                    if extra_name == spec_tool_name:
+                        continue
+                    extra_args: dict[str, Any] = {"query": spec_query, "maxResults": 5}
+                    if _fach: extra_args["discipline"] = _fach
+                    if _stufe: extra_args["educationalContext"] = _stufe
+                    t = asyncio.create_task(call_mcp_tool(extra_name, extra_args))
+                    extra_spec_tasks.append((extra_name, t))
+                    logger.info("speculative extra=%s args=%s", extra_name, extra_args)
         except Exception as _e:
             logger.warning("speculative tool spawn failed: %s", _e)
             spec_task = None
@@ -585,6 +1178,134 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     # Update state
     new_state = classification.next_state
 
+    # ── Intent-Override: Create-Trigger (robust gegen Classifier-Drift) ──
+    # Wenn der User klar ein Erstell-Verb ("Erstelle", "Mach mir ein", ...)
+    # verwendet UND ein Material-Typ erkennbar ist (oder er bereits im
+    # Canvas-State state-12 ist), overriden wir den Intent auf INT-W-11.
+    # Das schuetzt den Canvas-Flow davor, dass der LLM-Classifier
+    # "Erstelle mir ein Arbeitsblatt" faelschlich als INT-W-10
+    # (Unterrichtsplanung) oder INT-W-03b (Suchen) bucht.
+    _wants_create = looks_like_create_intent(req.message)
+    _detected_mt = extract_material_type_from_message(req.message)
+    _in_canvas_state = session_state.get("state_id") == "state-12"
+    _existing_canvas_md = (
+        (session_state.get("entities") or {}).get("_canvas_last_markdown") or ""
+    )
+    # ── Canvas-Edit-Override (INT-W-12) ──
+    # Wenn Canvas aktiv ist UND vorhandener Canvas-Inhalt besteht UND eine
+    # Edit-Formulierung erkannt wird UND KEIN expliziter "neues X"-Override
+    # vorliegt, routen wir die Nachricht als EDIT an _handle_canvas_edit
+    # (inline) statt eine neue Generierung zu starten.
+    from app.services.canvas_service import (
+        looks_like_edit_intent, has_explicit_new_create_override,
+    )
+    _wants_edit = (
+        _in_canvas_state
+        and bool(_existing_canvas_md)
+        and looks_like_edit_intent(req.message)
+        and not has_explicit_new_create_override(req.message)
+    )
+    if _wants_edit:
+        logger.info(
+            "Intent override: %s -> INT-W-12 (edit-verb in state-12, md_len=%d)",
+            classification.intent_id, len(_existing_canvas_md),
+        )
+        classification.intent_id = "INT-W-12"
+        new_state = "state-12"
+        # Route to canvas_edit handler with current markdown + instruction
+        edit_req = ChatRequest(
+            session_id=req.session_id,
+            message=req.message,
+            action="canvas_edit",
+            action_params={
+                "current_markdown": _existing_canvas_md,
+                "edit_instruction": req.message,
+            },
+            device=req.device,
+            page=req.page,
+        )
+        return await _handle_canvas_edit(edit_req, session_state)
+
+    # Soft-Create: wenn ein Material-Typ explizit genannt wird UND kein
+    # klares Such-Verb im Text steht, treat es als Create-Wunsch.
+    # Deckt typische Verwaltungs-/Politik-/Presse-Formulierungen ab:
+    #   "Als Verwaltungskraft brauche ich einen Bericht zur OER-Lage"
+    #   "Für die Pressemappe ein Factsheet"
+    _search_verbs = get_search_verbs()
+    _msg_low_override = (req.message or "").lower()
+    # Position-based mixed-intent resolution: "Zeig … UND erstelle …" should
+    # go to CREATE (second clause is the actionable one); "Erstelle … und
+    # zeig dazu" should also go to CREATE. We look up the earliest index of
+    # any create- vs search-verb and use the later one as the primary intent
+    # (second clause wins — matches how Germans coordinate with "und/dann").
+    def _first_index(needles: tuple[str, ...]) -> int:
+        best = -1
+        for n in needles:
+            i = _msg_low_override.find(n)
+            if i >= 0 and (best < 0 or i < best):
+                best = i
+        return best
+    _search_pos = _first_index(_search_verbs)
+    _create_pos = _first_index(get_create_triggers())
+    _has_search_verb = _search_pos >= 0
+    _has_create_verb = _create_pos >= 0
+    # Decide primacy when BOTH verbs present:
+    #   - if search comes AFTER create: create wins (typical "Erstelle X und zeig mir Beispiele")
+    #   - if create comes AFTER search: create STILL wins (second clause is
+    #     the actionable one — "Zeig Material UND erstelle Quiz")
+    #   - if only search: search wins
+    # => Rule: if create-verb is present at all, create wins over search.
+    _search_blocks_soft_create = _has_search_verb and not _has_create_verb
+    _soft_create = bool(_detected_mt) and not _search_blocks_soft_create
+    if classification.intent_id != "INT-W-11":
+        if (_wants_create or _soft_create) and (_detected_mt or _in_canvas_state):
+            logger.info(
+                "Intent override: %s -> INT-W-11 (create=%s search=%s mt=%s prior_state=%s)",
+                classification.intent_id,
+                _create_pos if _has_create_verb else None,
+                _search_pos if _has_search_verb else None,
+                _detected_mt, session_state.get("state_id"),
+            )
+            classification.intent_id = "INT-W-11"
+            if _detected_mt and not (classification.entities or {}).get("material_typ"):
+                if classification.entities is None:
+                    classification.entities = {}
+                classification.entities["material_typ"] = _detected_mt
+            if new_state != "state-12":
+                new_state = "state-12"
+    # Regardless of whether the intent was overridden, keep session_state
+    # entities in sync: the pattern engine reads material_typ from there.
+    # If the classifier already chose INT-W-11 but didn't name a material
+    # type, lift the heuristically detected one into entities as well.
+    # ── State-12 Precondition-Guard ──
+    # state-12 (Canvas-Arbeit) darf NUR mit INT-W-11/INT-W-12 aktiv sein UND
+    # entweder vorhandener Canvas-Markdown ODER ein konkretes Thema (damit
+    # die Canvas-Pane nicht durch Unsinn aktiviert wird). Sonst: auf state-5
+    # zurücksetzen.
+    if new_state == "state-12":
+        _ent_now = session_state.get("entities", {}) or {}
+        _has_md = bool(_ent_now.get("_canvas_last_markdown"))
+        _has_topic = bool(
+            _ent_now.get("_canvas_topic")
+            or _ent_now.get("thema")
+            or (classification.entities or {}).get("thema")
+            or (classification.entities or {}).get("topic")
+        )
+        _canvas_intent = classification.intent_id in ("INT-W-11", "INT-W-12")
+        if not _canvas_intent or not (_has_md or _has_topic):
+            logger.info(
+                "State-12 guard: dropping to state-5 (intent=%s has_md=%s has_topic=%s)",
+                classification.intent_id, _has_md, _has_topic,
+            )
+            new_state = "state-5"
+
+    if classification.intent_id == "INT-W-11":
+        _mt_session = session_state.get("entities", {}).get("material_typ")
+        _mt_class = (classification.entities or {}).get("material_typ")
+        _chosen = _mt_session or _mt_class or _detected_mt
+        if _chosen and session_state["entities"].get("material_typ") != _chosen:
+            session_state["entities"]["material_typ"] = _chosen
+
     # 2b. Build ContextSnapshot (Triple-Schema T-04/05)
     from app.services.context_service import build_context
     context_snapshot = build_context(env, session_state, classification)
@@ -614,6 +1335,9 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             safety.blocked_tools.append(t)
 
     # 3. Pattern selection (Gate → Score → Modulate)
+    #    Safety may enforce a specific pattern (e.g. PAT-CRISIS on self-harm);
+    #    in that case select_pattern() bypasses gating/scoring entirely and
+    #    returns the enforced pattern with its full core_rule + tool config.
     tracer.start("pattern", "Pattern selection (3-phase)")
     winner, pattern_output, scores, eliminated = select_pattern(
         persona_id=session_state["persona_id"],
@@ -624,23 +1348,19 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         device=env.get("device", "desktop"),
         entities=session_state["entities"],
         intent_confidence=classification.intent_confidence,
+        enforced_pattern_id=safety.enforced_pattern or None,
     )
     tracer.end({"winner": winner.id, "eliminated": len(eliminated)})
 
-    # 3b. Safety override: enforced pattern + tool blocking
+    # 3b. Safety: strip blocked tools from the chosen pattern
     if safety.blocked_tools:
-        # Remove blocked tools from pattern output
         if "tools" in pattern_output:
             pattern_output["tools"] = [
                 t for t in pattern_output["tools"] if t not in safety.blocked_tools
             ]
         logger.info("Safety blocked tools: %s", safety.blocked_tools)
-    if safety.enforced_pattern:
-        logger.info("Safety enforced pattern: %s", safety.enforced_pattern)
-        # Override pattern_output with safety-mandated style
-        pattern_output["tone"] = "empathisch"
-        pattern_output["length"] = "kurz"
-        pattern_output["tools"] = []  # No tool calls in crisis
+    if safety.enforced_pattern and winner.id == safety.enforced_pattern:
+        logger.info("Safety enforced pattern active: %s", winner.id)
 
     # 4. RAG areas → presented as callable tools alongside MCP tools
     #    "always" areas are always available as tools
@@ -763,7 +1483,9 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                                 all_collection_contents.append(
                                     f"### Aus Sammlung: {col.get('title', 'Unbekannt')}\n{col_contents}"
                                 )
-                                _lp_cards_collected.extend(parse_wlo_cards(col_contents))
+                                _col_cards_parsed = parse_wlo_cards(col_contents)
+                                await resolve_discipline_labels(_col_cards_parsed)
+                                _lp_cards_collected.extend(_col_cards_parsed)
                                 tools_called.append(f"get_collection_contents ({col.get('title', '')[:30]})")
                         except Exception as e:
                             logger.warning("Failed to fetch contents for collection %s: %s", col.get("title"), e)
@@ -802,6 +1524,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                         "query": topic, "maxItems": 5, "skipCount": _search_skip,
                     })
                     search_cards = parse_wlo_cards(search_result)
+                    await resolve_discipline_labels(search_cards)
                     logger.info("LP found %d collections", len(search_cards))
                     if not search_cards and _search_skip > 0:
                         # Pagination exhausted → reset and refetch
@@ -811,10 +1534,20 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                             "query": topic, "maxItems": 5, "skipCount": 0,
                         })
                         search_cards = parse_wlo_cards(search_result)
+                        await resolve_discipline_labels(search_cards)
+                    # Helper: how many unique items do we have so far?
+                    def _unique_count(cards_list: list[dict]) -> int:
+                        return len({c.get("node_id", "") for c in cards_list if c.get("node_id")})
+
+                    all_lines: list[str] = []
+                    tools_called = [f"search_wlo_collections ({topic[:30]})"]
+                    # NOTE: topic must stay as the user asked for it (e.g.
+                    # "Eiszeit"). We deliberately do NOT overwrite it with the
+                    # first collection's title — doing so would rebrand the
+                    # whole learning path to the collection's theme
+                    # ("Formen der Erdoberfläche") instead of the user's
+                    # actual topic, silently hijacking the request.
                     if search_cards:
-                        all_lines: list[str] = []
-                        tools_called = [f"search_wlo_collections ({topic[:30]})"]
-                        topic = search_cards[0].get("title", topic)
                         for sc in search_cards[:3]:
                             col_id = sc.get("node_id")
                             col_title = sc.get("title", "")
@@ -825,6 +1558,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                                     "nodeId": col_id, "maxItems": 16, "skipCount": 0,
                                 })
                                 col_cards = parse_wlo_cards(col_contents_text)
+                                await resolve_discipline_labels(col_cards)
                                 # Diversity filter: drop already-used items
                                 fresh_cards = [c for c in col_cards
                                                if c.get("node_id") and c["node_id"] not in _lp_used]
@@ -847,11 +1581,55 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                                     tools_called.append(f"get_collection_contents ({col_title[:30]})")
                             except Exception as e:
                                 logger.warning("LP fetch failed for '%s': %s", col_title, e)
-                        if all_lines:
-                            contents_text = "\n".join(all_lines)
-                            tools_called.append("generate_learning_path")
-                            # Advance skipCount for next LP request on same topic
-                            session_state.setdefault("entities", {})[_topic_key] = _search_skip + 3
+
+                    # ── Thin-candidates fallback ─────────────────────────
+                    # For specific topics (e.g. "Eiszeit") search_wlo_collections
+                    # sometimes returns only 1 weakly-related collection with
+                    # a single item. A useful learning path needs at least a
+                    # handful of distinct materials. If the collection-based
+                    # search produced fewer than 4 unique candidates, pull in
+                    # direct content-level hits via search_wlo_content.
+                    if _unique_count(_lp_cards_collected) < 4:
+                        try:
+                            content_res = await call_mcp_tool("search_wlo_content", {
+                                "query": topic, "maxItems": 10, "skipCount": 0,
+                            })
+                            content_cards = parse_wlo_cards(content_res)
+                            await resolve_discipline_labels(content_cards)
+                            # Drop items already present + previously used
+                            _seen_ids = {c.get("node_id") for c in _lp_cards_collected}
+                            fresh_content = [
+                                c for c in content_cards
+                                if c.get("node_id")
+                                and c["node_id"] not in _seen_ids
+                                and c["node_id"] not in _lp_used
+                            ]
+                            if fresh_content:
+                                _lp_cards_collected.extend(fresh_content[:8])
+                                all_lines.append(f"### Direkte Treffer zu \"{topic}\"")
+                                for c in fresh_content[:8]:
+                                    types = ", ".join(c.get("learning_resource_types", [])) or "Material"
+                                    line = f"- **{c.get('title','')}** ({types})"
+                                    if c.get("description"):
+                                        line += f"\n  {c['description'][:200]}"
+                                    if c.get("url"):
+                                        line += f"\n  URL: {c['url']}"
+                                    all_lines.append(line)
+                                    if c.get("node_id"):
+                                        _lp_new_ids.append(c["node_id"])
+                                tools_called.append(f"search_wlo_content ({topic[:30]})")
+                                logger.info(
+                                    "LP thin-candidates fallback: added %d content items",
+                                    len(fresh_content[:8]),
+                                )
+                        except Exception as e:
+                            logger.warning("LP content fallback failed: %s", e)
+
+                    if all_lines:
+                        contents_text = "\n".join(all_lines)
+                        tools_called.append("generate_learning_path")
+                        # Advance skipCount for next LP request on same topic
+                        session_state.setdefault("entities", {})[_topic_key] = _search_skip + 3
                 except Exception as e:
                     logger.warning("Failed to search+fetch collections for LP: %s", e)
 
@@ -869,11 +1647,164 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                     )
                     session_state.setdefault("entities", {})["_lp_used_node_ids"] = "[]"
                 _add_used_lp_ids(session_state, _lp_new_ids)
-                wlo_cards_raw = _lp_cards_collected
+                # Only expose the cards the LLM actually referenced in the
+                # path as tiles — the rest were candidates the LLM discarded.
+                wlo_cards_raw = _filter_cards_used_in_text(
+                    _lp_cards_collected, response_text or ""
+                )
                 _lp_routed = True
+
+                # Also hand the learning-path text to the canvas so the user
+                # can print/download it and edit it via chat commands.
+                _lp_title = f"Lernpfad: {topic}" if topic else "Lernpfad"
+                _lp_first_line = (response_text or "").lstrip().splitlines()[0] if response_text else ""
+                _m = _re_lp_title.search(_lp_first_line)
+                if _m:
+                    _lp_title = _m.group(1).strip() or _lp_title
+                # Mark state so follow-up chat messages are treated as
+                # canvas-edits against this learning path.
+                new_state = "state-12"
+                session_state["entities"]["_canvas_material_type"] = "lernpfad"
+                session_state["entities"]["_canvas_topic"] = topic or ""
+                globals().setdefault("_lp_canvas_payload", None)
+                # Set a local variable the page_action builder below picks up.
+                _lp_full_markdown = response_text or ""
+                _canvas_payload_out_lp = {
+                    "action": "canvas_open",
+                    "payload": {
+                        "title": _lp_title,
+                        "material_type": "lernpfad",
+                        "material_type_label": "🗺️ Lernpfad",
+                        "markdown": _lp_full_markdown,
+                    },
+                }
+                # Replace the long LP text in the chat bubble with a short
+                # announcement — the full path lives in the canvas, where
+                # the user can print, download or edit it via chat commands.
+                response_text = (
+                    f"Ich habe dir den **Lernpfad zu *{topic}*** im Canvas "
+                    "rechts aufgebaut. Du kannst ihn dort drucken, als "
+                    "Markdown speichern oder mir sagen, was angepasst "
+                    "werden soll (z.B. *\"mach ihn für Klasse 5 einfacher\"* "
+                    "oder *\"füge einen Schritt zur Sicherung hinzu\"*)."
+                )
 
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Learning path from history failed: %s", e)
+
+    # ── Canvas-Create via natural text (INT-W-11 + PAT-21) ────────
+    # User tippt z.B. "Erstelle ein Arbeitsblatt zur Photosynthese"
+    # → Classifier setzt INT-W-11, Pattern-Engine waehlt PAT-21
+    # → wir generieren Canvas-Inhalt direkt, ohne generate_response.
+    _canvas_routed = False
+    _canvas_payload_out: dict | None = None
+    _canvas_forced_quick_replies: list[str] = []
+    # Ensure tools_called exists when we take the canvas fast-path. If the LP
+    # block already set it, we leave that value intact.
+    try:
+        tools_called  # type: ignore[used-before-assignment]  # noqa: F821
+    except NameError:
+        tools_called = []
+    # Trigger canvas flow whenever INT-W-11 is the winning intent — even if
+    # the pattern engine eliminated PAT-21 (e.g. precondition_slots missing).
+    # In that case we want to show the material-type degradation, not fall
+    # through to a generic PAT-02 Clarification response.
+    if not _lp_routed and classification.intent_id == "INT-W-11":
+        _c_topic = (session_state.get("entities", {}).get("thema") or "").strip()
+        _mt_raw = (
+            (classification.entities or {}).get("material_typ")
+            or session_state.get("entities", {}).get("material_typ")
+            or ""
+        )
+        _mt_key = resolve_material_type(_mt_raw) or extract_material_type_from_message(req.message)
+
+        # Topic-Fallback: wenn der Classifier kein 'thema' extrahiert hat,
+        # aber Material-Typ bekannt ist, nutze die User-Message selbst als
+        # Topic (nach Bereinigung: Create-Verben + Material-Typ-Wort raus).
+        # Deckt analytische Anfragen ab, wo 'thema' oft komplex ist
+        # ('OER-Lage in Deutschland', 'Vergleich WLO vs Schulbücher', etc.).
+        if not _c_topic and _mt_key:
+            import re as _re_topic
+            _fallback = (req.message or "").strip()
+            # strip leading create verbs
+            _fallback = _re_topic.sub(
+                r"^\s*(erstelle?|generiere?|mach(?:\s+mir)?|bau\s+mir|schreib\s+mir|"
+                r"entwirf|produziere|ich\s+brauche|brauche|ich\s+möchte|möchte|"
+                r"hätte\s+ger?n|gib\s+mir|kannst\s+du|fasse\s+zusammen|wandle)"
+                r"\s+(mir\s+)?(ein|eine|einen)?\s*",
+                "", _fallback, flags=_re_topic.IGNORECASE,
+            )
+            # strip the detected material-type word
+            _aliases = get_type_aliases()
+            for _alias in sorted((k for k in _aliases.keys()), key=len, reverse=True):
+                if len(_alias) >= 4 and _aliases[_alias] == _mt_key:
+                    _fallback = _re_topic.sub(
+                        rf"\b{_re_topic.escape(_alias)}\b", "", _fallback,
+                        flags=_re_topic.IGNORECASE,
+                    )
+            # strip leading role prefixes ("als Verwaltungskraft", "als Journalist")
+            _fallback = _re_topic.sub(
+                r"^\s*als\s+\w+(?:kraft|ist[in]*|e?r?|in)\b[\s,]*",
+                "", _fallback, flags=_re_topic.IGNORECASE,
+            )
+            # strip "zu", "über", "zum", "zur" + collapse whitespace
+            _fallback = _re_topic.sub(r"^\s*(zu|über|zum|zur|ueber)\s+", "", _fallback, flags=_re_topic.IGNORECASE)
+            _fallback = _re_topic.sub(r"\s+", " ", _fallback).strip(" .,:;")
+            # Cap at 80 chars to avoid weirdly long topics
+            _c_topic = _fallback[:80]
+            if _c_topic:
+                logger.info("canvas-create topic fallback: %r", _c_topic)
+
+        if _c_topic and _mt_key:
+            _mts_flow = get_material_types()
+            _label = _mts_flow[_mt_key]["label"]
+            _emoji = _mts_flow[_mt_key]["emoji"]
+            _title, _md = await generate_canvas_content(
+                topic=_c_topic,
+                material_type_key=_mt_key,
+                session_state=session_state,
+                memory_context=memory_context,
+            )
+            response_text = (
+                f"Ich habe dir ein **{_label}** zum Thema *{_c_topic}* erstellt — "
+                f"schau es dir im Canvas an. Schreib mir einfach, was ich anpassen soll."
+            )
+            tools_called = ["canvas_service.generate_canvas_content"]
+            wlo_cards_raw = []
+            _canvas_routed = True
+            _canvas_payload_out = {
+                "action": "canvas_open",
+                "payload": {
+                    "title": _title,
+                    "material_type": _mt_key,
+                    "material_type_label": f"{_emoji} {_label}",
+                    "material_type_category": get_material_type_category(_mt_key),
+                    "markdown": _md,
+                },
+            }
+            new_state = "state-12"
+            session_state["entities"]["_canvas_material_type"] = _mt_key
+            session_state["entities"]["_canvas_topic"] = _c_topic
+        elif _c_topic and not _mt_key:
+            response_text = (
+                f"Welches Material soll ich dir zum Thema **{_c_topic}** erstellen? "
+                "Waehle einen Typ aus den Vorschlaegen oder schreib \"Automatisch\", "
+                "damit ich den passenden Typ selbst waehle."
+            )
+            tools_called = []
+            wlo_cards_raw = []
+            _canvas_routed = True
+            _canvas_forced_quick_replies = material_type_quick_replies_for_persona(
+                session_state.get("persona_id") or ""
+            )
+        elif not _c_topic:
+            response_text = (
+                "Gerne erstelle ich dir ein Material. Zu welchem **Thema**? "
+                "Beispiel: \"Erstelle ein Arbeitsblatt zur Photosynthese für Klasse 6\"."
+            )
+            tools_called = []
+            wlo_cards_raw = []
+            _canvas_routed = True
 
     response_outcomes: list = []
 
@@ -901,6 +1832,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             or _pat_forbids_mcp
             or _pat_wants_no_tools
             or _lp_routed  # LP path ran its own MCP logic, discard spec
+            or _canvas_routed  # Canvas-create doesn't need search results
             or _degradation_blocks  # Missing thema → ask first, don't search
         )
         if spec_blocked:
@@ -922,7 +1854,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             except Exception as _e:
                 logger.warning("speculative %s failed: %s", spec_tool_name, _e)
 
-    if not _lp_routed:
+    if not _lp_routed and not _canvas_routed:
         tracer.start("response", "LLM response generation")
         response_text, wlo_cards_raw, tools_called, response_outcomes = await generate_response(
             message=req.message,
@@ -937,6 +1869,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             rag_config=rag_config,
             blocked_tools=safety.blocked_tools,
             prefetched_tool=prefetched_tool_payload,
+            canvas_state=req.canvas_state,
         )
         tracer.end({
             "tools": tools_called,
@@ -949,6 +1882,38 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         disclaimers = "\n\n".join(f"_{d}_" for d in policy.required_disclaimers)
         response_text = f"{response_text}\n\n{disclaimers}"
 
+    # ── Safety-Hinweis (Medium-Risk) ───────────────────────────────
+    # Bei High-Risk uebernimmt PAT-CRISIS bereits die komplette Antwort
+    # (inkl. Notfallnummern). Bei Medium-Risk gibt der LLM eine normale
+    # Antwort – wir haengen aber einen sichtbaren Hinweis an, damit
+    # der User weiss, dass bestimmte Kategorien geflaggt/Tools gesperrt
+    # wurden und warum (Transparenz statt stilles Blockieren).
+    if safety.risk_level == "medium" and response_text:
+        _safety_notes: list[str] = []
+        _legal_de = {
+            "strafrecht": "strafrechtlich relevante",
+            "jugendschutz": "jugendschutzrelevante",
+            "persoenlichkeitsrechte": "persoenlichkeitsrechtliche",
+            "datenschutz": "datenschutzbezogene",
+        }
+        if safety.legal_flags:
+            _cats = ", ".join(_legal_de.get(f, f) for f in safety.legal_flags[:2])
+            _safety_notes.append(
+                f"Hinweis: Deine Anfrage beruehrt {_cats} Themen — ich kann dazu "
+                f"keine eigenstaendige rechtliche Beratung geben."
+            )
+        elif safety.blocked_tools:
+            _safety_notes.append(
+                "Hinweis: Fuer diese Anfrage habe ich die Suche vorsichtshalber eingeschraenkt."
+            )
+        elif "possible_prompt_injection" in safety.reasons:
+            _safety_notes.append(
+                "Hinweis: Deine Nachricht enthaelt Formulierungen, die wie eine "
+                "Anweisung an mich aussehen. Ich halte mich an meine Regeln."
+            )
+        if _safety_notes:
+            response_text = f"{response_text}\n\n" + "\n\n".join(f"_{n}_" for n in _safety_notes)
+
     # Triple-Schema T-25/27: feedback from outcomes
     from app.services.outcome_service import adjust_confidence, derive_state_hint
     final_confidence = adjust_confidence(classification.intent_confidence, response_outcomes)
@@ -956,6 +1921,93 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     if state_hint and state_hint != new_state:
         logger.info("Outcome-based state hint: %s -> %s", new_state, state_hint)
         new_state = state_hint
+
+    # 6c. Merge extra speculative results (collections, topic-pages, content).
+    #     These ran in parallel to the primary; their cards are appended
+    #     now so the UI can render the full picture (grouped by node_type
+    #     in the canvas). If a node_id is already present but the existing
+    #     card is skinny (topic-pages-search returns minimal metadata),
+    #     we merge the richer fields from the extra card instead of
+    #     discarding it. Enrichment-target fields: preview_url, description,
+    #     disciplines, educational_contexts, keywords, license, publisher,
+    #     learning_resource_types.
+    def _enrich_card_inplace(dst: dict, src: dict) -> bool:
+        """Copy non-empty fields from src into dst where dst is empty. Returns True on any copy."""
+        touched = False
+        for f in ("preview_url", "description", "license", "publisher"):
+            if not dst.get(f) and src.get(f):
+                dst[f] = src[f]
+                touched = True
+        for f in ("disciplines", "educational_contexts", "keywords", "learning_resource_types"):
+            if not (dst.get(f) or []) and (src.get(f) or []):
+                dst[f] = src[f]
+                touched = True
+        # Preserve topic_pages (we want to keep the topic-page link)
+        if not dst.get("topic_pages") and src.get("topic_pages"):
+            dst["topic_pages"] = src["topic_pages"]
+            touched = True
+        return touched
+
+    if extra_spec_tasks and not _lp_routed and not _canvas_routed:
+        _by_id: dict[str, dict] = {
+            c.get("node_id"): c for c in wlo_cards_raw if c.get("node_id")
+        }
+        for _name, _task in extra_spec_tasks:
+            try:
+                _text = await _task
+                if not _text:
+                    continue
+                if _name == "search_wlo_topic_pages":
+                    _extra_cards = parse_wlo_topic_page_cards(_text)
+                else:
+                    _extra_cards = parse_wlo_cards(_text)
+                if not _extra_cards:
+                    continue
+                await resolve_discipline_labels(_extra_cards)
+                _default_type = (
+                    "collection" if ("collection" in _name or "topic" in _name) else "content"
+                )
+                _added = 0
+                _enriched = 0
+                for c in _extra_cards:
+                    nid = c.get("node_id")
+                    if not nid:
+                        continue
+                    if nid in _by_id:
+                        # Enrich the existing skinny card with richer fields
+                        if _enrich_card_inplace(_by_id[nid], c):
+                            _enriched += 1
+                        continue
+                    c.setdefault("node_type", _default_type)
+                    wlo_cards_raw.append(c)
+                    _by_id[nid] = c
+                    _added += 1
+                if _added or _enriched:
+                    tools_called.append(f"{_name} (extra)")
+                    logger.info(
+                        "extra-spec %s: %d new, %d enriched", _name, _added, _enriched,
+                    )
+            except Exception as _e:
+                logger.warning("extra-spec %s failed: %s", _name, _e)
+
+    # 6d. Synthesize a preview_url for any card that still lacks one.
+    #     The edu-sharing preview endpoint accepts just the nodeId.
+    _PREVIEW_BASE = (
+        "https://redaktion.openeduhub.net/edu-sharing/preview"
+        "?nodeId={nid}&storeProtocol=workspace&storeId=SpacesStore"
+    )
+    for c in wlo_cards_raw:
+        if not c.get("preview_url") and c.get("node_id"):
+            c["preview_url"] = _PREVIEW_BASE.format(nid=c["node_id"])
+        # Default description for bare topic-page cards so they don't look
+        # empty in the UI. Only fills the gap, never overwrites real data.
+        if c.get("topic_pages") and not (c.get("description") or "").strip():
+            title = (c.get("title") or "").strip() or "das gewaehlte Thema"
+            c["description"] = (
+                f"Themenseite \"{title}\" — kuratierte Einstiegsseite mit "
+                "Sammlungen, Materialien und weiterführenden Links, "
+                "von der WLO-Fachredaktion zusammengestellt."
+            )
 
     # 7. Build WloCard objects — send all, frontend limits display
     all_cards_raw = wlo_cards_raw
@@ -981,12 +2033,24 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 "title": c.get("title", ""),
             })
         elif c.get("node_id"):
+            # Store enough fields that a later Lernpfad-rebuild (Priority 1
+            # in the LP router) can reconstruct visually identical cards —
+            # especially preview_url for thumbnails. Without this, LP cards
+            # re-hydrated from session lose their previews and appear as
+            # blank placeholders even though search results just had them.
             content_refs.append({
                 "node_id": c["node_id"],
                 "title": c.get("title", ""),
                 "description": (c.get("description") or "")[:200],
                 "url": c.get("url", ""),
+                "wlo_url": c.get("wlo_url", ""),
+                "preview_url": c.get("preview_url", ""),
                 "learning_resource_types": c.get("learning_resource_types", []),
+                "disciplines": c.get("disciplines", []),
+                "educational_contexts": c.get("educational_contexts", []),
+                "keywords": c.get("keywords", []),
+                "license": c.get("license", ""),
+                "publisher": c.get("publisher", ""),
             })
     if collection_refs:
         session_state["entities"]["_last_collections"] = json.dumps(
@@ -1002,8 +2066,11 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     #    - "inline": pattern has conversational hooks in text, still generate
     #      quick replies as additional options
     #    - "none": skip quick replies (rare — only for terminal patterns)
+    #    - Canvas degradation (material-type missing): use forced 12-chip list
     follow_up_mode = pattern_output.get("format_follow_up", "quick_replies")
-    if follow_up_mode != "none":
+    if _canvas_forced_quick_replies:
+        quick_replies = _canvas_forced_quick_replies
+    elif follow_up_mode != "none":
         quick_replies = await generate_quick_replies(
             message=req.message,
             response_text=response_text,
@@ -1013,16 +2080,63 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     else:
         quick_replies = []
 
-    # 9. Build page_action for host page integration
+    # Collection-Relevanz: wenn nur Sammlungen geliefert wurden und keine
+    # davon das Topic im Titel traegt, biete prominent den Wechsel zu
+    # Einzelmaterialien an. Der User erkennt so sofort, dass die Sammlung
+    # nur am Rand passt, und kann mit einem Klick tiefer suchen.
+    _topic_for_check = (session_state.get("entities", {}).get("thema") or "").strip()
+    if _topic_for_check and cards and not _canvas_forced_quick_replies:
+        _all_coll = all(c.node_type == "collection" for c in cards)
+        if _all_coll and not _collection_matches_topic(cards, _topic_for_check):
+            _fallback_reply = f"Zeig mir stattdessen Einzelmaterialien zu {_topic_for_check}"
+            if _fallback_reply not in (quick_replies or []):
+                # Insert at position 0, trim list to <=4 to stay within UI
+                quick_replies = [_fallback_reply] + (quick_replies or [])
+                quick_replies = quick_replies[:4]
+
+    # 9. Build page_action
+    #    Priority:
+    #     1. Canvas-open/update (PAT-21 or action handler) — dominates
+    #     2. Host-page integration (/suche etc.) — legacy show_results
+    #     3. Widget-context with cards — canvas_show_cards (Phase 1: move tiles to canvas)
     page_action = None
-    if cards and env.get("page") in ("/suche", "/startseite", "/"):
-        page_action = {
-            "action": "show_results",
-            "payload": {
-                "cards": [c.model_dump() for c in cards[:pattern_output.get("max_items", 5)]],
-                "query": session_state["entities"].get("thema", req.message),
-            },
-        }
+    # LP-derived canvas payload (set inside the LP block when _lp_routed=True)
+    _lp_canvas = locals().get("_canvas_payload_out_lp")
+    if _canvas_payload_out:
+        page_action = _canvas_payload_out
+    elif _lp_canvas:
+        page_action = _lp_canvas
+    elif cards:
+        # Widget-Kontext dominiert: wenn das Frontend den WidgetComponent
+        # verwendet (egal auf welcher Seite es embeddet ist), markiert es
+        # sich via page_context.widget=true. Dann gehen Kacheln immer ins
+        # Canvas — unabhaengig von env.page. Die alte Host-Page-Erkennung
+        # bleibt nur fuer echte Direct-Integrationen (WLO-Suche ohne Widget).
+        _widget_active = bool((env.get("page_context") or {}).get("widget"))
+        _host_page = (not _widget_active) and env.get("page") in ("/suche", "/startseite", "/")
+        if _host_page:
+            page_action = {
+                "action": "show_results",
+                "payload": {
+                    "cards": [c.model_dump() for c in cards[:pattern_output.get("max_items", 5)]],
+                    "query": session_state["entities"].get("thema", req.message),
+                },
+            }
+        else:
+            # Widget-Kontext: Kacheln ins Canvas statt in den Chat.
+            # Wichtig: gleiche Kachel-Liste wie die Chat-Response (cards),
+            # damit die Anzeige zwischen Chat-Unterdrueckung und Canvas
+            # konsistent bleibt — sonst sieht der User unterschiedliche
+            # Counts je nachdem ob Canvas offen ist.
+            page_action = {
+                "action": "canvas_show_cards",
+                "payload": {
+                    "cards": [c.model_dump() for c in cards],
+                    "query": session_state["entities"].get("thema", req.message),
+                    "pagination": pagination.model_dump() if pagination else None,
+                    "append": False,
+                },
+            }
 
     # 10. Debug info — resolve human-readable labels for IDs
     from app.services.config_loader import load_persona_definitions, load_intents, load_states

@@ -21,7 +21,7 @@ Das Backend ist das Herzstueck — es verarbeitet Chat-Nachrichten, klassifizier
 - **Spekulative Vorab-Abfragen** — Parallelisierte Safety/Classify-Ausfuehrung + vorausschauende MCP-Tool-Calls fuer reduzierte Latenz
 - **Multi-Provider LLM-Abstraktion** — OpenAI nativ, B-API-OpenAI, B-API-AcademicCloud
 - **Session-Management** — SQLite-basiert mit Gespraechsverlauf und State-Tracking
-- **Sprache** — Whisper STT + satzweise OpenAI TTS mit Pre-Fetching (nur bei OpenAI-Provider)
+- **Sprache** — OpenAI STT (`gpt-4o-mini-transcribe`, Fallback `whisper-1`) + satzweise OpenAI TTS mit Pre-Fetching (nur bei OpenAI-Provider)
 - **Quality-Logging** — Automatische Protokollierung jedes Turns (Pattern, Scores, Confidence, Entities, Degradation) fuer Offline-Analyse
 - **Widget-Auslieferung** — Stellt das kompilierte Chat-Widget unter `/widget/` bereit
 - **Config-API** — REST-Endpunkte fuer Studio-Zugriff auf alle YAML/Markdown-Konfigurationen
@@ -38,7 +38,7 @@ Das Backend ist das Herzstueck — es verarbeitet Chat-Nachrichten, klassifizier
 Das Studio ist die Konfigurations-Oberflaeche. Hier werden alle 5 Architektur-Schichten visuell editiert — ohne YAML-Dateien manuell anfassen zu muessen.
 
 **Kernfunktionen:**
-- **Schicht 1 — Identitaet & Schutz:** Persona-Editor, Safety-Preset-Auswahl (off/basic/standard/strict/paranoid), Geraete-Konfiguration
+- **Schicht 1 — Identitaet & Schutz:** Persona-Editor, Safety-Preset-Auswahl (off/regex/standard/strict/paranoid), Geraete-Konfiguration
 - **Schicht 2 — Domain & Regeln:** Domain-Regel-Editor, Policy-Verwaltung (Persona/Intent-basierte Tool-Blockaden)
 - **Schicht 3 — Patterns:** Visueller Pattern-Editor mit Gate-Konfiguration, Signal-Fit-Gewichten, Ton/Laenge/Detail-Defaults
 - **Schicht 4 — Dimensionen:** Persona-Verwaltung, Intent-Definitionen, Entity-Slots, Signal-Modulationstabelle, State-Definitionen, Kontext-Definitionen
@@ -110,5 +110,5 @@ Nutzer:in (Browser)
 | Quality-Logging/Analytics   |    x    |   x    |         |
 | Passwortschutz              |         |   x    |         |
 | API-Key-Authentifizierung   |    x    |   x    |         |
-| Whisper STT / OpenAI TTS    |    x    |        |         |
+| OpenAI STT / OpenAI TTS     |    x    |        |         |
 | Health-Endpoint             |    x    |        |    x    |

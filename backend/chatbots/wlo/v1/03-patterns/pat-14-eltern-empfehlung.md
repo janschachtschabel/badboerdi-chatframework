@@ -4,7 +4,7 @@ label: Eltern-Empfehlung
 priority: 400
 gate_personas: ["P-ELT"]
 gate_states: ["*"]
-gate_intents: ["*"]
+gate_intents: ["INT-W-01", "INT-W-03a", "INT-W-03c", "INT-W-06", "INT-W-08", "INT-W-10"]
 signal_high_fit: ["vertrauend", "orientierungssuchend", "delegierend"]
 signal_medium_fit: []
 signal_low_fit: []

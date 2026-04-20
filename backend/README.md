@@ -69,7 +69,7 @@ Schutzstatus: **offen** = immer erreichbar · **Studio** = braucht Header `X-Stu
 
 | Methode | Pfad | Schutz | Beschreibung |
 |---------|------|--------|--------------|
-| `POST` | `/api/speech/transcribe` | offen | Whisper STT — Audio-Upload → Text. |
+| `POST` | `/api/speech/transcribe` | offen | OpenAI STT (`gpt-4o-mini-transcribe`, Fallback `gpt-4o-transcribe` → `whisper-1`) — Audio-Upload → Text. |
 | `POST` | `/api/speech/synthesize` | offen | OpenAI TTS — Text → Audio. |
 
 ### Config (`/api/config`) — Studio-Editoren
@@ -145,7 +145,7 @@ chatbots/wlo/v1/
 ├── 01-base/                           ← Schicht 1: Identitaet & Schutz
 │   ├── base-persona.md                ←   Wer ist BOERDi? (Name, Rolle, Tonalitaet)
 │   ├── guardrails.md                  ←   Harte Regeln R-01 bis R-10 (LETZTER Block im Prompt)
-│   ├── safety-config.yaml             ←   Presets off/basic/standard/strict/paranoid + Rate-Limits
+│   ├── safety-config.yaml             ←   Presets off/regex/standard/strict/paranoid + Rate-Limits
 │   ├── quality-log-config.yaml        ←   Quality-Logging: an/aus, Retention, Alert-Schwellwerte
 │   └── device-config.yaml             ←   Geraete-Limits (max_items) + Persona-Anrede (Sie/du)
 │
@@ -187,7 +187,7 @@ chatbots/wlo/v1/
 │   ├── ver.md                         ←   P-VER   — Verwaltung
 │   └── and.md                         ←   P-AND   — Allgemein (Default)
 │
-├── 04-intents/                        ← Schicht 4b: 11 Intents
+├── 04-intents/                        ← Schicht 4b: 14 Intents (inkl. INT-W-11 Create, INT-W-12 Edit)
 │   └── intents.yaml
 │
 ├── 04-entities/                       ← Schicht 4c: 5 Entities/Slots
@@ -196,13 +196,20 @@ chatbots/wlo/v1/
 ├── 04-signals/                        ← Schicht 4d: 17 Signale in 4 Dimensionen
 │   └── signal-modulations.yaml
 │
-├── 04-states/                         ← Schicht 4e: 11 Gespraechszustaende
+├── 04-states/                         ← Schicht 4e: 12 Gespraechszustaende (inkl. state-12 Canvas)
 │   └── states.yaml
 │
 ├── 04-contexts/                       ← Schicht 4f: 5 Seitenkontexte
 │   └── contexts.yaml
 │
-└── 05-knowledge/                      ← Schicht 5: Wissen
+├── 05-canvas/                         ← Schicht 5: Canvas-Ausgabe-Formate
+│   ├── material-types.yaml            ←   18 Material-Typen (13 didaktisch + 5 analytisch)
+│   ├── type-aliases.yaml              ←   Keyword-Aliase + LRT-Mapping (Remix)
+│   ├── create-triggers.yaml           ←   Verben die „Neu erstellen" signalisieren
+│   ├── edit-triggers.yaml             ←   Edit-Verben + explizite Create-Overrides
+│   └── persona-priorities.yaml        ←   Welche Personas sehen analytische Typen zuerst
+│
+└── 05-knowledge/                      ← Schicht 6: Wissen
     ├── rag-config.yaml                ←   4 RAG-Wissensbereiche (mode: always/on-demand)
     └── mcp-servers.yaml               ←   MCP-Server-Registry (1 Server, 10 Tools)
 ```
@@ -235,7 +242,7 @@ welche Tonalitaet/Formalitaet verwendet wird.
 | `P-VER` | Verwaltung | Braucht Zahlen, Statistiken, strukturierte Uebersichten |
 | `P-AND` | Allgemein | Default-Persona fuer nicht zuordenbare Nutzer:innen |
 
-### 4b. Intents (11)
+### 4b. Intents (14)
 
 Erkannte Absicht der Nutzernachricht. Steuert Pattern-Gates und Tool-Auswahl.
 
@@ -245,14 +252,16 @@ Erkannte Absicht der Nutzernachricht. Steuert Pattern-Gates und Tool-Auswahl.
 | `INT-W-02` | Soft Probing | Bot klaert aktiv Bedarf, Rolle oder Kontext |
 | `INT-W-03a` | Themenseite entdecken | Suche nach Fachportal, Sammlung oder Themenseite |
 | `INT-W-03b` | Unterrichtsmaterial suchen | Konkrete Materialsuche (Arbeitsblaetter, Aufgaben) |
-| `INT-W-03c` | Lerninhalt suchen | Lerninhalte fuer Schueler:innen/Eltern (Videos, Uebungen) |
-| `INT-W-04` | Feedback | Rueckmeldung zu Ergebnissen oder zum Bot |
-| `INT-W-05` | Routing Redaktion | Weiterleitung an Redaktion (Luecken, Fehler, Wuensche) |
+| `INT-W-03c` | Lerninhalt suchen | Lerninhalte fuer Schueler:innen/Eltern (Videos, Uebungen). Wird vom Classifier erkannt, Patterns matchen ueber Persona-Gates (SL/ELT). |
+| `INT-W-04` | Feedback | Rueckmeldung zu Ergebnissen oder zum Bot → PAT-22 (Feedback-Echo) |
+| `INT-W-05` | Routing Redaktion | Weiterleitung an Redaktion (Luecken, Fehler, Wuensche) → PAT-23 (Redaktions-Routing) |
 | `INT-W-06` | Faktenfragen | Faktenfragen ueber WLO, edu-sharing oder Metaventis |
-| `INT-W-07` | Material herunterladen | Konkretes Material oeffnen oder herunterladen |
+| `INT-W-07` | Material herunterladen | Konkretes Material oeffnen oder herunterladen → PAT-24 (Download-Hinweis) |
 | `INT-W-08` | Inhalte evaluieren | Qualitaet, Lizenz oder Eignung pruefen |
 | `INT-W-09` | Analyse & Reporting | Zahlen, Statistiken, Uebersichten fuer Verwaltung/Beratung |
 | `INT-W-10` | Unterrichtsplanung | Strukturierte Materialzusammenstellung fuer Unterrichtseinheit |
+| `INT-W-11` | Inhalt erstellen | Canvas-Create: neues Material (Arbeitsblatt/Quiz/Bericht/Factsheet/…) KI-generiert → PAT-21 |
+| `INT-W-12` | Canvas-Edit | Bestehenden Canvas-Inhalt verfeinern („einfacher", „Loesungen hinzu") → direkter Handler `_handle_canvas_edit` |
 
 ### 4c. Entities / Slots (5)
 
@@ -303,10 +312,12 @@ Ton, Laenge und weitere Ausgabeoptionen.
 | | `validierend` | belegend | mittel | add_sources |
 | | `delegierend` | proaktiv | mittel | — |
 
-### 4e. States (11)
+### 4e. States (12)
 
 Gespraechszustand, der sich ueber die Turns hinweg entwickelt. Steuert Pattern-Gates
-und bestimmt den Gespraechsfortschritt.
+und bestimmt den Gespraechsfortschritt. **state-12** wird durch einen expliziten Guard
+(`chat.py`) geschuetzt: er wird nur bei INT-W-11/12 UND entweder vorhandenem Canvas-Markdown
+ODER einem konkreten Thema aktiviert, sonst fällt der State auf state-5 zurueck.
 
 | ID | Label | Beschreibung |
 |----|-------|-------------|
@@ -321,6 +332,7 @@ und bestimmt den Gespraechsfortschritt.
 | `state-9` | Evaluation/Feedback | Bot fragt nach Zufriedenheit |
 | `state-10` | Redaktions-Recherche | Redakteur:in recherchiert systematisch |
 | `state-11` | System/Meta | Meta-Fragen zum Bot oder zur Plattform |
+| `state-12` | Canvas-Arbeit | Canvas-Inhalt wurde erstellt, Edit-Verben triggern INT-W-12 |
 
 ### 4f. Kontexte (5)
 
@@ -339,7 +351,7 @@ Beeinflussen Pattern-Scoring (page_bonus) und Bot-Verhalten.
 
 ## 5. Pattern-Engine (3-Phasen-Modell)
 
-Die Pattern-Engine waehlt pro Nachricht deterministisch eines von 20 Patterns aus und
+Die Pattern-Engine waehlt pro Nachricht deterministisch eines von 26 Patterns aus und
 moduliert die Ausgabe. Implementiert in `app/services/pattern_engine.py`.
 
 ### Phase 1: Gate-Pruefung (binaere Elimination)
@@ -390,7 +402,7 @@ Geraet und Persona beeinflussen max_items und Formalitaet.
 | `one_option` | bool | Nur 1 Option zeigen (bei Unsicherheit) |
 | `add_sources` | bool | Quellen/Lizenzen explizit nennen (bei Skepsis) |
 
-### Alle 20 Patterns im Ueberblick
+### Alle 26 Patterns im Ueberblick
 
 | ID | Label | Prio | Kernregel | Personas | States | Intents | Precond. | Sources | Follow-Up |
 |----|-------|------|-----------|----------|--------|---------|----------|---------|-----------|
@@ -402,27 +414,33 @@ Geraet und Persona beeinflussen max_items und Formalitaet.
 | PAT-06 | Degradation-Bruecke | 600 | Breite Suche ohne fehlende Parameter + Soft Probe | * | * | * | — | mcp | quick_replies |
 | PAT-07 | Ergebnis-Kuratierung | 410 | Sammlungen als Kacheln, 1 Satz Einleitung | LK, SL, BER | 6 | * | — | mcp | quick_replies |
 | PAT-08 | Null-Treffer | 590 | Ehrlich zugeben, Alternativen anbieten | * | * | * | — | mcp | quick_replies |
-| PAT-09 | Redaktions-Recherche | 400 | Fachgebiet erkunden, redaktionell | RED | 10 | * | — | mcp | inline |
+| PAT-09 | Redaktions-Recherche | 400 | Fachgebiet erkunden, redaktionell | RED | * | 01, 03a/b, 05, 06, 08, 09 | — | mcp | inline |
 | PAT-10 | Fakten-Bulletin | 460 | Bullet-Facts, zitierfaehig, kein Suche-Angebot | POL, PRESSE, AND, LK, BER, VER, SL, ELT | * | 01, 06, 09 | — | rag, mcp | inline |
 | PAT-11 | Nachfrage-Schleife | 380 | „Hat das gepasst?" → wenn nein: sofort Fallback | * | 9 | * | — | mcp | quick_replies |
 | PAT-12 | Ueberbrueckungs-Hinweis | 580 | Transparent kommunizieren, Alternative anbieten | * | * | * | — | mcp | quick_replies |
 | PAT-13 | Schritt-fuer-Schritt | 400 | Medientyp → Vokabular → gefilterte Suche | SL, ELT | * | * | — | mcp | quick_replies |
-| PAT-14 | Eltern-Empfehlung | 400 | Altersgruppe + Thema → 2-3 Empfehlungen, kein Fachjargon | ELT | * | * | — | mcp | quick_replies |
-| PAT-15 | Analyse-Ueberblick | 400 | Strukturierte Uebersicht, Daten + Zahlen zuerst | VER, BER, AND, LK, POL, PRESSE, SL, ELT | * | 01, 06, 09 | — | rag, mcp | inline |
+| PAT-14 | Eltern-Empfehlung | 400 | Altersgruppe + Thema → 2-3 Empfehlungen, kein Fachjargon | ELT | * | 01, 03a, 03c, 06, 08, 10 | — | mcp | quick_replies |
+| PAT-15 | Analyse-Ueberblick | 400 | Strukturierte Uebersicht, Daten + Zahlen zuerst | VER, BER, POL, PRESSE, RED, LK | * | 01, 06, 09 | — | rag, mcp | inline |
 | PAT-16 | Themen-Exploration | 400 | Themengebiete identifizieren, Luecken erkennen | RED, BER | 4, 10 | * | — | mcp | quick_replies |
 | PAT-17 | Sanfter Einstieg | 390 | WLO-Infofragen, einladend, Persona weiter klaeren | * | 1 | * | — | rag, mcp | quick_replies |
 | PAT-18 | Unterrichts-Paket | 470 | Fach+Stufe+Thema → Sammlungssuche → 3-5 Treffer | LK, AND, ELT | * | * | fach, stufe, thema | mcp | quick_replies |
 | PAT-19 | Unterrichts-Lernpfad | 480 | Stundenentwurf mit Lernzielen und Zeitangaben | LK | 5, 6 | * | fach, stufe, thema | mcp | quick_replies |
 | PAT-20 | Orientierungs-Guide | 480 | Faehigkeiten vorstellen, Einstiegspunkte anbieten, KEIN Tool | AND, LK, SL, ELT, BER, VER | 1, 4 | 02, 01 | — | — | quick_replies |
+| PAT-21 | Canvas-Create | 470 | Neues Material KI-generiert im Canvas-Pane | * | 5, 6, 8, 12 | 11 | thema, material_typ | llm | quick_replies |
+| PAT-22 | Feedback-Echo | 420 | Feedback bestaetigen, paraphrasieren, Folgeangebot | * | * | 04 | — | llm | quick_replies |
+| PAT-23 | Redaktions-Routing | 440 | An Redaktion weiterleiten + Alternative anbieten | * | * | 05 | — | llm | quick_replies |
+| PAT-24 | Download-Hinweis | 430 | Download-Weg ueber Kachel erklaeren + Lizenz-Hinweis | * | * | 07 | — | llm | quick_replies |
+| PAT-CRISIS | Crisis-Empathie | — | Notfall-Pattern: Bei Krisen-Signalen sofort deeskalieren | * | * | * | — | — | — |
+| PAT-REFUSE-THREAT | Refuse-Threat | — | Abweisung von Bedrohungs-/Policy-Verletzungen | * | * | * | — | — | — |
 
 **Legende Personas:** LK=Lehrkraft, SL=Schueler:in, ELT=Eltern, POL=Politik, PRESSE=Presse, RED=Redaktion, BER=Beratung, VER=Verwaltung, AND=Allgemein
 
 **Priority-Hierarchie (hoeher = bevorzugt bei Gleichstand):**
 - 600: PAT-06 (Degradation) — universeller Fallback
 - 580–590: PAT-12 (Ueberbrueckung), PAT-08 (Null-Treffer) — Fehlerbehandlung
-- 470–500: PAT-01, PAT-18, PAT-19, PAT-20 — Kern-Use-Cases
-- 400–460: PAT-02 bis PAT-17 — situative Patterns
-- 380–390: PAT-11, PAT-17 — niedrigste Prioritaet
+- 470–500: PAT-01, PAT-18, PAT-19, PAT-20, PAT-21 — Kern-Use-Cases (inkl. Canvas-Create)
+- 420–460: PAT-02 bis PAT-17, PAT-22, PAT-23, PAT-24 — situative Patterns
+- 380–400: PAT-09, PAT-11, PAT-13–PAT-16 — niedrigste Prioritaet
 
 ### card_text_mode — Text vs. Kacheln
 
@@ -551,8 +569,11 @@ Deployment-Doku Abschnitt 4).
 
 ## 8. Safety-Pipeline (Triple-Schema v2)
 
-Die Safety laeuft **vor** dem LLM-Call und kann Tools sperren oder Patterns erzwingen
-(z.B. `PAT-CRISIS`).
+Die Safety laeuft **vor** dem LLM-Call und kann Tools sperren oder Patterns erzwingen.
+Aktuell unterscheidet das Gate zwei erzwungene Patterns:
+
+- **`PAT-CRISIS`** — Selbstbezogene Krisen (Suizid, Selbstverletzung, Tabletten-Euphemismen, Jugendschutz): empathisch, Telefonseelsorge/112.
+- **`PAT-REFUSE-THREAT`** — Drohungen gegen Dritte (§241 StGB, `hate/threatening`, `harassment/threatening`): sachlich-ablehnend, optional Hinweis auf 110. **Keine** Krisen-Empathie, da der Nutzer hier nicht das Opfer ist.
 
 ```
 Regex-Gate (immer)
@@ -569,7 +590,14 @@ Confidence-Adjustment aus Tool-Outcomes
 
 Konfiguration: `chatbots/wlo/v1/01-base/safety-config.yaml`
 
-* `security_level`: `off | basic | standard | strict | paranoid`
+* `security_level`: `off | regex | standard | strict | paranoid`
+  * **off** — nur Crisis/PII-Regex (~1 ms)
+  * **regex** — + Prompt-Injection (~2 ms)
+  * **standard** (Default) — + OpenAI-Moderation parallel (~150 ms)
+  * **strict** — + LLM-Legal-Classifier smart (~150-300 ms)
+  * **paranoid** — Legal immer + halbierte Schwellen + Double-Check
+  * Alle LLM-Stages laufen via `asyncio.gather` parallel: Latenz ≈ `max(stage_times)`
+  * Alias: `basic` wird transparent auf `standard` gemappt (Backwards-Compat)
 * `presets.*`: definieren `moderation`, `legal_classifier`, `prompt_injection`,
   optional `threshold_multiplier` und `double_check`
 * `escalation.legal_thresholds.flag` / `.high`: Schwellwerte fuer den Legal-Classifier
@@ -716,7 +744,7 @@ Die B-API bietet nur `chat/completions` und `embeddings` an. Folgende Funktionen
 
 | Feature | Code-Anker | Verhalten ohne native OpenAI |
 |---------|-----------|------------------------------|
-| **Whisper STT** | `routers/speech.py` | Mikrofon-Button im Widget tot, sofern kein zusaetzlicher OpenAI-Key vorliegt. |
+| **OpenAI STT** (`gpt-4o-mini-transcribe`) | `routers/speech.py` | Mikrofon-Button im Widget tot, sofern kein zusaetzlicher OpenAI-Key vorliegt. |
 | **TTS** | `routers/speech.py` | Vorlese-Funktion deaktiviert. |
 | **Stage-2 Moderation** | `services/safety_service.py` | Wird uebersprungen. Stage 1 (Regex) und Stage 3 (Legal-Classifier) bleiben aktiv. |
 | **RAG-Vektor-Kompatibilitaet** | `services/rag_service.py` | `e5-mistral-7b-instruct` (1024 dim) ≠ `text-embedding-3-small` (1536 dim). **Bestehende Embeddings sind nach einem Wechsel zu `b-api-academiccloud` unbrauchbar — alle Dokumente neu indexieren.** |
@@ -813,3 +841,97 @@ logging:
 - Durchschnittliche Confidence und Score-Gap
 - Degradation-Rate, Empty-Entity-Rate
 - Anzahl Tight Races (Score-Gap < 0.02 — Pattern-Entscheidung war knapp)
+
+**Delete-Endpoints** (alle hinter `X-Studio-Key` gesichert):
+
+| Methode | Pfad | Zweck |
+|---------|------|-------|
+| `DELETE /api/sessions/{id}` | Session komplett loeschen (Messages + Memory + Quality + Safety + Session-Row). Cascade-Counts im Response. |
+| `DELETE /api/sessions/{id}/messages` | Nur Chatverlauf leeren — Session, Memory und Analytics bleiben erhalten. |
+| `DELETE /api/quality/logs/{log_id}` | Einzelner Quality-Log-Eintrag. |
+| `POST /api/quality/logs/clear?pattern_id=&intent_id=&session_id=` | Bulk-Delete mit Filter. Ohne Filter verlangt `?confirm=true` (Sicherheitsbremse). |
+
+Diese Endpoints sind in der Studio-UI unter **Sessions** und **Quality** mit Confirm-Dialogen verdrahtet.
+
+---
+
+## 13. Canvas-Arbeitsflaeche
+
+Die Canvas-Arbeitsflaeche erlaubt KI-generierte Ausgaben (Arbeitsblatt, Quiz, Bericht, …) neben
+dem Chat. Zwei Intents steuern den Flow:
+
+| Intent | Pattern/Handler | Beschreibung |
+|--------|-----------------|-------------|
+| `INT-W-11` Inhalt erstellen | PAT-21 (Canvas-Create) | Neu generieren: `canvas_service.generate_canvas_content(topic, material_type)` → strukturiertes Markdown + `page_action: canvas_open` |
+| `INT-W-12` Canvas-Edit | direkter Handler `_handle_canvas_edit()` | Bestehenden Canvas-Inhalt verfeinern — triggert NICHT die Pattern-Engine |
+
+**Konfiguration** in `chatbots/wlo/v1/05-canvas/`:
+
+| Datei | Inhalt |
+|-------|--------|
+| `material-types.yaml` | 18 Typen (13 didaktisch + 5 analytisch), jeder mit `id`, `label`, `emoji`, `category`, `structure` (LLM-Vorgabe) |
+| `type-aliases.yaml` | Alias-Mapping (74 Keywords → Typ-ID), Short-Whitelist (z.B. `quiz`, `test`, `pm`), LRT→Typ-Mapping fuer Remix |
+| `create-triggers.yaml` | 44 Create-Verb-Phrasen + Negative-Search-Verb-Liste |
+| `edit-triggers.yaml` | 56 Edit-Verben + 13 Explicit-Create-Override-Phrasen (`neues Quiz`, `anderes Thema`) |
+| `persona-priorities.yaml` | Welche Personas sehen analytische Typen zuerst (VER, POL, BER, PRESSE, RED) |
+
+Alle 5 Dateien sind live im Studio-Layer **Canvas-Formate** editierbar (mtime-Cache → keine
+Backend-Restarts).
+
+**Detection-Logik** (Wort-Grenzen-Matching in `canvas_service.py`):
+- `looks_like_create_intent(msg)` — erkennt Create-Verben nur an Wort-Grenzen („mach ein" matcht nicht „mach es einfacher")
+- `looks_like_edit_intent(msg)` — Edit-Verben, nur geprueft wenn state-12 aktiv und Canvas-Markdown vorhanden
+- `has_explicit_new_create_override(msg)` — „neues Quiz" setzt sich auch in state-12 durch und geht auf Create
+
+**State-12-Guard** (`chat.py`): state-12 darf nur aktiv sein bei INT-W-11/12 UND entweder
+vorhandenem Canvas-Markdown ODER konkretem Thema. Sonst fällt state auf state-5 zurueck —
+verhindert State-Pollution.
+
+---
+
+## 14. Themenseiten-Resolution (page_context_service)
+
+Wenn das Widget auf einer WLO-Seite eingebettet ist, loest das Backend die URL vor dem ersten
+Turn zu semantischen Metadaten auf. Das Frontend extrahiert dabei:
+
+| URL-Pattern | Extrahierte Keys |
+|-------------|------------------|
+| `/themenseite/<slug>` | `topic_page_slug`, `page_type=themenseite` |
+| `/fachportal/<fach>/<slug>` | `subject_slug`, `topic_page_slug`, `page_type=fachportal` |
+| `/sammlung/<id>` | `collection_id` |
+| `/material/<id>` | `node_id` |
+| `/components/render/<uuid>` | `node_id` (edu-sharing) |
+| Query: `?node=`, `?collection=`, `?q=` | `node_id`, `collection_id`, `search_query` |
+| Fallback | `document_title` (Dokumenten-Titel) |
+
+`page_context_service.resolve_page_context()` ruft dann:
+1. `get_node_details(nodeId)` wenn `node_id`/`collection_id` vorhanden
+2. `search_wlo_topic_pages(query=slug)` + folgenden `get_node_details` wenn nur Slug vorhanden
+3. Fallback auf `document_title` wenn MCP fehlschlaegt
+
+Das Ergebnis landet in `session_state.entities._page_metadata` mit TTL:
+
+| Status | TTL | Begründung |
+|--------|-----|------------|
+| `resolved` (Titel, Beschreibung, Faecher, Stufen, LRTs) | **30 Min** | Themenseiten aendern sich selten |
+| `unresolved` (MCP-Fehler / nur Dokumenten-Titel) | **2 Min** | Transiente Ausfaelle sollen sich schnell erholen |
+
+Der System-Prompt erhaelt statt Roh-JSON einen semantischen Block:
+
+```
+## Aktuelle Themenseite
+Titel: Optik
+Beschreibung: Grundlagen der Optik - Licht, Brechung, Abbildung.
+Faecher: Physik
+Bildungsstufen: Sekundarstufe I, Sekundarstufe II
+Schlagworte: Licht, Linse, Reflexion
+Materialtypen auf der Seite: Video, Arbeitsblatt
+
+Der Nutzer ist auf dieser Seite eingebettet. Regeln:
+- Bei Fragen wie 'Worum geht es hier?' → beziehe dich direkt auf Titel/Beschreibung/Stufen.
+- Bei Create-Anfragen ohne eigenes Thema → nimm den Seitentitel als Thema.
+- Bei 'mehr Material dazu' → Suche mit Titel/Schlagworten starten.
+```
+
+Dadurch werden Anfragen wie „Worum geht es hier?" oder „Erstelle mir ein Quiz dazu" ohne
+Rueckfrage beantwortet.

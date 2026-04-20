@@ -13,7 +13,7 @@ import QualityView from '@/components/QualityView';
 import InfoView from '@/components/InfoView';
 
 // ── Types ────────────────────────────────────────────────────────────
-type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'info';
+type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'canvas' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'info';
 
 export interface Elements {
   patterns: PatternData[];
@@ -108,7 +108,8 @@ const LAYERS: { id: Layer; num: number; icon: string; label: string; desc: strin
   { id: 'domain',     num: 2, icon: '🌐', label: 'Domain & Regeln',    desc: 'Plattform-Wissen, Policy, Kontexte' },
   { id: 'patterns',   num: 3, icon: '🧩', label: 'Patterns',           desc: 'Gesprächsmuster' },
   { id: 'dimensions', num: 4, icon: '🎭', label: 'Dimensionen',        desc: 'Personas, Intents, States…' },
-  { id: 'knowledge',  num: 5, icon: '📚', label: 'Wissen',             desc: 'RAG-Wissensbereiche' },
+  { id: 'canvas',     num: 5, icon: '🎨', label: 'Canvas-Formate',     desc: 'Material-Typen, Aliase, Persona-Priorität' },
+  { id: 'knowledge',  num: 6, icon: '📚', label: 'Wissen',             desc: 'RAG-Wissensbereiche' },
 ];
 
 // ── Main Studio Page ─────────────────────────────────────────────────
@@ -378,6 +379,22 @@ export default function StudioPage() {
               { label: 'Plattform-Wissen', desc: 'WLO-Fakten, Statistiken, Geschichte, FAQ', path: '02-domain/wlo-plattform-wissen.md' },
               { label: 'Policy-Regeln', desc: 'Konditionale Compliance-Regeln (Match/Effect): Tool-Sperren, Disclaimer pro Persona/Intent', path: '02-domain/policy.yaml' },
               { label: 'Kontexte', desc: 'Benannte Konversations-Kontexte (Page/Device-Trigger) für Pattern-Fit & UI-Filterung', path: '04-contexts/contexts.yaml' },
+            ]}
+            loadFile={loadFile}
+            saveFile={saveFile}
+          />
+        )}
+
+        {backendOnline && layer === 'canvas' && (
+          <ConfigTextEditor
+            title="Canvas-Formate"
+            subtitle="Die Material-Typen, die BOERDi im Canvas-Bereich rechts vom Chat erzeugen kann — inklusive Aliase, Create-Trigger-Verben und Persona-Priorisierung. Änderungen wirken live, ohne Backend-Restart."
+            files={[
+              { label: 'Material-Typen', desc: '18 Canvas-Output-Formate (Arbeitsblatt, Quiz, Bericht, …) mit Struktur-Vorgabe und Kategorie (didaktisch/analytisch)', path: '05-canvas/material-types.yaml' },
+              { label: 'Typ-Aliase & LRT-Mapping', desc: 'Welches Wort triggert welchen Typ + edu-sharing-LRT → Canvas-Typ für Remix', path: '05-canvas/type-aliases.yaml' },
+              { label: 'Create-Trigger-Verben', desc: 'Phrasen, die "Erstelle neues Material" signalisieren (inkl. indikativ: "brauche", "hätte gern") + Search-Gegenliste', path: '05-canvas/create-triggers.yaml' },
+              { label: 'Edit-Trigger-Verben', desc: 'Phrasen, die im Canvas-State als Refinement interpretiert werden ("mach es einfacher", "füge Lösungen hinzu") + "neues X"-Overrides, die trotz Canvas-State zurück auf Create gehen', path: '05-canvas/edit-triggers.yaml' },
+              { label: 'Persona-Priorisierung', desc: 'Welche Personas sehen analytische Typen (Bericht/Factsheet/…) zuerst in der Canvas-Auswahl', path: '05-canvas/persona-priorities.yaml' },
             ]}
             loadFile={loadFile}
             saveFile={saveFile}

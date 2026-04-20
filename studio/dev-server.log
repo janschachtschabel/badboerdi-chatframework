@@ -1,0 +1,145 @@
+
+> badboerdi-studio@0.1.0 dev
+> next dev -p 3001
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\jan\pnpm-lock.yaml as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\studio\package-lock.json
+
+   ▲ Next.js 15.5.14
+   - Local:        http://localhost:3001
+   - Network:      http://192.168.178.62:3001
+   - Experiments (use with caution):
+     · proxyTimeout: 180000
+
+ ✓ Starting...
+ ✓ Ready in 3.2s
+ ✓ Compiled /middleware in 265ms (114 modules)
+ ○ Compiling / ...
+ ✓ Compiled / in 1361ms (549 modules)
+ GET / 200 in 2136ms
+ ✓ Compiled /api/[...path] in 431ms (569 modules)
+ GET /api/config/elements 200 in 1401ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 29ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 21ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 33ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 48ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 37ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 48ms
+ GET /api/config/file?path=01-base%2Fguardrails.md 200 in 32ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 27ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 23ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 23ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 15ms
+ GET /api/config/file?path=02-domain%2Fwlo-plattform-wissen.md 200 in 25ms
+ GET /api/config/file?path=02-domain%2Fpolicy.yaml 200 in 29ms
+ GET /api/config/file?path=04-contexts%2Fcontexts.yaml 200 in 25ms
+ GET /api/config/mcp-servers 200 in 24ms
+ GET /api/config/mcp-servers 200 in 13ms
+ GET /api/config/file?path=03-patterns%2Fpat-01-direkt-antwort.md 200 in 23ms
+ GET /api/config/file?path=05-canvas%2Fmaterial-types.yaml 200 in 28ms
+ GET /api/config/file?path=05-canvas%2Fmaterial-types.yaml 200 in 15ms
+ GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml 200 in 33ms
+ GET /api/config/file?path=05-canvas%2Fmaterial-types.yaml 200 in 21ms
+ GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml 200 in 27ms
+ GET /api/config/file?path=05-canvas%2Fcreate-triggers.yaml 200 in 26ms
+ GET /api/config/file?path=05-canvas%2Fedit-triggers.yaml 200 in 24ms
+ GET /api/config/file?path=05-canvas%2Fpersona-priorities.yaml 200 in 25ms
+ GET /api/rag/areas 200 in 33ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 42ms
+ GET /api/config/mcp-servers 200 in 44ms
+ GET /api/rag/areas 200 in 31ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 24ms
+ GET /api/config/mcp-servers 200 in 38ms
+ GET /api/sessions 307 in 20ms
+ GET /api/sessions 307 in 14ms
+ GET /api/sessions/bb-d824bd7c-c993-4e38-92a9-7c577b8e2093/messages 200 in 23ms
+ GET /api/sessions/bb-a5131340-67c8-4c1a-bc60-7ea6044636db/messages 200 in 25ms
+ GET /api/sessions/bb-9ecb269e-4dc0-4124-9c66-f4c1cbcec3e2/messages 200 in 28ms
+ GET /api/safety/logs?limit=200 200 in 40ms
+ GET /api/safety/stats 200 in 43ms
+ GET /api/safety/logs?limit=200 200 in 60ms
+ GET /api/safety/stats 200 in 61ms
+ GET /api/sessions 307 in 18ms
+ GET /api/sessions 307 in 11ms
+ GET /api/sessions/z-Search-reg/messages 200 in 32ms
+ GET /api/safety/logs?limit=200 200 in 39ms
+ GET /api/safety/stats 200 in 44ms
+ GET /api/safety/logs?limit=200 200 in 27ms
+ GET /api/safety/stats 200 in 31ms
+ GET /api/quality/stats 200 in 67ms
+ GET /api/quality/logs?limit=200 200 in 204ms
+ GET /api/quality/stats 200 in 122ms
+ GET /api/quality/logs?limit=200 200 in 221ms
+ GET /api/quality/stats 200 in 36ms
+ GET /api/quality/logs?limit=200 200 in 163ms
+ ✓ Compiled in 372ms (550 modules)
+ ✓ Compiled in 248ms (550 modules)
+ ✓ Compiled in 210ms (550 modules)
+ ✓ Compiled in 211ms (550 modules)
+ ✓ Compiled in 299ms (550 modules)
+ ✓ Compiled in 205ms (550 modules)
+ ✓ Compiled in 166ms (550 modules)
+ ✓ Compiled in 320ms (550 modules)
+ ✓ Compiled in 201ms (550 modules)
+ ✓ Compiled in 131ms (550 modules)
+ ✓ Compiled in 146ms (550 modules)
+ ✓ Compiled in 604ms (550 modules)
+ ✓ Compiled /api/[...path] in 315ms (341 modules)
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 503ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 507ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 18ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 32ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 32ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 39ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 31ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 23ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 38ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 16ms
+ GET /api/config/mcp-servers 200 in 24ms
+ GET /api/config/mcp-servers 200 in 15ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 23ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 36ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 19ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 25ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 78ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 84ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 32ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 51ms
+ GET /api/config/file?path=01-base%2Fguardrails.md 200 in 32ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 28ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 26ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 28ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 20ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 41ms
+ GET /api/config/mcp-servers 200 in 44ms
+ GET /api/rag/areas 200 in 81ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 27ms
+ GET /api/config/mcp-servers 200 in 40ms
+ GET /api/rag/areas 200 in 22ms
+ GET /api/sessions 307 in 26ms
+ GET /api/sessions 307 in 13ms
+ GET /api/sessions/bb-208426c4-7610-4fe8-aa12-2242e3556c81/messages 200 in 29ms
+ GET /api/sessions/bb-8bf99cdd-fbd4-4feb-b2d6-a2e7cc08f501/messages 200 in 33ms
+ GET /api/sessions/bb-58e7b376-e8e2-4bfe-85bd-8e705469ec9e/messages 200 in 25ms
+ GET /api/sessions/bb-c4303fc6-fa14-42be-a364-5bb1041933a0/messages 200 in 30ms
+ GET /api/sessions/bb-d824bd7c-c993-4e38-92a9-7c577b8e2093/messages 200 in 46ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 47ms
+ GET /api/config/mcp-servers 200 in 57ms
+ GET /api/rag/areas 200 in 98ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 36ms
+ GET /api/config/mcp-servers 200 in 46ms
+ GET /api/rag/areas 200 in 23ms
+ GET /api/config/file?path=05-canvas%2Fmaterial-types.yaml 200 in 45ms
+ GET /api/config/file?path=05-canvas%2Fmaterial-types.yaml 200 in 20ms
+ GET /api/config/mcp-servers 200 in 23ms
+ GET /api/config/mcp-servers 200 in 15ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 27ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 16ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 31ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 46ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 24ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 30ms

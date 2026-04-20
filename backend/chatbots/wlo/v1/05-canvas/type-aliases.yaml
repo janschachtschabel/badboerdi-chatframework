@@ -1,0 +1,164 @@
+# Canvas-Material-Typ-Aliases
+# ============================================================================
+# Hier wird definiert, wie frei geschriebene Wörter auf die internen
+# Canvas-Typ-IDs (aus material-types.yaml) gemappt werden.
+#
+# - aliases: Direkt-Lookup. User schreibt den Key → Typ wird gewählt.
+#   Groß-/Kleinschreibung egal, Umlaute werden separat normalisiert.
+# - short_whitelist: Kurze Wörter (<6 Zeichen), die trotzdem erkannt werden
+#   dürfen, wenn sie in einer längeren Nachricht stehen. Nur aufnehmen,
+#   wenn die Verwechslungsgefahr minimal ist (z.B. 'quiz' ist eindeutig,
+#   'info' wäre mehrdeutig und gehört NICHT hierhin).
+# - lrt_to_type: Mapping von edu-sharing `learning_resource_types`-Werten
+#   auf Canvas-Typ. Wird im Remix-Flow benutzt, damit ein Video-Remix ein
+#   Infoblatt wird, ein Arbeitsblatt-Remix bleibt Arbeitsblatt, etc.
+#
+# Änderungen wirken live (mtime-Cache).
+
+aliases:
+  # Automatisch
+  auto: auto
+  automatisch: auto
+  ki: auto
+
+  # Didaktisch
+  arbeitsblatt: arbeitsblatt
+  aufgabenblatt: arbeitsblatt
+  worksheet: arbeitsblatt
+
+  infoblatt: infoblatt
+  info: infoblatt
+  informationsblatt: infoblatt
+  zusammenfassung: infoblatt
+
+  praesentation: praesentation
+  präsentation: praesentation
+  folien: praesentation
+  vortrag: praesentation
+
+  quiz: quiz
+  test: quiz
+  "quiz/test": quiz
+
+  checkliste: checkliste
+  checklist: checkliste
+
+  glossar: glossar
+  begriffe: glossar
+
+  strukturuebersicht: struktur
+  strukturübersicht: struktur
+  struktur: struktur
+  mindmap: struktur
+  themenuebersicht: struktur
+  themenübersicht: struktur
+  übersicht: struktur
+
+  uebung: uebung
+  übung: uebung
+  uebungen: uebung
+  übungen: uebung
+  uebungsaufgaben: uebung
+  übungsaufgaben: uebung
+
+  lerngeschichte: lerngeschichte
+  geschichte: lerngeschichte
+  story: lerngeschichte
+
+  versuch: versuch
+  experiment: versuch
+  versuchsanleitung: versuch
+
+  diskussion: diskussion
+  diskussionskarten: diskussion
+  debatte: diskussion
+
+  rollenspiel: rollenspiel
+  rollenspielkarten: rollenspiel
+  rollen: rollenspiel
+
+  # Analytisch
+  bericht: bericht
+  report: bericht
+  reporting: bericht
+  managementbericht: bericht
+  jahresbericht: bericht
+  lagebericht: bericht
+
+  factsheet: factsheet
+  faktenblatt: factsheet
+  kennzahlen: factsheet
+  kpis: factsheet
+  kpi: factsheet
+  fakten: factsheet
+  uebersicht: factsheet
+
+  steckbrief: steckbrief
+  projektsteckbrief: steckbrief
+  projektinfo: steckbrief
+  projektprofil: steckbrief
+
+  pressemitteilung: pressemitteilung
+  presse: pressemitteilung
+  pm: pressemitteilung
+  pressetext: pressemitteilung
+  medienmitteilung: pressemitteilung
+
+  vergleich: vergleich
+  gegenueberstellung: vergleich
+  gegenüberstellung: vergleich
+  matrix: vergleich
+  vergleichsanalyse: vergleich
+  evaluation: vergleich
+
+# Kurze Keywords (unter 6 Zeichen), die trotzdem matchen dürfen.
+# Vorsicht: nur aufnehmen, wenn die Verwechslungsgefahr minimal ist.
+short_whitelist:
+  - quiz
+  - test
+  - kpi
+  - pm
+
+# Mapping: edu-sharing-LRT-Wert → Canvas-Typ (für Remix-Flow).
+# Wenn ein Content-Node beim Remix eine LRT-Angabe liefert, wird der
+# neue Canvas-Output in diesen Typ umgewandelt. Nicht gemappte LRT
+# fallen auf 'auto' zurück.
+lrt_to_type:
+  arbeitsblatt: arbeitsblatt
+  aufgabe: uebung
+  unterrichtsbaustein: arbeitsblatt
+  unterrichtsplan: arbeitsblatt
+  unterrichtsplanung: arbeitsblatt
+  übungsmaterial: uebung
+  uebungsmaterial: uebung
+  uebungsaufgabe: uebung
+  übungsaufgabe: uebung
+  test: quiz
+  quiz: quiz
+  selbsttest: quiz
+  praesentation: praesentation
+  präsentation: praesentation
+  folie: praesentation
+  infoblatt: infoblatt
+  informationsblatt: infoblatt
+  lesetext: infoblatt
+  nachschlagewerk: glossar
+  glossar: glossar
+  begriffsdefinition: glossar
+  mindmap: struktur
+  "concept map": struktur
+  themenuebersicht: struktur
+  themenübersicht: struktur
+  übersicht: struktur
+  rollenspiel: rollenspiel
+  debatte: diskussion
+  diskussion: diskussion
+  experiment: versuch
+  versuch: versuch
+  video: infoblatt
+  audio: infoblatt
+  webseite: infoblatt
+  lerngeschichte: lerngeschichte
+  geschichte: lerngeschichte
+  erzaehlung: lerngeschichte
+  checkliste: checkliste

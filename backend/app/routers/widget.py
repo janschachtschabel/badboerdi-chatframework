@@ -56,7 +56,11 @@ def _resolve(asset_name: str) -> Path:
 
 def _cors(resp: Response) -> Response:
     resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Cache-Control"] = "public, max-age=300"
+    # Revalidate on every fetch so widget updates propagate immediately.
+    # `no-cache` (NOT `no-store`) still lets the browser keep the bundle
+    # locally but forces a conditional GET (ETag/Last-Modified) on reload,
+    # which is cheap and avoids stale-widget confusion during iteration.
+    resp.headers["Cache-Control"] = "no-cache, must-revalidate"
     return resp
 
 
@@ -100,53 +104,151 @@ _DEMO_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BOERDi Widget — Demo</title>
+  <title>BOERDi Widget — Demo & Integrations-Guide</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 720px; margin: 40px auto; padding: 0 20px; color: #333;
+      max-width: 880px; margin: 40px auto; padding: 0 20px; color: #333;
       line-height: 1.6;
     }
     h1 { color: #1c4587; }
+    h2 { color: #1c4587; margin-top: 32px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; }
+    h3 { color: #334155; margin-top: 20px; font-size: 1.05em; }
     code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
-    pre  { background: #1f2937; color: #e5e7eb; padding: 16px; border-radius: 8px; overflow-x: auto; }
+    pre  { background: #1f2937; color: #e5e7eb; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
     .hero { background: #f9fafb; padding: 24px; border-radius: 12px; border: 1px solid #e5e7eb; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+    th { background: #f9fafb; }
+    .tag { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-right: 4px; }
+    .tag-note { background: #fef3c7; color: #92400e; }
+    .note { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 12px 16px; border-radius: 4px; margin: 12px 0; font-size: 13px; }
   </style>
 </head>
 <body>
-  <h1>🦉 BOERDi Widget — Demo</h1>
+  <h1>🦉 BOERDi Widget — Demo & Integrations-Guide</h1>
   <div class="hero">
     <p>Klicke unten rechts auf die Eule, um den Chatbot zu öffnen.</p>
-    <p>Diese Seite simuliert eine beliebige Drittseite. Der Chatbot weiß über die
-       <code>page-context</code>-Property, dass er auf einer Demo-Seite läuft.</p>
+    <p>Diese Seite demonstriert alle Integrations-Varianten. Das Widget läuft hier mit
+       <code>auto-context="true"</code> — URL, Titel und Themenseiten-Slug werden automatisch erkannt.</p>
   </div>
 
-  <h2>Einbettung</h2>
-  <pre>&lt;script src="/widget/boerdi-widget.js" defer&gt;&lt;/script&gt;
-&lt;boerdi-chat
-  api-url="http://localhost:8000"
-  page-context='{"thema":"demo","seite":"widget-test"}'
+  <h2>Schnellstart (Minimal-Embed)</h2>
+  <pre>&lt;script src="http://localhost:8000/widget/boerdi-widget.js" defer&gt;&lt;/script&gt;
+&lt;boerdi-chat api-url="http://localhost:8000"&gt;&lt;/boerdi-chat&gt;</pre>
+  <p>Mehr braucht es nicht für den Standard-Fall. <code>auto-context="true"</code> ist Default,
+     d.h. URL-Pfad, <code>?node=</code>, <code>?collection=</code>, <code>?q=</code>, WLO-Slugs
+     (<code>/themenseite/…</code>, <code>/fachportal/…</code>), edu-sharing-Render-URLs
+     (<code>/components/render/&lt;uuid&gt;</code>) und der Seitentitel werden erkannt und
+     an das Backend übergeben.</p>
+
+  <h2>Integrations-Szenarien</h2>
+
+  <h3>1. Themenseite (wirlernenonline.de/themenseite/optik)</h3>
+  <pre>&lt;boerdi-chat
+  api-url="https://api.wlo.de"
+  position="bottom-right"&gt;
+&lt;/boerdi-chat&gt;</pre>
+  <p>Auto-Context erkennt den Slug <code>optik</code>, das Backend ruft
+     <code>search_wlo_topic_pages</code> + <code>get_node_details</code> via MCP auf und
+     cacht Titel/Beschreibung/Fächer/Bildungsstufen in der Session (TTL 30 Min).
+     Der Bot kann anschließend „Worum geht es auf dieser Seite?" direkt beantworten.</p>
+
+  <h3>2. edu-sharing Content-Render (.../components/render/&lt;uuid&gt;)</h3>
+  <pre>&lt;boerdi-chat
+  api-url="https://api.wlo.de"
+  position="bottom-right"&gt;
+&lt;/boerdi-chat&gt;</pre>
+  <p>Der <code>node_id</code> wird aus dem URL-Pfad extrahiert und automatisch via MCP aufgelöst.</p>
+
+  <h3>3. Expliziter Kontext-Override (z.B. auf eigener Seite mit bekannten Meta-Daten)</h3>
+  <pre>&lt;boerdi-chat
+  api-url="https://api.wlo.de"
+  page-context='{"node_id":"a1b2c3d4-1234-5678-90ab-cdef01234567"}'&gt;
+&lt;/boerdi-chat&gt;</pre>
+  <p>Manuell gesetzte <code>page-context</code>-Keys überschreiben Auto-Detection.
+     Unterstützte Keys:
+     <code>node_id</code>, <code>collection_id</code>, <code>topic_page_slug</code>,
+     <code>subject_slug</code>, <code>search_query</code>, <code>page_type</code>,
+     <code>document_title</code>.</p>
+
+  <h3>4. Sammlungsseite (.../sammlung/&lt;id&gt;)</h3>
+  <pre>&lt;boerdi-chat
+  api-url="https://api.wlo.de"
   position="bottom-right"
-  primary-color="#1c4587"&gt;
+  initial-state="expanded"&gt;
+&lt;/boerdi-chat&gt;</pre>
+  <p><code>initial-state="expanded"</code> öffnet das Widget direkt. Nützlich, wenn der
+     User über eine Link-Kampagne kommt und sofort interagieren soll.</p>
+
+  <h3>5. Auto-Context deaktivieren (statischer Kontext)</h3>
+  <pre>&lt;boerdi-chat
+  api-url="https://api.wlo.de"
+  auto-context="false"
+  page-context='{"page_type":"landingpage","campaign":"digital-pakt-2026"}'&gt;
 &lt;/boerdi-chat&gt;</pre>
 
-  <h2>Properties</h2>
-  <ul>
-    <li><code>api-url</code> — Backend-Basis-URL (z.B. <code>https://api.wlo.de</code>)</li>
-    <li><code>page-context</code> — JSON-String mit Kontext für das Pattern-Matching</li>
-    <li><code>position</code> — <code>bottom-right</code> | <code>bottom-left</code> | <code>top-right</code> | <code>top-left</code></li>
-    <li><code>initial-state</code> — <code>collapsed</code> | <code>expanded</code></li>
-    <li><code>primary-color</code> — Akzentfarbe für Button und Header</li>
-    <li><code>persist-session</code> — <code>true</code>/<code>false</code> für localStorage-Session</li>
-    <li><code>session-key</code> — Storage-Key für die Session-ID</li>
-    <li><code>greeting</code> — Begrüßungstext überschreiben</li>
-    <li><code>auto-context</code> — URL/Title automatisch in den Kontext packen</li>
-  </ul>
+  <h2>Properties (vollständige Liste)</h2>
+  <table>
+    <tr><th>HTML-Attribut</th><th>Typ</th><th>Default</th><th>Beschreibung</th></tr>
+    <tr><td><code>api-url</code></td><td>string</td><td><code>""</code></td>
+        <td>Backend-Basis-URL (z.B. <code>https://api.wlo.de</code>). Ohne Wert nutzt das Widget denselben Host, von dem das JS geladen wurde.</td></tr>
+    <tr><td><code>page-context</code></td><td>JSON string</td><td><code>{}</code></td>
+        <td>Manuelle Kontext-Keys (siehe Liste oben). Wird mit Auto-Context gemerged — manuelle Keys gewinnen.</td></tr>
+    <tr><td><code>auto-context</code></td><td>boolean</td><td><code>true</code></td>
+        <td>URL-Regex extrahiert <code>node_id</code>, Slug, Query-Param usw. automatisch. <code>document.title</code> geht als Fallback mit.</td></tr>
+    <tr><td><code>position</code></td><td>enum</td><td><code>bottom-right</code></td>
+        <td><code>bottom-right</code> | <code>bottom-left</code> | <code>top-right</code> | <code>top-left</code></td></tr>
+    <tr><td><code>initial-state</code></td><td>enum</td><td><code>collapsed</code></td>
+        <td><code>collapsed</code> (FAB) | <code>expanded</code> (direkt offen)</td></tr>
+    <tr><td><code>primary-color</code></td><td>CSS color</td><td><code>#1c4587</code></td>
+        <td>Akzentfarbe für FAB, Header und Buttons.</td></tr>
+    <tr><td><code>persist-session</code></td><td>boolean</td><td><code>true</code></td>
+        <td>Session-ID in localStorage — Konversation bleibt über Seitenaufrufe erhalten.</td></tr>
+    <tr><td><code>session-key</code></td><td>string</td><td><code>boerdi_session_id</code></td>
+        <td>localStorage-Key, falls mehrere Widgets auf derselben Domain laufen.</td></tr>
+    <tr><td><code>greeting</code></td><td>string</td><td><code>""</code></td>
+        <td>Eigener Begrüßungstext (überschreibt den Persona-Default).</td></tr>
+  </table>
+
+  <h2>Was der Chatbot kann</h2>
+  <table>
+    <tr><th>Fähigkeit</th><th>Beispiel-Nutzer-Anfrage</th></tr>
+    <tr><td><span class="tag">Suche</span> Einzel-Materialien</td>
+        <td>„Zeig mir Videos zur Bruchrechnung"</td></tr>
+    <tr><td><span class="tag">Suche</span> Sammlungen</td>
+        <td>„Welche Sammlungen gibt es zu Geometrie?"</td></tr>
+    <tr><td><span class="tag">Suche</span> Themenseiten</td>
+        <td>„Wo finde ich eine Übersicht zu Klimawandel?"</td></tr>
+    <tr><td><span class="tag">Info</span> Plattform/Projekt/Statistik</td>
+        <td>„Wie viele OER-Materialien hat WLO?"</td></tr>
+    <tr><td><span class="tag">Canvas-Create</span> didaktisch</td>
+        <td>„Erstell mir ein Arbeitsblatt zur Photosynthese Klasse 6"</td></tr>
+    <tr><td><span class="tag">Canvas-Create</span> analytisch</td>
+        <td>„Ich brauche ein Factsheet zu Bildungsgerechtigkeit"</td></tr>
+    <tr><td><span class="tag">Canvas-Create</span> Lernpfad</td>
+        <td>„Bau mir einen Lernpfad aus der Sammlung"</td></tr>
+    <tr><td><span class="tag">Canvas-Edit</span></td>
+        <td>„Mach es einfacher", „Füge Lösungen hinzu"</td></tr>
+    <tr><td><span class="tag">Feedback</span></td>
+        <td>„Das war nicht hilfreich" → Acknowledgment + Routing-Angebot</td></tr>
+  </table>
+  <div class="note">
+    <strong>Canvas-Arbeitsfläche:</strong> Ab Breakpoint &gt;1200 px öffnet das Widget eine
+    zweite Spalte rechts neben dem Chat (Canvas-Pane). Dort erscheinen Markdown-Dokumente
+    (Arbeitsblatt, Quiz, Factsheet, …) mit Druck/Download, sowie die Material-Kachel-Grid für
+    Such-Ergebnisse. Mobile: Tab-Switcher im Header.
+  </div>
+
+  <h2>Personas, Intents, Patterns</h2>
+  <p>Das Backend klassifiziert jeden Turn auf 9 Personas (Lehrkraft, Schüler:in, Eltern,
+     Anonym, Verwaltung, Politik, Berater, Presse, Redaktion) und 14 Intents
+     (Suche/Canvas-Create/Canvas-Edit/Feedback/…). 26 Patterns entscheiden, wie geantwortet
+     wird — konfigurierbar im <a href="http://localhost:3001">BadBoerdi Studio</a>.</p>
 
   <script src="/widget/boerdi-widget.js" defer></script>
   <boerdi-chat
     api-url="http://localhost:8000"
-    page-context='{"thema":"demo","seite":"widget-test"}'
     position="bottom-right"
     primary-color="#1c4587">
   </boerdi-chat>

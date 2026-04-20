@@ -1,0 +1,101 @@
+# Canvas-Edit-Trigger
+# ============================================================================
+# Wenn state-12 (Canvas-Arbeit) aktiv ist UND eine dieser Formulierungen
+# vorkommt, wird der nächste Turn als EDIT des bestehenden Canvas-Inhalts
+# behandelt (INT-W-12), nicht als neue Erstellung (INT-W-11).
+#
+# Damit die Abgrenzung zu "Erstelle mir was Neues" sauber ist:
+#   - edit_triggers werden NUR geprüft wenn state-12 aktiv UND bereits
+#     Canvas-Markdown in der Session liegt.
+#   - Starke Create-Verben (z.B. "erstelle mir ein neues Quiz")
+#     setzen sich trotzdem durch, weil explicit_create_overrides zuerst
+#     matcht.
+#
+# Änderungen wirken live (mtime-Cache).
+
+# Überstimmt Edit: wenn eines dieser Phrasen vorkommt, wird trotz state-12
+# auf CREATE gegangen. Für Fälle wie "mach mir ein neues Arbeitsblatt".
+explicit_create_overrides:
+  - neues arbeitsblatt
+  - neues infoblatt
+  - neues quiz
+  - neuen bericht
+  - neues factsheet
+  - neue präsentation
+  - neuen steckbrief
+  - neue pressemitteilung
+  - neuen vergleich
+  - anderes thema
+  - zu einem anderen thema
+  - fang nochmal an
+  - fang von vorne
+
+# Edit-Verben (Refinement / Änderung bestehenden Canvas-Inhalts)
+edit_triggers:
+  # Sprachliche Vereinfachung / Verdichtung
+  - mach es einfacher
+  - mach das einfacher
+  - einfacher formulieren
+  - vereinfachen
+  - vereinfache
+  - kürzer
+  - kürzer fassen
+  - kürzer formulieren
+  - knapper
+  - ausführlicher
+  - detaillierter
+  - länger
+  - mehr details
+  - mehr detail
+
+  # Ergänzen
+  - füge hinzu
+  - ergänze
+  - ergänze um
+  - nimm noch
+  - nimm zusätzlich
+  - zusätzlich
+  - dazu noch
+  - mehr übungen
+  - mehr aufgaben
+  - mehr beispiele
+  - füge lösungen
+  - füge eine lösung
+  - mit lösungen
+  - mit lösung
+
+  # Streichen
+  - streiche
+  - entferne
+  - lösche
+  - weg mit
+  - ohne
+
+  # Umformulieren
+  - formuliere um
+  - schreib um
+  - anders formulieren
+  - umformulieren
+  - neu formulieren
+  - stil anpassen
+  - förmlicher
+  - formeller
+  - lockerer
+  - persönlicher
+
+  # Ändern (generisch)
+  - ändere
+  - ändere den titel
+  - ändere die überschrift
+  - ändere die reihenfolge
+  - sortiere um
+  - tausch
+  - ersetze
+
+  # Explizite Edit-Formulierungen
+  - pass es an
+  - passe es an
+  - überarbeite
+  - verbessere
+  - optimiere
+  - verfeinere

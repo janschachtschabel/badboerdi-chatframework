@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any
 
 from app.models.schemas import SafetyDecision
@@ -28,10 +29,45 @@ from app.services.config_loader import load_safety_config
 logger = logging.getLogger(__name__)
 
 # ── Stage 1: Regex patterns ─────────────────────────────────────────
+# Crisis = Nutzer richtet Gewalt/Suizid gegen SICH SELBST.  Ein reines
+# "ich" weiter vorn im Satz reicht NICHT — "ich werde dich umbringen"
+# wäre sonst eine Crisis statt einer Drohung gegen Dritte.  Darum muss
+# das self-referentielle Pronomen (mich/mir/selbst) DIREKT am Gewaltverb
+# hängen (max. 10 Zeichen Abstand).
 _CRISIS_PATTERNS = [
-    r"\b(suizid|suicid|umbringen|nicht mehr leben|selbstmord)\b",
-    r"\b(selbstverletz|ritz mich|tu mir weh)\b",
+    # Suizid-Keywords sind klar self-referential
+    r"\b(suizid|suicid|selbstmord|selbstt[öo]tung)\b",
+    # Selbstverletzung
+    r"\b(selbstverletz|ritz mich|ritze mich|ritzen seit|tu mir weh)\b",
+    # "umbringen / töten" mit engem Selbstbezug. 0-10 Zeichen Abstand —
+    # "ich will mich umbringen" ✓, "ich werde dich finden und umbringen" ✗.
+    # WICHTIG: `umbring\w*` statt `\bumbring\b` — sonst matcht "umbringen"
+    # nicht, weil \b mitten im Wort steht.
+    r"\b(mich|mir)\b[^.?!]{0,10}\bumbring\w*\b",
+    r"\b(mich|mir)\b[^.?!]{0,10}\bt[öo]te\w*\b",
+    r"\bumbring\w*\b[^.?!]{0,10}\b(mich|mir)\b",
+    r"\bt[öo]te\w*\b[^.?!]{0,10}\b(mich|mir)\b",
+    r"\bmich\s+selbst\b[^.?!]{0,10}\b(umbring\w*|t[öo]te\w*)\b",
+    # "nicht mehr leben wollen" — klar Suizid
+    r"\bnicht mehr leben\b",
+    # Tabletten-/Überdosis-Euphemismen (fängt "wie viele tabletten muss
+    # ich nehmen damit es reicht", "genug tabletten für immer", "überdosis")
+    r"\b(tabletten|pillen)\b[^.?!]{0,40}\b(reich(en|t)|genug|f[üu]r immer|damit (es|ich))\b",
+    r"\b(überdosis|ueberdosis|overdose)\b",
 ]
+
+# Threat = Nutzer droht Gewalt/Tötung gegen Dritte.  Eigener enforced
+# Pattern (PAT-REFUSE-THREAT) und HIGH-Risk, aber KEINE Suizid-Empathie.
+# Vorsicht: `\bumbring\b` matcht NICHT in "umbringen"! Deshalb `umbring\w*`.
+_THREAT_PATTERNS = [
+    # "Ich werde dich/euch/ihn/sie umbringen/töten …"
+    r"\b(werde|will|gonna)\b[^.?!]{0,30}\b(dich|euch|ihn|sie|ihr|you|him|her|them)\b[^.?!]{0,40}\b(umbring\w*|t[öo]te\w*|abstech\w*|erschieß\w*|erschiess\w*|kill\w*|murder\w*)\b",
+    # "… umbringen, dich", umgekehrte Reihenfolge
+    r"\b(umbring\w*|t[öo]te\w*|abstech\w*|erschieß\w*|erschiess\w*|kill\w*|murder\w*)\b[^.?!]{0,40}\b(dich|euch|ihn|sie|ihr|you|him|her|them)\b",
+    # "Ich finde dich und …"
+    r"\bich\s+finde\s+dich\b[^.?!]{0,40}\b(umbring\w*|t[öo]te\w*|fertig)\b",
+]
+
 _PII_PATTERNS = [
     r"\b(passwort|password|kreditkart|sozialvers|geburtsdatum)\b.*\b(meine?|ist|lautet)\b",
 ]
@@ -46,13 +82,25 @@ _LEGAL_TRIGGER_PATTERNS = [
     r"\b(hate|kill you|hurt you|threat|murder)\b",
 ]
 
+# All patterns are matched against `message.lower()`, so the patterns
+# themselves must be lowercase. Don't put uppercase tokens here.
 _INJECTION_PATTERNS = [
-    r"ignoriere?\s+(alle|deine|vorherige|bisherige)\s+(anweisungen|regeln|instruktionen|prompts?)",
-    r"ignore\s+(all|your|previous|prior)\s+(instructions|rules|prompts?)",
+    # DE: allow 1-3 intermediate words between "ignoriere" and the noun so
+    # phrases like "ignoriere alle vorherigen anweisungen" match.
+    r"ignorier[et]?\s+(?:\w+\s+){1,3}(anweisungen|regeln|instruktionen|prompts?)",
+    # EN: same — "ignore all previous instructions", "ignore your prior rules".
+    r"ignore\s+(?:\w+\s+){1,3}(instructions|rules|prompts?)",
     r"system\s*prompt",
-    r"(act|verhalte dich|du bist jetzt|you are now)\s+(as|wie|ein)\s+",
+    # Persona-override — handles both "verhalte dich als/wie …" and
+    # free-form "du bist jetzt <rolle/modus>". The old pattern required
+    # "(as|wie|ein)" after "du bist jetzt …" which missed "du bist jetzt
+    # dan mode" (no connector word).
+    r"\b(verhalte dich|act as|you are now)\s+(as|wie|ein)\s+",
+    r"\bdu bist jetzt\s+\w+",
     r"(reveal|zeig(e)?|gib aus)\s+(your|den|deinen)\s+(prompt|system|instructions)",
-    r"(jailbreak|DAN mode|developer mode)",
+    # Known jailbreak modes — keep lowercase!
+    r"\b(jailbreak|dan\s*mode|developer\s*mode|do\s*anything\s*now)\b",
+    r"\bantworte\s+ohne\s+filter\b",
     r"<\|.*?\|>",
     r"```\s*system",
 ]
@@ -61,6 +109,9 @@ _INJECTION_PATTERNS = [
 def _resolve_preset(cfg: dict) -> dict:
     """Resolve active preset from security_level. Falls back to legacy escalation."""
     level = (cfg.get("security_level") or "standard").lower()
+    # Backwards-compat: "basic" was renamed/merged into "standard"
+    if level == "basic":
+        level = "standard"
     presets = cfg.get("presets") or {}
     preset = presets.get(level)
     if preset:
@@ -96,7 +147,17 @@ def _stage_should_run(stage_mode: str, current_risk: str) -> bool:
 
 
 def _regex_gate(message: str, signals: list[str]) -> SafetyDecision:
-    """Stage 1: fast regex assessment."""
+    """Stage 1: fast regex assessment.
+
+    Three mutually exclusive hard-block paths:
+      * Crisis — user endangers themselves → PAT-CRISIS (empathic)
+      * Threat — user threatens others   → PAT-REFUSE-THREAT (firm refusal)
+      * PII   — user volunteers sensitive data → soft medium block
+
+    Crisis takes priority over Threat when both would match (conservative
+    side of the fence — never respond with hostility if there's any
+    self-harm signal).
+    """
     msg = (message or "").lower()
     decision = SafetyDecision()
     decision.stages_run.append("regex")
@@ -111,6 +172,18 @@ def _regex_gate(message: str, signals: list[str]) -> SafetyDecision:
             ]
             decision.reasons.append("crisis_signal_detected")
             decision.legal_flags.append("jugendschutz")
+            return decision
+
+    for pat in _THREAT_PATTERNS:
+        if re.search(pat, msg):
+            decision.risk_level = "high"
+            decision.enforced_pattern = "PAT-REFUSE-THREAT"
+            decision.blocked_tools = [
+                "search_wlo_collections", "search_wlo_content",
+                "get_collection_contents",
+            ]
+            decision.reasons.append("threat_signal_detected")
+            decision.legal_flags.append("strafrecht")
             return decision
 
     for pat in _PII_PATTERNS:
@@ -188,17 +261,19 @@ async def _llm_legal_classify(message: str) -> dict[str, dict]:
     Returns dict like {"strafrecht": {"risk": 0.1, "reason": "..."}, ...}
     """
     try:
-        from app.services.llm_provider import get_client, get_chat_model
+        from app.services.llm_provider import get_client, get_chat_model, build_chat_kwargs
         client = get_client()
         resp = await client.chat.completions.create(
-            model=get_chat_model(),
-            messages=[
-                {"role": "system", "content": _LEGAL_SYSTEM},
-                {"role": "user", "content": message[:2000]},
-            ],
-            temperature=0.0,
-            max_tokens=300,
-            response_format={"type": "json_object"},
+            **build_chat_kwargs(
+                model=get_chat_model(),
+                messages=[
+                    {"role": "system", "content": _LEGAL_SYSTEM},
+                    {"role": "user", "content": message[:2000]},
+                ],
+                temperature=0.0,
+                max_tokens=300,
+                response_format={"type": "json_object"},
+            )
         )
         raw = resp.choices[0].message.content or "{}"
         data = json.loads(raw)
@@ -272,7 +347,13 @@ async def assess_safety(message: str, signals: list[str] | None = None) -> Safet
         return decision
 
     decision.escalated = True
+    _t0 = time.perf_counter()
     results = await asyncio.gather(*(t[1] for t in tasks), return_exceptions=True)
+    _elapsed_ms = (time.perf_counter() - _t0) * 1000
+    logger.info(
+        "safety stages=%s level=%s took %.0fms",
+        ",".join(n for n, _ in tasks), preset["level"], _elapsed_ms,
+    )
 
     openai_data: dict[str, Any] = {}
     legal_data: dict[str, dict] = {}
@@ -318,14 +399,29 @@ async def assess_safety(message: str, signals: list[str] | None = None) -> Safet
         if legal and legal not in decision.legal_flags:
             decision.legal_flags.append(legal)
 
-    # Hard-Block-Kategorien sofort high
-    if any(c in hard_blocks for c in flagged_now):
+    # Hard-Block-Kategorien sofort high. Wählt Pattern je nach Kategorie:
+    #   - self_harm / sexual/minors       → PAT-CRISIS (empathisch)
+    #   - hate/threatening / harassment/threatening → PAT-REFUSE-THREAT (sachlich ablehnend)
+    #   - illicit/violent                 → PAT-CRISIS (default refusal, siehe config)
+    hard_hit = [c for c in flagged_now if c in hard_blocks]
+    if hard_hit:
         decision.risk_level = "high"
-        decision.enforced_pattern = "PAT-CRISIS"
+        # Pattern wählen: wenn ein Threat-Kategorie dabei ist UND keine
+        # Selbstgefährdung, nimm das Threat-Pattern. Selbstgefährdung
+        # hat immer Vorrang (Schutz hat Vorrang).
+        threat_cats = {"hate/threatening", "harassment/threatening"}
+        crisis_cats = {"self_harm", "self_harm/intent", "sexual/minors"}
+        if set(hard_hit) & crisis_cats:
+            decision.enforced_pattern = cfg.get("crisis_pattern", "PAT-CRISIS")
+        elif set(hard_hit) & threat_cats:
+            decision.enforced_pattern = cfg.get("threat_pattern", "PAT-REFUSE-THREAT")
+        else:
+            # illicit/violent etc. — generische Zurückweisung über Crisis-Pattern
+            decision.enforced_pattern = cfg.get("crisis_pattern", "PAT-CRISIS")
         for t in cfg.get("crisis_blocked_tools", []):
             if t not in decision.blocked_tools:
                 decision.blocked_tools.append(t)
-        decision.reasons.append(f"hard_block:{','.join(c for c in flagged_now if c in hard_blocks)}")
+        decision.reasons.append(f"hard_block:{','.join(hard_hit)}")
 
     # ── Merge LLM legal classifier ────────────────────────────────
     legal_thr = esc.get("legal_thresholds", {}) or {}
@@ -347,12 +443,16 @@ async def assess_safety(message: str, signals: list[str] | None = None) -> Safet
                     decision.reasons.append(f"legal:{cat} {risk:.2f}")
 
     # ── Downgrade false positives ─────────────────────────────────
+    # Prompt-injection hits are kept at medium even when moderation/legal come
+    # back clean — the user still deserves the "looks like an instruction,
+    # ignoring it" notice.
     if (
         esc.get("downgrade_false_positives", True)
         and decision.risk_level == "medium"
         and not flagged_now
         and not any(e.get("risk", 0) >= 0.5 for e in legal_data.values())
         and "crisis_signal_detected" not in decision.reasons
+        and "possible_prompt_injection" not in decision.reasons
     ):
         decision.risk_level = "low"
         decision.reasons.append("downgraded_by_llm_check")

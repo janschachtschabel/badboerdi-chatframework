@@ -9,14 +9,14 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.models.schemas import ClassificationResult
-from app.services.mcp_client import TOOL_DEFINITIONS, call_mcp_tool, parse_wlo_cards
+from app.services.mcp_client import TOOL_DEFINITIONS, call_mcp_tool, parse_wlo_cards, resolve_discipline_labels
 from app.services.pattern_engine import select_pattern
 from app.services.config_loader import (
     load_persona_prompt, load_domain_rules, load_base_persona, load_guardrails,
     load_intents, load_states, load_entities, load_signal_modulations,
     load_device_config, load_persona_definitions,
 )
-from app.services.llm_provider import get_client, get_chat_model
+from app.services.llm_provider import get_client, get_chat_model, build_chat_kwargs
 
 client = get_client()
 MODEL = get_chat_model()
@@ -111,7 +111,11 @@ def _build_classify_tool() -> dict[str, Any]:
     }
 
 
-def _build_classify_system_prompt(session_state: dict, environment: dict) -> str:
+def _build_classify_system_prompt(
+    session_state: dict,
+    environment: dict,
+    canvas_state: dict | None = None,
+) -> str:
     """Build the classification system prompt from config files."""
     # Load config-driven element lists
     device_cfg = load_device_config()
@@ -176,7 +180,11 @@ def _build_classify_system_prompt(session_state: dict, environment: dict) -> str
     else:
         entity_lines = (
             "- fach: Schulfach oder Fachgebiet (z.B. Mathematik, Deutsch, Biologie)\n"
-            "- stufe: Bildungsstufe oder Klassenstufe (z.B. Grundschule, Sek I, Klasse 7)\n"
+            "- stufe: Bildungsstufe aus dem WLO-Vokabular (Grundschule, Sekundarstufe I, "
+            "Sekundarstufe II, Berufliche Bildung, Hochschule, Erwachsenenbildung). "
+            "Nennt der Nutzer eine Klassenstufe, MAPPE sie: Klasse 1-4=Grundschule, "
+            "Klasse 5-10=Sekundarstufe I, Klasse 11-13=Sekundarstufe II. "
+            "Eine Filter-Ebene 'Klassenstufe' gibt es auf WLO nicht.\n"
             "- thema: Konkretes Thema oder Lerngegenstand (z.B. Bruchrechnung, Fotosynthese)\n"
             "- medientyp: Art des Materials (z.B. Video, Arbeitsblatt)\n"
             "- lizenz: Gewünschte Lizenz (z.B. CC BY, CC0)"
@@ -186,6 +194,44 @@ def _build_classify_system_prompt(session_state: dict, environment: dict) -> str
     if session_state.get("persona_id"):
         persona_prompt = f"\nAktuelle Persona: {session_state['persona_id']}"
 
+    canvas_prompt = ""
+    if canvas_state and canvas_state.get("mode") and canvas_state.get("mode") != "empty":
+        c_title = (canvas_state.get("title") or "").strip()
+        c_type = (canvas_state.get("material_type") or "").strip()
+        c_mode = canvas_state.get("mode")
+        c_md = (canvas_state.get("markdown") or "")[:800]
+        c_cards = canvas_state.get("cards_count") or 0
+        canvas_prompt = (
+            f"\n\n## Canvas-Kontext (was der Nutzer gerade sieht)"
+            f"\nModus: {c_mode}"
+            + (f"\nTitel: {c_title}" if c_title else "")
+            + (f"\nMaterial-Typ: {c_type}" if c_type else "")
+            + (f"\nKachel-Anzahl: {c_cards}" if c_mode == "cards" else "")
+            + (f"\nAuszug aus dem Canvas-Dokument:\n{c_md}" if c_md else "")
+            + "\n\nWICHTIG: Wenn die Nutzernachricht sich auf etwas im Canvas bezieht "
+              "(\"hier\", \"das\", \"die Aufgabe\", \"der Text\", \"mach es ...\"), "
+              "ist turn_type = \"follow_up\" oder \"clarification\" und Intent richtet "
+              "sich nach dem Canvas-Inhalt (INT-W-11 bei Material-Edits; INT-W-10 bei "
+              "Lernpfad-Edits; sonst wie aus der Nachricht ableitbar)."
+        )
+
+    # Semantic page-context block (populated if the widget is embedded on a
+    # theme page and page_context_service resolved its metadata).
+    try:
+        from app.services import page_context_service
+        _page_meta = page_context_service.get_cached(session_state)
+        _page_block = page_context_service.render_for_prompt(_page_meta)
+    except Exception:
+        _page_block = ""
+
+    # Also keep the raw page_context as a compact one-liner for debug /
+    # fallback (the semantic block is the primary signal).
+    _raw_pc = {
+        k: v for k, v in (environment.get("page_context") or {}).items()
+        if k in ("node_id", "collection_id", "search_query",
+                 "topic_page_slug", "subject_slug", "page_type", "widget")
+    }
+
     return f"""Du bist der Klassifikations-Modul des WLO-Chatbots.
 Analysiere die Nutzernachricht und klassifiziere sie in die 7 Input-Dimensionen.
 
@@ -193,8 +239,9 @@ Aktueller State: {session_state.get('state_id', 'state-1')}
 Bekannte Entities: {json.dumps(session_state.get('entities', {}))}{persona_prompt}
 Turn: {session_state.get('turn_count', 0) + 1}
 Seite: {environment.get('page', '/')}
-Seitenkontext: {json.dumps(environment.get('page_context', {}))}
-Device: {environment.get('device', 'desktop')}
+Seitenkontext (Rohdaten): {json.dumps(_raw_pc)}
+Device: {environment.get('device', 'desktop')}{canvas_prompt}
+{_page_block}
 
 ## Personas (WICHTIG: Genau zuordnen!)
 {persona_lines}
@@ -235,6 +282,50 @@ INTENT-REGELN:
 - "Was ist WLO", "Was ist WirLernenOnline" → INT-W-01 (WLO kennenlernen)
 - Wenn der Nutzer auf die Begruessung mit Orientierungswunsch antwortet → INT-W-02.
 
+- INT-W-11 (Inhalt erstellen) — Nutzer:in will ein NEUES Material KI-generieren lassen.
+  TRIGGER-VERBEN: "erstelle", "erstell mir", "generiere", "mach mir ein(e)",
+  "schreib ein(e)", "bau mir", "entwirf", "fasse zusammen als", "produziere".
+  Typische Beispiele:
+  - "Erstelle ein Arbeitsblatt zu ..."
+  - "Mach mir ein Quiz zu ..."
+  - "Generiere ein Infoblatt ueber ..."
+  - "Schreib eine Lerngeschichte zum Thema ..."
+  - "Bau mir ein Rollenspiel zu ..."
+  next_state: state-12 (Canvas-Arbeit).
+  Zusaetzliches Entity: wenn Material-Typ erkennbar (Arbeitsblatt/Quiz/Glossar/etc.),
+  speichere ihn unter entities.material_typ.
+
+- ABGRENZUNG INT-W-11 vs. INT-W-10 (Unterrichtsplanung):
+  - INT-W-10 = Lehrkraft plant eine komplette Unterrichtseinheit / Stunde / Lernpfad,
+    erwartet STRUKTURIERTE MATERIALZUSAMMENSTELLUNG aus bestehenden Quellen.
+    Trigger: "Lernpfad", "Stundenentwurf", "Unterrichtsplanung", "Unterrichtseinheit",
+    "Unterrichtsstunde", "plane eine Stunde".
+  - INT-W-11 = einzelnes, neu generiertes Material wird gewuenscht.
+    Trigger: siehe oben (Verb + konkreter Material-Typ).
+  - Faustregel: "Lernpfad"/"Stunde"/"Einheit" → INT-W-10; konkreter Typ wie
+    "Arbeitsblatt"/"Quiz"/"Glossar" ohne Stunden-Kontext → INT-W-11.
+
+- ABGRENZUNG INT-W-11 vs. INT-W-03b (Unterrichtsmaterial suchen):
+  - INT-W-03b = Nutzer:in SUCHT bestehende Materialien im WLO-Bestand.
+    Trigger: "Zeig mir", "Suche", "Finde", "Gibt es", "Hast du", "Welche ... gibt es".
+  - INT-W-11 = Nutzer:in will ein NEUES Material ERSTELLEN lassen.
+    Trigger: siehe oben (aktive Verben).
+  - Faustregel: "Zeig mir Arbeitsblaetter zu X" → INT-W-03b;
+    "Erstelle ein Arbeitsblatt zu X" → INT-W-11.
+
+- SAMMLUNGEN vs. THEMENSEITEN vs. EINZELINHALTE — richtiges INT-W-03?:
+  - Wenn der User explizit "Sammlung(en)", "Kollektion" oder "Themenseite(n)",
+    "Fachportal", "Portal" erwaehnt → INT-W-03a (Themenseite/Sammlung
+    entdecken), NICHT INT-W-03b.
+  - Wenn der User einen Material-Typ erwaehnt ("Arbeitsblatt", "Video",
+    "Quiz", "Uebung", "Unterrichtsbaustein") → INT-W-03b (Material suchen).
+  - Wenn der User offen formuliert ("zeig mir was zu X", "etwas ueber X",
+    "Material zu X" ohne spezifischen Typ) und Schueler:in/Eltern
+    ist → INT-W-03c (Lerninhalt suchen).
+  - Wenn offen formuliert und Lehrkraft ist → INT-W-03a, weil Lehrkraefte
+    zuerst von kuratierten Sammlungen/Themenseiten profitieren.
+  - Faustregel: "Zeig mir Sammlungen zu Optik" → INT-W-03a mit thema=Optik.
+
 ## Signale
 {signal_lines}
 
@@ -259,13 +350,14 @@ async def classify_input(
     history: list[dict],
     session_state: dict,
     environment: dict,
+    canvas_state: dict | None = None,
 ) -> ClassificationResult:
     """Phase 1: Classify user input into the 7 input dimensions.
 
     Returns a validated ClassificationResult. Falls back to defaults on
     validation errors so the pipeline never breaks.
     """
-    system = _build_classify_system_prompt(session_state, environment)
+    system = _build_classify_system_prompt(session_state, environment, canvas_state)
     classify_tool = _build_classify_tool()
 
     messages = [{"role": "system", "content": system}]
@@ -274,11 +366,13 @@ async def classify_input(
     messages.append({"role": "user", "content": message})
 
     resp = await client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        tools=[classify_tool],
-        tool_choice={"type": "function", "function": {"name": "classify_input"}},
-        temperature=0.1,
+        **build_chat_kwargs(
+            model=MODEL,
+            messages=messages,
+            tools=[classify_tool],
+            tool_choice={"type": "function", "function": {"name": "classify_input"}},
+            temperature=0.1,
+        )
     )
 
     tool_call = resp.choices[0].message.tool_calls[0]
@@ -309,6 +403,7 @@ async def generate_response(
     rag_config: dict[str, Any] | None = None,
     blocked_tools: list[str] | None = None,
     prefetched_tool: dict[str, Any] | None = None,
+    canvas_state: dict | None = None,
 ) -> tuple[str, list[dict], list[str], list]:
     """Generate the final response using the selected pattern and MCP tools.
 
@@ -336,17 +431,30 @@ Kernregel: {pattern_output.get('core_rule', '')}
 Response-Typ: {pattern_output.get('response_type', 'answer')}
 Ton: {pattern_output.get('tone', 'sachlich')}
 Formality: {pattern_output.get('formality', 'neutral')}
-Länge: {pattern_output.get('length', 'mittel')} (kurz=2-3 Saetze, mittel=1-2 Absaetze, lang=ausfuehrlich mit Details und Aufzaehlungen)
+Länge: {pattern_output.get('length', 'mittel')} (kurz=kompakte 2-4 Saetze, ein Absatz; mittel=strukturierte Erklaerung mit 2-4 Absaetzen, gerne mit H3-Unterpunkten wenn das Thema mehrere Aspekte hat; lang=ausfuehrliche Darstellung mit mehreren Absaetzen, Beispielen und Aufzaehlungen)
+Wenn internes Wissen (RAG-Kontext, query_knowledge-Ergebnisse) verfuegbar ist, nutze es inhaltlich REICH aus — der Nutzer hat explizit gefragt und erwartet eine substantielle Antwort, keine Ein-Satz-Zusammenfassung.
 Detail: {pattern_output.get('detail_level', 'standard')}
 Max. Ergebnisse: {pattern_output.get('max_items', 5)}""",
         # Layer 5: Conversation context
         f"""## Kontext
 Seite: {environment.get('page', '/')}
-Seitenkontext: {json.dumps(environment.get('page_context', {}))}
-Entities: {json.dumps(classification.get('entities', {}))}
+Entities: {json.dumps({k: v for k, v in (classification.get('entities') or {}).items() if not k.startswith('_')})}
 Signale: {', '.join(classification.get('signals', []))}
 State: {classification.get('next_state', 'state-1')}""",
     ]
+
+    # Semantic page-context block (resolved theme-page metadata). Cached on
+    # session_state["entities"]["_page_metadata"] by page_context_service at
+    # request entry time. Goes after the generic context so the LLM treats
+    # it as prime information.
+    try:
+        from app.services import page_context_service
+        _pm = page_context_service.get_cached(session_state)
+        _pb = page_context_service.render_for_prompt(_pm)
+        if _pb:
+            system_parts.append(_pb)
+    except Exception:
+        pass
 
     # Card-text-mode: how to handle overlap between text and material cards
     _card_mode = pattern_output.get("card_text_mode", "minimal")
@@ -409,7 +517,10 @@ im Text kurz hervorheben und begruenden, warum sie besonders passen.
             "Deine Antwort MUSS eine DIREKTE FRAGE nach den fehlenden Infos enthalten.\n"
             "- Wenn 'thema' fehlt: Frage EXPLIZIT nach dem konkreten Thema.\n"
             "  Beispiel: 'Mathe, super! Welches Thema steht an — Bruchrechnung, Geometrie, Gleichungen?'\n"
-            "- Wenn 'stufe' fehlt: Frage nach der Klassenstufe/Bildungsstufe.\n"
+            "- Wenn 'stufe' fehlt: Frage nach der Bildungsstufe — NICHT nach der Klassenstufe. "
+            "(WLO-Inhalte sind nur auf Bildungsstufen-Ebene getaggt: Grundschule, Sek I, Sek II, "
+            "Berufliche Bildung, Hochschule, Erwachsenenbildung.) Wenn der Nutzer trotzdem eine "
+            "Klassenstufe nennt, uebernimm das Mapping still im Hintergrund.\n"
             "- Baue KEINEN Lernpfad oder Unterrichtsentwurf ohne konkretes Thema.\n"
             "- Die Frage soll am ANFANG deiner Antwort stehen, nicht versteckt am Ende.\n"
             "- Rufe KEINE Tools auf und zeige KEINE Materialien/Sammlungen an — die Rueckfrage\n"
@@ -452,11 +563,14 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
             # Pattern like PAT-20 Orientierungs-Guide: pure text, no tool calls
             system_parts.append("""
 ## Antwort-Regeln
-- Antworte NUR mit Text und Quick Replies.
+- Antworte NUR mit flieszendem Text.
 - Rufe KEINE Tools auf.
 - Stelle die Faehigkeiten des Chatbots vor und biete konkrete Einstiegspunkte an.
 - Erfinde KEINE Sammlungen oder Materialien.
 - Schliesse mit einer offenen Frage die hilft, die Persona des Nutzers zu klaeren.
+- WICHTIG: Antwortvorschlaege / Quick Replies werden automatisch als Buttons
+  unter dem Text gerendert. Schreibe sie NIEMALS in den Antworttext
+  (keine Liste wie "**Quick Replies:**", keine Aufzaehlung von Vorschlaegen).
 
 Antworte auf Deutsch. Formatiere mit Markdown.""")
     else:
@@ -581,6 +695,37 @@ SCHRITT 2 — REGELN:
 6. Frage NIE "Fuer welches Fach suchst du?" -- hoechstens nach dem Thema.
 7. Wenn query_knowledge Ergebnisse liefert, nutze diese als Hauptquelle.
    Du kannst zusaetzlich MCP-Tools aufrufen um ergaenzende Materialien zu finden.
+8. FILTER-PFLICHT bei medientyp (STRIKT): Wenn in den Entities ein `medientyp`
+   gesetzt ist (z.B. "Video", "Arbeitsblatt", "Bild", "interaktiv",
+   "Simulation", "Quiz", "Kurs"), gilt OHNE AUSNAHME:
+   a) Ziel-Tool ist search_wlo_content (Sammlungen lassen sich nicht nach
+      Inhaltstyp filtern — search_wlo_collections taugt NICHT als
+      Fallback fuer medientyp-Anfragen).
+   b) Uebergib den Wert als `learningResourceType`-Parameter an
+      search_wlo_content. Der MCP-Server akzeptiert sowohl Labels als
+      auch URIs — beides funktioniert:
+        "Video", "Arbeitsblatt", "Bild", "Audio", "Interaktives medium",
+        "Unterrichtsplan", "Quiz", "Kurs", "Praesentation", "Lernspiel",
+        "Simulation", "Webseite", ...
+      Wenn du dir bei der genauen Form unsicher bist, hilft
+      lookup_wlo_vocabulary(vocabulary="lrt") — aber oft ist der Label
+      ausreichend.
+   c) WICHTIG: Der Parameter heisst `learningResourceType` (NICHT
+      `resourceType`!). Der MCP-Server ignoriert den alten Namen.
+   d) Rufe search_wlo_content NIE OHNE learningResourceType auf, wenn
+      entities.medientyp gesetzt ist — auch nicht als Fallback nach
+      leerem search_wlo_collections-Ergebnis.
+   e) Wenn kein passender Eintrag gefunden wird, weise kurz im
+      Antworttext darauf hin ("Ich konnte nicht exakt nach '<medientyp>'
+      filtern") und suche ungefiltert.
+9. Fach & Bildungsstufe als Filter: Wenn entities `fach` bzw. `stufe` enthalten,
+   setze sie als `discipline` bzw. `educationalContext` (NICHT
+   `educationalLevel`!) in search_wlo_content / search_wlo_collections.
+   Der MCP-Server akzeptiert sowohl Klartext-Labels ("Mathematik",
+   "Sekundarstufe I") als auch URIs aus lookup_wlo_vocabulary. Eine
+   Filter-Ebene "Klassenstufe" gibt es NICHT — mappe Klassenangaben
+   immer auf die Bildungsstufe (Kl. 1-4=Grundschule, 5-10=Sek I,
+   11-13=Sek II).
 
 Antworte auf Deutsch. Formatiere mit Markdown.""")
 
@@ -611,6 +756,34 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         # Fallback: always offer search + topic pages + all info tools
         fallback_tools = {"search_wlo_collections", "search_wlo_topic_pages"} | INFO_TOOLS
         active_tools = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in fallback_tools]
+
+    # ── Route medientyp queries away from search_wlo_collections ──────
+    # Sammlungen (collections) cannot be filtered by resourceType, so if the
+    # classifier extracted a medientyp the only correct path is
+    # search_wlo_content. Removing the collection tool here prevents the
+    # LLM from "falling back" to collections when content search could
+    # satisfy the filter — a pattern we saw it enter after empty
+    # collection results.
+    _classif_entities_top = classification.get("entities", {}) or {}
+    if _classif_entities_top.get("medientyp"):
+        before = {t["function"]["name"] for t in active_tools}
+        active_tools = [
+            t for t in active_tools
+            if t["function"]["name"] != "search_wlo_collections"
+        ]
+        removed = before - {t["function"]["name"] for t in active_tools}
+        if removed:
+            _logger.info(
+                "medientyp=%r → removed %s from active_tools to force content search",
+                _classif_entities_top.get("medientyp"), sorted(removed),
+            )
+        # Ensure search_wlo_content is available even if pattern didn't list it.
+        if not any(t["function"]["name"] == "search_wlo_content" for t in active_tools):
+            for td in TOOL_DEFINITIONS:
+                if td["function"]["name"] == "search_wlo_content":
+                    active_tools.append(td)
+                    _logger.info("medientyp set — added search_wlo_content to active_tools")
+                    break
 
     # ── Add RAG knowledge areas as virtual tools ──────────────────
     if available_rag_areas and rag_config:
@@ -651,6 +824,34 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         active_tools = [knowledge_tool] + active_tools  # Knowledge first!
 
     messages = [{"role": "system", "content": system}]
+
+    # Inject the current canvas state as an additional system context.
+    # This lets the LLM reference or modify what the user currently sees
+    # in the canvas pane (material text, card grid), not just the chat history.
+    if canvas_state and canvas_state.get("mode") and canvas_state.get("mode") != "empty":
+        c_mode = canvas_state.get("mode")
+        c_title = (canvas_state.get("title") or "").strip()
+        c_type = (canvas_state.get("material_type") or "").strip()
+        c_md = (canvas_state.get("markdown") or "").strip()
+        c_cards = canvas_state.get("cards_count") or 0
+        parts = [
+            f"Canvas-Modus: {c_mode}",
+        ]
+        if c_title: parts.append(f"Titel: {c_title}")
+        if c_type:  parts.append(f"Material-Typ: {c_type}")
+        if c_mode == "cards":
+            parts.append(f"Angezeigte Kacheln: {c_cards}")
+        if c_md and c_mode != "cards":
+            parts.append("Aktueller Canvas-Inhalt (Markdown):\n" + c_md[:4000])
+        canvas_ctx = (
+            "[Kontext: Canvas-Pane rechts im Widget]\n" + "\n".join(parts) +
+            "\n\nDer Nutzer sieht diesen Canvas-Inhalt parallel zum Chat. "
+            "Wenn er sich mit 'hier', 'das', 'die Aufgabe', 'der Text' o.ae. "
+            "auf Canvas-Inhalte bezieht, antworte direkt darauf. Verweise auf "
+            "einzelne Abschnitte/Aufgaben/Kacheln, wenn hilfreich."
+        )
+        messages.append({"role": "system", "content": canvas_ctx})
+
     for h in history[-10:]:
         messages.append(h)
 
@@ -721,6 +922,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         _txt = prefetched_tool["result_text"]
         try:
             mcp_prefetch_cards = parse_wlo_cards(_txt) or []
+            await resolve_discipline_labels(mcp_prefetch_cards)
             if _name == "search_wlo_collections":
                 for c in mcp_prefetch_cards:
                     c.setdefault("node_type", "collection")
@@ -763,13 +965,8 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     first_iteration = True
 
     for iteration in range(max_iterations):
-        kwargs: dict[str, Any] = {
-            "model": MODEL,
-            "messages": messages,
-            "temperature": 0.4,
-        }
+        tool_choice: Any = None
         if active_tools:
-            kwargs["tools"] = active_tools
             # Force tool call on first iteration — but NOT if context is already available
             # (pre-fetched knowledge or prior content cards already provide context)
             has_prior_content = bool(session_state.get("entities", {}).get("_last_contents"))
@@ -780,8 +977,30 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                 and not mcp_prefetched
                 and not has_prior_content
             ):
-                kwargs["tool_choice"] = "required"
+                tool_choice = "required"
             first_iteration = False
+
+        # Map pattern.length → GPT-5 verbosity. RAG/knowledge-heavy turns get
+        # an extra bump so the model actually USES the prefetched context
+        # rather than condensing it into a one-liner.
+        _length = (pattern_output.get("length") or "mittel").lower()
+        _verbosity_map = {"kurz": "low", "mittel": "medium", "lang": "high"}
+        _verbosity = _verbosity_map.get(_length, "medium")
+        if knowledge_prefetched or (rag_context and len(rag_context) > 500):
+            # RAG context present → lift at least one notch (medium → high).
+            if _verbosity == "low":
+                _verbosity = "medium"
+            elif _verbosity == "medium":
+                _verbosity = "high"
+
+        kwargs = build_chat_kwargs(
+            model=MODEL,
+            messages=messages,
+            tools=active_tools or None,
+            tool_choice=tool_choice,
+            temperature=0.4,
+            verbosity=_verbosity,
+        )
 
         try:
             resp = await client.chat.completions.create(**kwargs)
@@ -845,18 +1064,77 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     })
                     continue
 
-                # Enforce maxItems limit on search/collection tools
-                MAX_ITEMS = 5
+                # Enforce maxResults limit on search/collection tools.
+                # (maxItems is a legacy alias accepted by our Pydantic validator.)
+                MAX_RESULTS = 5
                 if tool_name in ("search_wlo_collections", "search_wlo_content", "get_collection_contents"):
-                    tool_args.setdefault("maxItems", MAX_ITEMS)
-                    if tool_args["maxItems"] > MAX_ITEMS:
-                        tool_args["maxItems"] = MAX_ITEMS
+                    # Migrate legacy key if the LLM passed the old name.
+                    if "maxItems" in tool_args and "maxResults" not in tool_args:
+                        tool_args["maxResults"] = tool_args.pop("maxItems")
+                    tool_args.setdefault("maxResults", MAX_RESULTS)
+                    if tool_args["maxResults"] > MAX_RESULTS:
+                        tool_args["maxResults"] = MAX_RESULTS
+
+                # ── Safety net: forward entity-level filters the LLM forgot ──
+                # The classifier extracts medientyp / fach / stufe up-front; the
+                # LLM is instructed to pass them as learningResourceType /
+                # discipline / educationalContext on content searches, but it's
+                # not 100% reliable (especially when it chains
+                # search_wlo_collections first and then does a "fallback"
+                # search_wlo_content). We inject missing filters here so user
+                # intent isn't lost. mcp_client's fuzzy label→URI resolver
+                # tolerates paraphrased entity values.
+                if tool_name == "search_wlo_content":
+                    _classif_entities = classification.get("entities", {}) or {}
+                    # Migrate any legacy keys the LLM might still send
+                    if "resourceType" in tool_args and "learningResourceType" not in tool_args:
+                        tool_args["learningResourceType"] = tool_args.pop("resourceType")
+                    if "educationalLevel" in tool_args and "educationalContext" not in tool_args:
+                        tool_args["educationalContext"] = tool_args.pop("educationalLevel")
+                    _medientyp = _classif_entities.get("medientyp")
+                    if _medientyp and "learningResourceType" not in tool_args:
+                        _logger.info(
+                            "injecting learningResourceType=%r from entities.medientyp (LLM omitted it)",
+                            _medientyp,
+                        )
+                        tool_args["learningResourceType"] = _medientyp
+                    _fach = _classif_entities.get("fach")
+                    if _fach and "discipline" not in tool_args:
+                        tool_args["discipline"] = _fach
+                    _stufe = _classif_entities.get("stufe")
+                    if _stufe and "educationalContext" not in tool_args:
+                        tool_args["educationalContext"] = _stufe
+                # Same for search_wlo_collections — collections can't be
+                # filtered by learningResourceType, but fach/stufe are valid
+                # and worth propagating.
+                elif tool_name == "search_wlo_collections":
+                    _classif_entities = classification.get("entities", {}) or {}
+                    if "educationalLevel" in tool_args and "educationalContext" not in tool_args:
+                        tool_args["educationalContext"] = tool_args.pop("educationalLevel")
+                    _fach = _classif_entities.get("fach")
+                    if _fach and "discipline" not in tool_args:
+                        tool_args["discipline"] = _fach
+                    _stufe = _classif_entities.get("stufe")
+                    if _stufe and "educationalContext" not in tool_args:
+                        tool_args["educationalContext"] = _stufe
 
                 # Triple-Schema T-23: call with structured outcome
                 from app.services.outcome_service import call_with_outcome
                 result_text, outcome = await call_with_outcome(tool_name, tool_args)
                 outcomes.append(outcome)
-                cards = parse_wlo_cards(result_text)
+                # Only search/content tools produce card-shaped output. Vocabulary
+                # and *_info tools return markdown documentation that would pollute
+                # the card list (e.g. "## Vokabular: Bildungsstufe" becoming a card).
+                CARD_YIELDING_TOOLS = {
+                    "search_wlo_collections", "search_wlo_content",
+                    "search_wlo_topic_pages", "get_collection_contents",
+                    "get_node_details",
+                }
+                if tool_name in CARD_YIELDING_TOOLS:
+                    cards = parse_wlo_cards(result_text)
+                    await resolve_discipline_labels(cards)
+                else:
+                    cards = []
                 # Mark cards from search_wlo_collections as collections
                 if tool_name == "search_wlo_collections":
                     for c in cards:
@@ -896,15 +1174,17 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     if all_cards:
         try:
             summary_resp = await client.chat.completions.create(
-                model=MODEL,
-                messages=messages + [{
-                    "role": "user",
-                    "content": (
-                        "Bitte fasse jetzt KURZ (1–2 Sätze) zusammen, was du gefunden "
-                        "hast — ohne weitere Tool-Aufrufe. Sprich den Nutzer direkt an."
-                    ),
-                }],
-                temperature=0.4,
+                **build_chat_kwargs(
+                    model=MODEL,
+                    messages=messages + [{
+                        "role": "user",
+                        "content": (
+                            "Bitte fasse jetzt KURZ (1–2 Sätze) zusammen, was du gefunden "
+                            "hast — ohne weitere Tool-Aufrufe. Sprich den Nutzer direkt an."
+                        ),
+                    }],
+                    temperature=0.4,
+                )
             )
             text = (summary_resp.choices[0].message.content or "").strip()
             if text:
@@ -919,6 +1199,79 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     return "Ich konnte leider keine Antwort generieren.", all_cards, tools_called, outcomes
 
 
+# ── Persona-abhaengige Quick-Reply-Menues (Capability-Hints) ──────────
+# Diese Listen geben dem LLM einen konkreten Vorrat an plausiblen
+# Vorschlaegen, ausgerichtet an dem, was der Bot TATSAECHLICH kann.
+# Der LLM darf daraus ableiten oder abwandeln — NICHT woertlich kopieren.
+_CAPABILITY_HINTS_DIDACTIC = [
+    # Suche
+    "Zeig mir mehr Material zu {thema}",
+    "Hast du auch Videos/Audios dazu?",
+    "Gibt es interaktive Uebungen dazu?",
+    "Welche Sammlungen gibt es zu {thema}?",
+    "Welche Themenseite passt dazu?",
+    # Canvas-Create didaktisch
+    "Erstelle mir ein Arbeitsblatt dazu",
+    "Mach mir ein Quiz dazu",
+    "Erstell mir eine Praesentation zu {thema}",
+    "Bau mir einen Lernpfad daraus",
+    # Canvas-Edit (wenn state-12)
+    "Mach es einfacher",
+    "Fuege Loesungen hinzu",
+    "Kuerzer fassen",
+    "Mehr Beispiele bitte",
+    # Vertiefung / Richtung
+    "Was gibt es noch zu {fach}?",
+    "Anderes Thema: ",
+    "Fuer welche Klassenstufe ist das?",
+]
+
+_CAPABILITY_HINTS_ANALYTICAL = [
+    # Projekt-/OER-Statistik / Plattforminfos
+    "Welche Statistiken gibt es zu WLO?",
+    "Wie viele Materialien hat WLO?",
+    "Welche Faecher sind am besten abgedeckt?",
+    "Wer steht hinter WLO?",
+    "Welche Projekte laufen gerade?",
+    # Canvas-Create analytisch
+    "Erstell mir einen Bericht dazu",
+    "Bau mir ein Factsheet zu {thema}",
+    "Ich brauche einen Projektsteckbrief",
+    "Entwirf eine Pressemitteilung dazu",
+    "Erstell mir einen Vergleich zu {thema}",
+    # Canvas-Edit
+    "Formeller formulieren",
+    "Kuerzer fassen",
+    "Kennzahlen ergaenzen",
+    "Foerderlogik hervorheben",
+    # Suche / Kontext
+    "Zeig mir Datengrundlagen dazu",
+    "Welche Zielgruppen sind primaer?",
+]
+
+
+def _capability_hints_for_persona(
+    persona_id: str, in_canvas: bool, has_topic: bool,
+) -> list[str]:
+    """Return a focused subset of capability hints for the quick-reply LLM."""
+    from app.services.canvas_service import get_analytical_personas
+    analytical = get_analytical_personas()
+    base = (
+        _CAPABILITY_HINTS_ANALYTICAL if persona_id in analytical
+        else _CAPABILITY_HINTS_DIDACTIC
+    )
+    hints = [h for h in base if not (("{thema}" in h or "{fach}" in h) and not has_topic)]
+    if not in_canvas:
+        # Drop pure-edit hints — no canvas yet.
+        hints = [h for h in hints if not any(
+            w in h.lower() for w in (
+                "einfacher", "loesungen", "kuerzer", "mehr beispiele",
+                "formeller", "kennzahlen ergaenzen", "foerderlogik",
+            )
+        )]
+    return hints[:14]
+
+
 async def generate_quick_replies(
     message: str,
     response_text: str,
@@ -929,58 +1282,109 @@ async def generate_quick_replies(
     persona_id = classification.get("persona_id", "P-AND")
     intent_id = classification.get("intent_id", "")
     state_id = classification.get("next_state", session_state.get("state_id", "state-1"))
-    entities = classification.get("entities", {})
+    entities = classification.get("entities", {}) or {}
+    # Drop internal keys (prefix _) — they would confuse the LLM.
+    public_entities = {k: v for k, v in entities.items() if not str(k).startswith("_")}
+
+    in_canvas = state_id == "state-12"
+    thema = public_entities.get("thema") or public_entities.get("topic") or ""
+    fach = public_entities.get("fach") or ""
+    has_topic = bool(thema or fach)
+    capability_hints = _capability_hints_for_persona(persona_id, in_canvas, has_topic)
+    # Fill the {thema}/{fach} placeholders in the hints with the concrete
+    # session values so the LLM sees realistic example sentences.
+    filled_hints = []
+    for h in capability_hints:
+        try:
+            filled_hints.append(h.format(thema=thema or "dem Thema", fach=fach or "deinem Fach"))
+        except Exception:
+            filled_hints.append(h)
+
+    # Semantic page-context block (resolved theme-page metadata, if any)
+    try:
+        from app.services import page_context_service
+        _pm = page_context_service.get_cached(session_state)
+        _page_line = ""
+        if _pm and _pm.get("title"):
+            _page_line = (
+                f"\nAktuelle Themenseite: {_pm['title']}"
+                + (f" ({', '.join((_pm.get('disciplines') or [])[:2])})"
+                   if _pm.get("disciplines") else "")
+                + (f" | Stufen: {', '.join((_pm.get('educational_contexts') or [])[:2])}"
+                   if _pm.get("educational_contexts") else "")
+            )
+    except Exception:
+        _page_line = ""
+
+    persona_salute = "Sie" if persona_id in {
+        "P-W-LK", "P-ELT", "P-VER", "P-W-POL", "P-BER", "P-W-PRESSE", "P-W-RED",
+    } else "du"
 
     system = f"""Du generierst genau 4 kurze Antwortvorschlaege fuer einen Chatbot-Nutzer.
-Der Nutzer hat gerade mit einem Bildungsportal-Chatbot (WirLernenOnline) interagiert.
+Der Nutzer interagiert gerade mit BOERDi, dem Chatbot der Bildungsplattform
+WirLernenOnline (WLO).
 
-Kontext:
-- Persona: {persona_id}
+## Kontext
+- Persona: {persona_id} (Anrede: {persona_salute})
 - Intent: {intent_id}
-- State: {state_id}
-- Erkannte Entities: {json.dumps(entities)}
+- State: {state_id}{" (Canvas-Arbeit aktiv)" if in_canvas else ""}
+- Erkannte Entities: {json.dumps(public_entities, ensure_ascii=False)}{_page_line}
 
-WICHTIG — Perspektive:
-Die Vorschlaege sind Saetze, die der NUTZER sagen wuerde — NICHT der Bot!
-Schreibe aus ICH-Perspektive des Nutzers. Der Nutzer spricht den Bot an.
-FALSCH (Bot-Perspektive): "Weitere Materialien zeigen", "Suche eingrenzen"
-RICHTIG (User-Perspektive): "Zeig mir mehr davon", "Ich will das eingrenzen"
+## Was BOERDi kann (die Vorschlaege MUESSEN sich daraus bedienen)
+1. **Inhalte suchen** — einzelne Materialien (Video, Arbeitsblatt, Audio, interaktive
+   Uebung, Bild, Text) mit Filtern auf Fach, Stufe, Medientyp, Lizenz.
+2. **Sammlungen suchen** — kuratierte Material-Sammlungen.
+3. **Themenseiten suchen** — didaktisch aufbereitete Einstiegsseiten zu einem Thema.
+4. **Plattforminfos und OER-Projektinfos** — Fragen zu WLO, edu-sharing, Metaventis,
+   Projekten, Zahlen/Statistiken zur Plattform.
+5. **Canvas-Ausgaben (neue Inhalte erstellen)** — didaktisch: Arbeitsblatt, Infoblatt,
+   Praesentation, Quiz, Checkliste, Glossar, Strukturuebersicht, Uebungen,
+   Lerngeschichte, Versuchsanleitung, Diskussionskarten, Rollenspiel, **Lernpfad**.
+   Analytisch: Bericht, Factsheet, Projektsteckbrief, Pressemitteilung, Vergleich.
+6. **Canvas-Edits** — bestehenden Canvas-Inhalt verfeinern (einfacher, kuerzer,
+   ausfuehrlicher, Loesungen ergaenzen, formeller, etc.) — NUR wenn State=state-12.
 
-Regeln:
-1. Genau 4 Vorschlaege, einer pro Zeile
-2. Jeder Vorschlag max 6-8 Woerter
-3. Vorschlaege muessen zur Persona und zum aktuellen Gespraechskontext passen
-4. Mix aus diesen Typen:
-   a) 1x Vertiefung (mehr zum aktuellen Thema, z.B. "Gibt es Videos dazu?")
-   b) 1x Richtungswechsel (neues Thema/anderer Blickwinkel, z.B. "Was gibt es zu Physik?")
-   c) 1x Weiterverarbeitung (Lernpfad, Unterrichtspaket, z.B. "Mach mir einen Lernpfad daraus")
-   d) 1x offene Frage oder Orientierung (z.B. "Was kannst du noch?")
-5. Natuerlich klingen, wie echte Nutzer-Eingaben — keine Bot-Kommandos
-6. KEINE Nummerierung, KEINE Aufzaehlungszeichen, nur der reine Text
-7. Sprache: Deutsch, passend zur Persona (du/Sie)
-8. WICHTIG: Wenn der Bot eine Rueckfrage stellt (z.B. nach Thema, Fach, Stufe),
-   dann muessen die Vorschlaege KONKRETE ANTWORTEN auf diese Frage sein!
-   z.B. bei Frage nach Mathe-Thema: "Bruchrechnung Klasse 6", "Geometrie Grundschule",
-   "Prozentrechnung Klasse 7", "Gleichungen Sek I"
-   NICHT: "Was kannst du noch?", "Zeig mir mehr" — das waeren keine Antworten auf die Frage!
+## Realistische Vorschlag-Beispiele fuer diese Persona
+(Inspiration — nicht woertlich uebernehmen, auf den konkreten Kontext anpassen.)
+{chr(10).join(f"- {h}" for h in filled_hints)}
 
-Beispiele fuer Lehrkraefte (Sie):
-Haben Sie auch Videos dazu?
-Erstellen Sie mir einen Lernpfad
-Was gibt es zur Oberstufe?
-Anderes Thema: Klimawandel
+## Perspektive
+Die 4 Vorschlaege sind saetze, die der NUTZER dem Bot sagt — NICHT der Bot zum Nutzer.
+FALSCH: "Weitere Materialien zeigen", "Suche eingrenzen"
+RICHTIG: "Zeig mir mehr davon", "Ich will das eingrenzen"
 
-Beispiele fuer Schueler (du):
-Hast du noch mehr davon?
-Erklaer mir das genauer
-Ich suche was zu Mathe
-Mach mir einen Lernpfad daraus
+## Struktur (4 verschiedene Typen — KEIN Duplikat)
+Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien):
+  (a) **Vertiefung** — mehr zum aktuellen Thema/Treffer
+      z.B. "Hast du auch Videos dazu?", "Gibt es das fuer Klasse 8?"
+  (b) **Canvas-Ausgabe** — neues Material erstellen lassen (zieht den aktuellen
+      Kontext als Thema heran)
+      z.B. "Mach mir ein Quiz daraus", "Erstell mir einen Lernpfad"
+  (c) **Canvas-Edit** — NUR wenn state-12 aktiv: bestehenden Inhalt aendern
+      z.B. "Mach es einfacher", "Fuege Loesungen hinzu"
+  (d) **Richtungswechsel** — anderes Thema / andere Fachrichtung
+      z.B. "Anderes Thema: Klimawandel", "Was gibt's zu Physik?"
+  (e) **Plattforminfo** — Fragen ueber WLO, Projekte, Zahlen
+      z.B. "Welche Faecher deckt WLO ab?", "Wer steht hinter der Plattform?"
+  (f) **Konkrete Antwort auf Rueckfrage des Bots** — wenn der Bot eine Frage
+      stellt (Thema? Fach? Stufe?), liefere KONKRETE Antworten als Vorschlaege,
+      z.B. bei Mathe-Frage: "Bruchrechnung Klasse 6", "Geometrie Sek I".
 
-Beispiele fuer Eltern (Sie):
-Gibt es das auch als Video?
-Was empfehlen Sie fuer Klasse 5?
-Ich suche etwas anderes
-Wie kann mein Kind damit lernen?"""
+## Regeln
+1. Genau 4 Vorschlaege, einer pro Zeile, KEINE Nummerierung, KEINE Bullets.
+2. Jeder Vorschlag max 6-8 Woerter.
+3. Anrede strikt {persona_salute}.
+4. Wenn Canvas aktiv (state-12) ist: mindestens EIN Edit-Vorschlag (Kategorie c).
+5. Wenn Themenseite bekannt: mindestens EIN Vorschlag der den Seiten-Kontext nutzt.
+6. Wenn Persona analytisch ist (P-VER/P-W-POL/P-W-PRESSE/P-BER/P-W-RED):
+   bevorzuge Bericht/Factsheet/Steckbrief/Pressemitteilung/Vergleich und
+   Plattform-/Projekt-/Statistik-Fragen. Weniger klassische Lehrmaterialien.
+7. Wenn Persona didaktisch (P-W-LK/P-W-SL/P-ELT/P-AND): klassische Lehrmaterialien
+   + Lernpfad + Medienvielfalt. Keine Berichte/Factsheets.
+8. Wenn der Bot eine Rueckfrage stellt, liefere KONKRETE Antworten (Kategorie f) —
+   KEINE generischen Phrasen wie "Was kannst du noch?".
+
+Gib NUR die 4 Zeilen zurueck, sonst nichts."""
 
     messages = [
         {"role": "system", "content": system},
@@ -989,14 +1393,24 @@ Wie kann mein Kind damit lernen?"""
 
     try:
         resp = await client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=150,
+            **build_chat_kwargs(
+                model=MODEL,
+                messages=messages,
+                temperature=0.6,
+                max_tokens=150,
+            )
         )
         text = resp.choices[0].message.content or ""
-        replies = [line.strip() for line in text.strip().split("\n") if line.strip()]
-        return replies[:4]
+        replies = [line.strip().lstrip("-•*0123456789. ") for line in text.strip().split("\n") if line.strip()]
+        # Drop duplicates while preserving order
+        seen: set[str] = set()
+        unique: list[str] = []
+        for r in replies:
+            k = r.lower()
+            if k and k not in seen:
+                seen.add(k)
+                unique.append(r)
+        return unique[:4]
     except Exception:
         return []
 
@@ -1031,6 +1445,21 @@ Verfuegbare Inhalte:
 **Aufgabe:** Waehle die geeignetsten Inhalte aus und ordne sie in einem sinnvollen Lernpfad an.
 Bringe die Materialien in eine didaktisch sinnvolle Reihenfolge (vom Einfachen zum Komplexen).
 
+**HARTE REGELN — nicht verhandelbar:**
+1. **Jeder Inhalt darf maximal EINMAL verwendet werden.** Verlinke nie dasselbe
+   Material in zwei verschiedenen Schritten. Wiederholungen sind ein Fehler.
+2. **Die Anzahl der Schritte richtet sich nach den verfuegbaren Materialien:**
+   - Bei 1 Material → 1 Schritt (plus Hinweis, dass der Pfad so kurz ist, weil nur
+     ein passendes Material gefunden wurde). Schreibe keinen mehrstufigen Pfad mit
+     einem einzigen wiederholten Material.
+   - Bei 2-3 Materialien → 2-3 Schritte.
+   - Bei 4+ Materialien → 3-5 Schritte, klassisch Einstieg / Erarbeitung / Sicherung.
+3. **Das Thema des Lernpfads ist \"{collection_title}\" — nicht der Titel einer
+   Sammlung oder eines einzelnen Inhalts.** Wenn die Materialien thematisch nur
+   am Rand passen, weise darauf explizit hin (z.B. \"Ein direkt zu '{collection_title}'
+   passendes Material war nicht verfuegbar — die folgenden Inhalte streifen das
+   Thema.\"). Kapere das Thema nicht.
+
 **Format (Markdown, auf Deutsch):**
 
 Beginne mit einem kurzen Ueberblick:
@@ -1056,7 +1485,10 @@ Schliesse mit:
 - **Tipp fuer Lehrende:** Praktische Hinweise zur Durchfuehrung
 
 Nutze ausschliesslich Inhalte aus der obigen Liste. Verlinke alle verwendeten Inhalte.
-Wenn wenige Materialien vorhanden sind, schlage vor wo ergaenzende Materialien hilfreich waeren."""
+Wenn wenige Materialien vorhanden sind, schlage konkret vor, welche Materialtypen
+zur Ergaenzung gesucht werden koennten (z.B. \"ein kurzes Erklaervideo\",
+\"ein Arbeitsblatt mit Aufgaben\") — aber verwende niemals dasselbe Material mehrfach,
+um Luecken zu fuellen."""
 
     messages = [
         {"role": "system", "content": system},
@@ -1065,10 +1497,12 @@ Wenn wenige Materialien vorhanden sind, schlage vor wo ergaenzende Materialien h
 
     try:
         resp = await client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=2000,
+            **build_chat_kwargs(
+                model=MODEL,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=2000,
+            )
         )
         return resp.choices[0].message.content or "Lernpfad konnte nicht erstellt werden."
     except Exception as e:

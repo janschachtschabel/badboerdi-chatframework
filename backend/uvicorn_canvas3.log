@@ -1,0 +1,13 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\jan\\staging\\Windsurf\\wlo-suche\\badboerdi\\backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [25872] using WatchFiles
+INFO:     Started server process [28624]
+INFO:     Waiting for application startup.
+10:36:40 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+10:36:40 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+10:36:40 INFO startup: Config warmup done in 33ms
+INFO:     Application startup complete.
+10:36:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+10:36:42 INFO startup: LLM warmup done in 2004ms
+WARNING:  WatchFiles detected changes in 'app\routers\chat.py'. Reloading...
+ 

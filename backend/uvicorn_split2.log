@@ -1,0 +1,92 @@
+INFO:     Started server process [43184]
+INFO:     Waiting for application startup.
+14:49:53 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+14:49:53 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+14:49:53 INFO startup: Config warmup done in 33ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+14:49:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:49:54 INFO startup: LLM warmup done in 1247ms
+INFO:     127.0.0.1:51345 - "GET /api/health HTTP/1.1" 200 OK
+14:50:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:50:03 INFO app.services.safety_service: safety stages=openai level=standard took 563ms
+14:50:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:50:05 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Photosynthese', 'maxResults': 5, 'educationalContext': 'Sekundarstufe I'}
+14:50:05 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Photosynthese', 'maxResults': 5, 'educationalContext': 'Sekundarstufe I'}
+14:50:05 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:50:05 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Photosynthese'
+14:50:05 INFO app.routers.chat: LP search: topic='Photosynthese' skip=0
+14:50:05 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Photosynthese', 'maxItems': 5, 'skipCount': 0}
+14:50:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:07 INFO app.services.mcp_client: MCP server: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:50:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:07 INFO app.services.mcp_client: MCP server: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:50:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:50:07 INFO app.services.mcp_client: MCP handshake complete
+14:50:08 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:50:08 INFO app.services.mcp_client: MCP handshake complete
+14:50:08 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:08 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:08 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+14:50:08 INFO app.services.mcp_client: educationalContext label\u2192URI cache loaded: 48 entries
+14:50:08 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:50:09 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:09 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3576 chars
+14:50:09 INFO app.routers.chat: LP found 5 collections
+14:50:09 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '6829fde5-208c-4648-b7ec-e17b440b3d56', 'maxItems': 16, 'skipCount': 0}
+14:50:10 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3576 chars
+14:50:10 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:11 INFO app.services.mcp_client: MCP tool get_collection_contents returned 14515 chars
+14:50:11 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'c1893399-8b3c-4e62-9de6-1dddf864c88c', 'maxItems': 16, 'skipCount': 0}
+14:50:12 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:12 INFO app.services.mcp_client: MCP tool get_collection_contents returned 4031 chars
+14:50:12 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'd38101c1-9a43-414b-a51f-e2dcff0add44', 'maxItems': 16, 'skipCount': 0}
+14:50:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:14 INFO app.services.mcp_client: MCP tool get_collection_contents returned 10654 chars
+14:50:14 INFO app.routers.chat: LP contents: 6670 chars, topic='Photosynthese'
+14:50:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:50:23 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+14:50:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51349 - "POST /api/chat HTTP/1.1" 200 OK
+14:50:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:50:26 INFO app.services.safety_service: safety stages=openai level=standard took 391ms
+14:50:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:50:27 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Photosynthese', 'maxResults': 5, 'educationalContext': 'Sekundarstufe I'}
+14:50:27 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Photosynthese', 'maxResults': 5, 'educationalContext': 'Sekundarstufe I'}
+14:50:27 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:50:27 INFO app.routers.chat: LP contents: 1487 chars, topic='Photosynthese'
+14:50:28 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:29 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3576 chars
+14:50:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:50:37 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+14:50:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:62003 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - "GET /widget/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - "GET /widget/boerdi-widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61104 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61106 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61108 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60130 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60342 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60344 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53538 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53540 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53542 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52101 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52103 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52105 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64141 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57675 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57677 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58017 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58019 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58021 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58010 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58012 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58014 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64952 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64954 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64956 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58968 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58970 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58972 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK

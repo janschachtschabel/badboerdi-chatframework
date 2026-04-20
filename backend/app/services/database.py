@@ -560,6 +560,43 @@ async def get_quality_logs(
         return out
 
 
+async def delete_quality_log(log_id: int) -> int:
+    """Delete a single quality log row by primary key. Returns row count."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "DELETE FROM quality_logs WHERE id = ?", (log_id,),
+        )
+        await db.commit()
+        return cur.rowcount or 0
+
+
+async def clear_quality_logs(
+    session_id: str = "",
+    pattern_id: str = "",
+    intent_id: str = "",
+) -> int:
+    """Bulk-delete quality logs by the same filter shape as get_quality_logs.
+
+    With NO filter given, deletes ALL quality logs — callers must confirm.
+    Returns number of deleted rows.
+    """
+    where: list[str] = []
+    args: list[Any] = []
+    if session_id:
+        where.append("session_id = ?"); args.append(session_id)
+    if pattern_id:
+        where.append("pattern_id LIKE ?"); args.append(f"{pattern_id}%")
+    if intent_id:
+        where.append("intent_id LIKE ?"); args.append(f"{intent_id}%")
+    sql = "DELETE FROM quality_logs"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(sql, args)
+        await db.commit()
+        return cur.rowcount or 0
+
+
 async def get_quality_stats() -> dict:
     """Aggregate quality metrics for dashboard / offline analysis."""
     async with aiosqlite.connect(DB_PATH) as db:
@@ -643,6 +680,38 @@ async def get_messages(session_id: str, limit: int = 50) -> list[dict]:
         )
         rows = await cursor.fetchall()
         return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+
+async def delete_messages_for_session(session_id: str) -> int:
+    """Delete only the chat messages for a session (keeps the session row
+    + its memory + quality/safety logs intact). Returns number of rows."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "DELETE FROM messages WHERE session_id = ?", (session_id,),
+        )
+        await db.commit()
+        return cur.rowcount or 0
+
+
+async def delete_session(session_id: str) -> dict[str, int]:
+    """Fully delete a session and every dependent row.
+
+    Returns row counts per table so the API can give useful feedback.
+    Safe no-op if the session does not exist (all counts 0).
+    """
+    counts: dict[str, int] = {}
+    async with aiosqlite.connect(DB_PATH) as db:
+        for table in ("messages", "memory", "quality_logs", "safety_logs"):
+            cur = await db.execute(
+                f"DELETE FROM {table} WHERE session_id = ?", (session_id,),
+            )
+            counts[table] = cur.rowcount or 0
+        cur = await db.execute(
+            "DELETE FROM sessions WHERE session_id = ?", (session_id,),
+        )
+        counts["sessions"] = cur.rowcount or 0
+        await db.commit()
+    return counts
 
 
 # ── Memory helpers ─────────────────────────────────────────────

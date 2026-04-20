@@ -142,7 +142,7 @@ state-11 System/Meta          → Meta-Fragen zum Bot
 
 ### 6. Pattern (Gespraechsmuster)
 
-**Datei:** `03-patterns/*.md` (20 Patterns)
+**Datei:** `03-patterns/*.md` (26 Patterns)
 
 **Pattern-Engine (3 Phasen):**
 1. **Gate-Pruefung** — Passt Persona, State, Intent? UND: Sind alle `precondition_slots` gefuellt? (`precondition_slots` ist ein **Hard Gate** — fehlt ein geforderter Slot, wird das Pattern eliminiert, nicht nur schlechter bewertet)
@@ -171,6 +171,12 @@ state-11 System/Meta          → Meta-Fragen zum Bot
 | PAT-18 | Unterrichts-Paket | Materialzusammenstellung (precondition: fach+stufe+thema) |
 | PAT-19 | Unterrichts-Lernpfad | Strukturierter Lernpfad (precondition: fach+stufe+thema) |
 | PAT-20 | Orientierungs-Guide | Reine Text-Orientierung (kein MCP!) |
+| PAT-21 | Canvas-Create | Neues Material KI-generiert im Canvas (precondition: thema+material_typ, INT-W-11) |
+| PAT-22 | Feedback-Echo | Nutzer-Feedback bestaetigen + Folge-Angebot (INT-W-04) |
+| PAT-23 | Redaktions-Routing | Luecken/Fehler an Redaktion weiterleiten (INT-W-05) |
+| PAT-24 | Download-Hinweis | Download-Weg ueber Kachel erklaeren + Lizenz-Hinweis (INT-W-07) |
+| PAT-CRISIS | Crisis-Empathie | Notfall-Pattern: Bei Krisen-Signalen sofort deeskalieren |
+| PAT-REFUSE-THREAT | Refuse-Threat | Abweisung von Bedrohungs-/Policy-Verletzungen |
 
 **Wirkung:**
 - Bestimmt Antwortstruktur (Ton, Laenge, Detailgrad)
@@ -208,7 +214,7 @@ Diese Elemente werden nicht in YAML definiert, sondern zur Laufzeit erzeugt:
 **Felder:**
 - `risk_level`: low | medium | high
 - `blocked_tools`: Liste gesperrter Tools (z.B. bei Krisen-Erkennung)
-- `enforced_pattern`: Erzwungenes Pattern (z.B. PAT-CRISIS)
+- `enforced_pattern`: Erzwungenes Pattern (z.B. `PAT-CRISIS` bei selbstbezogenen Krisen, `PAT-REFUSE-THREAT` bei Drohungen gegen Dritte)
 - `disclaimers`: Pflicht-Hinweistexte
 
 **Wechselwirkung mit anderen Elementen:**

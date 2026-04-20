@@ -1,0 +1,266 @@
+# Canvas-Material-Typen
+# ============================================================================
+# Jede Definition wird im Canvas als möglicher Output-Typ angeboten.
+# - id:        interner Key (nur a-z, ziffern, _). Wird vom Code referenziert.
+# - label:     Anzeigename im UI
+# - emoji:     Vorangestelltes Symbol in Quick-Replies + Canvas-Badge
+# - category:  'didaktisch' (Lehrer/Schüler/Eltern) oder 'analytisch'
+#              (Verwaltung/Politik/Presse/Beratung). Steuert die
+#              Badge-Farbe im Canvas und die Quick-Reply-Reihenfolge pro
+#              Persona (siehe persona-priorities.yaml).
+# - structure: Markdown-Struktur-Vorgabe, die dem LLM im Create-Prompt als
+#              konkrete Gliederungs-Anweisung mitgegeben wird.
+#
+# Änderungen an dieser Datei wirken live — Backend-Cache invalidiert sich
+# über mtime. Kein Restart nötig.
+
+material_types:
+
+  # ── Automatisch (Fallback) ──
+  - id: auto
+    label: Automatisch
+    emoji: "🤖"
+    category: didaktisch
+    structure: |
+      Wähle einen für das Thema und die Lernenden passenden Material-Typ
+      (Arbeitsblatt, Infoblatt, Quiz, Präsentation, Checkliste, Glossar,
+      Struktur-übersicht, Übungsaufgaben, Lerngeschichte, Versuchsanleitung,
+      Diskussionskarten oder Rollenspielkarten). Beginne den Inhalt mit einer
+      H1-Überschrift in der Form '# [Typ]: [Thema]'. Gestalte das Material
+      didaktisch sinnvoll.
+
+  # ── Didaktisch ──
+  - id: arbeitsblatt
+    label: Arbeitsblatt
+    emoji: "📝"
+    category: didaktisch
+    structure: |
+      Erstelle ein Arbeitsblatt mit:
+      1. H1-Überschrift '# Arbeitsblatt: [Thema]'
+      2. Kurzer Einleitung (2-3 Sätze, was die Lernenden lernen)
+      3. 4-7 nummerierte Aufgaben, gemischt zwischen Reproduktion und Anwendung
+      4. Abschnitt '## Lösungen' am Ende mit Musterlösungen zu jeder Aufgabe
+      5. Optionalem Hinweis für Lehrkräfte (Differenzierung)
+
+  - id: infoblatt
+    label: Infoblatt
+    emoji: "📄"
+    category: didaktisch
+    structure: |
+      Erstelle ein Infoblatt mit:
+      1. H1-Überschrift '# Infoblatt: [Thema]'
+      2. Kurzem Einstieg (worum geht es?)
+      3. 3-5 thematischen Abschnitten als H2-Überschriften
+      4. Bullet-Listen und Fließtext, keine Aufgaben
+      5. Abschnitt '## Wichtige Begriffe' mit 3-6 Begriffserklärungen
+      6. Abschnitt '## Weiterführende Fragen' (3-4 Denkanstöße)
+
+  - id: praesentation
+    label: Präsentation
+    emoji: "📊"
+    category: didaktisch
+    structure: |
+      Erstelle eine Foliensatz-Struktur mit 6-10 Folien als H2-Abschnitte:
+      1. H1 '# Präsentation: [Thema]'
+      2. Pro Folie: H2-Überschrift '## Folie N: [Titel]', darunter 3-5
+      Bullet-Points (kurz, nicht mehr als 12 Wörter je Bullet).
+      3. Zwischendurch 1-2 Folien mit Reflexionsfragen ('## Folie N: Diskussion')
+      4. Letzte Folie '## Folie X: Zusammenfassung' mit 3-4 Kernpunkten
+
+  - id: quiz
+    label: Quiz/Test
+    emoji: "❓"
+    category: didaktisch
+    structure: |
+      Erstelle ein Quiz mit:
+      1. H1 '# Quiz: [Thema]'
+      2. Kurzem Einstieg (Thema, Anzahl Fragen, geschätzte Bearbeitungszeit)
+      3. 6-10 Fragen, gemischte Typen: Multiple-Choice (A/B/C/D), Wahr/Falsch,
+      offene Fragen. Nummeriere durchgehend.
+      4. Bei MC-Fragen: alle Optionen angeben.
+      5. Abschnitt '## Lösungen' mit richtiger Antwort und 1 Satz Begründung je Frage
+
+  - id: checkliste
+    label: Checkliste
+    emoji: "✅"
+    category: didaktisch
+    structure: |
+      Erstelle eine Schritt-für-Schritt-Checkliste mit:
+      1. H1 '# Checkliste: [Thema]'
+      2. Kurzer Einleitung (wann/wofür?)
+      3. 5-12 Checklisten-Punkten als '- [ ] Beschreibung' (Markdown-Task-Syntax)
+      4. Gruppiere bei Bedarf in H2-Phasen ('## Vorbereitung', '## Durchführung', '## Nachbereitung')
+      5. Abschließend: '## Häufige Fehler' (3-5 Stolperfallen)
+
+  - id: glossar
+    label: Glossar
+    emoji: "📖"
+    category: didaktisch
+    structure: |
+      Erstelle ein Glossar mit:
+      1. H1 '# Glossar: [Thema]'
+      2. Kurzer Einführung
+      3. 8-15 Begriffen, alphabetisch sortiert, als Definitionsliste:
+         **Begriff**
+         : Definition (1-3 Sätze, präzise)
+      4. Querverweise zwischen verwandten Begriffen (z.B. 'siehe auch: ...')
+
+  - id: struktur
+    label: Strukturübersicht
+    emoji: "🗺️"
+    category: didaktisch
+    structure: |
+      Erstelle eine Text-Mindmap / Themenübersicht:
+      1. H1 '# Strukturübersicht: [Thema]'
+      2. Kurzer Einleitung
+      3. Baumstruktur in verschachtelten Listen (3 Ebenen):
+         - Hauptast
+           - Unterast
+             - Detail
+      4. 4-7 Hauptäste, jeweils mit 2-4 Unterästen
+      5. Abschluss: '## Wie liest man diese Übersicht?' (1 Absatz)
+
+  - id: uebung
+    label: Übungsaufgaben
+    emoji: "✏️"
+    category: didaktisch
+    structure: |
+      Erstelle differenzierte Übungsaufgaben:
+      1. H1 '# Übungsaufgaben: [Thema]'
+      2. Drei H2-Schwierigkeitsgrade: '## Basis (★)', '## Mittel (★★)', '## Fortgeschritten (★★★)'
+      3. Pro Schwierigkeitsgrad 2-4 Aufgaben, nummeriert
+      4. Abschnitt '## Lösungen' mit Musterlösungen nach Schwierigkeitsgrad gegliedert
+
+  - id: lerngeschichte
+    label: Lerngeschichte
+    emoji: "📚"
+    category: didaktisch
+    structure: |
+      Erstelle eine narrative Lerngeschichte:
+      1. H1 '# Lerngeschichte: [Thema]'
+      2. Kurze Charakter- und Rahmen-Einführung (1 Absatz)
+      3. Erzählung in 3-5 Kapiteln als H2 ('## Kapitel 1: ...')
+      4. Pro Kapitel 2-4 Absätze Fließtext, eingestreute wörtliche Rede,
+      fachliche Inhalte im Dialog
+      5. Abschließend '## Was wir gelernt haben' mit 3-5 Bullet-Points
+
+  - id: versuch
+    label: Versuchsanleitung
+    emoji: "🔬"
+    category: didaktisch
+    structure: |
+      Erstelle eine Experiment-/Versuchsanleitung:
+      1. H1 '# Versuch: [Thema]'
+      2. '## Lernziel' (1 Absatz)
+      3. '## Material' (Bullet-Liste)
+      4. '## Durchführung' (nummerierte Schritte)
+      5. '## Beobachtung' (Platzhalter für Einträge der Lernenden)
+      6. '## Erklärung' (fachliche Hintergründe, 1-3 Absätze)
+      7. '## Sicherheitshinweise' (falls relevant)
+
+  - id: diskussion
+    label: Diskussionskarten
+    emoji: "💬"
+    category: didaktisch
+    structure: |
+      Erstelle einen Satz Diskussionsimpulse als 'Karten':
+      1. H1 '# Diskussionskarten: [Thema]'
+      2. Kurzer Moderationshinweis (1 Absatz)
+      3. 6-10 Karten als H3-Blöcke ('### Karte 1'), jede mit:
+         - Eine provokante/offene Frage in fetter Schrift
+         - 2-3 Leitfragen zur Vertiefung
+         - Mini-Hintergrund (1-2 Sätze) für die Moderation
+
+  - id: rollenspiel
+    label: Rollenspielkarten
+    emoji: "🎭"
+    category: didaktisch
+    structure: |
+      Erstelle ein Rollenspiel-Set mit Szenario + Rollenkarten:
+      1. H1 '# Rollenspiel: [Thema]'
+      2. '## Szenario' mit Ausgangssituation und Ziel (1-3 Absätze)
+      3. 4-6 Rollenkarten als H3 ('### Rolle: [Name/Funktion]'), jede mit:
+         - **Motivation:** Was will diese Rolle?
+         - **Hintergrund:** Kurze Charakterisierung
+         - **Argumente:** 2-3 typische Standpunkte/Sätze
+      4. '## Ablauf' mit Phasen des Rollenspiels und Zeitangaben
+      5. '## Nachbereitung' (3-4 Reflexionsfragen)
+
+  # ── Analytisch (Politik/Verwaltung/Beratung/Presse) ──
+  - id: bericht
+    label: Bericht
+    emoji: "📊"
+    category: analytisch
+    structure: |
+      Erstelle einen strukturierten Management-Bericht:
+      1. H1 '# Bericht: [Titel]' — klarer Titel mit Bezug zu Thema/Zeitraum
+      2. **Kurzfassung** (3-5 Sätze als fette Aufmacher-Zeile, kein Blindtext)
+      3. '## Ausgangslage' (1-2 Absätze: Kontext, warum ist das Thema relevant)
+      4. '## Zahlen & Fakten' — wo immer möglich mit Tabelle (| Kennzahl | Wert | Stand |).
+      Wenn keine belastbare Zahl vorliegt, schreibe [Zahl einsetzen] statt zu halluzinieren.
+      5. '## Analyse' (2-4 Absätze: Muster, Auffälligkeiten, Einordnung)
+      6. '## Schlussfolgerungen & Empfehlungen' (3-5 Bullet-Points)
+      7. '## Quellen' — Liste der herangezogenen Seiten/Dokumente, jeweils als Markdown-Link.
+      Tonalität: sachlich, faktenorientiert, siezend. Keine Didaktik-Sprache.
+
+  - id: factsheet
+    label: Factsheet
+    emoji: "📈"
+    category: analytisch
+    structure: |
+      Erstelle ein kompaktes Factsheet (eine DIN-A4-Seite):
+      1. H1 '# Factsheet: [Thema]'
+      2. 3-4 One-Liner-Kernaussagen direkt darunter (fett gesetzt, mit zentraler Zahl oder Aussage je Zeile).
+      Nutze [Zahl einsetzen] bei Unsicherheit.
+      3. '## Kennzahlen' — Tabelle mit 5-10 Zeilen: | Kennzahl | Wert | Stand | Quelle |
+      4. '## Einordnung' (2-3 Absätze, jeweils max. 3 Sätze)
+      5. '## Weiterführende Informationen' — Bulletliste mit Markdown-Links
+      Tonalität: faktisch, zitierfähig, siezend. Keine werblichen Floskeln.
+
+  - id: steckbrief
+    label: Projektsteckbrief
+    emoji: "🗂️"
+    category: analytisch
+    structure: |
+      Erstelle einen Projektsteckbrief:
+      1. H1 '# Projektsteckbrief: [Projektname]'
+      2. Meta-Tabelle direkt am Anfang: | Träger | … | Laufzeit | … | Fördervolumen | … | Partner | … |
+      3. '## Ziel & Mehrwert' (1-2 Absätze, was das Projekt erreichen will und für wen)
+      4. '## Umsetzung' — Meilensteine als Bulletliste mit Jahres-/Quartalsangabe
+      5. '## Ergebnisse / Outputs' — konkrete Produkte, Zahlen, Veröffentlichungen.
+      Wenn noch keine Ergebnisse vorliegen: '[Zwischenstand: Projekt laufend]'.
+      6. '## Beteiligte & Kontakt' — Ansprechpartner:innen (Platzhalter wenn unbekannt)
+      Tonalität: sachlich-präzise, nachvollziehbar, siezend.
+
+  - id: pressemitteilung
+    label: Pressemitteilung
+    emoji: "📰"
+    category: analytisch
+    structure: |
+      Erstelle eine journalistisch sauber strukturierte Pressemitteilung:
+      1. Dateline-Zeile: '[Ort], [Datum als heute ausformuliert]'
+      2. H1 '# [Headline]' — aussagestark, News-Wert, max. 12 Wörter
+      3. Subhead in *kursiv* direkt unter der H1 (ein Satz, ergänzt die Headline)
+      4. **Lead-Absatz**: 5-W-Aufmacher (wer, was, wann, wo, warum) in ≤ 5 Sätzen, fett gesetzt
+      5. 2-3 Fließtext-Absätze mit Kernbotschaften
+      6. Zitat-Block (einleitend mit '>'): „[Zitat]" — [Name, Funktion]
+      7. '## Über WirLernenOnline' — 2-Satz-Boilerplate
+      8. '## Pressekontakt' — Ansprechpartner/E-Mail (Platzhalter)
+      Tonalität: zitierfähig, präzise, ohne Werbesprech, siezend.
+
+  - id: vergleich
+    label: Vergleichs-Analyse
+    emoji: "⚖️"
+    category: analytisch
+    structure: |
+      Erstelle eine Vergleichs-Analyse:
+      1. H1 '# Vergleich: [Option A] vs. [Option B] (ggf. vs. [Option C])'
+      2. '## Fragestellung' (1 Absatz: worum geht es, welche Entscheidung steht an)
+      3. '## Kriterien-Matrix' — Markdown-Tabelle: Spalten = Optionen, Zeilen =
+      4-7 Kriterien. In jeder Zelle kurze Bewertung + ✓ / ○ / ✗ Symbol. Beispiel:
+         | Kriterium | Option A | Option B |
+         | --- | --- | --- |
+         | Reichweite | ✓ stark (10k+) | ○ mittel (3k) |
+      4. '## Stärken & Schwächen' — pro Option 1 Absatz
+      5. '## Empfehlung' — klare Handlungsempfehlung mit Begründung (1-2 Absätze)
+      Tonalität: analytisch, ausgewogen, siezend.

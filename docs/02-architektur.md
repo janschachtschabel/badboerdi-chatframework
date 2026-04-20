@@ -1,12 +1,12 @@
-# Architektur — Die 5 Schichten
+# Architektur — Die 6 Schichten
 
-## Warum 5 Schichten?
+## Warum 6 Schichten?
 
-Chatbot-Prompts werden schnell lang und unstrukturiert. BadBoerdi loest das durch eine **5-Schichten-Architektur**: Jede Schicht hat eine klare Aufgabe, wird als separate Datei gepflegt und erst zur Laufzeit zum finalen System-Prompt zusammengesetzt.
+Chatbot-Prompts werden schnell lang und unstrukturiert. BadBoerdi loest das durch eine **6-Schichten-Architektur**: Jede Schicht hat eine klare Aufgabe, wird als separate Datei gepflegt und erst zur Laufzeit zum finalen System-Prompt zusammengesetzt.
 
 **Vorteile:**
-- **Kein Prompt-Overload** — Nicht jede Schicht ist in jeder Nachricht aktiv. Schicht 5 (Wissen) wird nur bei Bedarf geladen; Schicht 4 (Dimensionen) wird dynamisch gefiltert.
-- **Token-Management** — Bei Ueberschreitung des Token-Limits werden Schichten nach Prioritaet entladen (5 → 4 → 3), Schichten 1-2 bleiben immer.
+- **Kein Prompt-Overload** — Nicht jede Schicht ist in jeder Nachricht aktiv. Schicht 5 (Canvas-Formate) laedt nur bei Create/Edit-Intents; Schicht 6 (Wissen) nur bei Bedarf; Schicht 4 (Dimensionen) wird dynamisch gefiltert.
+- **Token-Management** — Bei Ueberschreitung des Token-Limits werden Schichten nach Prioritaet entladen (6 → 5 → 4 → 3), Schichten 1-2 bleiben immer.
 - **Separation of Concerns** — Persona-Text, Sicherheit, Fachregeln, Gespraechsmuster und Wissen sind unabhaengig editierbar.
 - **Studio-Kompatibilitaet** — Jede Schicht/jedes Element hat eine eigene Datei → Studio kann gezielt einzelne Elemente laden und speichern.
 
@@ -21,7 +21,7 @@ Chatbot-Prompts werden schnell lang und unstrukturiert. BadBoerdi loest das durc
 |-------|-------|
 | `base-persona.md` | Grundlegende Identitaet: Name (BOERDi), Rolle (blaue Eule von WLO), Tonalitaet, Verhalten |
 | `guardrails.md` | Harte Regeln, die nie ueberschrieben werden (z.B. nie blockieren, max. 1 Frage pro Turn) |
-| `safety-config.yaml` | Sicherheits-Presets (off/basic/standard/strict/paranoid) mit Stufenkonfiguration fuer Regex, Moderation, Legal-Classifier |
+| `safety-config.yaml` | Sicherheits-Presets (off/regex/standard/strict/paranoid) mit Stufenkonfiguration fuer Regex, Moderation, Legal-Classifier |
 | `quality-log-config.yaml` | Quality-Logging: An/Aus, Retention, Alert-Schwellwerte (Score-Gap, Degradation-Rate, Entity-Rate) |
 | `device-config.yaml` | Geraete-spezifische Limits (max_items) und Persona-Anrede (Sie/du/neutral) |
 
@@ -61,7 +61,11 @@ Chatbot-Prompts werden schnell lang und unstrukturiert. BadBoerdi loest das durc
 
 **Pfad:** `chatbots/wlo/v1/03-patterns/`
 
-**20 Patterns** (PAT-01 bis PAT-20) definieren, *wie* der Bot auf verschiedene Situationen reagiert. Jedes Pattern ist eine Markdown-Datei mit YAML-Frontmatter.
+**26 Patterns** (PAT-01 bis PAT-24, plus PAT-CRISIS und PAT-REFUSE-THREAT) definieren, *wie* der Bot auf verschiedene Situationen reagiert. Jedes Pattern ist eine Markdown-Datei mit YAML-Frontmatter. Die neu hinzugekommenen Patterns:
+- **PAT-21 Canvas-Create** — neues Material im Canvas-Pane erstellen (INT-W-11)
+- **PAT-22 Feedback-Echo** — Nutzer-Feedback bestaetigen + Folge-Angebot (INT-W-04)
+- **PAT-23 Redaktions-Routing** — Luecken/Fehler an Redaktion weiterleiten (INT-W-05)
+- **PAT-24 Download-Hinweis** — Download-Weg ueber Kachel erklaeren (INT-W-07)
 
 **Auswahl-Mechanismus (Pattern-Engine, 3 Phasen):**
 1. **Gate-Pruefung** — Passt Persona, State, Intent? UND: Sind alle `precondition_slots` gefuellt? (Hard Gate — z.B. PAT-19 braucht fach+stufe+thema; fehlt eines, wird das Pattern eliminiert, nicht nur schlechter bewertet)
@@ -104,21 +108,42 @@ Schicht 4 besteht aus **6 Element-Typen**, die zur Laufzeit dynamisch gefiltert 
 | Verzeichnis | Element-Typ | Anzahl | Beschreibung |
 |------------|-------------|--------|--------------|
 | `04-personas/` | Personas | 9 | Nutzergruppen (Lehrkraft, Schueler, Eltern, Presse, ...) |
-| `04-intents/` | Intents | 10 | Erkannte Absichten (WLO kennenlernen, Material suchen, ...) |
+| `04-intents/` | Intents | 14 | Erkannte Absichten (WLO kennenlernen, Material suchen, Inhalt erstellen, Canvas-Edit, ...) |
 | `04-entities/` | Entities | 5 | Extrahierte Slots (Fach, Stufe, Thema, Medientyp, Lizenz) |
 | `04-signals/` | Signale | 17 | Emotionale/situative Hinweise in 4 Dimensionen (Zeit, Sicherheit, Haltung, Kontext) |
-| `04-states/` | States | 11 | Gespraechszustaende (Orientierung → Suche → Kuratierung → Feedback) |
-| `04-contexts/` | Kontexte | 4 | Seitenbasierte Situationen (Suchseite, Sammlungsdetail, Mobil, ...) |
+| `04-states/` | States | 12 | Gespraechszustaende (Orientierung → Suche → Kuratierung → Feedback → Canvas-Arbeit) |
+| `04-contexts/` | Kontexte | 5 | Seitenbasierte Situationen (Suchseite, Sammlungsdetail, Mobil, Fachportal, Material-Detail) |
 
-**Im Prompt:** Nur die **erkannte Persona**, der **aktive Intent** und die **detektierten Signale** werden eingefuegt — nicht alle 9 Personas oder 10 Intents.
+**Im Prompt:** Nur die **erkannte Persona**, der **aktive Intent** und die **detektierten Signale** werden eingefuegt — nicht alle 9 Personas oder 14 Intents.
 
 **Prioritaet:** 300-600 — kann teilweise entladen werden.
 
 ---
 
-## Schicht 5: Wissen
+## Schicht 5: Canvas-Formate
 
-**Pfad:** `chatbots/wlo/v1/05-knowledge/`
+**Pfad:** `chatbots/wlo/v1/05-canvas/`
+
+**Dateien:**
+| Datei | Inhalt |
+|-------|--------|
+| `material-types.yaml` | 18 Material-Typen (13 didaktisch: Arbeitsblatt, Quiz, Präsentation, …; 5 analytisch: Bericht, Factsheet, Steckbrief, Pressemitteilung, Vergleich). Jeder Typ mit `id`, `label`, `emoji`, `category`, `structure` (LLM-Vorgabe). |
+| `type-aliases.yaml` | 74 Keyword→Typ-Aliase, Short-Whitelist (`quiz`, `test`, `pm`, `kpi`), LRT→Typ-Mapping für Remix |
+| `create-triggers.yaml` | 44 Create-Verb-Phrasen („erstelle", „generiere", „bau mir", „brauche", …) + Negative-Search-Verben |
+| `edit-triggers.yaml` | 56 Edit-Verben („einfacher", „Lösungen hinzu", „kürzer", „formeller", …) + 13 Explicit-Create-Overrides („neues Quiz") |
+| `persona-priorities.yaml` | Welche Personas sehen analytische Typen zuerst (P-VER, P-W-POL, P-BER, P-W-PRESSE, P-W-RED) |
+
+**Im Prompt:** Nur aktiv bei Canvas-Intents (INT-W-11 Create, INT-W-12 Edit). Die Struktur-Vorgabe des gewählten Material-Typs wird als Strukturierungsanweisung für den LLM geladen.
+
+**Prioritaet:** 200-400 — entladen bei Token-Knappheit.
+
+**Live-Editierbarkeit:** Alle 5 Dateien sind über das Studio-Layer **Canvas-Formate** hot-reloadbar (mtime-gecachter YAML-Loader, automatische Cache-Invalidierung bei Writes).
+
+---
+
+## Schicht 6: Wissen
+
+**Pfad:** `chatbots/wlo/v1/05-knowledge/` (+ Laufzeit-Service `page_context_service.py`)
 
 **Dateien:**
 | Datei | Zweck |
@@ -144,6 +169,17 @@ Das Backend liefert eine initiale Wissensbasis als `knowledge/rag-seed.json` mit
 
 **Im Prompt:** RAG-Kontext wird als synthetisches Tool-Call/Result-Paar injiziert. MCP-Tools werden als OpenAI-Function-Definitions bereitgestellt und vom LLM bei Bedarf aufgerufen.
 
+### Themenseiten-Resolver (`page_context_service.py`)
+
+Wenn das Widget auf einer WLO-Seite eingebettet ist und einen `node_id`/`topic_page_slug` über `page_context` mitliefert, löst das Backend die URL vor dem ersten Turn via MCP (`get_node_details`, `search_wlo_topic_pages`) zu semantischen Metadaten auf (Titel, Fach, Bildungsstufen, Keywords, Material-Typen) und cacht sie in der Session:
+
+| Status | TTL | Verhalten |
+|--------|-----|-----------|
+| resolved | 30 Min | Themenseiten ändern sich selten |
+| unresolved (MCP-Fehler / Dokumenten-Titel-Fallback) | 2 Min | Transiente Ausfälle erholen sich schnell |
+
+Die Metadaten landen als semantischer Block im System-Prompt — der Bot kann „Worum geht es hier?", „Welche Klassenstufe?", „Erstelle mir ein Quiz dazu" (Thema = Seiten-Titel) ohne Rückfragen beantworten.
+
 **Prioritaet:** 100-200 — wird als erstes entladen bei Token-Knappheit.
 
 ---
@@ -153,20 +189,23 @@ Das Backend liefert eine initiale Wissensbasis als `knowledge/rag-seed.json` mit
 ```
 System-Prompt (zusammengesetzt aus):
 +----------------------------------+
-| Schicht 1: base-persona.md      |  <-- immer
+| Schicht 1: base-persona.md       |  <-- immer
 +----------------------------------+
-| Schicht 2: domain-rules.md      |  <-- immer
+| Schicht 2: domain-rules.md       |  <-- immer
 |            wlo-plattform-wissen  |
 +----------------------------------+
-| Schicht 4: Persona-Prompt       |  <-- nur erkannte Persona
+| Schicht 4: Persona-Prompt        |  <-- nur erkannte Persona
 |            Intent-Kontext        |
 |            Signal-Modulationen   |
 +----------------------------------+
-| Schicht 3: Pattern-Block        |  <-- nur das gewinnende Pattern
+| Schicht 3: Pattern-Block         |  <-- nur das gewinnende Pattern
 +----------------------------------+
-| Schicht 5: RAG-Kontext          |  <-- nur bei always-on Areas
+| Schicht 5: Canvas-Struktur       |  <-- nur bei INT-W-11/12
 +----------------------------------+
-| Schicht 1: guardrails.md        |  <-- IMMER am Ende
+| Schicht 6: Aktuelle Themenseite  |  <-- wenn node_id/slug auflösbar
+|            RAG-Kontext           |  <-- bei always-on Areas
++----------------------------------+
+| Schicht 1: guardrails.md         |  <-- IMMER am Ende
 +----------------------------------+
 
 Nachrichten:
@@ -179,14 +218,15 @@ Nachrichten:
 
 Tools (Function-Definitions):
 +----------------------------------+
-| MCP-Tools (wenn sources=["mcp"])|
-| query_knowledge (wenn on-demand)|
+| MCP-Tools (wenn sources=["mcp"]) |
+| query_knowledge (wenn on-demand) |
 +----------------------------------+
 ```
 
 **Token-Budget-Management:**
 Wenn der zusammengesetzte Prompt das Kontextfenster ueberschreitet, werden Schichten nach Prioritaet entladen:
-1. Schicht 5 (Wissen) → wird entfernt
-2. Schicht 4 (Dimensionen) → wird reduziert
-3. Schicht 3 (Pattern) → Fallback auf PAT-06 Degradation
-4. Schichten 1-2 → werden **nie** entfernt
+1. Schicht 6 (Wissen + Themenseite) → wird entfernt
+2. Schicht 5 (Canvas) → wird entfernt (Canvas-Flow degradiert auf generisches Markdown)
+3. Schicht 4 (Dimensionen) → wird reduziert
+4. Schicht 3 (Pattern) → Fallback auf PAT-06 Degradation
+5. Schichten 1-2 → werden **nie** entfernt

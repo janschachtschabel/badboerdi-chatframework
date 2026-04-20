@@ -2,7 +2,7 @@
 id: PAT-15
 label: Analyse-Überblick
 priority: 400
-gate_personas: ["P-VER", "P-BER", "P-AND", "P-W-LK", "P-W-POL", "P-W-PRESSE", "P-W-SL", "P-ELT"]
+gate_personas: ["P-VER", "P-BER", "P-W-POL", "P-W-PRESSE", "P-W-RED", "P-W-LK"]
 gate_states: ["*"]
 gate_intents: ["INT-W-01", "INT-W-06", "INT-W-09"]
 signal_high_fit: ["zielgerichtet", "effizient", "vergleichend"]

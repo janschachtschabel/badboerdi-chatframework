@@ -4,31 +4,32 @@
 edu-sharing-com-webseite:
   mode: always
   description: >
-    Das Dokument beschreibt edu-sharing als Open-Source-Loesung fuer Bildungscloud, E-Learning, Suche und
-    Content-Management, mit der Lerninhalte, Metadaten und Tools systemuebergreifend vernetzt, gefunden und
-    geteilt werden koennen. Es zeigt die Anwendungsbereiche, Funktionen, Integrationen, Releases, Downloads
-    und Mehrwerte der Software fuer Lehrende, Redaktionen, Autor:innen und Betreiber.
+    Das Dokument beschreibt edu-sharing als Open-Source-Loesung fuer Bildungscloud, E-Learning,
+    Suche und Content-Management, mit der Lerninhalte, Metadaten und Tools systemuebergreifend
+    vernetzt, gefunden und geteilt werden koennen. Es zeigt die Anwendungsbereiche, Funktionen,
+    Integrationen, Releases, Downloads und Mehrwerte der Software fuer Lehrende, Redaktionen,
+    Autor:innen und Betreiber.
 
 edu-sharing-net-webseite:
   mode: always
   description: >
     Der edu-sharing.net e.V. ist ein gemeinnuetziges Netzwerk, das Bildungsorganisationen mit
-    Open-Source-Technologien vernetzt, um Lerninhalte, Tools und Daten gemeinsam zu teilen. Er entwickelt
-    digitale Bildungsclouds, foerdert OER und treibt Innovationen wie KI-basierte Bildungsinfrastrukturen
-    durch Projekte, Community-Arbeit und Kooperationen voran.
+    Open-Source-Technologien vernetzt, um Lerninhalte, Tools und Daten gemeinsam zu teilen. Er
+    entwickelt digitale Bildungsclouds, foerdert OER und treibt Innovationen wie KI-basierte
+    Bildungsinfrastrukturen durch Projekte, Community-Arbeit und Kooperationen voran.
 
 wirlernenonline.de-webseite:
   mode: always
   description: >
-    Das Dokument beschreibt WirLernenOnline als offene Bildungsplattform mit Suchmaschine, Fachportalen und
-    Community fuer frei nutzbare, qualitaetsgepruefe Lernmaterialien. Es erklaert ausserdem OER,
-    Qualitaetssicherung, Quellenerschliessung, Plug-ins, Fachredaktionen und Mitmachmoeglichkeiten fuer
-    Lehrende, Lernende und Partner.
+    Das Dokument beschreibt WirLernenOnline als offene Bildungsplattform mit Suchmaschine,
+    Fachportalen und Community fuer frei nutzbare, qualitaetsgepruefe Lernmaterialien. Es
+    erklaert ausserdem OER, Qualitaetssicherung, Quellenerschliessung, Plug-ins,
+    Fachredaktionen und Mitmachmoeglichkeiten fuer Lehrende, Lernende und Partner.
 
 wissenlebtonline-webseite:
   mode: always
   description: >
-    WLO ist eine offene, KI-gestuetzte Infrastruktur, die Bildungsinhalte erschliesst, strukturiert und
-    ueber Schnittstellen in Plattformen sowie Anwendungen verbreitet. Das Dokument beschreibt Akteure,
-    Funktionen und Mehrwerte des Oekosystems — von OER-Community ueber Redaktionssoftware bis zur
-    souveraenen KI- und Dateninfrastruktur.
+    WLO ist eine offene, KI-gestuetzte Infrastruktur, die Bildungsinhalte erschliesst,
+    strukturiert und ueber Schnittstellen in Plattformen sowie Anwendungen verbreitet. Das
+    Dokument beschreibt Akteure, Funktionen und Mehrwerte des Oekosystems — von OER-Community
+    ueber Redaktionssoftware bis zur souveraenen KI- und Dateninfrastruktur.

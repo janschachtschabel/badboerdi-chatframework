@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react';
 
 const LEVELS: { id: string; label: string; desc: string; color: string }[] = [
-  { id: 'off',      label: 'Off',      desc: 'Nur Regex-Blocks (Suizid). Keine LLM-Calls.',        color: '#9ca3af' },
-  { id: 'basic',    label: 'Basic',    desc: 'Regex + OpenAI Moderation immer (gratis, ~150ms).', color: '#10b981' },
-  { id: 'standard', label: 'Standard', desc: 'Basic + Legal-Classifier bei Verdacht + Injection.', color: '#3b82f6' },
-  { id: 'strict',   label: 'Strict',   desc: 'Alles immer. Legal auch bei low. Mehr Latenz/Kosten.', color: '#f59e0b' },
-  { id: 'paranoid', label: 'Paranoid', desc: 'Strict + halbierte Schwellen + Output-Review.',     color: '#ef4444' },
+  { id: 'off',      label: 'Off',      desc: 'Aus. Nur Crisis/PII-Regex (~1 ms).',                         color: '#9ca3af' },
+  { id: 'regex',    label: 'Regex',    desc: 'Alle Regex-Checks inkl. Prompt-Injection (~2 ms).',          color: '#10b981' },
+  { id: 'standard', label: 'Standard', desc: 'Regex + OpenAI-Moderation (parallel, ~150 ms). Empfohlen.',  color: '#3b82f6' },
+  { id: 'strict',   label: 'Strict',   desc: 'Standard + LLM-Legal-Classifier smart (~150-300 ms).',       color: '#f59e0b' },
+  { id: 'paranoid', label: 'Paranoid', desc: 'Strict + Legal immer + halbierte Schwellen.',                color: '#ef4444' },
 ];
 
 const PATH = '01-base/safety-config.yaml';

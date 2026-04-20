@@ -32,11 +32,60 @@
         <!-- Content -->
         <div *ngIf="!msg.isLoading && msg.content" [innerHTML]="renderMarkdown(msg.content)" class="msg-content"></div>
 
+        <!-- Lernpfad: prominenter Druck-Button am Ende des Textes -->
+        <div *ngIf="!msg.isLoading && isLearningPath(msg)" class="lp-print-bar">
+          <button class="btn-lp-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
+            🖨 Lernpfad drucken / als PDF speichern
+          </button>
+        </div>
+
+        <!-- Compact collection-action bar: only shown when the canvas is NOT
+             open (otherwise the canvas owns every interaction and the chat
+             stays purely textual, as the user explicitly asked). -->
+        <div *ngIf="msg.cards && msg.cards.length && !hideCards && hasCollectionCards(msg) && false"
+             class="collection-shortcuts">
+          <ng-container *ngFor="let card of getCollectionCards(msg)">
+            <div class="coll-row">
+              <div class="coll-row-title">
+                <span *ngIf="card.topic_pages && card.topic_pages.length"
+                      class="chip chip-typpille chip-tp-topicpage">🌐 Themenseite</span>
+                <span *ngIf="!(card.topic_pages && card.topic_pages.length)"
+                      class="chip chip-typpille chip-tp-sammlung">📚 Sammlung</span>
+                <span class="coll-row-name">{{ card.title }}</span>
+              </div>
+              <div class="coll-row-actions">
+                <button type="button" class="card-btn card-btn--primary"
+                        [disabled]="isLoading"
+                        (click)="browseCollection(card.node_id, card.title)">
+                  📋 Inhalte
+                </button>
+                <button type="button" class="card-btn card-btn--secondary"
+                        [disabled]="isLoading"
+                        (click)="generateLearningPath(card.node_id, card.title)">
+                  🗺️ Lernpfad
+                </button>
+                <a *ngIf="card.topic_pages && card.topic_pages.length"
+                   class="card-btn card-btn--tertiary"
+                   [href]="card.topic_pages[0].url"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                  🌐 Themenseite
+                </a>
+                <button type="button" class="card-btn card-btn--remix"
+                        [disabled]="isLoading"
+                        (click)="remixCard(card)">
+                  🔄 Remix
+                </button>
+              </div>
+            </div>
+          </ng-container>
+        </div>
+
         <!-- Cards -->
-        <div *ngIf="msg.cards && msg.cards.length" class="cards-list">
+        <div *ngIf="msg.cards && msg.cards.length && !hideCards" class="cards-list">
           <div *ngFor="let card of getVisibleCards(msg)" class="wlo-card-wrapper">
             <a class="wlo-card"
-               [href]="card.wlo_url || card.url || '#'"
+               [href]="cardUrl(card)"
                target="_blank"
                rel="noopener noreferrer"
                (click)="$event.stopPropagation()">
@@ -47,13 +96,20 @@
               <div class="card-info">
                 <div class="card-title">{{ card.title }}</div>
                 <div class="card-meta">
+                  <!-- Typ-Pille: immer zuerst, genau eine von 3 -->
+                  <span *ngIf="card.node_type === 'collection' && card.topic_pages && card.topic_pages.length"
+                        class="chip chip-typpille chip-tp-topicpage">🌐 Themenseite</span>
+                  <span *ngIf="card.node_type === 'collection' && !(card.topic_pages && card.topic_pages.length)"
+                        class="chip chip-typpille chip-tp-sammlung">📚 Sammlung</span>
+                  <span *ngIf="card.node_type !== 'collection'"
+                        class="chip chip-typpille chip-tp-inhalt">📄 Inhalt</span>
+
                   <span *ngFor="let d of card.disciplines" class="chip chip-fach">{{ d }}</span>
                   <span *ngFor="let e of card.educational_contexts" class="chip chip-stufe">{{ e }}</span>
                   <ng-container *ngFor="let t of card.learning_resource_types">
                     <span *ngIf="t !== 'Sammlung' && t !== 'collection'" class="chip chip-typ">{{ t }}</span>
                   </ng-container>
                   <span *ngIf="card.license" class="chip chip-lizenz">{{ card.license }}</span>
-                  <span *ngIf="card.node_type === 'collection'" class="chip chip-sammlung">Sammlung</span>
                 </div>
                 <div class="card-desc" *ngIf="card.description">{{ card.description | slice:0:120 }}{{ card.description && card.description.length > 120 ? '...' : '' }}</div>
               </div>
@@ -103,7 +159,7 @@
         </div>
 
         <!-- Pagination: count + show more / load more -->
-        <div *ngIf="msg.cards && msg.cards.length > 1" class="pagination-bar">
+        <div *ngIf="msg.cards && msg.cards.length > 1 && !hideCards" class="pagination-bar">
           <span class="pagination-info">
             {{ getVisibleCards(msg).length }} von {{ msg.cards.length }} Ergebnissen
           </span>
@@ -122,10 +178,15 @@
           </button>
         </div>
 
-        <!-- TTS button for bot messages -->
-        <button *ngIf="msg.sender === 'bot' && !msg.isLoading && msg.content" class="btn-speak" (click)="speakText(msg.content)" [title]="isSpeaking ? 'Stop' : 'Vorlesen'">
-          {{ isSpeaking ? '⏹️' : '🔈' }}
-        </button>
+        <!-- Action buttons for bot messages: TTS + Lernpfad drucken -->
+        <div *ngIf="msg.sender === 'bot' && !msg.isLoading && msg.content" class="msg-actions">
+          <button class="btn-speak" (click)="speakText(msg.content)" [title]="isSpeaking ? 'Stop' : 'Vorlesen'">
+            {{ isSpeaking ? '⏹️' : '🔈' }}
+          </button>
+          <button *ngIf="isLearningPath(msg)" class="btn-speak btn-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
+            🖨
+          </button>
+        </div>
 
         <!-- Quick replies -->
         <div *ngIf="msg.quickReplies && msg.quickReplies.length" class="quick-replies">

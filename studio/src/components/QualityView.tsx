@@ -69,10 +69,18 @@ export default function QualityView() {
   const [selected, setSelected] = useState<QualityLog | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<'overview' | 'logs'>('overview');
+  const [busy, setBusy] = useState<number | 'bulk' | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
 
   /* Filters */
   const [filterPattern, setFilterPattern] = useState('');
   const [filterIntent, setFilterIntent] = useState('');
+  const [filterSession, setFilterSession] = useState('');
+
+  const showFlash = (msg: string) => {
+    setFlash(msg);
+    setTimeout(() => setFlash(null), 3500);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,6 +88,7 @@ export default function QualityView() {
       const params = new URLSearchParams({ limit: '200' });
       if (filterPattern) params.set('pattern_id', filterPattern);
       if (filterIntent) params.set('intent_id', filterIntent);
+      if (filterSession) params.set('session_id', filterSession);
       const [logsRes, statsRes] = await Promise.all([
         fetch(`/api/quality/logs?${params}`),
         fetch('/api/quality/stats'),
@@ -96,9 +105,63 @@ export default function QualityView() {
     } finally {
       setLoading(false);
     }
-  }, [filterPattern, filterIntent]);
+  }, [filterPattern, filterIntent, filterSession]);
 
   useEffect(() => { load(); }, [load]);
+
+  const deleteOne = async (logId: number) => {
+    if (!confirm(`Quality-Log #${logId} löschen?`)) return;
+    setBusy(logId);
+    try {
+      const resp = await fetch(`/api/quality/logs/${logId}`, { method: 'DELETE' });
+      if (!resp.ok) {
+        showFlash(`❌ Löschen fehlgeschlagen: HTTP ${resp.status}`);
+        return;
+      }
+      showFlash(`✅ Log #${logId} gelöscht`);
+      if (selected?.id === logId) setSelected(null);
+      await load();
+    } catch (e) {
+      showFlash(`❌ Fehler: ${e}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const clearFiltered = async () => {
+    const hasFilter = !!(filterPattern || filterIntent || filterSession);
+    const count = logs.length;
+    const desc = hasFilter
+      ? `${count} gefilterte Quality-Logs löschen?\n\nFilter:` +
+        (filterPattern ? `\n  • Pattern: ${filterPattern}*` : '') +
+        (filterIntent ? `\n  • Intent: ${filterIntent}*` : '') +
+        (filterSession ? `\n  • Session: ${filterSession}` : '')
+      : `ALLE Quality-Logs löschen?\n\nDas betrifft ${stats?.total_turns ?? '?'} Einträge — sicher?`;
+    if (!confirm(desc)) return;
+
+    setBusy('bulk');
+    try {
+      const params = new URLSearchParams();
+      if (filterPattern) params.set('pattern_id', filterPattern);
+      if (filterIntent) params.set('intent_id', filterIntent);
+      if (filterSession) params.set('session_id', filterSession);
+      if (!hasFilter) params.set('confirm', 'true');
+      const resp = await fetch(`/api/quality/logs/clear?${params}`, { method: 'POST' });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+        showFlash(`❌ Löschen fehlgeschlagen: ${err.detail || resp.status}`);
+        return;
+      }
+      const data = await resp.json();
+      showFlash(`✅ ${data.deleted} Logs gelöscht`);
+      setSelected(null);
+      await load();
+    } catch (e) {
+      showFlash(`❌ Fehler: ${e}`);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   /* ── Derived metrics ─────────────────────────────────────────────── */
   const tightRaceLogs = logs.filter(l => l.phase2_score_gap < 0.02 && l.phase2_score_gap >= 0);
@@ -117,6 +180,17 @@ export default function QualityView() {
           </button>
         </div>
       </div>
+
+      {flash && (
+        <div className="card" style={{
+          marginBottom: 12,
+          background: flash.startsWith('❌') ? '#FEE2E2' : '#DCFCE7',
+          borderColor: flash.startsWith('❌') ? '#FCA5A5' : '#86EFAC',
+          fontSize: 13,
+        }}>
+          {flash}
+        </div>
+      )}
 
       {/* ════════════════════ OVERVIEW TAB ════════════════════ */}
       {tab === 'overview' && stats && (
@@ -199,24 +273,44 @@ export default function QualityView() {
       {tab === 'logs' && (
         <>
           {/* Filters */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <input
               className="input"
               placeholder="Pattern-ID (z.B. PAT-10)"
               value={filterPattern}
               onChange={e => setFilterPattern(e.target.value)}
-              style={{ padding: '6px 10px', width: 180 }}
+              style={{ padding: '6px 10px', width: 170 }}
             />
             <input
               className="input"
               placeholder="Intent-ID (z.B. INT-W-06)"
               value={filterIntent}
               onChange={e => setFilterIntent(e.target.value)}
-              style={{ padding: '6px 10px', width: 180 }}
+              style={{ padding: '6px 10px', width: 170 }}
             />
-            {(filterPattern || filterIntent) && (
-              <button className="btn btn-sm" onClick={() => { setFilterPattern(''); setFilterIntent(''); }}>✕ Filter zurücksetzen</button>
+            <input
+              className="input"
+              placeholder="Session-ID"
+              value={filterSession}
+              onChange={e => setFilterSession(e.target.value)}
+              style={{ padding: '6px 10px', width: 170 }}
+            />
+            {(filterPattern || filterIntent || filterSession) && (
+              <button className="btn btn-sm" onClick={() => { setFilterPattern(''); setFilterIntent(''); setFilterSession(''); }}>✕ Filter zurücksetzen</button>
             )}
+            <button
+              className="btn btn-sm"
+              onClick={clearFiltered}
+              disabled={busy !== null || logs.length === 0}
+              style={{ background: '#DC2626', color: '#fff', borderColor: '#DC2626' }}
+              title={
+                filterPattern || filterIntent || filterSession
+                  ? 'Alle Einträge die aktuell den Filter treffen löschen'
+                  : 'Alle Quality-Logs löschen (ohne Filter)'
+              }
+            >
+              {busy === 'bulk' ? '…' : `🗑 ${filterPattern || filterIntent || filterSession ? 'Gefilterte' : 'Alle'} löschen`}
+            </button>
             <span style={{ fontSize: 12, color: 'var(--text-muted)', alignSelf: 'center', marginLeft: 'auto' }}>
               {logs.length} Einträge
             </span>
@@ -247,11 +341,27 @@ export default function QualityView() {
                       background: selected?.id === log.id ? 'var(--primary-lt)' : undefined,
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, alignItems: 'center', gap: 6 }}>
                       <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{log.pattern_id}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>
+                      <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>
                         {new Date(log.created_at).toLocaleString('de-DE')}
                       </span>
+                      <button
+                        title="Diesen Log-Eintrag löschen"
+                        disabled={busy === log.id}
+                        onClick={(e) => { e.stopPropagation(); deleteOne(log.id); }}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          fontSize: 12,
+                          padding: '2px 4px',
+                          color: '#DC2626',
+                          opacity: busy === log.id ? 0.4 : 0.7,
+                        }}
+                      >
+                        🗑
+                      </button>
                     </div>
                     <div style={{ fontSize: 13, marginTop: 4, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {log.message || '(leer)'}
@@ -289,6 +399,15 @@ export default function QualityView() {
                     <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto' }}>
                       Session: {selected.session_id.slice(0, 8)}…
                     </span>
+                    <button
+                      className="btn btn-sm"
+                      disabled={busy === selected.id}
+                      onClick={() => deleteOne(selected.id)}
+                      title="Diesen Log-Eintrag löschen"
+                      style={{ background: '#DC2626', color: '#fff', borderColor: '#DC2626', fontSize: 11 }}
+                    >
+                      🗑 Löschen
+                    </button>
                   </div>
 
                   <div style={{ background: '#f9fafb', padding: 10, borderRadius: 6, marginBottom: 12, fontSize: 13 }}>

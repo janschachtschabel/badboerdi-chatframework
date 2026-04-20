@@ -1,5 +1,6 @@
 """BadBoerdi Backend — FastAPI application."""
 
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -13,15 +14,27 @@ from app.routers import chat, config, rag, speech, sessions, safety, quality, wi
 
 load_dotenv()
 
+# Configure root logging so INFO-level messages (warmup, safety timings,
+# quality logs) are actually emitted. Override with LOG_LEVEL env var.
+_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
     import logging
+    import time
+
+    log = logging.getLogger("startup")
 
     # Warn if Studio API key is not configured (all admin endpoints unprotected)
     if not (os.getenv("STUDIO_API_KEY") or "").strip():
-        logging.getLogger("startup").warning(
+        log.warning(
             "⚠ STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. "
             "Set STUDIO_API_KEY in your environment for production deployments."
         )
@@ -34,13 +47,61 @@ async def lifespan(app: FastAPI):
             from app.routers.rag import embed_missing
             result = await embed_missing()
             if result.get("embedded", 0) > 0:
-                logging.getLogger("startup").info(
-                    "Generated embeddings for %d seed chunks", result["embedded"]
-                )
+                log.info("Generated embeddings for %d seed chunks", result["embedded"])
         except Exception as e:
-            logging.getLogger("startup").warning("Seed embedding skipped: %s", e)
+            log.warning("Seed embedding skipped: %s", e)
 
+    # Background: preload all YAML configs into the mtime-cache
+    # → First request skips ~5-20 ms of YAML parsing.
+    async def _warmup_configs():
+        try:
+            t0 = time.perf_counter()
+            from app.services import config_loader as cl
+            cl.load_safety_config()
+            cl.load_policy_config()
+            cl.load_rag_config()
+            cl.load_intents()
+            cl.load_states()
+            cl.load_entities()
+            cl.load_persona_definitions()
+            cl.load_device_config()
+            cl.load_domain_rules()
+            try:
+                cl.load_quality_log_config()
+            except Exception:
+                pass
+            log.info("Config warmup done in %.0fms", (time.perf_counter() - t0) * 1000)
+        except Exception as e:
+            log.warning("Config warmup skipped: %s", e)
+
+    # Background: pre-initialise the OpenAI client + httpx connection pool and
+    # send one cheap moderation ping so the first real chat turn does not pay
+    # ~2-5 s of TLS handshake + DNS + client construction cost.
+    async def _warmup_llm():
+        try:
+            t0 = time.perf_counter()
+            from app.services.llm_provider import get_client, is_openai_native
+            client = get_client()
+            # Fire-and-forget moderation ping — tiny, free, warms the connection
+            if is_openai_native():
+                try:
+                    await asyncio.wait_for(
+                        client.moderations.create(
+                            model="omni-moderation-latest",
+                            input="warmup",
+                        ),
+                        timeout=10.0,
+                    )
+                except Exception as e:
+                    log.debug("LLM warmup moderation ping failed: %s", e)
+            log.info("LLM warmup done in %.0fms", (time.perf_counter() - t0) * 1000)
+        except Exception as e:
+            log.warning("LLM warmup skipped: %s", e)
+
+    # All three run concurrently, none blocks the server from accepting requests
     asyncio.create_task(_embed_seed_chunks())
+    asyncio.create_task(_warmup_configs())
+    asyncio.create_task(_warmup_llm())
     yield
 
 
@@ -85,22 +146,32 @@ async def root():
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
-    from app.services.llm_provider import get_chat_model, get_embed_model, get_provider
-    return {
+    from app.services.llm_provider import (
+        get_chat_model, get_embed_model, get_provider,
+        supports_gpt5_params, get_verbosity, get_reasoning_effort,
+    )
+    model = get_chat_model()
+    info: dict = {
         "status": "ok",
         "provider": get_provider(),
-        "chat_model": get_chat_model(),
+        "chat_model": model,
         "embed_model": get_embed_model(),
+        "gpt5_params_active": supports_gpt5_params(model),
     }
+    if info["gpt5_params_active"]:
+        info["verbosity"] = get_verbosity()
+        info["reasoning_effort"] = get_reasoning_effort()
+    return info
 
 
 @app.get("/api/debug/mcp-test", dependencies=[Depends(require_studio_key)])
 async def mcp_test():
     """Test MCP connection directly."""
-    from app.services.mcp_client import call_mcp_tool, parse_wlo_cards, _session_id, _initialized
+    from app.services.mcp_client import call_mcp_tool, parse_wlo_cards, resolve_discipline_labels, _session_id, _initialized
     try:
         result = await call_mcp_tool("search_wlo_collections", {"query": "Mathematik"})
         cards = parse_wlo_cards(result)
+        await resolve_discipline_labels(cards)
         return {
             "status": "ok",
             "session_id": _session_id,

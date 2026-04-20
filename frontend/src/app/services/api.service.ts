@@ -160,6 +160,7 @@ export class ApiService {
     env?: Partial<Environment>,
     action?: string,
     actionParams?: Record<string, any>,
+    canvasState?: Record<string, any> | null,
   ): Promise<ChatResponse> {
     const environment: Environment = {
       page: env?.page || window.location.pathname,
@@ -177,6 +178,7 @@ export class ApiService {
     };
     if (action) body['action'] = action;
     if (actionParams) body['action_params'] = actionParams;
+    if (canvasState) body['canvas_state'] = canvasState;
 
     const resp = await fetch(`${this.baseUrl}/chat`, {
       method: 'POST',
@@ -244,16 +246,47 @@ export class ApiService {
     const ctx: Record<string, any> = {};
     const url = new URL(window.location.href);
     const params = url.searchParams;
+
+    // Query params (höchste Priorität — explizit vom Host gesetzt)
     if (params.get('q')) ctx['search_query'] = params.get('q');
     if (params.get('node')) ctx['node_id'] = params.get('node');
     if (params.get('collection')) ctx['collection_id'] = params.get('collection');
 
-    // Try to extract from WLO URL patterns
     const path = url.pathname;
-    const collMatch = path.match(/\/sammlung\/([^/]+)/);
-    if (collMatch) ctx['collection_id'] = collMatch[1];
-    const matMatch = path.match(/\/material\/([^/]+)/);
-    if (matMatch) ctx['node_id'] = matMatch[1];
+
+    // edu-sharing Render-Pattern: /edu-sharing/components/render/<uuid>
+    // Wird auf edu-sharing-Instanzen (inkl. Themenseiten-Einbindung) genutzt.
+    const renderMatch = path.match(
+      /\/components\/render\/([a-f0-9-]{8,})/i
+    );
+    if (renderMatch && !ctx['node_id']) ctx['node_id'] = renderMatch[1];
+
+    // WLO /sammlung/<id> und /material/<id> (häufigste WLO-Patterns)
+    const collMatch = path.match(/\/sammlung\/([^/?#]+)/);
+    if (collMatch && !ctx['collection_id']) ctx['collection_id'] = collMatch[1];
+    const matMatch = path.match(/\/material\/([^/?#]+)/);
+    if (matMatch && !ctx['node_id']) ctx['node_id'] = matMatch[1];
+
+    // WLO Themenseiten: /themenseite/<slug> oder /fachportal/<fach>/<slug>
+    // Hier hat die URL nur einen Slug, keine node_id — der Slug wird als
+    // Hinweis mitgegeben, das Backend kann daraus einen Lookup machen.
+    const themenMatch = path.match(/\/themenseite\/([^/?#]+)/);
+    if (themenMatch) {
+      ctx['topic_page_slug'] = themenMatch[1];
+      ctx['page_type'] = 'themenseite';
+    }
+    const fachMatch = path.match(/\/fachportal\/([^/?#]+)(?:\/([^/?#]+))?/);
+    if (fachMatch) {
+      ctx['subject_slug'] = fachMatch[1];
+      if (fachMatch[2]) ctx['topic_page_slug'] = fachMatch[2];
+      ctx['page_type'] = ctx['page_type'] || 'fachportal';
+    }
+
+    // Dokumenten-Titel als zusätzlicher Kontext (semantisch — hilft LLM,
+    // wenn node_id nicht auflösbar)
+    if (typeof document !== 'undefined' && document.title) {
+      ctx['document_title'] = document.title.slice(0, 200);
+    }
 
     return ctx;
   }

@@ -21,7 +21,7 @@ intents:
 
   - id: INT-W-03c
     label: Lerninhalt suchen
-    description: "Schüler:in oder Eltern suchen Lerninhalte (Videos, Übungen, Erklärungen)."
+    description: "Schüler:in oder Eltern suchen Lerninhalte (Videos, Übungen, Erklärungen). Wird vom Classifier zusammen mit 03a/03b als spezielle Such-Intent-Gruppe erkannt und landet in chat.py:_spec_search_intents — d.h. die MCP-Suche wird direkt angesteuert. Patterns mit Wildcard-Intent-Gate (PAT-13 Schritt-für-Schritt, PAT-14 Eltern-Empfehlung, PAT-17 Sanfter Einstieg) matchen dann über Persona-Gate (P-W-SL / P-ELT)."
 
   - id: INT-W-04
     label: Feedback
@@ -50,3 +50,11 @@ intents:
   - id: INT-W-10
     label: Unterrichtsplanung
     description: "Lehrkraft plant eine Unterrichtseinheit und braucht strukturierte Materialzusammenstellung."
+
+  - id: INT-W-11
+    label: Inhalt erstellen
+    description: "Nutzer:in möchte ein neues Material KI-generiert erstellen lassen (Arbeitsblatt, Infoblatt, Quiz, Präsentation, Checkliste, Glossar, Strukturübersicht, Übungsaufgaben, Lerngeschichte, Versuchsanleitung, Diskussionskarten, Rollenspielkarten, Bericht, Factsheet, Projektsteckbrief, Pressemitteilung, Vergleich). ABGRENZUNG: 'Zeig mir Material zu X', 'Suche Arbeitsblatt über Y', 'Finde Quiz zu Z' ist INT-W-03b (Suchen), NICHT Erstellen. Erstellen-Trigger sind Verben wie 'erstelle', 'generiere', 'mach mir', 'schreib ein'."
+
+  - id: INT-W-12
+    label: Canvas-Edit
+    description: "Nutzer:in möchte den bereits im Canvas befindlichen Inhalt VERFEINERN oder ÄNDERN (nicht neu erstellen). Typische Trigger: 'mach es einfacher', 'kürzer', 'ausführlicher', 'füge X hinzu', 'formuliere Y um', 'streiche Z', 'ändere den Titel', 'nochmal, aber mit Lösung'. Voraussetzung: state-12 (Canvas-Arbeit) ist aktiv und es existiert bereits Canvas-Content. ABGRENZUNG: Wenn state-12 NICHT aktiv oder kein Canvas-Content vorhanden, ist es INT-W-11 (Erstellen)."

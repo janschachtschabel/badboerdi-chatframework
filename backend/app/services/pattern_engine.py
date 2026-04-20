@@ -251,9 +251,25 @@ def select_pattern(
     device: str,
     entities: dict[str, Any],
     intent_confidence: float = 0.8,
+    enforced_pattern_id: str | None = None,
 ) -> tuple[PatternDef, dict[str, Any], dict[str, float], list[str]]:
-    """Run all 3 phases and return (winner, modulated_output, scores, eliminated)."""
+    """Run all 3 phases and return (winner, modulated_output, scores, eliminated).
+
+    If ``enforced_pattern_id`` is given (e.g. from the Safety layer), that
+    pattern is loaded directly and the normal Gate→Score phases are skipped.
+    Its ``core_rule`` and ``tools``/``sources`` are honoured so the LLM gets
+    a proper instruction (instead of just having tone/length overridden on
+    whatever pattern happened to win the scoring phase).
+    """
     patterns = get_patterns()
+
+    # ── Safety override: skip gating/scoring, load the enforced pattern ──
+    if enforced_pattern_id:
+        enforced = next((p for p in patterns if p.id == enforced_pattern_id), None)
+        if enforced is not None:
+            output = phase3_modulate(enforced, signals, device, entities, persona_id)
+            return enforced, output, {enforced.id: 1.0}, []
+
     candidates, eliminated = phase1_gate(patterns, persona_id, state_id, intent_id, entities)
 
     if not candidates:

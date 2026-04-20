@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -225,15 +226,17 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_wlo_collections",
-            "description": "Search WLO themed collections/topic pages by keyword, discipline, educational level.",
+            "description": "Search WirLernenOnline (WLO) for Sammlungen (= Themenseiten) — kuratierte thematische Seiten, die Lerninhalte buendeln. Sammlungen koennen NICHT nach Inhaltstyp (Video/Arbeitsblatt/...) gefiltert werden — dafuer search_wlo_content verwenden.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "discipline": {"type": "string", "description": "Subject/discipline filter"},
-                    "educationalLevel": {"type": "string", "description": "Educational level filter"},
+                    "query": {"type": "string", "description": "Suchanfrage auf Deutsch, z.B. 'Klimawandel' oder 'Algebra'. Leer lassen fuer Top-Level-Sammlungen."},
+                    "parentNodeId": {"type": "string", "description": "NodeId einer Eltern-Sammlung, um darin zu suchen. Leer fuer Suche ab WLO-Root."},
+                    "educationalContext": {"type": "string", "description": "Bildungsstufe als Label ODER URI — z.B. 'Primarstufe', 'Sekundarstufe I', 'Sekundarstufe II', 'Hochschule'. Mappe Klassenangaben IMMER auf eine Bildungsstufe (Kl. 1-4=Grundschule, 5-10=Sek I, 11-13=Sek II). Eine Filterebene 'Klassenstufe' existiert NICHT."},
+                    "discipline": {"type": "string", "description": "Fach/Schulfach als Label ODER URI — z.B. 'Mathematik', 'Biologie', 'Informatik', 'Deutsch'."},
+                    "userRole": {"type": "string", "description": "Zielgruppe als Label ODER URI — z.B. 'Lehrer/in', 'Lerner/in', 'Eltern'."},
+                    "maxResults": {"type": "integer", "description": "Anzahl Treffer (1-20, Default 5)"},
                 },
-                "required": ["query"],
             },
         },
     },
@@ -241,15 +244,17 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_wlo_content",
-            "description": "Search WLO for individual learning materials (worksheets, videos, exercises).",
+            "description": "Search WirLernenOnline (WLO) for einzelne Lerninhalte (Arbeitsblaetter, Videos, interaktive Medien, Unterrichtsplaene, Quizze, Bilder, Kurse, ...). Nutze diese Funktion wenn der Nutzer nach einem konkreten Inhaltstyp fragt.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "discipline": {"type": "string", "description": "Subject filter"},
-                    "educationalLevel": {"type": "string", "description": "Level filter"},
-                    "resourceType": {"type": "string", "description": "Resource type filter"},
-                    "license": {"type": "string", "description": "License filter"},
+                    "query": {"type": "string", "description": "Suchanfrage auf Deutsch, z.B. 'Bruchrechnung Grundschule' oder 'Klimawandel interaktiv'."},
+                    "educationalContext": {"type": "string", "description": "Bildungsstufe als Label ODER URI — z.B. 'Primarstufe', 'Sekundarstufe I', 'Sekundarstufe II', 'Hochschule', 'Berufliche Bildung'. Mappe Klassenangaben IMMER auf eine Bildungsstufe (Kl. 1-4=Grundschule, 5-10=Sek I, 11-13=Sek II). Eine Filterebene 'Klassenstufe' existiert NICHT."},
+                    "discipline": {"type": "string", "description": "Fach/Schulfach als Label ODER URI — z.B. 'Mathematik', 'Biologie', 'Deutsch', 'Informatik'."},
+                    "userRole": {"type": "string", "description": "Zielgruppe als Label ODER URI — z.B. 'Lehrer/in', 'Lerner/in'."},
+                    "learningResourceType": {"type": "string", "description": "Inhaltstyp / Lernressourcentyp (lrt) als Label ODER URI — z.B. 'Video', 'Arbeitsblatt', 'Bild', 'Interaktives medium', 'Unterrichtsplan', 'Quiz', 'Audio', 'Kurs'. PFLICHT wenn der Nutzer einen Inhaltstyp nennt. Labels aus lookup_wlo_vocabulary(vocabulary='lrt'). Ohne diesen Filter kommen gemischte Treffer zurueck."},
+                    "publisher": {"type": "string", "description": "Anbieter-Filter, z.B. 'Klexikon', 'ZUM', 'Serlo', 'Khan Academy'."},
+                    "maxResults": {"type": "integer", "description": "Anzahl Treffer (1-20, Default 8)"},
                 },
                 "required": ["query"],
             },
@@ -276,13 +281,16 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_collection_contents",
-            "description": "Get contents and sub-collections of a specific WLO collection by its node ID.",
+            "description": "Inhalte und/oder Sub-Sammlungen einer WLO-Sammlung (Themenseite) per nodeId abrufen.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "nodeId": {"type": "string", "description": "The node ID of the collection"},
-                    "skipCount": {"type": "integer", "description": "Pagination offset"},
-                    "maxItems": {"type": "integer", "description": "Max items to return"},
+                    "nodeId": {"type": "string", "description": "NodeId der Sammlung (aus search_wlo_collections)"},
+                    "query": {"type": "string", "description": "Optionale Such-/Filter-Anfrage, um Ergebnisse innerhalb der Sammlung zu re-ranken."},
+                    "contentFilter": {"type": "string", "enum": ["files", "folders", "both"], "description": "files = Lernmaterialien (Default), folders = Sub-Sammlungen, both = alles"},
+                    "includeSubcollections": {"type": "boolean", "description": "Wenn true: Sub-Sammlungen rekursiv durchsuchen (nur fuer contentFilter=files)"},
+                    "maxResults": {"type": "integer", "description": "Max. Treffer (1-100, Default 20)"},
+                    "skipCount": {"type": "integer", "description": "Pagination-Offset (Default 0)"},
                 },
                 "required": ["nodeId"],
             },
@@ -362,17 +370,17 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "lookup_wlo_vocabulary",
-            "description": "Look up valid filter values for WLO search. Use 'discipline' for subjects, 'educationalContext' for education levels, 'lrt' for resource types, 'userRole' for target groups.",
+            "description": "Look up valid filter values for WLO search. Use 'discipline' for subjects, 'educationalContext' for education levels, 'lrt' for resource types, 'userRole' for target groups. Returns entries with URIs — use the URI as the filter value on search_wlo_content / search_wlo_collections (resourceType / educationalLevel / discipline).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "field": {
+                    "vocabulary": {
                         "type": "string",
                         "enum": ["educationalContext", "discipline", "userRole", "lrt"],
                         "description": "Which vocabulary to look up: educationalContext (Bildungsstufen), discipline (Fächer), lrt (Lernressourcentypen), userRole (Zielgruppen)",
                     },
                 },
-                "required": ["field"],
+                "required": ["vocabulary"],
             },
         },
     },
@@ -404,8 +412,23 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
     """Call a WLO MCP tool via JSON-RPC 2.0 with MCP protocol handshake."""
     global _initialized, _session_id
 
+    # Debug: log raw LLM-supplied arguments BEFORE validation/resolution so we
+    # can see exactly what the model wanted to send. Keeps this at INFO — the
+    # cost is ~100 bytes per tool call and it's indispensable for diagnosing
+    # filter bugs.
+    logger.info("MCP tool %s args: %s", tool_name, arguments)
+
     # Validate arguments before sending to MCP server
     arguments = validate_tool_args(tool_name, arguments)
+
+    # Auto-resolve label→URI for filter values. The WLO MCP server expects
+    # the URI form (e.g. 'http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/...')
+    # for resourceType / discipline / educationalLevel. If the LLM passed a
+    # plain label or alias ('Video', 'interaktiv', 'Mathematik', 'Sek I'),
+    # we look it up in the corresponding vocabulary cache and substitute
+    # the URI transparently. Unknown labels are passed through unchanged.
+    if tool_name in ("search_wlo_content", "search_wlo_collections"):
+        arguments = await _resolve_filter_uris(arguments)
 
     # Ensure we have a valid session
     await _ensure_initialized_with_session()
@@ -473,6 +496,95 @@ def parse_total_count(mcp_text: str) -> int:
     if m:
         return int(m.group(1))
     return 0
+
+
+_UUID_RE = re.compile(
+    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}",
+    re.IGNORECASE,
+)
+
+
+def _extract_collection_id_from_url(url: str) -> str:
+    """Pull the collection UUID out of a WLO topic-page URL.
+
+    Topic-page URLs look like:
+      .../components/topic-pages?collectionId=324f24e3-6687-...
+      .../components/topic-pages?collectionId=<uuid>&var=teacher
+      .../components/render/<uuid>
+      .../components/collections?id=<uuid>&scope=...
+    Any of those are acceptable — we just return the first UUID we find.
+    """
+    if not url:
+        return ""
+    m = _UUID_RE.search(url)
+    return m.group(0) if m else ""
+
+
+def parse_wlo_topic_page_cards(mcp_text: str) -> list[dict]:
+    """Parse the special `search_wlo_topic_pages` output.
+
+    The response uses `Sammlung-nodeId:` / `Variante-ID:` / `Themenseite:`
+    instead of the plain `nodeId:` / `URL:` that `parse_wlo_cards` expects.
+    Multiple variants of the same topic page (different target groups) are
+    merged into one card, with all variants collected in `topic_pages[]`.
+    """
+    if not mcp_text:
+        return []
+
+    cards_by_nid: dict[str, dict] = {}
+    order: list[str] = []
+    current_title: str | None = None
+    current: dict | None = None
+
+    for raw in mcp_text.split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("## "):
+            # New variant block — the title is the collection title
+            current_title = line.lstrip("#").strip()
+            current = None
+            continue
+        if not current_title:
+            continue
+
+        ll = line.lower()
+        if ll.startswith("sammlung-nodeid:") or ll.startswith("nodeid:"):
+            nid = line.split(":", 1)[-1].strip()
+            if not nid:
+                continue
+            if nid not in cards_by_nid:
+                cards_by_nid[nid] = {
+                    "node_id": nid,
+                    "title": current_title,
+                    "node_type": "collection",
+                    "topic_pages": [],
+                    "wlo_url": f"https://redaktion.openeduhub.net/edu-sharing/components/render/{nid}",
+                }
+                order.append(nid)
+            current = cards_by_nid[nid]
+            # Keep the longest/earliest title we saw
+            if not current.get("title"):
+                current["title"] = current_title
+        elif ll.startswith("variante-id:") and current is not None:
+            current.setdefault("_pending_variant", {})["variant_id"] = line.split(":", 1)[-1].strip()
+        elif ll.startswith("zielgruppe:") and current is not None:
+            tg = line.split(":", 1)[-1].strip()
+            if tg.lower() in ("nicht gesetzt", "unknown", "-", ""):
+                tg = ""
+            current.setdefault("_pending_variant", {})["target_group"] = tg
+        elif ll.startswith("label:") and current is not None:
+            current.setdefault("_pending_variant", {})["label"] = line.split(":", 1)[-1].strip()
+        elif ll.startswith("themenseite:") and current is not None:
+            url = line.split(":", 1)[-1].strip()
+            variant = current.pop("_pending_variant", {}) or {}
+            variant["url"] = url
+            variant.setdefault("label", "Themenseite")
+            variant.setdefault("target_group", "")
+            variant.setdefault("variant_id", "")
+            current["topic_pages"].append(variant)
+
+    return [cards_by_nid[nid] for nid in order]
 
 
 def parse_wlo_cards(mcp_text: str) -> list[dict]:
@@ -595,8 +707,19 @@ def parse_wlo_cards(mcp_text: str) -> list[dict]:
     regular_cards = []
     for c in cards:
         if c.get("_tp_url"):
-            # This is a topic-page variant, not a regular card
-            coll_id = c.get("_tp_collection_id", "")
+            # This is a topic-page variant, not a regular card.
+            # Priority for the collection ID (used as `node_id` so browse /
+            # learning_path / remix work exactly like for Sammlungen):
+            #   1. explicit `Sammlung-nodeId:` from MCP
+            #   2. the regular `nodeId:` on the card (if any)
+            #   3. extracted from the URL's `collectionId=<uuid>` or `<uuid>`
+            #      path segment — the WLO topic-page URL always carries it.
+            coll_id = (
+                c.get("_tp_collection_id")
+                or c.get("node_id")
+                or _extract_collection_id_from_url(c.get("_tp_url", ""))
+                or ""
+            )
             tg_raw = c.get("_tp_target_group", "")
             label = _tp_label(tg_raw)
             variant = {
@@ -607,7 +730,10 @@ def parse_wlo_cards(mcp_text: str) -> list[dict]:
             }
             if coll_id:
                 tp_by_collection.setdefault(coll_id, []).append(variant)
-            # Also emit as a card so the LLM can reference it
+            # Also emit as a card so the LLM can reference it.
+            # Carry over any additional metadata the parser picked up —
+            # search_wlo_topic_pages sometimes ships preview_url / disciplines /
+            # educational_contexts / license alongside the variant data.
             card = {
                 "node_id": coll_id,
                 "title": c.get("title", ""),
@@ -616,6 +742,13 @@ def parse_wlo_cards(mcp_text: str) -> list[dict]:
                 "topic_pages": [variant],
                 "wlo_url": c.get("wlo_url", ""),
                 "url": c.get("url", ""),
+                "preview_url": c.get("preview_url", ""),
+                "disciplines": c.get("disciplines", []),
+                "educational_contexts": c.get("educational_contexts", []),
+                "keywords": c.get("keywords", []),
+                "learning_resource_types": c.get("learning_resource_types", []),
+                "license": c.get("license", ""),
+                "publisher": c.get("publisher", ""),
             }
             # Deduplicate: only add if not already in regular_cards with same node_id
             if not any(rc.get("node_id") == coll_id and rc.get("node_id") for rc in regular_cards):
@@ -644,6 +777,271 @@ _TARGET_GROUP_LABELS = {
     "learner": "Lernende",
     "general": "Allgemein",
 }
+
+
+# ── Discipline label cache ──────────────────────────────────────────
+#
+# The WLO MCP server resolves school-discipline taxon URIs to labels
+# (e.g. "Mathematik"), but for Hochschulfaecher (vocab:
+# hochschulfaechersystematik) it returns raw URIs. We lazily fetch the
+# full discipline vocabulary once via lookup_wlo_vocabulary and build
+# a URI→label map that post_process_discipline_labels() applies to
+# card.disciplines lists in place.
+_discipline_uri_to_label: dict[str, str] = {}
+_discipline_cache_loaded: bool = False
+
+
+# Fallback slug labels for well-known WLO vocabulary paths, used when
+# the vocabulary lookup hasn't populated the cache yet (first request)
+# or when a specific URI isn't covered.
+_VOCAB_PATH_LABELS = {
+    "hochschulfaechersystematik": "Hochschulfach",
+    "discipline": "Fach",
+    "educationalContext": "Bildungsstufe",
+    "learningResourceType": "Ressourcentyp",
+}
+
+
+def _pretty_uri_label(uri: str) -> str:
+    """Turn a taxon URI into a readable fallback label.
+
+    ``http://w3id.org/openeduhub/vocabs/hochschulfaechersystematik/n4``
+    → ``"Hochschulfach (n4)"``.  Leaves plain labels unchanged.
+    """
+    if not uri or not uri.startswith(("http://", "https://")):
+        return uri
+    # Strip query/fragment and trailing slashes
+    raw = uri.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+    parts = [p for p in raw.split("/") if p]
+    if len(parts) < 2:
+        return uri
+    slug = parts[-1]
+    vocab = parts[-2]
+    pretty_vocab = _VOCAB_PATH_LABELS.get(vocab, vocab.replace("-", " ").title())
+    return f"{pretty_vocab} ({slug})"
+
+
+async def _ensure_discipline_cache() -> None:
+    """Populate the URI→label cache for card display (discipline vocab).
+
+    Piggybacks on ``_ensure_label_cache('discipline')`` and inverts its
+    label→URI mapping to produce a URI→label map that card post-processing
+    uses to replace raw discipline URIs with human-readable labels.
+    """
+    global _discipline_cache_loaded
+    if _discipline_cache_loaded:
+        return
+    await _ensure_label_cache("discipline")
+    # Invert label→URI map. When multiple labels/aliases point to the same
+    # URI, prefer the one that looks like a proper noun (first word capital).
+    seen: dict[str, str] = {}
+    for label_or_alias, uri in _label_to_uri_cache.get("discipline", {}).items():
+        existing = seen.get(uri)
+        candidate = label_or_alias
+        if not existing:
+            seen[uri] = candidate
+        else:
+            # Prefer shorter / capitalized labels (typically the primary prefLabel)
+            if (len(candidate) < len(existing)) or (candidate and candidate[0].isupper() and not existing[0].isupper()):
+                seen[uri] = candidate
+    for uri, label in seen.items():
+        _discipline_uri_to_label.setdefault(uri, label.capitalize() if label else label)
+    logger.info(
+        "discipline URI→label cache loaded: %d entries",
+        len(_discipline_uri_to_label),
+    )
+    _discipline_cache_loaded = True
+
+
+# ── Label→URI caches for filter auto-resolution ─────────────────
+#
+# Maps lowercased label OR alias → canonical URI. Populated lazily
+# via lookup_wlo_vocabulary. Used by _resolve_filter_uris to translate
+# LLM-produced filter values (which may arrive as labels like 'Video'
+# or aliases like 'interaktiv') into the URI form the MCP server
+# requires for filtering.
+_label_to_uri_cache: dict[str, dict[str, str]] = {
+    # vocabulary → {normalized_label_or_alias: uri}
+    "lrt": {},
+    "discipline": {},
+    "educationalContext": {},
+    "userRole": {},
+}
+_label_cache_loaded: dict[str, bool] = {
+    "lrt": False,
+    "discipline": False,
+    "educationalContext": False,
+    "userRole": False,
+}
+
+
+def _norm_label(s: str) -> str:
+    """Lowercase and strip for case-insensitive lookup."""
+    return (s or "").strip().lower()
+
+
+async def _ensure_label_cache(vocab: str) -> None:
+    """Lazily populate the label→URI cache for a vocabulary."""
+    if _label_cache_loaded.get(vocab):
+        return
+    if vocab not in _label_to_uri_cache:
+        return  # unknown vocab, do nothing
+    try:
+        raw = await call_mcp_tool("lookup_wlo_vocabulary", {"vocabulary": vocab})
+    except Exception as e:  # pragma: no cover — network failure
+        logger.warning("%s vocabulary preload failed: %s", vocab, e)
+        _label_cache_loaded[vocab] = True
+        return
+
+    # Output format (from real MCP response):
+    #   - **Video**
+    #     URI: http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/...
+    #   - **Interaktives medium** | Aliases: interactive media, interaktiv, simulation
+    #     URI: http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/...
+    import re as _re
+    current_label: str | None = None
+    current_aliases: list[str] = []
+    cache = _label_to_uri_cache[vocab]
+
+    for line in (raw or "").split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        # Entry header: "- **Label** | Aliases: a, b, c" or "- **Label**"
+        m_label = _re.match(r"-\s*\*\*(.+?)\*\*(?:\s*\|\s*Aliases:\s*(.+))?\s*$", line)
+        if m_label:
+            current_label = m_label.group(1).strip()
+            aliases_str = m_label.group(2) or ""
+            current_aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
+            continue
+        # URI line: "URI: http://..."
+        m_uri = _re.match(r"URI:\s*(https?://\S+)", line)
+        if m_uri and current_label:
+            uri = m_uri.group(1).strip()
+            cache.setdefault(_norm_label(current_label), uri)
+            for alias in current_aliases:
+                cache.setdefault(_norm_label(alias), uri)
+            current_label = None
+            current_aliases = []
+
+    logger.info("%s label→URI cache loaded: %d entries", vocab, len(cache))
+    _label_cache_loaded[vocab] = True
+
+
+def _fuzzy_lookup(cache: dict[str, str], needle: str) -> tuple[str, str] | None:
+    """Best-effort label→URI lookup that tolerates LLM paraphrasing.
+
+    Strategy:
+    1. Exact match on normalized form ("Video" → cache["video"]).
+    2. Substring containment either way — cache key contains needle OR
+       needle contains cache key. This catches "Interaktives Material"
+       vs. cache entry "interaktiv" (alias of "Interaktives medium"):
+       needle contains the alias, so it matches.
+    3. Longest-substring wins when multiple keys match, to prefer
+       specific over generic (e.g. "interaktives medium" over "medium").
+
+    Returns (matched_key, uri) on hit, None otherwise.
+    """
+    if not needle:
+        return None
+    nn = _norm_label(needle)
+    # 1. exact
+    if nn in cache:
+        return nn, cache[nn]
+    # 2. substring
+    best_key: str | None = None
+    best_len = 0
+    for key in cache:
+        if not key:
+            continue
+        # key appears in needle (e.g. "interaktiv" in "interaktives material")
+        if key in nn or nn in key:
+            if len(key) > best_len:
+                best_key = key
+                best_len = len(key)
+    if best_key is not None:
+        return best_key, cache[best_key]
+    return None
+
+
+async def _resolve_filter_uris(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Rewrite label-style filter values into URIs using vocabulary caches.
+
+    The WLO MCP server accepts BOTH plain labels and full URIs for its
+    filter params (learningResourceType, discipline, educationalContext,
+    userRole). We still run a label→URI translation because:
+      * it normalises paraphrased values ("Interaktives Material" → the
+        canonical alias "interaktiv" → URI for Interaktives medium), and
+      * URIs are unambiguous and less brittle to server-side label parsing.
+
+    Leaves URIs untouched. Unresolvable labels are passed through — the
+    server may still accept them (exact label match) or at worst return
+    unfiltered results.
+    """
+    # Map the server's actual parameter names → vocabulary name used with
+    # lookup_wlo_vocabulary. These are the REAL MCP param names (matched
+    # against the server's tools/list schema), NOT our historical aliases.
+    key_to_vocab = {
+        "learningResourceType": "lrt",
+        "discipline": "discipline",
+        "educationalContext": "educationalContext",
+        "userRole": "userRole",
+    }
+    out = dict(arguments)
+    for key, vocab in key_to_vocab.items():
+        val = out.get(key)
+        if not isinstance(val, str) or not val:
+            continue
+        if val.startswith(("http://", "https://")):
+            continue  # already a URI
+        await _ensure_label_cache(vocab)
+        cache = _label_to_uri_cache.get(vocab) or {}
+        match = _fuzzy_lookup(cache, val)
+        if match:
+            matched_key, uri = match
+            if matched_key == _norm_label(val):
+                logger.info("resolved %s=%r → %s", key, val, uri)
+            else:
+                logger.info("resolved %s=%r via fuzzy %r → %s", key, val, matched_key, uri)
+            out[key] = uri
+        else:
+            logger.info("no URI for %s=%r (vocab=%s); passing label through", key, val, vocab)
+    return out
+
+
+async def resolve_discipline_labels(cards: list[dict]) -> list[dict]:
+    """Replace URI entries in each card's ``disciplines`` list with human labels.
+
+    Uses the lazy vocabulary cache when populated; falls back to the
+    slug-pretty-printer so raw URIs never reach the UI.
+    """
+    if not cards:
+        return cards
+
+    # Check if any card actually contains URI disciplines; only then load cache.
+    any_uri = any(
+        isinstance(c.get("disciplines"), list)
+        and any(d.startswith(("http://", "https://")) for d in c["disciplines"])
+        for c in cards
+    )
+    if any_uri:
+        await _ensure_discipline_cache()
+
+    for card in cards:
+        raw = card.get("disciplines") or []
+        if not raw:
+            continue
+        resolved: list[str] = []
+        for d in raw:
+            if not isinstance(d, str):
+                continue
+            if d.startswith(("http://", "https://")):
+                label = _discipline_uri_to_label.get(d) or _pretty_uri_label(d)
+                resolved.append(label)
+            else:
+                resolved.append(d)
+        card["disciplines"] = resolved
+    return cards
 
 
 def _tp_label(target_group: str) -> str:

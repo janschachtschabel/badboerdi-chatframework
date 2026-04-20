@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Classification result (validated LLM output) ──────────────────
@@ -35,8 +35,13 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str = Field(..., max_length=10000)
     environment: Environment = Field(default_factory=Environment)
-    action: str | None = None  # browse_collection | generate_learning_path | None
-    action_params: dict[str, Any] = Field(default_factory=dict)  # e.g. {collection_id, title}
+    action: str | None = None  # browse_collection | generate_learning_path | canvas_create | canvas_edit | None
+    action_params: dict[str, Any] = Field(default_factory=dict)  # e.g. {collection_id, title} or {current_markdown, edit_instruction, material_type}
+    # Snapshot of what the user currently sees in the canvas pane. The
+    # frontend sends this with every turn so the classifier / LLM knows
+    # the user's visible context (e.g. when asking "was bedeutet hier
+    # der Zaehler?" about an on-screen worksheet).
+    canvas_state: dict[str, Any] | None = None  # {title, material_type, markdown, mode: 'material'|'cards'|'empty', cards_count?}
 
 
 class WloCard(BaseModel):
@@ -218,21 +223,67 @@ class RagResult(BaseModel):
 
 # ── MCP tool arguments (validated before calling MCP server) ─────
 class SearchWloArgs(BaseModel):
-    """Arguments for search_wlo_collections and search_wlo_content."""
-    query: str
+    """Arguments for search_wlo_collections and search_wlo_content.
+
+    NOTE: These parameter names match the WLO MCP server schema EXACTLY.
+    Historical mismatches (resourceType, educationalLevel, maxItems) caused
+    the server to silently ignore our filters; those legacy names are now
+    accepted via pre-validator aliases but always exported as the server's
+    canonical names (learningResourceType, educationalContext, maxResults).
+    """
+    query: str = ""
     discipline: str = ""
-    educationalLevel: str = ""
-    resourceType: str = ""
-    license: str = ""
-    maxItems: int = Field(default=5, ge=1, le=20)
-    skipCount: int = Field(default=0, ge=0)
+    educationalContext: str = ""  # educationalLevel is a legacy alias
+    learningResourceType: str = ""  # resourceType is a legacy alias
+    userRole: str = ""
+    publisher: str = ""
+    parentNodeId: str = ""  # only valid for search_wlo_collections
+    maxResults: int = Field(default=5, ge=1, le=20)  # maxItems is a legacy alias
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_names(cls, data):
+        """Accept old param names we used in prompts and UI history."""
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        # educationalLevel → educationalContext
+        if "educationalContext" not in data and "educationalLevel" in data:
+            data["educationalContext"] = data.pop("educationalLevel")
+        # resourceType → learningResourceType
+        if "learningResourceType" not in data and "resourceType" in data:
+            data["learningResourceType"] = data.pop("resourceType")
+        # maxItems → maxResults
+        if "maxResults" not in data and "maxItems" in data:
+            data["maxResults"] = data.pop("maxItems")
+        # Drop fields the real MCP schema doesn't know
+        data.pop("license", None)
+        data.pop("skipCount", None)
+        return data
 
 
 class CollectionContentsArgs(BaseModel):
-    """Arguments for get_collection_contents."""
+    """Arguments for get_collection_contents.
+
+    Matches MCP schema: nodeId, query, contentFilter, includeSubcollections,
+    maxResults, skipCount. Legacy name maxItems accepted via pre-validator.
+    """
     nodeId: str
-    maxItems: int = Field(default=5, ge=1, le=20)
+    query: str = ""
+    contentFilter: str = ""  # "files" | "folders" | "both"
+    includeSubcollections: bool = False
+    maxResults: int = Field(default=5, ge=1, le=100)
     skipCount: int = Field(default=0, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_names(cls, data):
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        if "maxResults" not in data and "maxItems" in data:
+            data["maxResults"] = data.pop("maxItems")
+        return data
 
 
 class NodeDetailsArgs(BaseModel):
@@ -255,8 +306,21 @@ class SearchTopicPagesArgs(BaseModel):
 
 
 class LookupVocabularyArgs(BaseModel):
-    """Arguments for lookup_wlo_vocabulary."""
-    field: str
+    """Arguments for lookup_wlo_vocabulary.
+
+    NOTE: The upstream MCP server expects the parameter name ``vocabulary``
+    (not ``field``). Historically this project used ``field``; we accept
+    either via the pre-validator for backwards compatibility, but the
+    exported argument is always ``vocabulary``.
+    """
+    vocabulary: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_field(cls, data):
+        if isinstance(data, dict) and "vocabulary" not in data and "field" in data:
+            data = {**data, "vocabulary": data["field"]}
+        return data
 
 
 # ── Config / Studio ──────────────────────────────────────────────
@@ -267,6 +331,16 @@ class ConfigFile(BaseModel):
 
 
 class PageAction(BaseModel):
-    """Action to send back to host page (search results, navigate, etc.)."""
-    action: str  # navigate | show_collection | show_results | share_content
+    """Action to send back to host page or widget canvas (search results, navigate, etc.).
+
+    Values:
+      Host-Page:
+        navigate, show_collection, show_results, share_content
+      Widget-Canvas (Phase 1):
+        canvas_open          payload: {title, material_type, markdown}
+        canvas_update        payload: {markdown}
+        canvas_show_cards    payload: {cards, query}
+        canvas_close         payload: {}
+    """
+    action: str
     payload: dict[str, Any] = Field(default_factory=dict)

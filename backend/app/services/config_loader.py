@@ -184,6 +184,75 @@ def load_entities() -> list[dict[str, Any]]:
     return data.get("entities", [])
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Canvas config (05-canvas/)
+# ──────────────────────────────────────────────────────────────────────────
+
+def load_canvas_material_types() -> list[dict[str, Any]]:
+    """Load canvas material-type definitions (emoji, label, category, structure).
+
+    Returns a list of dicts with keys: id, label, emoji, category, structure.
+    Empty list if file missing — canvas_service then falls back to its
+    in-code defaults.
+    """
+    data = _load_yaml("05-canvas/material-types.yaml")
+    return data.get("material_types", [])
+
+
+def load_canvas_type_aliases() -> dict[str, Any]:
+    """Load canvas type-alias + LRT-mapping + short-whitelist from one YAML.
+
+    Returns a dict with keys:
+      - aliases:         dict[str, str]   keyword → canonical type id
+      - short_whitelist: list[str]        short aliases allowed mid-text
+      - lrt_to_type:     dict[str, str]   edu-sharing LRT → canvas type id
+
+    Missing sections return empty containers.
+    """
+    data = _load_yaml("05-canvas/type-aliases.yaml") or {}
+    return {
+        "aliases": data.get("aliases", {}) or {},
+        "short_whitelist": data.get("short_whitelist", []) or [],
+        "lrt_to_type": data.get("lrt_to_type", {}) or {},
+    }
+
+
+def load_canvas_create_triggers() -> dict[str, list[str]]:
+    """Load create-trigger verbs + search-verbs for canvas intent override.
+
+    Returns dict with 'create_triggers' and 'search_verbs' (both list[str]).
+    """
+    data = _load_yaml("05-canvas/create-triggers.yaml") or {}
+    return {
+        "create_triggers": data.get("create_triggers", []) or [],
+        "search_verbs": data.get("search_verbs", []) or [],
+    }
+
+
+def load_canvas_edit_triggers() -> dict[str, list[str]]:
+    """Load edit-trigger verbs + explicit-create-overrides for Canvas-Edit.
+
+    Returns dict with 'edit_triggers' and 'explicit_create_overrides'
+    (both list[str]).
+    """
+    data = _load_yaml("05-canvas/edit-triggers.yaml") or {}
+    return {
+        "edit_triggers": data.get("edit_triggers", []) or [],
+        "explicit_create_overrides": data.get("explicit_create_overrides", []) or [],
+    }
+
+
+def load_canvas_persona_priorities() -> dict[str, list[str]]:
+    """Load persona-priority groups for canvas quick-reply ordering.
+
+    Returns dict with key 'analytical_personas' (list of persona ids).
+    """
+    data = _load_yaml("05-canvas/persona-priorities.yaml") or {}
+    return {
+        "analytical_personas": data.get("analytical_personas", []) or [],
+    }
+
+
 def load_device_config() -> dict[str, Any]:
     """Load device config (max_items, persona_formality)."""
     return _load_yaml("01-base/device-config.yaml")

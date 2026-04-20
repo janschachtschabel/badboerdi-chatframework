@@ -9,6 +9,8 @@ from fastapi import APIRouter, Depends
 from app.services.auth import require_studio_key
 from app.services.database import (
     get_or_create_session, get_messages, get_memory, save_memory,
+    delete_session as db_delete_session,
+    delete_messages_for_session as db_delete_messages,
 )
 
 router = APIRouter()
@@ -51,6 +53,22 @@ async def set_session_memory(session_id: str, key: str, value: str,
     """Save a memory entry."""
     await save_memory(session_id, key, value, memory_type)
     return {"status": "saved", "key": key, "memory_type": memory_type}
+
+
+@router.delete("/{session_id}", dependencies=_studio)
+async def delete_session_endpoint(session_id: str):
+    """Fully delete a session: messages, memory, quality logs, safety logs,
+    and the session row itself. Returns per-table row counts."""
+    counts = await db_delete_session(session_id)
+    return {"status": "deleted", "session_id": session_id, "deleted": counts}
+
+
+@router.delete("/{session_id}/messages", dependencies=_studio)
+async def delete_session_messages_endpoint(session_id: str):
+    """Delete only the chat messages (keep session + memory + logs).
+    Useful to reset a conversation while preserving analytics."""
+    n = await db_delete_messages(session_id)
+    return {"status": "cleared", "session_id": session_id, "deleted_messages": n}
 
 
 @router.get("/", dependencies=_studio)

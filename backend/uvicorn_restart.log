@@ -1,0 +1,35 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\jan\\staging\\Windsurf\\wlo-suche\\badboerdi\\backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [26500] using WatchFiles
+INFO:     Started server process [34136]
+INFO:     Waiting for application startup.
+12:10:40 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+12:10:40 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+12:10:40 INFO startup: Config warmup done in 43ms
+INFO:     Application startup complete.
+12:10:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+12:10:41 INFO startup: LLM warmup done in 969ms
+WARNING:  WatchFiles detected changes in 'app\routers\chat.py'. Reloading...
+ Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\jan\miniconda3\Lib\multiprocessing\spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jan\miniconda3\Lib\multiprocessing\spawn.py", line 132, in _main
+    self = reduction.pickle.load(from_parent)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jan\miniconda3\Lib\multiprocessing\reduction.py", line 238, in _rebuild_socket
+    return ds.detach()
+           ^^^^^^^^^^^
+  File "C:\Users\jan\miniconda3\Lib\multiprocessing\resource_sharer.py", line 38, in detach
+    with _resource_sharer.get_connection(self._id) as conn:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jan\miniconda3\Lib\multiprocessing\resource_sharer.py", line 86, in get_connection
+    c = Client(address, authkey=process.current_process().authkey)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jan\miniconda3\Lib\multiprocessing\connection.py", line 517, in Client
+    c = PipeClient(address)
+        ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jan\miniconda3\Lib\multiprocessing\connection.py", line 719, in PipeClient
+    _winapi.WaitNamedPipe(address, 1000)
+FileNotFoundError: [WinError 2] Das System kann die angegebene Datei nicht finden

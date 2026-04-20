@@ -1,0 +1,204 @@
+16:48:54 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+16:48:54 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+16:48:54 INFO startup: Config warmup done in 31ms
+16:48:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:48:55 INFO startup: LLM warmup done in 1384ms
+16:49:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:49:09 INFO app.services.safety_service: safety stages=openai level=standard took 599ms
+16:49:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:49:09 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Photosynthese', 'maxResults': 5, 'educationalContext': 'Sekundarstufe I'}
+16:49:09 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Photosynthese', 'maxResults': 5, 'educationalContext': 'Sekundarstufe I'}
+16:49:09 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+16:49:10 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Photosynthese'
+16:49:10 INFO app.routers.chat: LP search: topic='Photosynthese' skip=0
+16:49:10 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Photosynthese', 'maxItems': 5, 'skipCount': 0}
+16:49:10 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:10 INFO app.services.mcp_client: MCP server: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+16:49:11 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:11 INFO app.services.mcp_client: MCP server: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+16:49:11 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+16:49:11 INFO app.services.mcp_client: MCP handshake complete
+16:49:12 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+16:49:12 INFO app.services.mcp_client: MCP handshake complete
+16:49:12 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:12 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:12 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+16:49:12 INFO app.services.mcp_client: educationalContext label\u2192URI cache loaded: 48 entries
+16:49:12 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+16:49:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:13 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3576 chars
+16:49:13 INFO app.routers.chat: LP found 5 collections
+16:49:13 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '6829fde5-208c-4648-b7ec-e17b440b3d56', 'maxItems': 16, 'skipCount': 0}
+16:49:14 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3576 chars
+16:49:14 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:15 INFO app.services.mcp_client: MCP tool get_collection_contents returned 14515 chars
+16:49:15 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'c1893399-8b3c-4e62-9de6-1dddf864c88c', 'maxItems': 16, 'skipCount': 0}
+16:49:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:16 INFO app.services.mcp_client: MCP tool get_collection_contents returned 4031 chars
+16:49:16 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'd38101c1-9a43-414b-a51f-e2dcff0add44', 'maxItems': 16, 'skipCount': 0}
+16:49:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:17 INFO app.services.mcp_client: MCP tool get_collection_contents returned 10654 chars
+16:49:17 INFO app.routers.chat: LP contents: 6670 chars, topic='Energieumsatz'
+16:49:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:49:19 INFO app.services.safety_service: safety stages=openai level=standard took 457ms
+16:49:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:49:20 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Eiszeit', 'maxResults': 5}
+16:49:20 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Eiszeit', 'maxResults': 5}
+16:49:20 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Eiszeit'
+16:49:20 INFO app.routers.chat: LP search: topic='Eiszeit' skip=0
+16:49:20 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Eiszeit', 'maxItems': 5, 'skipCount': 0}
+16:49:21 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:21 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:21 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 692 chars
+16:49:21 INFO app.routers.chat: LP found 1 collections
+16:49:21 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'f1a058f6-ae81-4545-9b77-af2dcea6257d', 'maxItems': 16, 'skipCount': 0}
+16:49:22 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 692 chars
+16:49:22 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:49:22 INFO app.services.mcp_client: MCP tool get_collection_contents returned 832 chars
+16:49:22 INFO app.routers.chat: LP contents: 326 chars, topic='Formen der Erdoberflche'
+16:49:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:49:29 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+16:49:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:49:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:49:44 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+16:49:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:50:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:50:23 INFO app.services.safety_service: safety stages=openai level=standard took 619ms
+16:50:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:50:24 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Bruchrechnung', 'maxResults': 5}
+16:50:24 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5}
+16:50:24 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+16:50:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:50:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:50:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:50:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:50:25 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13470 chars
+16:50:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:50:27 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+16:50:28 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:50:28 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+16:50:28 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+16:50:29 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:50:29 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+16:50:29 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 4}
+16:50:29 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:50:31 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3087 chars
+16:50:31 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Bruchrechnung', 'targetGroup': 'teacher', 'maxResults': 4}
+16:50:31 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:50:32 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 141 chars
+16:50:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:50:33 INFO app.routers.chat: Outcome-based state hint: state-8 -> state-6
+16:50:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:57:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:57:28 INFO app.services.safety_service: safety stages=openai level=standard took 602ms
+16:57:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:57:29 INFO app.routers.chat: speculative search_wlo_content for intent=INT-W-03b args={'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Video', 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+16:57:29 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Video', 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+16:57:29 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+16:57:30 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:57:30 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars
+16:57:30 INFO app.services.mcp_client: lrt label\u2192URI cache loaded: 100 entries
+16:57:30 INFO app.services.mcp_client: resolved learningResourceType='Video' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/38774279-af36-4ec2-8e70-811d5a51a6a1
+16:57:30 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+16:57:30 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:57:30 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+16:57:30 INFO app.services.mcp_client: discipline label\u2192URI cache loaded: 190 entries
+16:57:30 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+16:57:30 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+16:57:31 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:57:33 INFO app.services.mcp_client: MCP tool search_wlo_content returned 5181 chars
+16:57:33 INFO app.services.llm_service: medientyp='Video' \u2192 removed ['search_wlo_collections'] from active_tools to force content search
+16:57:33 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
+16:57:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:57:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:57:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:57:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:57:35 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13203 chars
+16:57:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:57:36 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Bruchrechnung', 'targetGroup': 'teacher', 'educationalContext': 'Sekundarstufe I', 'maxResults': 5}
+16:57:37 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:57:37 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 141 chars
+16:57:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:57:38 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+16:57:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:57:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:57:41 INFO app.services.safety_service: safety stages=openai level=standard took 402ms
+16:57:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:57:42 INFO app.routers.chat: speculative search_wlo_content for intent=INT-W-10 args={'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Video', 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+16:57:42 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Video', 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+16:57:42 INFO app.services.mcp_client: resolved learningResourceType='Video' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/38774279-af36-4ec2-8e70-811d5a51a6a1
+16:57:42 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+16:57:42 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+16:57:42 INFO app.routers.chat: LP contents: 978 chars, topic='Bruchrechnung'
+16:57:42 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:57:44 INFO app.services.mcp_client: MCP tool search_wlo_content returned 5181 chars
+16:57:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:57:49 INFO app.routers.chat: speculative search_wlo_content discarded (blocked by safety/pattern)
+16:57:50 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:57:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:57:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:57:52 INFO app.services.safety_service: safety stages=openai level=standard took 1418ms
+16:57:52 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Satz des Pythagoras', 'maxResults': 5, 'educationalContext': 'Sekundarstufe I'}
+16:57:52 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Satz des Pythagoras', 'maxResults': 5, 'educationalContext': 'Sekundarstufe I'}
+16:57:52 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+16:57:52 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Satz des Pythagoras'
+16:57:52 INFO app.routers.chat: LP search: topic='Satz des Pythagoras' skip=0
+16:57:52 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Satz des Pythagoras', 'maxItems': 5, 'skipCount': 0}
+16:57:53 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:57:54 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:58:00 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 4282 chars
+16:58:00 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 4282 chars
+16:58:00 INFO app.routers.chat: LP found 5 collections
+16:58:00 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '01c46536-d69e-49b1-a49d-ec7cc5f04508', 'maxItems': 16, 'skipCount': 0}
+16:58:01 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:58:01 INFO app.services.mcp_client: MCP tool get_collection_contents returned 3555 chars
+16:58:01 INFO app.routers.chat: LP contents: 1174 chars, topic='Politische Bildung'
+16:58:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:58:10 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+16:58:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:59:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:59:42 INFO app.services.safety_service: safety stages=openai level=standard took 759ms
+16:59:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:59:43 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Bruchrechnung', 'maxResults': 5}
+16:59:43 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5}
+16:59:43 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Bruchrechnung'
+16:59:43 INFO app.routers.chat: LP search: topic='Bruchrechnung' skip=0
+16:59:43 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxItems': 5, 'skipCount': 0}
+16:59:44 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:59:44 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:59:44 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3087 chars
+16:59:45 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3087 chars
+16:59:45 INFO app.routers.chat: LP found 4 collections
+16:59:45 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '39f845f1-65d5-4f46-ba51-918133501101', 'maxItems': 16, 'skipCount': 0}
+16:59:45 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:59:46 INFO app.services.mcp_client: MCP tool get_collection_contents returned 6531 chars
+16:59:46 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'd6c88b81-b639-4b89-94d7-c0507a3e90be', 'maxItems': 16, 'skipCount': 0}
+16:59:46 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:59:48 INFO app.services.mcp_client: MCP tool get_collection_contents returned 11946 chars
+16:59:48 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'ac18e9bf-3209-4606-a598-e8e290c9b999', 'maxItems': 16, 'skipCount': 0}
+16:59:48 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:59:50 INFO app.services.mcp_client: MCP tool get_collection_contents returned 11370 chars
+16:59:50 INFO app.routers.chat: LP contents: 5771 chars, topic='Ungleichungen'
+17:00:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+17:00:00 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+17:00:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+17:04:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+17:04:13 INFO app.services.safety_service: safety stages=openai level=standard took 430ms
+17:04:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+17:04:14 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Eiszeit', 'maxResults': 5}
+17:04:14 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Eiszeit', 'maxResults': 5}
+17:04:14 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Eiszeit'
+17:04:14 INFO app.routers.chat: LP search: topic='Eiszeit' skip=0
+17:04:14 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Eiszeit', 'maxItems': 5, 'skipCount': 0}
+17:04:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+17:04:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+17:04:16 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 692 chars
+17:04:16 INFO app.routers.chat: LP found 1 collections
+17:04:16 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'f1a058f6-ae81-4545-9b77-af2dcea6257d', 'maxItems': 16, 'skipCount': 0}
+17:04:16 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 692 chars
+17:04:16 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+17:04:17 INFO app.services.mcp_client: MCP tool get_collection_contents returned 832 chars
+17:04:17 INFO app.routers.chat: LP contents: 326 chars, topic='Formen der Erdoberflche'
+17:04:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+17:04:21 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+17:04:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"

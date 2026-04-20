@@ -45,3 +45,7 @@ states:
   - id: state-11
     label: System/Meta
     description: "Meta-Fragen zum Bot, System oder zur Plattform."
+
+  - id: state-12
+    label: Canvas-Arbeit
+    description: "Nutzer:in arbeitet im Canvas an einem neu erstellten oder remixten Inhalt (Arbeitsblatt, Infoblatt etc.) und gibt Änderungswünsche per Chat."

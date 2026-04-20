@@ -153,7 +153,10 @@ Bildungsmaterialien, Methoden, Tools, Lernorte, Veranstaltungen und Berufsinfos.
 Fachportale: https://wp-test.wirlernenonline.de/bildungsinhalte/
 
 **Kann ich nach Klassenstufe filtern?**
-Ja. Filter nach Fach, Klassenstufe, Bildungsbereich, Lizenz und mehr.
+WLO filtert auf Bildungsstufen-Ebene (educationalContext), nicht nach
+einzelnen Klassenstufen: Grundschule, Sekundarstufe I, Sekundarstufe II,
+Berufliche Bildung, Hochschule, Erwachsenenbildung. Weitere Filter:
+Fach (discipline), Ressourcentyp (lrt) und Lizenz.
 
 **Sind die Materialien geprueft?**
 Ja. Mehrstufig: Basis-Sichtung durch geschulte Redakteure, maschinelle Erschliessung durch KI, stichprobenweise Sichtung vor Freigabe.

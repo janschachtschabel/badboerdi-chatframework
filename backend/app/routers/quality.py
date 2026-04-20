@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 
-from app.services.database import get_quality_logs, get_quality_stats
+from app.services.auth import require_studio_key
+from app.services.database import (
+    get_quality_logs, get_quality_stats,
+    delete_quality_log, clear_quality_logs,
+)
 
 router = APIRouter()
+
+_studio = [Depends(require_studio_key)]
 
 
 @router.get("/logs")
@@ -29,6 +35,48 @@ async def list_quality_logs(
         pattern_id=pattern_id, intent_id=intent_id,
     )
     return {"count": len(rows), "logs": rows}
+
+
+@router.delete("/logs/{log_id}", dependencies=_studio)
+async def delete_quality_log_endpoint(log_id: int):
+    """Delete a single quality log entry by id."""
+    n = await delete_quality_log(log_id)
+    if n == 0:
+        raise HTTPException(status_code=404, detail="log not found")
+    return {"status": "deleted", "id": log_id}
+
+
+@router.post("/logs/clear", dependencies=_studio)
+async def clear_quality_logs_endpoint(
+    session_id: str = "",
+    pattern_id: str = "",
+    intent_id: str = "",
+    confirm: bool = False,
+):
+    """Bulk-delete quality logs by filter.
+
+    Without any filter this deletes ALL logs — require explicit confirm=true
+    in that case to avoid accidental nukes from dev tooling.
+    """
+    if not any([session_id, pattern_id, intent_id]) and not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Bulk-delete ohne Filter verlangt ?confirm=true — "
+                "das wuerde ALLE Quality-Logs loeschen."
+            ),
+        )
+    n = await clear_quality_logs(
+        session_id=session_id, pattern_id=pattern_id, intent_id=intent_id,
+    )
+    return {
+        "status": "cleared",
+        "deleted": n,
+        "filter": {
+            "session_id": session_id, "pattern_id": pattern_id,
+            "intent_id": intent_id,
+        },
+    }
 
 
 @router.get("/stats")

@@ -5,11 +5,15 @@ import type { Elements, PatternData } from '@/app/page';
 
 // ── YAML helpers ─────────────────────────────────────────────────────
 function serializeYamlValue(value: any, indent: number = 0): string {
-  const pad = '  '.repeat(indent);
   if (value === null || value === undefined) return '';
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number') return String(value);
   if (typeof value === 'string') {
+    // Multi-line string → YAML block scalar with `|` so newlines survive round-trip
+    if (value.includes('\n')) {
+      const indented = value.replace(/\n$/, '').split('\n').map(l => `  ${l}`).join('\n');
+      return `|\n${indented}`;
+    }
     if (value === '' || value === '*' || value.includes(':') || value.includes('#') || value.includes('"'))
       return `"${value.replace(/"/g, '\\"')}"`;
     return value;
@@ -68,7 +72,9 @@ function parseFrontmatterAndBody(raw: string): { meta: Record<string, any>; body
   let currentKey = '';
   let currentArray: string[] | null = null;
 
-  for (const line of match[1].split('\n')) {
+  const lines = match[1].split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
 
@@ -92,6 +98,38 @@ function parseFrontmatterAndBody(raw: string): { meta: Record<string, any>; body
 
     const key = trimmed.slice(0, colonIdx).trim();
     let val = trimmed.slice(colonIdx + 1).trim();
+
+    // Block scalar (`|`, `|-`, `>`) — consume subsequent indented lines as string
+    if (val === '|' || val === '|-' || val === '>') {
+      const mode = val;
+      const collected: string[] = [];
+      let j = i + 1;
+      // Determine baseline indent from first non-empty indented line
+      let baseIndent = -1;
+      while (j < lines.length) {
+        const next = lines[j];
+        if (next.trim() === '') { collected.push(''); j++; continue; }
+        const leading = next.match(/^(\s+)/)?.[1].length ?? 0;
+        if (leading === 0) break;
+        if (baseIndent < 0) baseIndent = leading;
+        if (leading < baseIndent) break;
+        collected.push(next.slice(baseIndent));
+        j++;
+      }
+      i = j - 1;
+      let joined: string;
+      if (mode === '>') {
+        // Folded: replace single newlines with spaces, keep blank lines as \n
+        joined = collected.join('\n').replace(/([^\n])\n(?!\n)/g, '$1 ');
+      } else {
+        joined = collected.join('\n');
+      }
+      if (mode === '|-') joined = joined.replace(/\n+$/, '');
+      else joined = joined.replace(/\n*$/, '\n').replace(/\n+$/, '\n');
+      meta[key] = joined.replace(/\n$/, '');
+      currentKey = key;
+      continue;
+    }
 
     if (val === '' || val === undefined) {
       // Start of array or object

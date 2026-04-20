@@ -61,6 +61,15 @@ export default function HomeOverview({ elements, backendOnline, onNavigate }: Pr
     },
     {
       num: 5,
+      id: 'canvas',
+      icon: '\u{1F3A8}',
+      label: 'Canvas-Formate',
+      desc: 'Ausgabe-Formate für die Canvas-Arbeitsfläche: Material-Typen, Aliase, Edit- & Create-Trigger, Persona-Priorisierung.',
+      stats: ['Material-Typen', 'Typ-Aliase', 'Create-/Edit-Trigger', 'Persona-Priorität'],
+      color: '#EC4899',
+    },
+    {
+      num: 6,
       id: 'knowledge',
       icon: '\u{1F4DA}',
       label: 'Wissen',
@@ -75,7 +84,7 @@ export default function HomeOverview({ elements, backendOnline, onNavigate }: Pr
       <div className="page-header">
         <div className="page-title">BadBoerdi Studio</div>
         <div className="page-subtitle">
-          Konfiguriere deinen Chatbot über die 5 Architektur-Schichten. Jede Schicht hat eine klare Verantwortung.
+          Konfiguriere deinen Chatbot über die 6 Architektur-Schichten. Jede Schicht hat eine klare Verantwortung.
         </div>
       </div>
 

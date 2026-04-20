@@ -440,7 +440,7 @@ Beim Wechsel von `openai` auf einen B-API-Provider verlierst du folgende Feature
 | RAG-Wissensabfrage | x | x | x |
 | Safety Stage 2 (OpenAI Moderation) | x | - | - |
 | Safety Stage 3 (Legal Classifier) | x | x | eingeschraenkt* |
-| Whisper STT (Spracheingabe) | x | - | - |
+| OpenAI STT (Spracheingabe, `gpt-4o-mini-transcribe`) | x | - | - |
 | TTS (Sprachausgabe) | x | - | - |
 | JSON-Mode (strukturierte Ausgabe) | x | x | eingeschraenkt* |
 | Embedding-Kompatibilitaet | x | x | inkompatibel** |
@@ -458,8 +458,8 @@ Die OpenAI Moderation API (`omni-moderation-latest`) ist kostenlos, aber nur mit
 
 **Tipp:** Setze auch bei B-API-Nutzung `OPENAI_API_KEY` in der `.env`. Dann wird Stage 2 trotzdem ausgefuehrt (der Moderation-Call geht direkt an OpenAI, der Chat-Call ueber die B-API). Der Moderation-Call ist kostenlos.
 
-**Whisper & TTS:**
-Spracherkennung (Whisper) und Sprachsynthese (TTS) benoetigen den nativen OpenAI-Endpunkt. Bei B-API-Providern sind die `/api/speech/transcribe` und `/api/speech/synthesize` Endpoints nicht verfuegbar (HTTP 500).
+**STT & TTS:**
+Spracherkennung (OpenAI STT, Default-Modell `gpt-4o-mini-transcribe` mit Fallback-Kette `gpt-4o-transcribe` → `whisper-1`, konfigurierbar via `STT_MODEL`) und Sprachsynthese (TTS) benoetigen den nativen OpenAI-Endpunkt. Bei B-API-Providern sind die `/api/speech/transcribe` und `/api/speech/synthesize` Endpoints nicht verfuegbar (HTTP 500).
 
 **Embedding-Wechsel:**
 Beim Wechsel zwischen Providern mit unterschiedlichen Embedding-Modellen werden bestehende RAG-Vektoren ungueltig. Im Studio muessen alle Wissensbereiche geloescht und Dokumente neu hochgeladen werden. **Empfehlung:** Provider vor dem Befuellen der Wissensbasis festlegen.

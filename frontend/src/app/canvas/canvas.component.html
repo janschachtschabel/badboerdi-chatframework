@@ -1,0 +1,355 @@
+<div class="canvas-shell" [class.empty]="viewMode === 'empty'">
+  <header class="canvas-head">
+    <div class="canvas-head-left">
+      <button type="button" class="canvas-back"
+              *ngIf="canGoBack"
+              (click)="onGoBack()"
+              title="Zur vorherigen Ansicht"
+              aria-label="Zurück">‹</button>
+      <span class="canvas-title" *ngIf="viewMode === 'content'">{{ title || 'Canvas' }}</span>
+      <span class="canvas-title" *ngIf="viewMode === 'cards'">{{ title || ('Treffer' + (query ? ' zu „' + query + '"' : '')) }}</span>
+      <span class="canvas-title" *ngIf="viewMode === 'preview'">{{ previewCard?.title || 'Vorschau' }}</span>
+      <span class="canvas-title" *ngIf="viewMode === 'empty'">Canvas</span>
+      <span class="canvas-type"
+            *ngIf="materialTypeLabel && viewMode === 'content'"
+            [class.canvas-type--analytical]="materialTypeCategory === 'analytisch'"
+            [class.canvas-type--didactical]="materialTypeCategory === 'didaktisch'">
+        {{ materialTypeLabel }}
+      </span>
+    </div>
+
+    <!-- Tab switch — only when BOTH material markdown AND cards exist -->
+    <div class="canvas-tabs" *ngIf="showTabs">
+      <button type="button"
+              class="canvas-tab"
+              [class.active]="viewMode === 'content'"
+              (click)="onSwitchView('material')">
+        📝 Material
+      </button>
+      <button type="button"
+              class="canvas-tab"
+              [class.active]="viewMode === 'cards'"
+              (click)="onSwitchView('cards')">
+        🔎 Treffer <span class="count" *ngIf="cards?.length">({{ cards.length }})</span>
+      </button>
+    </div>
+
+    <div class="canvas-head-actions">
+      <button type="button" class="canvas-btn"
+              *ngIf="viewMode === 'content'"
+              (click)="onPrint()"
+              title="Drucken / als PDF speichern">
+        <span aria-hidden="true">🖨</span>
+      </button>
+      <button type="button" class="canvas-btn"
+              *ngIf="viewMode === 'content'"
+              (click)="onDownload()"
+              title="Als Markdown-Datei herunterladen">
+        <span aria-hidden="true">⬇</span>
+      </button>
+      <button type="button" class="canvas-btn close"
+              (click)="onClose()"
+              title="Canvas schließen"
+              aria-label="Canvas schließen">×</button>
+    </div>
+  </header>
+
+  <div class="canvas-body" [ngSwitch]="viewMode">
+    <!-- Empty state -->
+    <div *ngSwitchCase="'empty'" class="canvas-empty">
+      <div class="empty-icon" aria-hidden="true">🎨</div>
+      <h3>Canvas-Arbeitsfläche</h3>
+      <p>Hier erscheinen erstellte Materialien und Inhaltskacheln.</p>
+      <div class="empty-hints">
+        <div class="hint">📝 <em>„Erstelle ein Arbeitsblatt zur Photosynthese"</em></div>
+        <div class="hint">❓ <em>„Mach mir ein Quiz zur Eiszeit"</em></div>
+        <div class="hint">🔎 <em>„Zeig mir Material zu Gletschern"</em></div>
+      </div>
+    </div>
+
+    <!-- Markdown content -->
+    <article *ngSwitchCase="'content'"
+             class="canvas-content"
+             [innerHTML]="renderedHtml()"></article>
+
+    <!-- Single-card preview (metadata view) -->
+    <div *ngSwitchCase="'preview'" class="canvas-preview">
+      <div class="preview-hero">
+        <img *ngIf="previewCard?.preview_url"
+             class="preview-img"
+             [src]="previewCard?.preview_url"
+             [alt]="previewCard?.title">
+        <div *ngIf="!previewCard?.preview_url" class="preview-img placeholder" aria-hidden="true">📄</div>
+      </div>
+      <h2 class="preview-title">{{ previewCard?.title }}</h2>
+      <div class="preview-chips">
+        <span *ngFor="let d of previewCard?.disciplines" class="chip chip-fach">{{ d }}</span>
+        <span *ngFor="let e of previewCard?.educational_contexts" class="chip chip-stufe">{{ e }}</span>
+        <ng-container *ngFor="let t of previewCard?.learning_resource_types">
+          <span *ngIf="t !== 'Sammlung' && t !== 'collection'" class="chip chip-typ">{{ t }}</span>
+        </ng-container>
+        <span *ngIf="previewCard?.license" class="chip chip-lizenz">{{ previewCard?.license }}</span>
+      </div>
+      <p class="preview-publisher" *ngIf="previewCard?.publisher">
+        <strong>Anbieter:</strong> {{ previewCard?.publisher }}
+      </p>
+      <p class="preview-desc" *ngIf="previewCard?.description">{{ previewCard?.description }}</p>
+      <div class="preview-actions">
+        <a class="card-btn card-btn--primary"
+           *ngIf="previewCard"
+           [href]="cardUrl(previewCard)"
+           target="_blank"
+           rel="noopener noreferrer">
+          🔗 In neuem Tab öffnen
+        </a>
+        <button type="button" class="card-btn card-btn--remix"
+                *ngIf="previewCard"
+                (click)="onCardAction('remix', previewCard!, $event)">
+          🔄 Remix
+        </button>
+      </div>
+      <p class="preview-hint">
+        💬 Frag den Chat nach einer Zusammenfassung, einem Quiz dazu oder
+        lass den Inhalt als Arbeitsblatt umwandeln.
+      </p>
+    </div>
+
+    <!-- Card grid — 3-teilig:
+         1) Themenseiten (kuratiert, mit Varianten-Dropdown)
+         2) Sammlungen (kuratiert, aber ohne Themenseite)
+         3) Einzelmaterialien (Content-Nodes)
+         Jede Gruppe bekommt nur dann eine Überschrift, wenn mehr als eine
+         Gruppe sichtbar ist. -->
+    <div *ngSwitchCase="'cards'" class="canvas-cards">
+
+      <!-- ═══ Gruppe 1: Themenseiten ═══ -->
+      <h3 class="canvas-cards-heading canvas-cards-heading--topic"
+          *ngIf="visibleTopicPageCards.length &&
+                 (visiblePureCollectionCards.length || visibleContentCards.length)">
+        🌐 Themenseiten
+      </h3>
+      <div *ngFor="let c of visibleTopicPageCards; trackBy: trackByNodeId" class="wlo-card-wrapper">
+        <a class="wlo-card"
+           [href]="topicPageUrl(c)"
+           target="_blank"
+           rel="noopener noreferrer">
+          <div class="card-thumb">
+            <img *ngIf="c.preview_url" [src]="c.preview_url" [alt]="c.title"
+                 loading="lazy" class="card-img">
+            <span *ngIf="!c.preview_url" class="card-icon" aria-hidden="true">🌐</span>
+          </div>
+          <div class="card-info">
+            <div class="card-title">{{ c.title }}</div>
+            <div class="card-meta">
+              <span class="chip chip-typpille chip-tp-topicpage">🌐 Themenseite</span>
+              <span *ngIf="c.topic_pages && c.topic_pages.length > 1"
+                    class="chip chip-variant-count"
+                    [title]="c.topic_pages.length + ' Varianten verfügbar'">
+                {{ c.topic_pages.length }} Varianten
+              </span>
+              <span *ngFor="let d of c.disciplines" class="chip chip-fach">{{ d }}</span>
+              <span *ngFor="let e of c.educational_contexts" class="chip chip-stufe">{{ e }}</span>
+              <span *ngIf="c.license" class="chip chip-lizenz">{{ c.license }}</span>
+            </div>
+            <div class="card-desc" *ngIf="c.description">
+              {{ c.description.length > 140 ? (c.description | slice:0:140) + '…' : c.description }}
+            </div>
+          </div>
+          <span class="card-arrow" aria-hidden="true">›</span>
+        </a>
+
+        <div class="card-actions">
+          <!-- Split-Button: Hauptteil öffnet die persona-vorausgewählte
+               Variante, der kleine ▾ daneben öffnet ein Mini-Menü mit
+               allen verfügbaren Varianten (nur sichtbar wenn >1). -->
+          <div class="card-btn-split"
+               (click)="$event.stopPropagation()"
+               [class.has-dropdown]="c.topic_pages && c.topic_pages.length > 1">
+            <a class="card-btn card-btn--primary card-btn-split__main"
+               [href]="topicPageUrl(c)"
+               target="_blank"
+               rel="noopener noreferrer"
+               [title]="'Themenseite öffnen — Variante: ' + (selectedVariant(c)?.label || 'allgemein')">
+              🌐 Themenseite öffnen
+            </a>
+            <button *ngIf="c.topic_pages && c.topic_pages.length > 1"
+                    type="button"
+                    class="card-btn card-btn--primary card-btn-split__arrow"
+                    [attr.aria-expanded]="openVariantMenuId === c.node_id"
+                    [attr.aria-haspopup]="'menu'"
+                    [title]="c.topic_pages.length + ' Varianten — andere auswählen'"
+                    (click)="toggleVariantMenu(c, $event)">
+              <span aria-hidden="true">▾</span>
+            </button>
+            <div *ngIf="openVariantMenuId === c.node_id"
+                 class="card-btn-split__menu"
+                 role="menu">
+              <a *ngFor="let v of c.topic_pages"
+                 class="card-btn-split__menu-item"
+                 role="menuitem"
+                 [href]="v.url"
+                 target="_blank"
+                 rel="noopener noreferrer"
+                 [class.is-selected]="v.variant_id === selectedVariant(c)?.variant_id"
+                 (click)="onPickVariant(c, v.variant_id, $event)">
+                <span class="variant-check" aria-hidden="true"
+                      *ngIf="v.variant_id === selectedVariant(c)?.variant_id">✓</span>
+                {{ v.label || v.target_group || 'Variante' }}
+              </a>
+            </div>
+          </div>
+
+          <button type="button" class="card-btn card-btn--secondary"
+                  (click)="onCardAction('browse', c, $event)"
+                  title="Inhalte dieser Sammlung anzeigen">
+            📋 Inhalte
+          </button>
+          <button type="button" class="card-btn card-btn--secondary"
+                  (click)="onCardAction('learning_path', c, $event)"
+                  title="Lernpfad aus dieser Sammlung generieren">
+            🗺️ Lernpfad
+          </button>
+          <button type="button" class="card-btn card-btn--remix"
+                  (click)="onCardAction('remix', c, $event)"
+                  title="Neues Material basierend auf dieser Sammlung erstellen">
+            🔄 Remix
+          </button>
+        </div>
+      </div>
+
+      <!-- ═══ Gruppe 2: Sammlungen (ohne Themenseite) ═══ -->
+      <h3 class="canvas-cards-heading canvas-cards-heading--collection"
+          *ngIf="visiblePureCollectionCards.length &&
+                 (visibleTopicPageCards.length || visibleContentCards.length)">
+        📚 Sammlungen
+      </h3>
+      <div *ngFor="let c of visiblePureCollectionCards; trackBy: trackByNodeId" class="wlo-card-wrapper">
+        <a class="wlo-card"
+           [href]="cardUrl(c)"
+           target="_blank"
+           rel="noopener noreferrer">
+          <div class="card-thumb">
+            <img *ngIf="c.preview_url" [src]="c.preview_url" [alt]="c.title"
+                 loading="lazy" class="card-img">
+            <span *ngIf="!c.preview_url" class="card-icon" aria-hidden="true">📚</span>
+          </div>
+          <div class="card-info">
+            <div class="card-title">{{ c.title }}</div>
+            <div class="card-meta">
+              <span class="chip chip-typpille chip-tp-sammlung">📚 Sammlung</span>
+              <span *ngFor="let d of c.disciplines" class="chip chip-fach">{{ d }}</span>
+              <span *ngFor="let e of c.educational_contexts" class="chip chip-stufe">{{ e }}</span>
+              <ng-container *ngFor="let t of c.learning_resource_types">
+                <span *ngIf="t !== 'Sammlung' && t !== 'collection'"
+                      class="chip chip-typ">{{ t }}</span>
+              </ng-container>
+              <span *ngIf="c.license" class="chip chip-lizenz">{{ c.license }}</span>
+            </div>
+            <div class="card-desc" *ngIf="c.description">
+              {{ c.description.length > 140 ? (c.description | slice:0:140) + '…' : c.description }}
+            </div>
+          </div>
+          <span class="card-arrow" aria-hidden="true">›</span>
+        </a>
+
+        <div class="card-actions" *ngIf="c.node_id">
+          <button type="button" class="card-btn card-btn--primary"
+                  (click)="onCardAction('browse', c, $event)"
+                  title="Inhalte dieser Sammlung anzeigen">
+            📋 Inhalte
+          </button>
+          <button type="button" class="card-btn card-btn--secondary"
+                  (click)="onCardAction('learning_path', c, $event)"
+                  title="Lernpfad aus dieser Sammlung generieren">
+            🗺️ Lernpfad
+          </button>
+          <button type="button" class="card-btn card-btn--remix"
+                  (click)="onCardAction('remix', c, $event)"
+                  title="Neues Material basierend auf dieser Sammlung erstellen">
+            🔄 Remix
+          </button>
+        </div>
+      </div>
+
+      <!-- ═══ Gruppe 3: Einzelmaterialien ═══ -->
+      <h3 class="canvas-cards-heading canvas-cards-heading--content"
+          *ngIf="visibleContentCards.length &&
+                 (visibleTopicPageCards.length || visiblePureCollectionCards.length)">
+        📄 Einzelmaterialien
+      </h3>
+      <div *ngFor="let c of visibleContentCards; trackBy: trackByNodeId" class="wlo-card-wrapper">
+        <a class="wlo-card"
+           [href]="cardUrl(c)"
+           target="_blank"
+           rel="noopener noreferrer">
+          <div class="card-thumb">
+            <img *ngIf="c.preview_url" [src]="c.preview_url" [alt]="c.title"
+                 loading="lazy" class="card-img">
+            <span *ngIf="!c.preview_url" class="card-icon" aria-hidden="true">📄</span>
+          </div>
+          <div class="card-info">
+            <div class="card-title">{{ c.title }}</div>
+            <div class="card-meta">
+              <span class="chip chip-typpille chip-tp-inhalt">📄 Inhalt</span>
+              <span *ngFor="let d of c.disciplines" class="chip chip-fach">{{ d }}</span>
+              <span *ngFor="let e of c.educational_contexts" class="chip chip-stufe">{{ e }}</span>
+              <ng-container *ngFor="let t of c.learning_resource_types">
+                <span *ngIf="t !== 'Sammlung' && t !== 'collection'"
+                      class="chip chip-typ">{{ t }}</span>
+              </ng-container>
+              <span *ngIf="c.license" class="chip chip-lizenz">{{ c.license }}</span>
+            </div>
+            <div class="card-desc" *ngIf="c.description">
+              {{ c.description.length > 140 ? (c.description | slice:0:140) + '…' : c.description }}
+            </div>
+          </div>
+          <span class="card-arrow" aria-hidden="true">›</span>
+        </a>
+        <div class="card-actions" *ngIf="c.url || c.wlo_url">
+          <button type="button" class="card-btn card-btn--primary"
+                  (click)="onCardAction('preview', c, $event)"
+                  title="Im Canvas ansehen">
+            🔍 Anschauen
+          </button>
+          <button type="button" class="card-btn card-btn--remix"
+                  (click)="onCardAction('remix', c, $event)"
+                  title="Neues Material auf Basis dieses Inhalts erstellen">
+            🔄 Remix
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="!cards?.length" class="canvas-empty">
+        <div class="empty-icon" aria-hidden="true">🔍</div>
+        <p>Keine Treffer für diese Suche.</p>
+      </div>
+
+      <!-- Pagination bar (same semantics as chat): "weitere anzeigen" for
+           client-cached cards, "mehr laden" for the next server page when
+           we're inside a collection. -->
+      <div *ngIf="cards?.length" class="canvas-pagination">
+        <span class="pg-info" *ngIf="pagination?.total_count">
+          {{ visibleCards.length }} von {{ pagination?.total_count }} Ergebnissen
+        </span>
+        <span class="pg-info" *ngIf="!pagination?.total_count && cards.length > 1">
+          {{ visibleCards.length }} von {{ cards.length }}
+        </span>
+        <button type="button" class="pg-btn"
+                *ngIf="hasHiddenCards"
+                (click)="onShowMore()">
+          Weitere anzeigen
+        </button>
+        <button type="button" class="pg-btn pg-btn--server"
+                *ngIf="!hasHiddenCards && pagination?.has_more && pagination?.collection_id"
+                [disabled]="loadingMore"
+                (click)="onLoadMore()">
+          {{ loadingMore ? 'Lädt…' : 'Mehr aus der Sammlung laden' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="canvas-foot" *ngIf="viewMode === 'content'">
+    💡 Schreib im Chat, was ich ändern soll — z.B. <em>„Mach es einfacher"</em> oder <em>„Füge Lösungen hinzu"</em>.
+  </footer>
+</div>

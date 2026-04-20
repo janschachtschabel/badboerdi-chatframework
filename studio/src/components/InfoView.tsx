@@ -257,10 +257,10 @@ export default function InfoView() {
         </p>
       </Section>
 
-      {/* ═══════════════ 5 LAYERS ═══════════════ */}
-      <Section title="Die 5 Architektur-Schichten" icon="🏗️">
+      {/* ═══════════════ 6 LAYERS ═══════════════ */}
+      <Section title="Die 6 Architektur-Schichten" icon="🏗️">
         <p style={pStyle}>
-          Der System-Prompt wird aus 5 Schichten zusammengesetzt. Jede Schicht hat eine Priorität — bei Token-Knappheit werden niedrig-priorisierte Schichten zuerst entladen.
+          Der System-Prompt wird aus mehreren Schichten zusammengesetzt. Jede Schicht hat eine Priorität — bei Token-Knappheit werden niedrig-priorisierte Schichten zuerst entladen. Schicht 5 (Canvas-Formate) steuert Ausgabe-Formate und wird nur bei Create-/Edit-Intents geladen.
         </p>
         <table style={tableStyle}>
           <thead>
@@ -287,7 +287,7 @@ export default function InfoView() {
             <tr>
               <td style={tdStyle}><strong>3 — Patterns</strong></td>
               <td style={tdStyle}><span style={{ color: '#8b5cf6', fontWeight: 700 }}>500-800</span></td>
-              <td style={tdStyle}>Das gewählte Gesprächsmuster (nur 1 von 20)</td>
+              <td style={tdStyle}>Das gewählte Gesprächsmuster (nur 1 von 26)</td>
               <td style={tdStyle}>Kann auf PAT-06 (Degradation) zurückfallen.</td>
             </tr>
             <tr>
@@ -297,7 +297,13 @@ export default function InfoView() {
               <td style={tdStyle}>Kann teilweise entladen werden.</td>
             </tr>
             <tr>
-              <td style={tdStyle}><strong>5 — Wissen</strong></td>
+              <td style={tdStyle}><strong>5 — Canvas-Formate</strong></td>
+              <td style={tdStyle}><span style={{ color: '#ec4899', fontWeight: 700 }}>200-400</span></td>
+              <td style={tdStyle}>Struktur-Vorgabe des gewählten Material-Typs, Alias-Mapping, Edit-/Create-Trigger</td>
+              <td style={tdStyle}>Nur bei INT-W-11/12 (Create/Edit) geladen — sonst nicht im Prompt.</td>
+            </tr>
+            <tr>
+              <td style={tdStyle}><strong>6 — Wissen</strong></td>
               <td style={tdStyle}><span style={{ color: '#10b981', fontWeight: 700 }}>100-200</span></td>
               <td style={tdStyle}>RAG-Kontext (always-on + on-demand), MCP-Tools</td>
               <td style={tdStyle}>Wird als <strong>erstes</strong> entladen.</td>
@@ -311,7 +317,9 @@ export default function InfoView() {
           <div>├─ Schicht 2: domain-rules.md + Plattform-Wissen <span style={{ color: 'var(--text-muted)' }}>← immer</span></div>
           <div>├─ Schicht 4: Persona-Prompt + Intent + Signale <span style={{ color: 'var(--text-muted)' }}>← nur erkannte</span></div>
           <div>├─ Schicht 3: Pattern-Block <span style={{ color: 'var(--text-muted)' }}>← nur der Gewinner</span></div>
-          <div>├─ Schicht 5: RAG-Kontext <span style={{ color: 'var(--text-muted)' }}>← always-on Areas</span></div>
+          <div>├─ Schicht 5: Canvas-Material-Struktur <span style={{ color: 'var(--text-muted)' }}>← nur bei INT-W-11/12</span></div>
+          <div>├─ Schicht 6: RAG-Kontext <span style={{ color: 'var(--text-muted)' }}>← always-on Areas</span></div>
+          <div>├─ Aktuelle Themenseite <span style={{ color: 'var(--text-muted)' }}>← wenn node_id auflösbar (page_context_service)</span></div>
           <div>└─ Schicht 1: guardrails.md <span style={{ color: 'var(--text-muted)' }}>← immer am Ende!</span></div>
         </div>
       </Section>

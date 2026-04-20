@@ -1,7 +1,7 @@
 # BadBoerdi — WLO Chatbot Plattform
 
 BadBoerdi ist eine modulare Chatbot-Plattform für [WirLernenOnline](https://wirlernenonline.de).
-Das System ist über das **Schema-Tripel-Modell** (22 Elemente · 31 Tripel · 5 Prompt-Schichten · 7
+Das System ist über das **Schema-Tripel-Modell** (22 Elemente · 31 Tripel · **6 Prompt-Schichten** · 7
 Verarbeitungsphasen) konfiguriert und besteht aus drei Komponenten:
 
 | Komponente | Stack | Port | Zweck |
@@ -67,25 +67,26 @@ Bequemer Wrapper im Repo-Root:
 BadBoerdi ist nicht "ein LLM mit System-Prompt", sondern ein **konfigurierbarer Verarbeitungs-
 graph**. Jeder Turn läuft durch zwei orthogonale Achsen:
 
-* **Y-Achse — 5 Prompt-Schichten**: regelt _was_ in welcher Priorität ins Kontextfenster geladen
+* **Y-Achse — 6 Prompt-Schichten**: regelt _was_ in welcher Priorität ins Kontextfenster geladen
   wird, damit nichts überflutet wird.
 * **X-Achse — 7 Verarbeitungsphasen**: regelt _wann_ jedes Element im Turn-Zyklus aktiv wird.
 
 Beide Achsen sind im Code 1:1 umgesetzt. Die Schichten sind in
 `backend/app/services/llm_service.py → generate_response()` als `system_parts`-Liste
-nachvollziehbar (siehe Kommentare `# Layer 1: …` bis `# Layer 5: …`).
+nachvollziehbar (siehe Kommentare `# Layer 1: …` bis `# Layer 6: …`).
 
-### 2.1 Y-Achse — Die 5 Prompt-Schichten (Stand: Code)
+### 2.1 Y-Achse — Die 6 Prompt-Schichten (Stand: Code)
 
 | # | Schicht | Quelle im Repo | Wann geladen | Inhalt |
 |---|---------|----------------|--------------|--------|
 | **1** | **Identität & Schutz** | `chatbots/wlo/v1/01-base/base-persona.md`, `guardrails.md`, `safety-config.yaml`, `quality-log-config.yaml`, `device-config.yaml` | **Immer** — bei jedem Turn als erstes in den Prompt | Wer ist BOERDi, was darf er nie tun (Guardrails als _letzter_ Block, nicht überschreibbar), Sicherheits-Preset (off/basic/standard/strict/paranoid), Quality-Logging, Geräte-Heuristiken |
 | **2** | **Domain & Regeln** | `chatbots/wlo/v1/02-domain/domain-rules.md`, `policy.yaml`, `wlo-plattform-wissen.md` | **Immer** — direkt nach Schicht 1 | Plattform-Wissen (WLO-Sammlungen, Lizenzen, Zielgruppen), Dauerregeln, Policy-Decisions (`policy_service.py`) |
-| **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/pat-01-…pat-20-*.md` | **Nach Bedarf** — nur das _eine_ Pattern, das der Pattern-Engine-Selector gewinnt (`pattern_engine.py → select_pattern()`) | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
-| **4** | **Dimensionen** | Klassifikator-Output aus `llm_service.py → classify_input()` | **Pro Turn neu** | Persona-ID, Intent-ID + Confidence, Signals, Entities, Slots, next_state — strukturierte Werte für genau diesen Turn |
-| **5** | **Wissen** | `chatbots/wlo/v1/05-knowledge/rag-config.yaml`, MCP-Tool-Outcomes, RAG-Memory (`rag_service.py`, `mcp_client.py`) | **Nur bei Bedarf** — wenn Pattern Tools ruft oder RAG-Bereich aktiv ist | Tool-Outcomes (Sammlungen, Materialien), RAG-Snippets, vorher gezeigte Sammlungen/Materialien aus dem Session-Memory |
+| **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/pat-*.md` (26 Patterns) | **Nach Bedarf** — nur das _eine_ Pattern, das der Pattern-Engine-Selector gewinnt (`pattern_engine.py → select_pattern()`) | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
+| **4** | **Dimensionen** | Klassifikator-Output aus `llm_service.py → classify_input()` + `04-*/*.yaml` (Personas, Intents, States, Entities, Signals) | **Pro Turn neu** | Persona-ID, Intent-ID + Confidence, Signals, Entities, Slots, next_state — strukturierte Werte für genau diesen Turn |
+| **5** | **Canvas-Formate** | `chatbots/wlo/v1/05-canvas/*.yaml` (material-types, type-aliases, create-triggers, edit-triggers, persona-priorities) | **Nur bei Canvas-Intents (INT-W-11, INT-W-12)** — liefert Struktur-Vorgabe des gewählten Material-Typs | 18 Material-Typen (13 didaktisch + 5 analytisch), Alias-Mapping, Create-/Edit-Trigger-Phrasen, Persona-abhängige Reihenfolge |
+| **6** | **Wissen** | `chatbots/wlo/v1/05-knowledge/rag-config.yaml`, MCP-Tool-Outcomes, RAG-Memory (`rag_service.py`, `mcp_client.py`), Themenseiten-Resolver (`page_context_service.py`) | **Nur bei Bedarf** — wenn Pattern Tools ruft, RAG-Bereich aktiv ist oder `node_id`/`topic_page_slug` über `page_context` aufgelöst werden kann | Tool-Outcomes, RAG-Snippets, gemerkte Materialien aus Session-Memory, semantisch aufgelöste Themenseiten-Metadaten |
 
-**Entlade-Reihenfolge bei Token-Knappheit**: 5 → 4 → 3. Schichten 1 und 2 werden _nie_ entladen.
+**Entlade-Reihenfolge bei Token-Knappheit**: 6 → 5 → 4 → 3. Schichten 1 und 2 werden _nie_ entladen.
 
 So sieht die Komposition im Code aus (`generate_response`, gekürzt):
 
@@ -97,7 +98,9 @@ system_parts = [
     pattern_block,       # Layer 3: Pattern
     context_block,       # Layer 4: Dimensions
     # ... Modulationen (skip_intro, one_option, add_sources, degradation)
-    rag_context,         # Layer 5: Knowledge (optional)
+    canvas_structure,    # Layer 5: Canvas-Material-Struktur (INT-W-11/12 only)
+    page_context_block,  # Layer 6: aufgelöste Themenseite (page_context_service)
+    rag_context,         # Layer 6: Knowledge (optional)
     guardrails,          # Layer 1: Schutz — IMMER zuletzt, nicht überschreibbar
 ]
 ```
@@ -123,9 +126,55 @@ Jede Phase ist im Backend isoliert testbar (siehe `backend/app/services/`).
 Persona · Policy · Safety · Guardrails · Environment · Context · Memory · Pattern · Intent ·
 Entity · Slot · Signal · State · Confidence · Tool · Outcome · Content · Style · Format ·
 Trace · Turn · UserFeedback. Sie sind in `backend/chatbots/wlo/v1/04-*` und `01-base/`,
-`02-domain/`, `03-patterns/`, `05-knowledge/` als YAML/Markdown-Dateien hinterlegt und werden
-über `services/config_loader.py` eingelesen — d.h. _jede_ Konfigurationsänderung im Studio wirkt
-ohne Code-Deploy.
+`02-domain/`, `03-patterns/`, `05-canvas/`, `05-knowledge/` als YAML/Markdown-Dateien
+hinterlegt und werden über `services/config_loader.py` eingelesen — d.h. _jede_
+Konfigurationsänderung im Studio wirkt ohne Code-Deploy (mtime-gecachter YAML-Loader,
+automatische Cache-Invalidierung bei Writes).
+
+### 2.4 Canvas-Arbeitsfläche (seit 2026-04-17)
+
+Das Widget öffnet neben dem Chat auf breiten Displays eine **Canvas-Pane** für strukturierte
+Ausgaben. Getrieben durch zwei Intents:
+
+* **INT-W-11 · Inhalt erstellen** → PAT-21 Canvas-Create, ruft `canvas_service.generate_canvas_content()`
+  mit Thema + Material-Typ auf und liefert strukturiertes Markdown + `page_action: canvas_open`.
+* **INT-W-12 · Canvas-Edit** → `_handle_canvas_edit()` verfeinert den bestehenden Canvas-Inhalt
+  ohne Neu-Generierung, getriggert durch Edit-Phrasen („mach es einfacher", „füge Lösungen hinzu",
+  „kürzer fassen") im state-12.
+
+**18 Material-Typen**, konfigurierbar im Studio-Layer „Canvas-Formate":
+
+| Kategorie | Typen |
+|-----------|-------|
+| **Didaktisch** (13) | Automatisch, Arbeitsblatt, Infoblatt, Präsentation, Quiz, Checkliste, Glossar, Strukturübersicht, Übungsaufgaben, Lerngeschichte, Versuchsanleitung, Diskussionskarten, Rollenspielkarten |
+| **Analytisch** (5) | Bericht, Factsheet, Projektsteckbrief, Pressemitteilung, Vergleich |
+
+Analytische Personas (P-VER Verwaltung, P-W-POL Politik, P-W-PRESSE Presse, P-BER Berater,
+P-W-RED Redaktion) sehen die analytischen Typen zuerst in den Quick-Replies; didaktische
+Personas (Lehrkraft, Schüler:in, Eltern, anonym) die didaktischen. PAT-21 ist für alle
+Personas erreichbar (`gate_personas: ["*"]`).
+
+### 2.5 Themenseiten-Auflösung
+
+Wenn das Widget auf einer WLO-Themenseite (`/themenseite/<slug>`), in einem Fachportal
+(`/fachportal/<fach>/<slug>`), auf einem edu-sharing-Render (`/components/render/<uuid>`) oder
+einer Sammlungsseite (`/sammlung/<id>`) eingebettet ist, löst das Backend die URL vor dem ersten
+Turn automatisch via MCP (`get_node_details`, `search_wlo_topic_pages`) auf und cached die
+Metadaten in der Session:
+
+```
+Aktuelle Themenseite
+  Titel: Optik
+  Fächer: Physik
+  Bildungsstufen: Sekundarstufe I, Sekundarstufe II
+  Schlagworte: Licht, Linse, Reflexion
+  Materialtypen auf der Seite: Video, Arbeitsblatt
+```
+
+Dieser Block landet direkt im System-Prompt — der Bot kann anschließend „Worum geht es auf
+dieser Seite?", „Welche Klassenstufe?" oder „Erstelle mir ein Quiz dazu" (Thema = Seiten-Titel)
+ohne Rückfrage beantworten. TTL: 30 Min bei erfolgreicher Auflösung, 2 Min bei MCP-Fehler (damit
+transiente Ausfälle keinen Stunden-Lock verursachen).
 
 ---
 
@@ -136,14 +185,15 @@ badboerdi/
 ├── backend/             # FastAPI-Service
 │   ├── app/
 │   │   ├── routers/     # chat, sessions, safety, quality, config, rag, speech, widget
-│   │   ├── services/    # llm, pattern_engine, safety, policy, rag, rate_limiter, trace, …
+│   │   ├── services/    # llm, pattern_engine, safety, policy, rag, canvas, page_context, …
 │   │   └── main.py
-│   ├── chatbots/wlo/v1/ # ↳ Konfigurations-Bundle (5 Schichten als Verzeichnisse)
+│   ├── chatbots/wlo/v1/ # ↳ Konfigurations-Bundle (6 Schichten als Verzeichnisse)
 │   │   ├── 01-base/     # Layer 1: Persona, Guardrails, Safety, Device
 │   │   ├── 02-domain/   # Layer 2: Domain-Wissen, Policy
-│   │   ├── 03-patterns/ # Layer 3: 20 Patterns
-│   │   ├── 04-*/        # Layer 4: Personas, Intents, Entities, Slots, Signals, States, Contexts
-│   │   └── 05-knowledge/# Layer 5: RAG- und MCP-Konfiguration
+│   │   ├── 03-patterns/ # Layer 3: 26 Patterns (PAT-01…PAT-24, PAT-CRISIS, PAT-REFUSE-THREAT)
+│   │   ├── 04-*/        # Layer 4: 9 Personas, 14 Intents, 12 States, 5 Entities, 17 Signals, Contexts
+│   │   ├── 05-canvas/   # Layer 5: 18 Material-Typen, Aliase, Create-/Edit-Trigger, Persona-Priorität
+│   │   └── 05-knowledge/# Layer 6: RAG- und MCP-Konfiguration
 │   └── run.py
 ├── frontend/            # Angular-App + Web-Component-Widget
 │   ├── src/app/chat/    # Chat-UI (Standalone-Component)
@@ -230,7 +280,7 @@ Die B-API stellt nur die OpenAI-kompatiblen `chat/completions`- und `embeddings`
 
 | Funktion | Verhalten bei B-API | Auswirkung |
 |----------|---------------------|------------|
-| **Sprach-Eingabe** (`POST /api/speech/transcribe`, Whisper) | Endpoint existiert nicht — fällt nur, wenn `OPENAI_API_KEY` zusätzlich gesetzt ist; sonst HTTP 500. | Mikrofon-Button im Widget funktioniert nicht. |
+| **Sprach-Eingabe** (`POST /api/speech/transcribe`, OpenAI STT `gpt-4o-mini-transcribe`, Fallback `whisper-1`) | Endpoint existiert nicht — fällt nur, wenn `OPENAI_API_KEY` zusätzlich gesetzt ist; sonst HTTP 500. | Mikrofon-Button im Widget funktioniert nicht. |
 | **Text-to-Speech** (`POST /api/speech/synthesize`, OpenAI TTS) | Wie oben — braucht `OPENAI_API_KEY` als Fallback. | Vorlese-Funktion deaktiviert. |
 | **Stage 2 Moderation** (`omni-moderation-latest`) | Wird übersprungen (`is_openai_native()`-Gate). | Keine OpenAI-Kategorien im `safety.categories`-Debug-Feld. Regex-Stage (Stage 1) **und** Legal-Classifier (Stage 3) bleiben voll aktiv — die Sicherheits-Pipeline ist also weiter wirksam, nur etwas weniger fein granuliert. |
 | **AcademicCloud-Embeddings für RAG** | `e5-mistral-7b-instruct` hat eine andere Vektor-Dimension als `text-embedding-3-small`. | **Bestehende RAG-Vektoren werden inkompatibel.** Nach einem Provider-Wechsel müssen alle Dokumente per `POST /api/rag/reindex` (oder über das Studio-RAG-Panel) neu eingebettet werden. Im Mischbetrieb gibt es sonst keine Treffer. |

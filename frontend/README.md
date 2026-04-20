@@ -32,9 +32,10 @@ Der Dev-Proxy ist in `proxy.conf.json` konfiguriert (`/api → http://localhost:
 src/
 ├── app/
 │   ├── chat/                  # ChatComponent — UI, Audio, Pattern-Debug, Pagination
-│   ├── widget/                # WidgetComponent — Floating-Eule + Panel-Wrapper
+│   ├── canvas/                # CanvasComponent — Markdown/Kachel-Pane neben dem Chat
+│   ├── widget/                # WidgetComponent — Floating-Eule + Panel-Wrapper + Canvas-Layout
 │   └── services/
-│       └── api.service.ts     # fetch-Wrapper, sessionId, History-Restore
+│       └── api.service.ts     # fetch-Wrapper, sessionId, URL-Regex für page_context
 ├── widget-main.ts             # Bootstrap als Custom Element via @angular/elements
 ├── main.ts                    # Bootstrap als normale Angular-App
 └── styles.scss
@@ -42,10 +43,13 @@ src/
 
 * `ChatComponent` ist ein **Standalone-Component** und wird vom Widget per
   `<badboerdi-chat>`-Selector eingebettet.
+* `CanvasComponent` rendert Markdown-Ausgaben (Arbeitsblatt, Quiz, Bericht, …) mit
+  Druck/Download, sowie die Material-Kachel-Grid für Such-Ergebnisse. Shown neben dem Chat auf
+  Desktop (≥1200px), darunter Tab-Switcher im Header.
 * `WidgetComponent` (Selector `boerdi-chat-widget`) wird in `widget-main.ts` über
   `createCustomElement()` zu `<boerdi-chat>`. Shadow-DOM isoliert das CSS gegen die Host-Seite.
 * `angular.json` enthält ein eigenes Build-Target `build-widget` mit `index: false`,
-  `outputHashing: none` und Entry `src/widget-main.ts`. Ergebnis: ein einziges `main.js`.
+  `outputHashing: none` und Entry `src/widget-main.ts`. Ergebnis: ein einziges `main.js` (~395 KB).
 
 ## 3. Embedding (Web Component)
 
@@ -72,14 +76,35 @@ Voraussetzung: Backend läuft und das Widget-Bundle ist gebaut (`npm run build:w
 | Attribut | Default | Beschreibung |
 |----------|---------|--------------|
 | `api-url` | _proxied_ | Basis-URL des FastAPI-Backends |
-| `page-context` | `""` | JSON-String, der ins `environment.page_context` einfließt (Pattern-Engine) |
+| `page-context` | `""` | JSON-String, der ins `environment.page_context` einfließt (Pattern-Engine, Themenseiten-Resolver). Manuelle Keys überschreiben Auto-Context. |
 | `position` | `bottom-right` | `bottom-right` · `bottom-left` · `top-right` · `top-left` |
 | `initial-state` | `collapsed` | Startet als FAB oder offenes Panel |
 | `primary-color` | `#1c4587` | Akzentfarbe |
 | `persist-session` | `true` | Session-ID in `localStorage` halten (Cross-Page) |
 | `session-key` | `boerdi_session_id` | Storage-Key |
 | `greeting` | _Default-Grußtext_ | Erste Bot-Nachricht überschreiben |
-| `auto-context` | `true` | URL, Query, Title, Referrer automatisch in den Page-Context packen |
+| `auto-context` | `true` | URL-Regex + Dokumententitel automatisch in den Page-Context packen |
+
+### Auto-Context — welche URLs werden automatisch erkannt
+
+`ApiService.extractPageContext()` parst bei jedem Request:
+
+| Input | Extrahierter Key |
+|-------|------------------|
+| `?node=<uuid>` | `node_id` |
+| `?collection=<id>` | `collection_id` |
+| `?q=<term>` | `search_query` |
+| `/material/<id>` | `node_id` |
+| `/sammlung/<id>` | `collection_id` |
+| `/themenseite/<slug>` | `topic_page_slug`, `page_type=themenseite` |
+| `/fachportal/<fach>/<slug>` | `subject_slug`, `topic_page_slug`, `page_type=fachportal` |
+| `/components/render/<uuid>` | `node_id` (edu-sharing) |
+| Fallback | `document_title` (Seitentitel, max 200 Zeichen) |
+
+Das Backend löst `node_id` / `topic_page_slug` danach via MCP (`get_node_details`,
+`search_wlo_topic_pages`) zu semantischen Metadaten auf (Titel, Fach, Stufen, Keywords) und
+hängt sie an den System-Prompt — der Bot kann dann „Worum geht es auf dieser Seite?" direkt
+beantworten, ohne Rückfragen.
 
 ### Cross-Page-Continuity
 
@@ -89,6 +114,30 @@ Lädt die Web-Component auf einer neuen Seite und findet sie in `localStorage`:
 2. einen TTL-Marker `boerdi_widget_open` (≤ 30 min) → öffnet das Panel automatisch.
 
 So fühlt sich der Bot wie ein durchlaufender Begleiter über mehrere Unterseiten hinweg an.
+
+## 3a. Canvas-Arbeitsfläche
+
+Das Widget expandiert auf breiten Displays (≥1200 px) um eine **Canvas-Pane** rechts neben dem
+Chat. Sie zeigt entweder ein Markdown-Dokument (Arbeitsblatt, Quiz, Factsheet, Bericht, …) mit
+Druck/Download oder die Material-Kachel-Grid für Such-Ergebnisse. Mobile: Tab-Switcher im
+Header.
+
+**Events vom Backend** (`ChatResponse.page_action`):
+
+| Action | Payload | Wirkung |
+|--------|---------|---------|
+| `canvas_open` | `{title, material_type, material_type_label, material_type_category, markdown}` | Öffnet Canvas und lädt Markdown |
+| `canvas_update` | `{markdown}` | Ersetzt aktuellen Markdown-Inhalt (Edit-Response) |
+| `canvas_show_cards` | `{cards, query}` | Kachel-Ansicht für Such-Treffer |
+| `canvas_close` | `{}` | Canvas schließen |
+
+**`material_type_category`** ist `didaktisch` oder `analytisch` — das CanvasComponent zeigt
+einen entsprechend farbigen Badge (grün / blau).
+
+**Follow-Up-Edits** im Chat: schreibt der User „Mach es einfacher" / „Füge Lösungen hinzu" /
+„Kürzer fassen" (Auswahl der 56 Edit-Trigger), erkennt das Backend INT-W-12 und verfeinert den
+Canvas-Inhalt per `edit_canvas_content()` ohne Neu-Generierung. „Erstelle mir ein neues Quiz"
+gewinnt auch in state-12 und geht auf Create.
 
 ## 4. Widget bauen & ans Backend ausliefern
 
@@ -143,7 +192,7 @@ Das Attribut `api-url` am Custom-Element hat weiterhin Vorrang, falls gesetzt.
 
 ## 6. Sprachein- und -ausgabe
 
-* **Spracheingabe** (🎤): MediaRecorder → `POST /api/speech/transcribe` (Whisper) → Text ins Eingabefeld
+* **Spracheingabe** (🎤): MediaRecorder → `POST /api/speech/transcribe` (OpenAI STT, `gpt-4o-mini-transcribe` mit Fallback auf `gpt-4o-transcribe` → `whisper-1`) → Text ins Eingabefeld
 * **Sprachausgabe** (🔊): Satzweise OpenAI TTS mit Pre-Fetching — waehrend Satz N abgespielt wird, wird Satz N+1 bereits geladen. Abbruch jederzeit via Toggle. Automatik-Modus (Auto-Speak) liest jede Bot-Antwort vor.
 * TTS wird nur bei `LLM_PROVIDER=openai` unterstuetzt.
 * Der Lautsprecher-Button zeigt einen roten Strich (🔊 durchgestrichen) wenn deaktiviert.
