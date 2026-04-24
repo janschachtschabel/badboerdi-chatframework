@@ -127,6 +127,57 @@ def get_embed_model() -> str:
     return _PROVIDER_DEFAULTS[get_provider()]["embed"]
 
 
+# ── Embedding dimension lookup ───────────────────────────────────
+#
+# sqlite-vec needs the column dimension fixed at table-creation time
+# AND at every INSERT. If a user swaps the embedding model (e.g. from
+# text-embedding-3-small → text-embedding-3-large), the dimension
+# changes from 1536 → 3072 — storing a 3072-float blob against a
+# 1536-float vec column silently drops the row. The mapping below
+# turns the model name into its true dimension so `EMBED_DIM` can
+# be derived dynamically at import time.
+#
+# Defaults intentionally leave the current 1536 value for
+# text-embedding-3-small unchanged — this is purely additive.
+
+_EMBED_MODEL_DIMS: dict[str, int] = {
+    # OpenAI
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+    # AcademicCloud / other B-API upstream models
+    "e5-mistral-7b-instruct": 4096,
+    "bge-m3": 1024,
+    "bge-large-en-v1.5": 1024,
+    "jina-embeddings-v2-base-de": 768,
+    "jina-embeddings-v2-base-en": 768,
+}
+
+_EMBED_DIM_DEFAULT = 1536  # safe fallback (OpenAI 3-small / ada-002)
+
+
+def get_embed_dim(model: str | None = None) -> int:
+    """Return the vector dimension of an embedding model.
+
+    Lookup order:
+      1. Explicit ``EMBED_DIM`` env var (escape hatch for custom models)
+      2. Model-name → dim table above
+      3. Default 1536 (safe for OpenAI text-embedding-3-small)
+
+    The resolution is case-insensitive and accepts bare model names
+    (``text-embedding-3-large``) or namespaced ones
+    (``openai/text-embedding-3-large``).
+    """
+    env_override = (os.getenv("EMBED_DIM") or "").strip()
+    if env_override.isdigit():
+        return int(env_override)
+    name = (model or get_embed_model() or "").lower().strip()
+    # Strip provider prefix so "openai/text-embedding-3-small" resolves too
+    if "/" in name:
+        name = name.rsplit("/", 1)[-1]
+    return _EMBED_MODEL_DIMS.get(name, _EMBED_DIM_DEFAULT)
+
+
 def is_openai_native() -> bool:
     """True only for the native OpenAI provider.
 
@@ -138,7 +189,13 @@ def is_openai_native() -> bool:
 
 @lru_cache(maxsize=1)
 def get_client() -> AsyncOpenAI:
-    """Build a single shared AsyncOpenAI client for the active provider."""
+    """Build a single shared AsyncOpenAI client for the active provider.
+
+    Native-OpenAI base URL can be overridden via ``OPENAI_BASE_URL`` to point
+    at any OpenAI-compatible endpoint (Azure OpenAI, LiteLLM, LocalAI,
+    Ollama's OpenAI shim, …). If unset, the SDK default (https://api.openai.com/v1)
+    applies, preserving existing behaviour.
+    """
     provider = get_provider()
     base = (os.getenv("B_API_BASE_URL") or _DEFAULT_B_API_BASE).rstrip("/")
     b_key = (os.getenv("B_API_KEY") or "").strip()
@@ -155,8 +212,12 @@ def get_client() -> AsyncOpenAI:
             base_url=f"{base}/academiccloud",
             default_headers={"X-API-KEY": b_key} if b_key else None,
         )
-    # native openai
-    return AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    # native openai (or any OpenAI-compatible endpoint via OPENAI_BASE_URL)
+    openai_base = (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/") or None
+    return AsyncOpenAI(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=openai_base,
+    )
 
 
 def reset_client_cache() -> None:

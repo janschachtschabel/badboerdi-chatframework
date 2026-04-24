@@ -35,14 +35,41 @@
     </div>
 
     <div class="canvas-head-actions">
+      <!-- Edit-Mode-Toolbar: Save / Cancel -->
+      <button type="button" class="canvas-btn canvas-btn--primary"
+              *ngIf="viewMode === 'content' && editMode()"
+              (click)="onSaveEdit()"
+              title="Änderungen speichern">
+        <span aria-hidden="true">✓</span> Speichern
+      </button>
       <button type="button" class="canvas-btn"
-              *ngIf="viewMode === 'content'"
+              *ngIf="viewMode === 'content' && editMode()"
+              (click)="onCancelEdit()"
+              title="Edit verwerfen">
+        Abbrechen
+      </button>
+      <!-- Edit-Button sichtbar wenn NICHT im Edit-Modus -->
+      <button type="button" class="canvas-btn"
+              *ngIf="viewMode === 'content' && !editMode()"
+              (click)="onToggleEdit()"
+              title="Markdown direkt bearbeiten">
+        <span aria-hidden="true">✎</span>
+      </button>
+      <!-- Bot-Version wiederherstellen — nur wenn User editiert hat -->
+      <button type="button" class="canvas-btn"
+              *ngIf="viewMode === 'content' && !editMode() && userEditedSinceBot"
+              (click)="onRestoreBotVersion()"
+              title="Zur Bot-Version zurückkehren (deine Änderungen verwerfen)">
+        <span aria-hidden="true">↺</span>
+      </button>
+      <button type="button" class="canvas-btn"
+              *ngIf="viewMode === 'content' && !editMode()"
               (click)="onPrint()"
               title="Drucken / als PDF speichern">
         <span aria-hidden="true">🖨</span>
       </button>
       <button type="button" class="canvas-btn"
-              *ngIf="viewMode === 'content'"
+              *ngIf="viewMode === 'content' && !editMode()"
               (click)="onDownload()"
               title="Als Markdown-Datei herunterladen">
         <span aria-hidden="true">⬇</span>
@@ -68,9 +95,25 @@
     </div>
 
     <!-- Markdown content -->
-    <article *ngSwitchCase="'content'"
-             class="canvas-content"
-             [innerHTML]="renderedHtml()"></article>
+    <ng-container *ngSwitchCase="'content'">
+      <!-- Rendered view (Standard) -->
+      <article *ngIf="!editMode()"
+               class="canvas-content"
+               [innerHTML]="renderedHtml()"></article>
+
+      <!-- Edit-Modus: direktes Markdown-Editieren -->
+      <div *ngIf="editMode()" class="canvas-edit">
+        <div class="canvas-edit-hint">
+          📝 Direkter Markdown-Editor. Änderungen übernehmen mit <strong>Speichern</strong>.
+          Der Bot arbeitet danach mit deiner Version weiter.
+        </div>
+        <textarea class="canvas-edit-textarea"
+                  [value]="editDraft()"
+                  (input)="onEditInput($event)"
+                  spellcheck="true"
+                  autofocus></textarea>
+      </div>
+    </ng-container>
 
     <!-- Single-card preview (metadata view) -->
     <div *ngSwitchCase="'preview'" class="canvas-preview">
@@ -169,7 +212,7 @@
                [href]="topicPageUrl(c)"
                target="_blank"
                rel="noopener noreferrer"
-               [title]="'Themenseite öffnen — Variante: ' + (selectedVariant(c)?.label || 'allgemein')">
+               [title]="'Themenseite öffnen — Variante: ' + (selectedVariant(c) ? variantLabel(c, selectedVariant(c)!) : 'Allgemein')">
               🌐 Themenseite öffnen
             </a>
             <button *ngIf="c.topic_pages && c.topic_pages.length > 1"
@@ -194,7 +237,7 @@
                  (click)="onPickVariant(c, v.variant_id, $event)">
                 <span class="variant-check" aria-hidden="true"
                       *ngIf="v.variant_id === selectedVariant(c)?.variant_id">✓</span>
-                {{ v.label || v.target_group || 'Variante' }}
+                {{ variantLabel(c, v) }}
               </a>
             </div>
           </div>

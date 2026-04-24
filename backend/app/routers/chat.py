@@ -58,9 +58,28 @@ from fastapi.responses import StreamingResponse
 
 from app.models.schemas import ChatRequest, ChatResponse, ClassificationResult, DebugInfo, PaginationInfo, WloCard
 from app.services.database import (
-    get_or_create_session, update_session, save_message, get_messages, get_memory,
+    get_or_create_session, update_session, get_messages, get_memory,
     log_safety_event,
 )
+from app.services.database import save_message as _db_save_message
+
+
+async def save_message(session_id: str, role: str, content: str,
+                       cards=None, debug=None):
+    """Gated message persistence — respects 01-base/privacy-config.yaml.
+
+    When `logging.messages: false` is configured, calls become no-ops so
+    the chat runs without ever storing user/bot text. Safety-log path is
+    unaffected (it uses log_safety_event directly, not save_message).
+    """
+    try:
+        from app.services.config_loader import load_privacy_config
+        if not load_privacy_config().get("messages", True):
+            return
+    except Exception:
+        # Loader failure → default to logging (conservative).
+        pass
+    await _db_save_message(session_id, role, content, cards=cards, debug=debug)
 from app.services.rate_limiter import check_rate_limit
 from app.services.llm_service import (
     classify_input, generate_response, generate_quick_replies, generate_learning_path_text,
@@ -425,6 +444,108 @@ async def _handle_browse_collection(
 
 
 # ── Action: Generate learning path ───────────────────────────────
+def _extract_headings(markdown: str, topic: str, levels: str = "##") -> list[str]:
+    """Extract H2 (or H2+H3) headings from the markdown, skipping duplicate
+    or wrapper headings that just echo the topic and filtering out meta-
+    sections like "Wie liest man diese Übersicht?" / "Lösungen" that would
+    otherwise become the single visible section and make the chat preview
+    look empty.
+    """
+    import re as _re
+    # Try H2 first — if few, also include H3
+    h2 = _re.findall(rf"^{levels}\s+(.+?)\s*$", markdown or "", flags=_re.MULTILINE)
+    if len(h2) < 2:
+        h2 = _re.findall(r"^#{2,3}\s+(.+?)\s*$", markdown or "", flags=_re.MULTILINE)
+
+    # If still too few, extract bold-bullet "**Hauptast**"-pattern from list
+    # structures (common in Strukturübersicht / Glossar where headings are
+    # nested instead of H2'd).
+    if len(h2) < 2:
+        bullet_bold = _re.findall(
+            r"^\s*[-*+]\s+\*\*(.+?)\*\*",
+            markdown or "", flags=_re.MULTILINE,
+        )
+        if bullet_bold:
+            h2 = bullet_bold
+
+    # Strip markdown syntax and trailing punctuation
+    cleaned = [h.strip().strip("*_`").strip() for h in h2]
+    tl = (topic or "").strip().lower()
+
+    # Meta-sections: filter unless they're the only thing we have. These
+    # are "how to use / solutions / meta" titles that don't describe content.
+    META_PATTERNS = (
+        r"wie\s+liest\s+man",
+        r"^lösungen?$",
+        r"^loesungen?$",
+        r"^quellen(angabe)?$",
+        r"^hinweise?$",
+        r"^anhang$",
+        r"^glossar$",  # only when it's a meta-ref, not the main content
+        r"^weiterführende",
+        r"^weiterfu[eh]hrende",
+        r"^literaturverzeichnis$",
+    )
+    def _is_meta(h: str) -> bool:
+        hl = h.strip().strip("*_`").lower()
+        return any(_re.search(p, hl) for p in META_PATTERNS)
+
+    non_meta = [h for h in cleaned if h and h.lower() != tl and not _is_meta(h)]
+    meta = [h for h in cleaned if h and h.lower() != tl and _is_meta(h)]
+
+    # Prefer non-meta sections; only fall back to meta when we'd otherwise
+    # have nothing.
+    out = non_meta if non_meta else meta
+    return out[:6]
+
+
+def _canvas_completion_message(label: str, topic: str, markdown: str) -> str:
+    """Build a rich chat-bubble text when a canvas-material is created.
+
+    Inlines the first 3–5 H2-sections as a mini-preview so the user doesn't
+    have to switch to the canvas just to see what's inside.
+    """
+    sections = _extract_headings(markdown, topic)
+    lines = [f"Ich habe dir ein **{label}** zum Thema *{topic}* erstellt."]
+    if sections:
+        lines.append("")
+        lines.append("Abschnitte:")
+        for i, s in enumerate(sections, 1):
+            lines.append(f"{i}. **{s}**")
+    lines.append("")
+    lines.append(
+        "Du siehst es rechts im Canvas — ich kann es direkt anpassen, "
+        "wenn du z.B. \"mach die Aufgaben einfacher\" oder \"füge Lösungen "
+        "hinzu\" schreibst."
+    )
+    return "\n".join(lines)
+
+
+def _lp_completion_message(topic: str, markdown: str) -> str:
+    """Build a rich chat-bubble text for a completed learning path.
+
+    The full path lives in the canvas — but the chat bubble needs more than
+    a terse "guck im canvas"-pointer. Extract the H2/H3-Überschriften (Phasen)
+    from the markdown so the user sees the roadmap inline.
+    """
+    phases = _extract_headings(markdown, topic)
+    lines = [
+        f"Ich habe dir den **Lernpfad zu *{topic}*** im Canvas rechts aufgebaut."
+    ]
+    if phases:
+        lines.append("")
+        lines.append("Er ist in diese Phasen gegliedert:")
+        for i, p in enumerate(phases, 1):
+            lines.append(f"{i}. **{p}**")
+    lines.append("")
+    lines.append(
+        "Du kannst ihn im Canvas drucken, als Markdown speichern oder mir "
+        "sagen, was angepasst werden soll (z.B. *\"mach ihn für Klasse 5 "
+        "einfacher\"* oder *\"füge einen Schritt zur Sicherung hinzu\"*)."
+    )
+    return "\n".join(lines)
+
+
 async def _handle_generate_learning_path(
     req: ChatRequest, session_state: dict,
 ) -> ChatResponse:
@@ -558,12 +679,7 @@ async def _handle_generate_learning_path(
         entities=json.dumps(session_state.get("entities", {})),
     )
 
-    short_ack = (
-        f"Ich habe dir einen **Lernpfad zu *{title}*** im Canvas rechts aufgebaut. "
-        "Du kannst ihn dort drucken, als Markdown speichern oder mir sagen, "
-        "was angepasst werden soll (z.B. *\"mach ihn für Klasse 5 einfacher\"* "
-        "oder *\"füge einen Schritt zur Sicherung hinzu\"*)."
-    )
+    short_ack = _lp_completion_message(title, markdown)
 
     return ChatResponse(
         session_id=req.session_id,
@@ -616,11 +732,7 @@ async def _handle_canvas_create(
     label = _mts[type_key]["label"]
     emoji = _mts[type_key]["emoji"]
 
-    response_text = (
-        f"Ich habe dir ein **{label}** zum Thema *{topic}* erstellt — "
-        f"schau es dir im Canvas an. Schreib mir einfach, was ich anpassen soll "
-        f"(z.B. \"mach die Aufgaben einfacher\" oder \"füge Lösungen hinzu\")."
-    )
+    response_text = _canvas_completion_message(label, topic, markdown)
 
     debug = DebugInfo(
         persona=session_state.get("persona_id", ""),
@@ -771,6 +883,9 @@ async def _handle_canvas_remix(
     session_state["state_id"] = "state-12"
     session_state.setdefault("entities", {})["_canvas_material_type"] = mt_key
     session_state["entities"]["_canvas_topic"] = topic
+    # Store fresh markdown so follow-up edits ("mach es einfacher") operate
+    # on THIS remix, not on a stale prior canvas.
+    session_state["entities"]["_canvas_last_markdown"] = md
 
     await save_message(
         req.session_id, "assistant", response_text,
@@ -823,11 +938,34 @@ async def _handle_canvas_edit(
             content="Welche Aenderung soll ich am Canvas-Inhalt vornehmen?",
         )
 
-    new_md = await edit_canvas_content(
-        current_markdown=current_md,
-        edit_instruction=instruction,
-        session_state=session_state,
-    )
+    # Import here to avoid circular dep at module load time
+    from app.services.canvas_service import CanvasEditRefused
+    try:
+        new_md = await edit_canvas_content(
+            current_markdown=current_md,
+            edit_instruction=instruction,
+            session_state=session_state,
+        )
+    except CanvasEditRefused as e:
+        # Moderation flagged the edit — return a polite refusal without
+        # running the LLM. UX: user sees the reason, Canvas stays as-is.
+        refusal_debug = DebugInfo(
+            persona=session_state.get("persona_id", ""),
+            intent="INT-W-12",
+            state="state-12",
+            pattern="ACTION: canvas_edit_refused",
+            tools_called=["canvas_service._moderate_canvas_edit"],
+            entities=session_state.get("entities", {}),
+        )
+        await save_message(
+            req.session_id, "assistant", str(e),
+            debug=refusal_debug.model_dump(),
+        )
+        return ChatResponse(
+            session_id=req.session_id,
+            content=str(e),
+            debug=refusal_debug,
+        )
 
     response_text = (
         "Erledigt. Der Canvas-Inhalt ist jetzt angepasst. "
@@ -1051,13 +1189,33 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         # Fall back to the raw user message stripped of obvious noise
         return req.message[:120]
 
+    def _spec_has_enough_signal() -> bool:
+        """Gate speculative prefetch on having a real topic, not just a fach.
+
+        Without this, requests like "Ich brauche Hilfe bei Mathe" trigger a
+        broad search for "Mathe" and the LLM then presents random top hits as
+        if they were a match for the user's intent. When only ``fach`` is set
+        (or nothing), let PAT-02 (Geführte Klärung) ask for the topic first.
+        """
+        ents = classification.entities or {}
+        thema = (ents.get("thema") or ents.get("topic")
+                 or ents.get("query") or ents.get("schlagwort") or "")
+        if str(thema).strip():
+            return True
+        # No topic at all — only fach or bare fallback query → skip prefetch
+        return False
+
     # Extra speculative tasks that run in parallel next to the primary one.
     # Their results are merged into the cards list after the main response
     # is generated — this lets us return e.g. collections + content + topic
     # pages side-by-side when the user asks generically ("etwas zu Optik").
     extra_spec_tasks: list[tuple[str, asyncio.Task]] = []
 
-    if safety.risk_level != "high" and classification.intent_id in _spec_search_intents:
+    if (
+        safety.risk_level != "high"
+        and classification.intent_id in _spec_search_intents
+        and _spec_has_enough_signal()
+    ):
         try:
             spec_query = _spec_query_from_classification()
             _ents_for_spec = classification.entities or {}
@@ -1188,8 +1346,16 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     _wants_create = looks_like_create_intent(req.message)
     _detected_mt = extract_material_type_from_message(req.message)
     _in_canvas_state = session_state.get("state_id") == "state-12"
+    # Canvas-Inhalt: der Client-Stand (canvas_state.markdown) gewinnt, weil der
+    # User im Canvas manuell editiert haben koennte. Fallback auf session_state
+    # nur wenn der Client nichts mitschickt (z.B. alter Chat-Client ohne
+    # canvas_state-Feld, oder Canvas wurde gerade erst eroeffnet).
+    _client_canvas_md = ""
+    if isinstance(req.canvas_state, dict):
+        _client_canvas_md = (req.canvas_state.get("markdown") or "").strip()
     _existing_canvas_md = (
-        (session_state.get("entities") or {}).get("_canvas_last_markdown") or ""
+        _client_canvas_md
+        or ((session_state.get("entities") or {}).get("_canvas_last_markdown") or "")
     )
     # ── Canvas-Edit-Override (INT-W-12) ──
     # Wenn Canvas aktiv ist UND vorhandener Canvas-Inhalt besteht UND eine
@@ -1199,10 +1365,18 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     from app.services.canvas_service import (
         looks_like_edit_intent, has_explicit_new_create_override,
     )
+    # Canvas-Edit kann auch ausserhalb von state-12 erkannt werden — der
+    # Classifier kann INT-W-12 setzen, selbst wenn das System-State noch nicht
+    # auf 12 gewechselt ist (z.B. bei der ersten Edit-Nachricht). In beiden
+    # Faellen wollen wir den Edit-Handler routen, solange echter
+    # Canvas-Markdown vorhanden ist.
+    _classifier_says_edit = classification.intent_id == "INT-W-12"
     _wants_edit = (
-        _in_canvas_state
-        and bool(_existing_canvas_md)
-        and looks_like_edit_intent(req.message)
+        bool(_existing_canvas_md)
+        and (
+            (_in_canvas_state and looks_like_edit_intent(req.message))
+            or _classifier_says_edit
+        )
         and not has_explicit_new_create_override(req.message)
     )
     if _wants_edit:
@@ -1212,7 +1386,9 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         )
         classification.intent_id = "INT-W-12"
         new_state = "state-12"
-        # Route to canvas_edit handler with current markdown + instruction
+        # Route to canvas_edit handler with current markdown + instruction.
+        # Carry over the original environment so device / page-context
+        # signals stay available in the edit handler.
         edit_req = ChatRequest(
             session_id=req.session_id,
             message=req.message,
@@ -1221,8 +1397,8 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 "current_markdown": _existing_canvas_md,
                 "edit_instruction": req.message,
             },
-            device=req.device,
-            page=req.page,
+            environment=req.environment,
+            canvas_state=req.canvas_state,
         )
         return await _handle_canvas_edit(edit_req, session_state)
 
@@ -1257,7 +1433,14 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     # => Rule: if create-verb is present at all, create wins over search.
     _search_blocks_soft_create = _has_search_verb and not _has_create_verb
     _soft_create = bool(_detected_mt) and not _search_blocks_soft_create
-    if classification.intent_id != "INT-W-11":
+    # Don't override intents that are explicitly non-create: Routing (05),
+    # Download (07), Evaluation (08), Statistics (09) never mean "create".
+    # Otherwise the heuristic "material_typ present → INT-W-11" would undo
+    # the classifier's correct non-create decision.
+    _non_create_protected = classification.intent_id in (
+        "INT-W-05", "INT-W-07", "INT-W-08", "INT-W-09", "INT-W-10", "INT-W-12",
+    )
+    if classification.intent_id != "INT-W-11" and not _non_create_protected:
         if (_wants_create or _soft_create) and (_detected_mt or _in_canvas_state):
             logger.info(
                 "Intent override: %s -> INT-W-11 (create=%s search=%s mt=%s prior_state=%s)",
@@ -1300,11 +1483,24 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             new_state = "state-5"
 
     if classification.intent_id == "INT-W-11":
+        # Priority for material_typ (fixes "stale type" bug):
+        #   1. type detected from THIS turn's user message  (_detected_mt)
+        #   2. classifier's extracted entity for this turn   (_mt_class)
+        #   3. sticky session value (prior turn)             (_mt_session)
+        # If the user explicitly mentions a type NOW, it always wins over
+        # whatever the last turn set — otherwise clicking a new type chip
+        # re-generates the previous type.
         _mt_session = session_state.get("entities", {}).get("material_typ")
         _mt_class = (classification.entities or {}).get("material_typ")
-        _chosen = _mt_session or _mt_class or _detected_mt
+        _chosen = _detected_mt or _mt_class or _mt_session
         if _chosen and session_state["entities"].get("material_typ") != _chosen:
             session_state["entities"]["material_typ"] = _chosen
+        # Also lift into classification.entities so the canvas flow reads
+        # the fresh value without re-querying session state.
+        if _chosen:
+            if classification.entities is None:
+                classification.entities = {}
+            classification.entities["material_typ"] = _chosen
 
     # 2b. Build ContextSnapshot (Triple-Schema T-04/05)
     from app.services.context_service import build_context
@@ -1400,7 +1596,20 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     _lp_keywords = {"lernpfad", "unterrichtsvorbereitung", "unterrichtsstunde", "unterrichtsplanung",
                      "unterricht vorbereiten", "unterrichtseinheit", "stundenentwurf"}
     _msg_lower = req.message.lower()
-    _has_lp_intent = any(kw in _msg_lower for kw in _lp_keywords) or classification.intent_id == "INT-W-10"
+    # LP-Fast-Path darf NICHT feuern wenn der Classifier einen non-create
+    # Intent gewählt hat. Der User will dann z.B. einen bestehenden Lernpfad
+    # bearbeiten (INT-W-12), herunterladen (INT-W-07), bewerten (INT-W-08)
+    # oder Feedback geben (INT-W-04) — nicht einen neuen erstellen.
+    _lp_blocking_intents = {
+        "INT-W-04", "INT-W-05", "INT-W-07", "INT-W-08", "INT-W-09", "INT-W-12",
+    }
+    _has_lp_intent = (
+        classification.intent_id not in _lp_blocking_intents
+        and (
+            any(kw in _msg_lower for kw in _lp_keywords)
+            or classification.intent_id == "INT-W-10"
+        )
+    )
     _last_contents_json = session_state.get("entities", {}).get("_last_contents", "")
     _last_collections_json = session_state.get("entities", {}).get("_last_collections", "")
     _lp_routed = False
@@ -1408,6 +1617,46 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     # Only route to LP builder if a concrete topic is known — fach alone is not enough
     _thema = session_state.get("entities", {}).get("thema", "")
     _lp_cards_collected: list[dict] = []  # cards found during LP content gathering
+
+    # Plausibilitätscheck auf _thema, bevor wir einen Lernpfad generieren.
+    # Dieselbe Logik wie beim Canvas-Fast-Path: wenn der Classifier einen
+    # substring der Nachricht als thema fehlinterpretiert hat, lieber
+    # degradieren statt einen unsinnigen Lernpfad zu bauen.
+    def _thema_plausible(t: str) -> bool:
+        if not t:
+            return False
+        import re as _rex
+        _tl = t.lower().strip(" .,:;?!")
+        if len(_tl) < 3:
+            return False
+        # Starts with pronoun/article → Satzrest
+        if _rex.match(r"^(das|dieses|diese|dieser|der|die|den|dem|des|ein|eine|einen|einem|einer|eines|"
+                      r"ihm|ihr|ihn|ihnen|mir|mich|dir|dich|uns|euch|es|sie|er)\b", _tl):
+            return False
+        # Starts with question/meta word
+        if _rex.match(r"^(wie|was|wo|wann|warum|wer|wieso|wieviel|kannst|kann|könnte|könntest|"
+                      r"hast|habt|gibt|gibts|ideen|vorschläge|tipps|möglichkeiten|"
+                      r"eine frage|frage|ne frage|irgendwas|bitte|mal|gerne|gern|"
+                      r"also|so|mal eben)\b", _tl):
+            return False
+        if t.rstrip().endswith("?"):
+            return False
+        # Query/meta verbs → existierendes Material, nicht LP-Thema
+        if _rex.search(r"\b(runterladen|herunterladen|bewerten|bewertung|prüfen|"
+                       r"ansehen|anschauen|kopieren|teilen|löschen|exportieren|"
+                       r"ausdrucken|drucken|speichern|öffnen|schließen|abbrechen|"
+                       r"bereitstellen|bereitstellung|schicken|senden|zusenden|"
+                       r"weiterleiten|feedback|meinung|bewerte|review)\b", _tl):
+            return False
+        # Fragment-Rest nach Material-Typ-Strip: "e der aktuellen..."
+        if _rex.match(r"^(e|er|es|en|em|n|s)\s", _tl):
+            return False
+        return True
+
+    if _thema and not _thema_plausible(_thema):
+        logger.info("LP fast-path: thema %r rejected as garbage, forcing degradation", _thema)
+        _thema = ""
+        session_state.setdefault("entities", {})["thema"] = ""
 
     # Force degradation when LP keywords detected but thema missing
     if _has_lp_intent and not _thema:
@@ -1681,13 +1930,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 # Replace the long LP text in the chat bubble with a short
                 # announcement — the full path lives in the canvas, where
                 # the user can print, download or edit it via chat commands.
-                response_text = (
-                    f"Ich habe dir den **Lernpfad zu *{topic}*** im Canvas "
-                    "rechts aufgebaut. Du kannst ihn dort drucken, als "
-                    "Markdown speichern oder mir sagen, was angepasst "
-                    "werden soll (z.B. *\"mach ihn für Klasse 5 einfacher\"* "
-                    "oder *\"füge einen Schritt zur Sicherung hinzu\"*)."
-                )
+                response_text = _lp_completion_message(topic, _lp_full_markdown)
 
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Learning path from history failed: %s", e)
@@ -1710,13 +1953,27 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     # In that case we want to show the material-type degradation, not fall
     # through to a generic PAT-02 Clarification response.
     if not _lp_routed and classification.intent_id == "INT-W-11":
-        _c_topic = (session_state.get("entities", {}).get("thema") or "").strip()
-        _mt_raw = (
-            (classification.entities or {}).get("material_typ")
-            or session_state.get("entities", {}).get("material_typ")
-            or ""
+        # Topic priority (fixes "stale topic" bug, same logic as material_typ):
+        # 1. classifier extraction from THIS turn
+        # 2. sticky session value (prior turn) — only when classifier is silent
+        _c_topic = (
+            ((classification.entities or {}).get("thema") or "").strip()
+            or (session_state.get("entities", {}).get("thema") or "").strip()
         )
-        _mt_key = resolve_material_type(_mt_raw) or extract_material_type_from_message(req.message)
+        # Type priority (fixes "stale type" bug):
+        # 1. direct extraction from THIS turn's message (covers chip-clicks
+        #    like "Rollenspielkarten" after a prior Infoblatt creation)
+        # 2. classifier entity for this turn
+        # 3. fallback to sticky session value from prior turn
+        _mt_key = (
+            extract_material_type_from_message(req.message)
+            or resolve_material_type(
+                (classification.entities or {}).get("material_typ", "")
+            )
+            or resolve_material_type(
+                session_state.get("entities", {}).get("material_typ", "")
+            )
+        )
 
         # Topic-Fallback: wenn der Classifier kein 'thema' extrahiert hat,
         # aber Material-Typ bekannt ist, nutze die User-Message selbst als
@@ -1726,12 +1983,25 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         if not _c_topic and _mt_key:
             import re as _re_topic
             _fallback = (req.message or "").strip()
-            # strip leading create verbs
+            # strip role-prefixes like "Ich bin Lehrerin und möchte...", "Als
+            # Redakteurin brauche ich..." — these are identity statements, not
+            # topics. Must happen BEFORE verb-stripping so the subsequent strip
+            # can find the verb.
+            _fallback = _re_topic.sub(
+                r"^\s*(ich\s+bin\s+\w+(?:in)?|"
+                r"als\s+\w+(?:kraft|ist[in]*|e?r?|in)?)\b"
+                r"[,\s]+(und\s+)?",
+                "", _fallback, flags=_re_topic.IGNORECASE,
+            )
+            # strip leading create verbs (including polite Sie-Form)
             _fallback = _re_topic.sub(
                 r"^\s*(erstelle?|generiere?|mach(?:\s+mir)?|bau\s+mir|schreib\s+mir|"
-                r"entwirf|produziere|ich\s+brauche|brauche|ich\s+möchte|möchte|"
-                r"hätte\s+ger?n|gib\s+mir|kannst\s+du|fasse\s+zusammen|wandle)"
-                r"\s+(mir\s+)?(ein|eine|einen)?\s*",
+                r"entwirf|produziere|ich\s+brauche|brauche|ich\s+benötige|benötige|"
+                r"ich\s+möchte|möchte|ich\s+hab(?:e)?|hab(?:e)?|ich\s+suche|suche|"
+                r"hätte\s+ger?n|gib\s+mir|kannst\s+du|könntest\s+du|könnten\s+sie|"
+                r"können\s+sie|würden\s+sie|würdest\s+du|hätten\s+sie|haben\s+sie|"
+                r"fasse\s+zusammen|wandle)"
+                r"\s+(mir\s+)?(bitte\s+)?(ein|eine|einen|die|der|das|den)?\s*",
                 "", _fallback, flags=_re_topic.IGNORECASE,
             )
             # strip the detected material-type word
@@ -1752,8 +2022,82 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             _fallback = _re_topic.sub(r"\s+", " ", _fallback).strip(" .,:;")
             # Cap at 80 chars to avoid weirdly long topics
             _c_topic = _fallback[:80]
+
+            # ── Plausibilitätscheck gegen garbage-Topics ──────────────
+            # Der regex-Fallback oben kann Müll liefern, wenn die Nachricht
+            # kein echter Create-Befehl mit Thema war, sondern z.B. eine Frage
+            # zum Download, Feedback oder vage Äußerung. Beispiele aus dem Eval:
+            #   "Kannst du mir das Arbeitsblatt runterladen?" → "das runterladen?"
+            #   "Ich brauche Ideen für ein neues Arbeitsblatt" → "Ideen für ein neues"
+            #   "Gibt's ne Übersicht zu Statistiken?" → "ne zu Statistiken"
+            # In allen diesen Fällen: lieber Topic LEER lassen, damit das
+            # System sauber degradiert und nach dem konkreten Thema fragt.
             if _c_topic:
-                logger.info("canvas-create topic fallback: %r", _c_topic)
+                _tl = _c_topic.lower().strip(" .,:;?!")
+                _bad = False
+                # Zu kurz (weniger als ein echtes Wort)
+                if len(_tl) < 3:
+                    _bad = True
+                # Beginnt mit Pronomen/Artikel/Possessiv (meist Satzreste ohne Sachsubstantiv)
+                elif _re_topic.match(
+                    r"^(das|dieses|diese|dieser|der|die|den|dem|des|ein|eine|einen|einem|einer|eines|"
+                    r"ihm|ihr|ihre|ihres|ihrem|ihren|ihn|ihnen|"
+                    r"mein|meine|meines|meinem|meinen|deiner?|deines|deinem|deinen|"
+                    r"unser|unsere|unseres|unserem|unseren|euer|eure|"
+                    r"mir|mich|dir|dich|uns|euch|es|sie|er)\b",
+                    _tl,
+                ):
+                    _bad = True
+                # Beginnt mit Frage-/Meta-Wort (das ist KEINE Create-Intention)
+                elif _re_topic.match(
+                    r"^(wie|was|wo|wann|warum|wer|wieso|wieviel|wie viel|"
+                    r"kannst|kann|könnte|könntest|hast|habt|gibt|gibts|"
+                    r"ideen|vorschläge|tipps|möglichkeiten|eine frage|frage|"
+                    r"ne frage|irgendwas|irgendwie|neues|neu|alles|etwas|"
+                    r"bitte|mal|gerne|gern|also|so|mal eben|kurz mal|"
+                    r"hey|hi|hallo|servus|oh|na|hm|äh|eh)\b",
+                    _tl,
+                ):
+                    _bad = True
+                # Zu wenig substantielle Inhalt (reine Satz-Fragmente wie
+                # "e der aktuellen", "zu Ihrem letzten", "paar Fragen zu")
+                elif len(_tl) < 12 or (
+                    # Erste 1-2 Zeichen sind kleinbuchstabiger Rest-Fragment,
+                    # typisch nach Material-Typ-Strip: "e der aktuellen..."
+                    _tl[:2].strip() in ("e", "er", "es", "en", "em", "n", "s")
+                    and _tl[2:3] == " "
+                ):
+                    _bad = True
+                # Endet auf Fragezeichen (Frage, keine Create-Directive)
+                elif _c_topic.rstrip().endswith("?"):
+                    _bad = True
+                # Enthält Verben, die KEINE Erstellung bedeuten — User will
+                # existierende Dinge aufrufen/manipulieren, kein neues Material
+                elif _re_topic.search(
+                    r"\b(runterladen|herunterladen|bewerten|bewertung|prüfen|"
+                    r"ansehen|anschauen|kopieren|teilen|löschen|exportieren|"
+                    r"ausdrucken|drucken|speichern|öffnen|schließen|abbrechen|"
+                    r"bereitstellen|bereitstellung|schicken|senden|zusenden|"
+                    r"weiterleiten|feedback|meinung|bewerte|review)\b",
+                    _tl,
+                ):
+                    _bad = True
+                # Enthält Meta-/Referenz-Tokens ("der letzten", "meiner klasse",
+                # "meinem sohn") — deutet auf Abfrage-Intent, nicht Erstellung
+                elif _re_topic.search(
+                    r"\b(der letzt|die letzt|das letzt|meiner?\s+(klasse|tochter|"
+                    r"sohn|kinder|schüler))\b",
+                    _tl,
+                ):
+                    _bad = True
+                if _bad:
+                    logger.info(
+                        "canvas-create topic fallback rejected as garbage: %r (msg: %r)",
+                        _c_topic, (req.message or "")[:100],
+                    )
+                    _c_topic = ""
+                else:
+                    logger.info("canvas-create topic fallback: %r", _c_topic)
 
         if _c_topic and _mt_key:
             _mts_flow = get_material_types()
@@ -1765,10 +2109,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 session_state=session_state,
                 memory_context=memory_context,
             )
-            response_text = (
-                f"Ich habe dir ein **{_label}** zum Thema *{_c_topic}* erstellt — "
-                f"schau es dir im Canvas an. Schreib mir einfach, was ich anpassen soll."
-            )
+            response_text = _canvas_completion_message(_label, _c_topic, _md)
             tools_called = ["canvas_service.generate_canvas_content"]
             wlo_cards_raw = []
             _canvas_routed = True
@@ -1785,6 +2126,13 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             new_state = "state-12"
             session_state["entities"]["_canvas_material_type"] = _mt_key
             session_state["entities"]["_canvas_topic"] = _c_topic
+            # Store fresh markdown so subsequent edit-verb turns
+            # ("mach es einfacher") operate on THIS canvas, not on an
+            # older one that may still be in session memory.
+            session_state["entities"]["_canvas_last_markdown"] = _md
+            # Also refresh thema so next turn's classifier sees the
+            # current topic, not a stale prior one.
+            session_state["entities"]["thema"] = _c_topic
         elif _c_topic and not _mt_key:
             response_text = (
                 f"Welches Material soll ich dir zum Thema **{_c_topic}** erstellen? "
@@ -2206,11 +2554,18 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         debug=debug.model_dump(),
     )
 
-    # 12. Quality logging (non-blocking, fire-and-forget)
+    # 12. Quality logging (non-blocking, fire-and-forget).
+    # Governed by TWO switches:
+    #   - 01-base/quality-log-config.yaml:logging.enabled  (feature flag)
+    #   - 01-base/privacy-config.yaml:logging.quality      (privacy flag)
+    # Both must be true. The privacy flag is the user-facing one (Studio).
     try:
-        from app.services.config_loader import load_quality_log_config
+        from app.services.config_loader import (
+            load_quality_log_config, load_privacy_config,
+        )
         _ql_cfg = (load_quality_log_config().get("logging") or {})
-        if _ql_cfg.get("enabled", True):
+        _privacy = load_privacy_config()
+        if _ql_cfg.get("enabled", True) and _privacy.get("quality", True):
             from app.services.database import log_quality_event
             asyncio.create_task(log_quality_event(
                 session_id=req.session_id,

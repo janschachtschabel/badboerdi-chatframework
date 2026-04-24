@@ -43,7 +43,18 @@ export default function KnowledgeManager() {
   const [tab, setTab] = useState<'areas' | 'upload' | 'mcp'>('areas');
 
   // Upload state
-  const [uploadArea, setUploadArea] = useState('general');
+  /** ID of the currently selected EXISTING area from the dropdown.
+   *  Starts empty — the first-area-auto-select effect below syncs it
+   *  once the areas list is loaded, so the dropdown value never drifts
+   *  from what the user sees (critical: HTML <select> displays the
+   *  first option when value doesn't match any option, but React state
+   *  stays on the invalid value — classic silent-bug source). */
+  const [uploadArea, setUploadArea] = useState('');
+  /** True when "+ Neuer Wissensbereich" is chosen in the dropdown — the
+   *  name is then taken from `newAreaName` below. */
+  const [creatingNewArea, setCreatingNewArea] = useState(false);
+  /** Free-text name for the new area, used when creatingNewArea is true. */
+  const [newAreaName, setNewAreaName] = useState('');
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadUrl, setUploadUrl] = useState('');
   const [uploadText, setUploadText] = useState('');
@@ -59,7 +70,43 @@ export default function KnowledgeManager() {
   const [mcpDiscoveredTools, setMcpDiscoveredTools] = useState<{ name: string; description: string }[]>([]);
   const [mcpStatus, setMcpStatus] = useState<string | null>(null);
 
+  /** Speicherstatus der Bereichs-Konfig (Beschreibungstext + mode).
+   *   - 'idle'    → nichts zu tun / letzter Save liegt lange zurueck
+   *   - 'pending' → Aenderung vorliegend, Debounce laeuft
+   *   - 'saving'  → PUT laeuft gerade
+   *   - 'saved'   → letzter Save erfolgreich (wird nach ~1.8s wieder 'idle')
+   *   - 'error'   → PUT fehlgeschlagen */
+  const [saveStatus, setSaveStatus] = useState<'idle'|'pending'|'saving'|'saved'|'error'>('idle');
+
+  // Viewer-Modal state (full chunks of a single document)
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerData, setViewerData] = useState<{
+    title: string;
+    source: string;
+    area: string;
+    chunk_count: number;
+    total_chars: number;
+    chunks: { index: number; content: string; created_at: string }[];
+  } | null>(null);
+
   useEffect(() => { loadAreas(); loadAreaConfigs(); loadMcpServers(); }, []);
+
+  /** Keep `uploadArea` in sync with the existing-areas list.
+   *  Runs whenever `areas` changes:
+   *    - Empty uploadArea + areas available → select the first one.
+   *    - uploadArea no longer in the list → fall back to the first.
+   *  Without this, <select value=...> can show an option that doesn't
+   *  match React state (browser renders the first available option,
+   *  but onChange never fires if the user just visually "confirms"
+   *  the pre-filled choice). */
+  useEffect(() => {
+    if (areas.length === 0) return;
+    const known = areas.some(a => a.area === uploadArea);
+    if (!known) {
+      setUploadArea(areas[0].area);
+    }
+  }, [areas, uploadArea]);
 
   // ── RAG Areas ──────────────────────────────────────────────
 
@@ -163,14 +210,44 @@ export default function KnowledgeManager() {
       }
       lines.push('');
     }
+    setSaveStatus('saving');
     try {
-      await fetch('/api/config/file', {
+      const resp = await fetch('/api/config/file', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: '05-knowledge/rag-config.yaml', content: lines.join('\n'), file_type: 'yaml' }),
       });
-    } catch { /* ignore */ }
+      setSaveStatus(resp.ok ? 'saved' : 'error');
+    } catch {
+      setSaveStatus('error');
+    }
+    // Zeige "gespeichert" nur kurz, dann ausblenden
+    setTimeout(() => setSaveStatus(prev => (prev === 'saved' ? 'idle' : prev)), 1800);
   };
+
+  /** Debounced Auto-Save: speichert ~600ms nach der letzten Tipp-Pause.
+   *  Damit gehen Eingaben nicht verloren, wenn der User das Feld NICHT
+   *  explizit verlaesst (Tab schliessen, Browser-Crash). */
+  const debouncedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleAutoSave = useCallback((configs: Record<string, AreaConfig>) => {
+    if (debouncedSaveRef.current) clearTimeout(debouncedSaveRef.current);
+    setSaveStatus('pending');
+    debouncedSaveRef.current = setTimeout(() => {
+      void saveAreaConfigs(configs);
+    }, 600);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Cleanup beim Unmount: Pending-Save sofort ausfuehren, damit nichts verloren geht
+  useEffect(() => {
+    return () => {
+      if (debouncedSaveRef.current) {
+        clearTimeout(debouncedSaveRef.current);
+        // Direkter flush mit aktuellem ref
+        void saveAreaConfigs(areaConfigsRef.current);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleAreaMode = async (area: string) => {
     const current = areaConfigs[area]?.mode || 'on-demand';
@@ -207,12 +284,97 @@ export default function KnowledgeManager() {
     if (selectedArea === area) { setSelectedArea(null); setDocs([]); }
   };
 
+  /** Open the viewer modal with ALL chunks of a single document. */
+  const viewDoc = async (doc: RagDoc) => {
+    if (!selectedArea) return;
+    setViewerOpen(true);
+    setViewerLoading(true);
+    setViewerData(null);
+    try {
+      const params = new URLSearchParams({
+        title: doc.title || '',
+        source: doc.source || '',
+      });
+      const resp = await fetch(
+        `/api/rag/area/${encodeURIComponent(selectedArea)}/doc?${params}`,
+      );
+      if (!resp.ok) {
+        setViewerData({
+          title: doc.title || '',
+          source: doc.source || '',
+          area: selectedArea,
+          chunk_count: 0,
+          total_chars: 0,
+          chunks: [],
+        });
+        return;
+      }
+      setViewerData(await resp.json());
+    } finally {
+      setViewerLoading(false);
+    }
+  };
+
+  const closeViewer = () => {
+    setViewerOpen(false);
+    setViewerData(null);
+  };
+
+  /** Delete a single document (all its chunks) from the currently selected
+   *  area. Identified by its compound key (title + source). */
+  const deleteDoc = async (doc: RagDoc) => {
+    if (!selectedArea) return;
+    const label = doc.title || '(ohne Titel)';
+    if (!confirm(
+      `Dokument "${label}" wirklich löschen?\n\n` +
+      `Quelle: ${doc.source || '—'}\n` +
+      `Chunks: ${doc.chunks}\n\n` +
+      `Der Bereich "${selectedArea}" bleibt erhalten.`,
+    )) return;
+    const params = new URLSearchParams({
+      title: doc.title || '',
+      source: doc.source || '',
+    });
+    const resp = await fetch(
+      `/api/rag/area/${encodeURIComponent(selectedArea)}/doc?${params}`,
+      { method: 'DELETE' },
+    );
+    if (!resp.ok) {
+      alert(`Löschen fehlgeschlagen: HTTP ${resp.status}`);
+      return;
+    }
+    // Refresh docs + area counts (chunk total shrinks)
+    await loadDocs(selectedArea);
+    await loadAreas();
+  };
+
+  /** Resolve the effective area name for the current upload.
+   *  Priority:
+   *    1. A freshly-typed new name in `newAreaName` (wins if non-empty)
+   *    2. The selected existing area in `uploadArea`
+   *  This fail-safe rule means the user can always pick one of the two
+   *  even if the dropdown state drifts (e.g. initial uploadArea 'general'
+   *  that doesn't exist yet). */
+  const effectiveAreaName = (): string => {
+    const typed = newAreaName.trim();
+    if (typed) return typed;
+    return uploadArea.trim();
+  };
+
   // Upload handlers
   const doUpload = async (method: 'file' | 'url' | 'text') => {
+    const areaName = effectiveAreaName();
+    // eslint-disable-next-line no-console
+    console.log('[rag-upload] method=%s area=%s (selected=%s, newName=%s)',
+      method, areaName, uploadArea, newAreaName);
+    if (!areaName) {
+      setUploadResult('Bitte einen Wissensbereich wählen oder einen neuen Namen eingeben.');
+      return;
+    }
     setUploading(true);
     setUploadResult(null);
     const form = new FormData();
-    form.append('area', uploadArea);
+    form.append('area', areaName);
     form.append('title', uploadTitle || 'Dokument');
 
     try {
@@ -242,10 +404,17 @@ export default function KnowledgeManager() {
       const data = await resp.json();
       setUploadResult(`${data.chunks} Chunks erstellt`);
 
-      if (!areaConfigs[uploadArea]) {
-        const updated = { ...areaConfigs, [uploadArea]: { mode: 'on-demand' as const, description: '' } };
+      if (!areaConfigs[areaName]) {
+        const updated = { ...areaConfigs, [areaName]: { mode: 'on-demand' as const, description: '' } };
         setAreaConfigs(updated);
         await saveAreaConfigs(updated);
+      }
+      // Nach erfolgreichem Upload: den frisch erstellten Bereich im
+      // Dropdown auswählen und das Neu-Name-Feld leeren, damit weitere
+      // Uploads ohne erneutes Eintippen in denselben Bereich gehen.
+      if (newAreaName.trim()) {
+        setUploadArea(areaName);
+        setNewAreaName('');
       }
       await loadAreas();
       setUploadTitle('');
@@ -354,7 +523,7 @@ export default function KnowledgeManager() {
       <div className="page-header">
         <div className="page-title">Wissen</div>
         <div className="page-subtitle">
-          Schicht 5: RAG-Wissensbereiche und MCP-Server-Anbindungen.
+          Schicht 6: MCP-Tools und RAG-Wissensbereiche.
           {alwaysOnCount > 0 && (
             <span className="tag tag-green" style={{ marginLeft: 8 }}>
               {alwaysOnCount} RAG-Bereich{alwaysOnCount > 1 ? 'e' : ''} immer aktiv
@@ -444,7 +613,7 @@ export default function KnowledgeManager() {
                         </button>
                       </div>
 
-                      {/* Editable description */}
+                      {/* Editable description — debounced auto-save */}
                       <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
                         <textarea
                           className="form-input form-input-sm"
@@ -455,8 +624,18 @@ export default function KnowledgeManager() {
                               [a.area]: { ...areaConfigs[a.area] || { mode: 'on-demand' }, description: e.target.value },
                             };
                             setAreaConfigs(updated);
+                            // Debounced: speichert nach 600ms Tipp-Pause
+                            scheduleAutoSave(updated);
                           }}
-                          onBlur={() => saveAreaConfigs(areaConfigsRef.current)}
+                          onBlur={() => {
+                            // Sicherheits-Flush beim Verlassen: falls noch
+                            // ein Debounce ansteht, sofort speichern.
+                            if (debouncedSaveRef.current) {
+                              clearTimeout(debouncedSaveRef.current);
+                              debouncedSaveRef.current = null;
+                            }
+                            void saveAreaConfigs(areaConfigsRef.current);
+                          }}
                           placeholder="Beschreibung: Was findet man hier? (z.B. WLO als Bildungsplattform mit Suchmaschine, Fachportalen...)"
                           rows={3}
                           style={{
@@ -472,8 +651,33 @@ export default function KnowledgeManager() {
                             fontFamily: 'inherit',
                           }}
                         />
-                        <div className="text-xs text-muted" style={{ marginTop: 2 }}>
-                          Diese Beschreibung hilft dem LLM zu entscheiden, wann dieser Bereich relevant ist.
+                        <div
+                          className="text-xs text-muted"
+                          style={{
+                            marginTop: 2, display: 'flex',
+                            justifyContent: 'space-between', alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <span>
+                            Diese Beschreibung hilft dem LLM zu entscheiden, wann dieser Bereich relevant ist.
+                          </span>
+                          {saveStatus !== 'idle' && (
+                            <span style={{
+                              fontSize: '.68rem',
+                              fontWeight: 600,
+                              whiteSpace: 'nowrap',
+                              color:
+                                saveStatus === 'error' ? '#B91C1C' :
+                                saveStatus === 'saved' ? '#059669' :
+                                '#B45309',
+                            }}>
+                              {saveStatus === 'pending' && '● ungespeichert'}
+                              {saveStatus === 'saving'  && '… speichere'}
+                              {saveStatus === 'saved'   && '✓ gespeichert'}
+                              {saveStatus === 'error'   && '✕ Fehler beim Speichern'}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -502,9 +706,51 @@ export default function KnowledgeManager() {
                       <div className="text-sm text-muted">Keine Dokumente gefunden.</div>
                     ) : docs.map((d, i) => (
                       <div key={i} className="card" style={{ marginBottom: 8 }}>
-                        <div style={{ fontWeight: 600, fontSize: '.88rem', marginBottom: 4 }}>{d.title}</div>
-                        <div className="text-xs text-muted mb-2">
-                          Quelle: {d.source} &middot; {d.chunks} Chunks
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'start' }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: '.88rem', marginBottom: 4 }}>
+                              {d.title || <em style={{ color: 'var(--text-muted)' }}>(ohne Titel)</em>}
+                            </div>
+                            <div className="text-xs text-muted mb-2">
+                              Quelle: {d.source || '—'} &middot; {d.chunks} Chunk{d.chunks === 1 ? '' : 's'}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              onClick={() => viewDoc(d)}
+                              title="Vollständigen Inhalt dieses Dokuments anzeigen"
+                              style={{
+                                background: '#2B6CB0',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 4,
+                                padding: '4px 10px',
+                                fontSize: '.72rem',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              👁 Ansehen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteDoc(d)}
+                              title="Dieses Dokument aus dem Bereich löschen"
+                              style={{
+                                background: '#DC2626',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 4,
+                                padding: '4px 10px',
+                                fontSize: '.72rem',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              🗑 Löschen
+                            </button>
+                          </div>
                         </div>
                         <div className="text-sm text-muted" style={{ maxHeight: 60, overflow: 'hidden' }}>
                           {d.preview}
@@ -539,14 +785,93 @@ export default function KnowledgeManager() {
           <div className="form-row mb-4">
             <div className="form-group">
               <label className="form-label">Wissensbereich</label>
-              <input className="form-input" value={uploadArea} onChange={e => setUploadArea(e.target.value)}
-                placeholder="z.B. wlo-hilfe, didaktik, faq" />
-              <div className="form-hint">Neuer Name = neuer Bereich wird automatisch angelegt.</div>
+              {/* Zwei Felder, beide sichtbar. Wenn das untere Textfeld
+                  einen Namen hat, gewinnt es; sonst zählt die Auswahl
+                  oben. Damit gibt es keinen Mode-Toggle-Bug. */}
+              <select
+                className="form-input"
+                value={uploadArea}
+                onChange={e => setUploadArea(e.target.value)}
+                disabled={!!newAreaName.trim()}
+                style={newAreaName.trim() ? { opacity: 0.55 } : undefined}
+              >
+                {areas.length === 0 && (
+                  <option value="" disabled>
+                    — noch keine Bereiche vorhanden —
+                  </option>
+                )}
+                {areas.map(a => (
+                  <option key={a.area} value={a.area}>
+                    {a.area} ({a.documents} Dok. · {a.chunks} Chunks)
+                  </option>
+                ))}
+              </select>
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  fontSize: '.72rem', color: 'var(--text-muted)',
+                  margin: '6px 0 4px',
+                }}
+              >
+                <span style={{ flex: 1, borderTop: '1px dashed #d1d5db' }} />
+                <span>oder neuer Bereich</span>
+                <span style={{ flex: 1, borderTop: '1px dashed #d1d5db' }} />
+              </div>
+              <input
+                className="form-input"
+                value={newAreaName}
+                onChange={e => setNewAreaName(e.target.value)}
+                placeholder="Name des neuen Wissensbereichs (z.B. wlo-hilfe, didaktik, faq)"
+              />
+              <div className="form-hint">
+                {newAreaName.trim()
+                  ? <>→ Upload geht in den neuen Bereich <code>{newAreaName.trim()}</code> (wird automatisch angelegt).</>
+                  : 'Leer lassen, um in den oben gewählten Bereich hochzuladen.'}
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Titel (optional)</label>
               <input className="form-input" value={uploadTitle} onChange={e => setUploadTitle(e.target.value)}
                 placeholder="Dokumenttitel" />
+            </div>
+          </div>
+
+          {/* Live-Anzeige: wohin der Upload gehen wird.
+              Damit der User VOR dem Klick eindeutig sieht, welches
+              Ziel aktiv ist — kein versteckter Default mehr. */}
+          <div
+            style={{
+              background: '#EFF6FF',
+              border: '1px solid #BFDBFE',
+              borderRadius: 8,
+              padding: '10px 14px',
+              marginBottom: 16,
+              fontSize: '.84rem',
+              color: '#1E3A8A',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: '1.1rem' }}>→</span>
+            <div>
+              <div>
+                Upload-Ziel: <strong>
+                  <code style={{
+                    background: '#DBEAFE',
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    color: '#1E3A8A',
+                  }}>{effectiveAreaName() || '(kein Bereich gewählt)'}</code>
+                </strong>
+              </div>
+              <div style={{ fontSize: '.72rem', marginTop: 2, color: '#3B4E7A' }}>
+                {newAreaName.trim()
+                  ? <>Der Bereich wird neu angelegt (aus Textfeld „neuer Bereich").</>
+                  : areas.some(a => a.area === uploadArea)
+                    ? <>Existierender Bereich aus dem Dropdown.</>
+                    : <>Hinweis: Der Bereich <code>{uploadArea}</code> existiert noch nicht — er wird beim Upload neu angelegt.</>}
+              </div>
             </div>
           </div>
 
@@ -792,6 +1117,129 @@ export default function KnowledgeManager() {
               Beim Hinzufuegen eines Servers werden die verfuegbaren Tools automatisch erkannt.<br /><br />
               <strong>Beispiele:</strong> OER-Repositorien, Curriculum-Datenbanken, Schulbuch-Verlage, interne Wikis
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Viewer-Modal: Volltext eines Dokuments (alle Chunks) ── */}
+      {viewerOpen && (
+        <div
+          onClick={closeViewer}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+            zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 12, padding: 20,
+              width: 'min(900px, 94vw)', maxHeight: '88vh',
+              display: 'flex', flexDirection: 'column', gap: 12,
+              boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 12 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <h2 style={{ margin: 0, fontSize: '1.05rem' }}>
+                  {viewerData?.title || <em style={{ color: 'var(--text-muted)' }}>(ohne Titel)</em>}
+                </h2>
+                <div style={{ fontSize: '.74rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  Bereich: <code>{viewerData?.area || selectedArea}</code>
+                  &nbsp;·&nbsp;Quelle: {viewerData?.source || '—'}
+                  {viewerData && (
+                    <>
+                      &nbsp;·&nbsp;{viewerData.chunk_count} Chunks
+                      &nbsp;·&nbsp;{viewerData.total_chars.toLocaleString('de-DE')} Zeichen
+                    </>
+                  )}
+                </div>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={closeViewer}>Schließen</button>
+            </div>
+
+            <div
+              style={{
+                overflow: 'auto', flex: 1, minHeight: 200,
+                border: '1px solid var(--border, #e5e7eb)',
+                borderRadius: 8, padding: 4, background: '#fafafa',
+              }}
+            >
+              {viewerLoading && (
+                <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Lade Inhalt…
+                </div>
+              )}
+              {!viewerLoading && viewerData && viewerData.chunks.length === 0 && (
+                <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Keine Chunks gefunden.
+                </div>
+              )}
+              {!viewerLoading && viewerData && viewerData.chunks.map((c) => (
+                <div
+                  key={c.index}
+                  style={{
+                    padding: '10px 14px',
+                    borderBottom: '1px solid #eee',
+                    fontSize: '.84rem',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.55,
+                  }}
+                >
+                  <div style={{
+                    fontSize: '.68rem',
+                    color: '#6b7280',
+                    fontWeight: 600,
+                    marginBottom: 6,
+                    textTransform: 'uppercase',
+                    letterSpacing: '.04em',
+                  }}>
+                    Chunk {c.index + 1} / {viewerData.chunk_count}
+                    <span style={{ opacity: 0.7, marginLeft: 10, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+                      {c.content.length.toLocaleString('de-DE')} Zeichen
+                    </span>
+                  </div>
+                  {c.content}
+                </div>
+              ))}
+            </div>
+
+            {/* Footer-Aktionen */}
+            {viewerData && viewerData.chunks.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: '.78rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={async () => {
+                    const text = (viewerData.chunks || []).map(c => c.content).join('\n\n---\n\n');
+                    try {
+                      await navigator.clipboard.writeText(text);
+                      alert('Volltext in Zwischenablage kopiert.');
+                    } catch {
+                      alert('Clipboard nicht verfügbar.');
+                    }
+                  }}
+                >
+                  📋 Kopieren
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    const text = (viewerData.chunks || []).map(c => c.content).join('\n\n---\n\n');
+                    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    const safe = (viewerData.title || 'dokument').replace(/[^\w.\-äöüÄÖÜß]+/g, '_');
+                    a.href = url; a.download = `${safe}.md`; a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  ↓ Download .md
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

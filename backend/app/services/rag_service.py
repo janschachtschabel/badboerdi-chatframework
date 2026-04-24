@@ -158,12 +158,259 @@ async def query_rag(query: str, area: str = "general", top_k: int = 3) -> list[d
     return results
 
 
+# ── Retrieval-Defaults ─────────────────────────────────────────────
+#
+# Tunable retrieval parameters. Defaults reproduce the previous
+# hard-coded behaviour (top_k=15, min_score=0.30 for pre-fetch via
+# llm_service; top_k=3, min_score=0.25 for arbitrary get_rag_context
+# callers; per-area cap unlimited). Can be overridden via:
+#   - ENV vars (highest precedence)
+#   - 01-base/rag-retrieval.yaml (optional, editable in Studio)
+#
+# Never lower this defensively — the numbers below match what shipped.
+
+_RAG_DEFAULTS = {
+    "top_k": 15,
+    "min_score": 0.30,
+    "max_chars_per_area": 3000,  # cap per-area text injected into prompt
+}
+
+
+# ── Cross-Encoder Reranker (ONNX int8, always on) ──────────────────
+#
+# Second-stage ranker that scores (query, chunk) jointly after the
+# embedding retrieval. LLM-as-Judge eval (10 queries) showed 8/10
+# wins, 0/10 losses vs. embedding-only ranking — so it's always on.
+#
+# Backend: pure onnxruntime + HF tokenizer, int8-quantized mMiniLM
+# (cross-encoder/mmarco-mMiniLMv2-L12-H384-v1), ~130 MB on disk,
+# ~600 ms overhead per query on CPU. No torch at runtime.
+#
+# Pre-requisite: the exported model must exist under
+#   backend/models/cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8/
+# Regenerate with: python -m scripts.export_reranker_onnx
+#
+# If the model dir is missing we log a WARNING and silently fall back
+# to pure embedding ranking — the chatbot still works.
+
+_RERANK_MODEL_SLUG = "cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8"
+_RERANK_CANDIDATES = 25   # top-N from embedding retrieval fed into rerank
+
+# Sentinel: None = not yet loaded, False = load failed (don't retry),
+# _OnnxReranker instance otherwise.
+_reranker: Any = None
+_reranker_loaded = False
+
+
+class _OnnxReranker:
+    """Minimal onnxruntime-based cross-encoder. No torch dependency."""
+
+    def __init__(self, model_dir: str):
+        import numpy as np  # noqa: F401
+        import onnxruntime as ort
+        from transformers import AutoTokenizer
+        from pathlib import Path
+
+        d = Path(model_dir)
+        # Quantized exports can use any of these filenames.
+        onnx_candidates = ["model_quantized.onnx", "model_int8.onnx", "model.onnx"]
+        onnx_file = next((d / name for name in onnx_candidates if (d / name).exists()), None)
+        if onnx_file is None:
+            found = list(d.glob("*.onnx"))
+            if not found:
+                raise FileNotFoundError(f"No .onnx file in {model_dir}")
+            onnx_file = found[0]
+        self.tokenizer = AutoTokenizer.from_pretrained(str(d))
+        # Graph optimization to ALL fuses ops / reorders nodes — critical
+        # for CPU perf. Threads left at ORT's default (physical cores).
+        sess_options = ort.SessionOptions()
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        self.session = ort.InferenceSession(
+            str(onnx_file),
+            sess_options=sess_options,
+            providers=["CPUExecutionProvider"],
+        )
+        self._input_names = {inp.name for inp in self.session.get_inputs()}
+
+    def predict(self, pairs: list[tuple[str, str]]):
+        import numpy as np
+
+        if not pairs:
+            return []
+        queries = [p[0] for p in pairs]
+        passages = [p[1] for p in pairs]
+        enc = self.tokenizer(
+            queries, passages,
+            padding=True, truncation=True, max_length=512,
+            return_tensors="np",
+        )
+        feed = {
+            "input_ids": enc["input_ids"].astype(np.int64),
+            "attention_mask": enc["attention_mask"].astype(np.int64),
+        }
+        if "token_type_ids" in self._input_names and "token_type_ids" in enc:
+            feed["token_type_ids"] = enc["token_type_ids"].astype(np.int64)
+        out = self.session.run(None, feed)
+        logits = out[0]
+        if logits.ndim == 2 and logits.shape[-1] == 1:
+            logits = logits.squeeze(-1)
+        return logits.tolist()
+
+
+def _reranker_model_dir() -> str | None:
+    """Return the canonical model dir path if it exists, else None."""
+    from pathlib import Path
+    here = Path(__file__).resolve().parent.parent.parent  # backend/
+    candidate = here / "models" / _RERANK_MODEL_SLUG
+    if candidate.exists() and any(candidate.glob("*.onnx")):
+        return str(candidate)
+    return None
+
+
+def _get_reranker():
+    """Load reranker on first use. Returns wrapper or None if unavailable."""
+    global _reranker, _reranker_loaded
+    if _reranker_loaded:
+        return _reranker or None
+    _reranker_loaded = True
+
+    import logging as _logging
+    log = _logging.getLogger(__name__)
+    model_dir = _reranker_model_dir()
+    if model_dir is None:
+        log.warning(
+            "RAG reranker model missing — running with embedding-only ranking.\n"
+            "    expected:  backend/models/%s/\n"
+            "    to enable: cd backend && \\\n"
+            "               pip install -r requirements-setup.txt "
+            "--extra-index-url https://download.pytorch.org/whl/cpu && \\\n"
+            "               python -m scripts.setup",
+            _RERANK_MODEL_SLUG,
+        )
+        _reranker = False
+        return None
+    try:
+        log.info("Loading ONNX reranker from: %s", model_dir)
+        _reranker = _OnnxReranker(model_dir)
+        return _reranker
+    except Exception as e:
+        log.warning("Reranker load failed: %s — running without rerank.", e)
+        _reranker = False
+        return None
+
+
+async def warmup_reranker() -> None:
+    """Load the reranker + run one prediction so the first real request
+    doesn't pay the ~1–1.5 s model-load + first-inference cost. Called
+    from the FastAPI lifespan handler as a background task.
+    """
+    import asyncio as _aio
+    import logging as _logging
+    import time as _time
+
+    log = _logging.getLogger(__name__)
+    loop = _aio.get_event_loop()
+
+    def _work():
+        t0 = _time.perf_counter()
+        rr = _get_reranker()
+        if rr is None:
+            return None
+        # Small dummy prediction to warm tokenizer + first ORT inference
+        rr.predict([("warmup", "warmup passage")])
+        return (_time.perf_counter() - t0) * 1000
+
+    try:
+        # Run in default executor — the model load + ORT call are blocking.
+        dt = await loop.run_in_executor(None, _work)
+        if dt is not None:
+            log.info("Reranker warmup done in %.0fms", dt)
+    except Exception as e:
+        log.warning("Reranker warmup skipped: %s", e)
+
+
+def rerank_results(query: str, results: list[dict], top_n: int) -> list[dict]:
+    """Rerank retrieval results with a cross-encoder. Falls back to
+    embedding-score sort if the reranker is unavailable.
+    """
+    if not results or top_n <= 0:
+        return results[:top_n] if results else []
+    rr = _get_reranker()
+    if rr is None:
+        results.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+        return results[:top_n]
+    pairs = [(query, r.get("chunk") or "") for r in results]
+    try:
+        scores = rr.predict(pairs)
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("Reranker predict failed: %s", e)
+        results.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+        return results[:top_n]
+    for r, s in zip(results, scores):
+        r["rerank_score"] = float(s)
+    results.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
+    return results[:top_n]
+
+
+def _parse_float_env(name: str) -> float | None:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _parse_int_env(name: str) -> int | None:
+    raw = (os.getenv(name) or "").strip()
+    if not raw.isdigit():
+        return None
+    return int(raw)
+
+
+def get_retrieval_settings() -> dict:
+    """Resolve retrieval params from ENV > yaml > defaults.
+
+    Keys: ``top_k`` (int), ``min_score`` (float 0-1),
+    ``max_chars_per_area`` (int, 0 = no cap).
+    """
+    settings = dict(_RAG_DEFAULTS)
+    # YAML tier (optional)
+    try:
+        from app.services.config_loader import _load_yaml  # type: ignore
+        cfg = _load_yaml("01-base/rag-retrieval.yaml") or {}
+        r = cfg.get("retrieval") if isinstance(cfg, dict) else None
+        if isinstance(r, dict):
+            if isinstance(r.get("top_k"), int) and r["top_k"] > 0:
+                settings["top_k"] = r["top_k"]
+            if isinstance(r.get("min_score"), (int, float)) and 0 <= r["min_score"] <= 1:
+                settings["min_score"] = float(r["min_score"])
+            if isinstance(r.get("max_chars_per_area"), int) and r["max_chars_per_area"] >= 0:
+                settings["max_chars_per_area"] = r["max_chars_per_area"]
+    except Exception:
+        pass
+    # ENV tier (wins)
+    env_top_k = _parse_int_env("RAG_TOP_K")
+    if env_top_k and env_top_k > 0:
+        settings["top_k"] = env_top_k
+    env_score = _parse_float_env("RAG_MIN_SCORE")
+    if env_score is not None and 0 <= env_score <= 1:
+        settings["min_score"] = env_score
+    env_cap = _parse_int_env("RAG_MAX_CHARS_PER_AREA")
+    if env_cap is not None and env_cap >= 0:
+        settings["max_chars_per_area"] = env_cap
+    return settings
+
+
 async def get_rag_context(query: str, areas: list[str] | None = None, top_k: int = 3,
-                          min_score: float = 0.25) -> str:
+                          min_score: float = 0.25,
+                          max_chars_per_area: int = 0) -> str:
     """Get RAG context string for injection into LLM prompt.
 
     Queries all given areas, merges results, filters by relevance threshold,
-    and returns the top-k chunks sorted by score.  Because all areas share the
+    and returns the top-k chunks sorted by score. Because all areas share the
     same embedding model and distance metric, scores are directly comparable
     across areas — no per-area guarantees needed.
 
@@ -174,6 +421,10 @@ async def get_rag_context(query: str, areas: list[str] | None = None, top_k: int
         min_score: Minimum similarity score (0-1). Chunks below this threshold
                    are dropped even if top_k is not yet reached. This prevents
                    irrelevant chunks from diluting the context.
+        max_chars_per_area: Optional per-area character cap applied AFTER
+                            relevance ranking. 0 = unlimited (default).
+                            Protects against prompt bloat when many areas
+                            each contribute large chunks.
     """
     if not areas:
         areas = ["general"]
@@ -186,17 +437,60 @@ async def get_rag_context(query: str, areas: list[str] | None = None, top_k: int
     if not all_results:
         return ""
 
-    # Sort by score globally across all areas, then filter by relevance threshold
+    # Sort by embedding score globally across all areas.
     all_results.sort(key=lambda x: x["score"], reverse=True)
-    top = [r for r in all_results[:top_k] if r["score"] >= min_score]
+
+    # Embedding score acts as a safety floor — anything below min_score is
+    # almost certainly irrelevant, so drop it before (optional) rerank.
+    # This also prevents the cross-encoder from wasting cycles on noise.
+    plausible = [r for r in all_results if r["score"] >= min_score]
+
+    if not plausible:
+        return ""
+
+    # Cross-encoder rerank is always on (ONNX int8). If the model file
+    # is missing, rerank_results transparently falls back to score-sort.
+    candidates = plausible[:max(_RERANK_CANDIDATES, top_k)]
+    top = rerank_results(query, candidates, top_k)
 
     if not top:
         return ""
 
+    # Optional per-area cap: greedily take highest-scored chunks per area
+    # until the char budget is spent. Prevents a single area from monopolising
+    # the context window when multiple areas have good matches.
+    if max_chars_per_area and max_chars_per_area > 0:
+        per_area_used: dict[str, int] = {}
+        filtered = []
+        for r in top:
+            a = r.get("area", "")
+            used = per_area_used.get(a, 0)
+            chunk = r.get("chunk") or ""
+            # Keep the whole chunk if it fits; otherwise truncate the last
+            # chunk that crosses the budget and drop subsequent ones for
+            # that area.
+            if used >= max_chars_per_area:
+                continue
+            remaining = max_chars_per_area - used
+            if len(chunk) > remaining:
+                r = dict(r)
+                r["chunk"] = chunk[:remaining].rstrip() + "…"
+                per_area_used[a] = max_chars_per_area
+            else:
+                per_area_used[a] = used + len(chunk)
+            filtered.append(r)
+        top = filtered
+
     parts = []
     for r in top:
-        parts.append(f"[Quelle: {r.get('title', r.get('source', 'unbekannt'))} | "
-                     f"Bereich: {r['area']} | Relevanz: {r['score']:.2f}]\n{r['chunk']}")
+        # Expose rerank score (if present) so prompt/debug shows the effective
+        # ordering criterion. Embedding score is kept as "Relevanz".
+        tag = f"[Quelle: {r.get('title', r.get('source', 'unbekannt'))} | " \
+              f"Bereich: {r['area']} | Relevanz: {r['score']:.2f}"
+        if "rerank_score" in r:
+            tag += f" | Rerank: {r['rerank_score']:.2f}"
+        tag += "]"
+        parts.append(f"{tag}\n{r['chunk']}")
 
     return "\n\n---\n\n".join(parts)
 

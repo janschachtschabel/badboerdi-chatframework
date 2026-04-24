@@ -579,9 +579,19 @@ def parse_wlo_topic_page_cards(mcp_text: str) -> list[dict]:
             url = line.split(":", 1)[-1].strip()
             variant = current.pop("_pending_variant", {}) or {}
             variant["url"] = url
-            variant.setdefault("label", "Themenseite")
             variant.setdefault("target_group", "")
             variant.setdefault("variant_id", "")
+            # Prefer a human-readable label derived from the Zielgruppe
+            # ('Lehrkräfte' / 'Lernende' / 'Allgemein') — only keep a
+            # generic MCP-supplied label if it's actually informative
+            # (i.e. not the useless default "Themenseite"). Variants
+            # without a target group fall back to "Themenseite".
+            mcp_label = (variant.get("label") or "").strip()
+            tg_label = _tp_label(variant.get("target_group", ""))
+            if mcp_label and mcp_label.lower() != "themenseite":
+                variant["label"] = mcp_label
+            else:
+                variant["label"] = tg_label
             current["topic_pages"].append(variant)
 
     return [cards_by_nid[nid] for nid in order]

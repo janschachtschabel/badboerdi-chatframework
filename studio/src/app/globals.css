@@ -854,34 +854,56 @@ tr.selected-row {
 }
 
 /* ── Home overview ───────────────────────────────────────── */
+
+.home-section-title {
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 32px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.home-section-title:first-of-type {
+  margin-top: 8px;
+}
+.home-section-title--ops {
+  color: #475569;
+}
+
+/* ═══ Architektur: 6 gleich-hohe Karten in Pipeline-Anordnung ═══ */
 .home-layers {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
-  max-width: 700px;
+  max-width: 820px;
 }
 
 .home-layer-card {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  column-gap: 14px;
+  align-items: center;
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 16px 18px;
   width: 100%;
+  min-height: 104px;            /* equal-height trigger for all 6 cards */
   cursor: pointer;
-  transition: all .15s;
+  transition: border-color .15s, box-shadow .15s, transform .1s;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
-
 .home-layer-card:hover {
   border-color: var(--primary);
   box-shadow: 0 2px 12px rgba(43, 108, 176, .1);
 }
-
-.home-layer-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  margin-bottom: 10px;
+.home-layer-card:active {
+  transform: translateY(1px);
 }
 
 .home-layer-badge {
@@ -894,7 +916,22 @@ tr.selected-row {
   justify-content: center;
   font-size: 1rem;
   font-weight: 700;
-  flex-shrink: 0;
+  margin: 0 auto;
+}
+
+.home-layer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.home-layer-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .home-layer-title {
@@ -902,11 +939,17 @@ tr.selected-row {
   font-weight: 700;
   color: var(--text);
 }
+.home-layer-icon { font-size: 1.05em; margin-right: 2px; }
+
+.home-layer-primary {
+  font-size: .78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 .home-layer-desc {
-  font-size: .82rem;
+  font-size: .8rem;
   color: var(--text-muted);
-  margin-top: 2px;
   line-height: 1.4;
 }
 
@@ -914,28 +957,106 @@ tr.selected-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
-  margin-left: 50px;
+  margin-top: 4px;
 }
 
 .home-layer-arrow {
-  text-align: right;
-  font-size: .78rem;
-  color: var(--primary);
-  font-weight: 500;
-  margin-top: 4px;
+  font-size: 1.3rem;
+  color: var(--text-muted);
   opacity: 0;
-  transition: opacity .15s;
+  transition: opacity .15s, transform .15s, color .15s;
 }
-
 .home-layer-card:hover .home-layer-arrow {
   opacity: 1;
+  color: var(--primary);
+  transform: translateX(3px);
 }
 
 .home-flow-connector {
   display: flex;
   justify-content: center;
-  padding: 2px 0;
+  padding: 4px 0;
+  height: 20px;
+}
+
+/* ═══ Betrieb & Datenschutz: 4er-Grid, kompakter ═══ */
+.home-ops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  max-width: 820px;
+  margin-bottom: 8px;
+}
+.home-ops-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, transform .1s;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 96px;
+}
+.home-ops-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 2px 12px rgba(43, 108, 176, .08);
+}
+.home-ops-card:active { transform: translateY(1px); }
+
+.home-ops-icon {
+  font-size: 1.2rem;
+  margin-bottom: 2px;
+}
+.home-ops-label {
+  font-size: .92rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.home-ops-desc {
+  font-size: .74rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* ═══ Info-Row (zwei gleich-hohe Erklär-Karten nebeneinander) ═══ */
+.home-info-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  margin-top: 24px;
+  max-width: 820px;
+}
+.home-info-card {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.home-info-title {
+  font-size: .92rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.home-info-list {
+  font-size: .78rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  padding-left: 18px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.home-info-list code {
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: .9em;
 }
 
 .home-nav-item .layer-badge {

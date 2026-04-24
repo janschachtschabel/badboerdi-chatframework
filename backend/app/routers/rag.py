@@ -103,17 +103,26 @@ async def list_areas():
 
 @router.get("/area/{area}")
 async def get_area_documents(area: str):
-    """List documents in a knowledge area."""
+    """List documents in a knowledge area.
+
+    Documents are grouped by the compound key ``(title, source)`` so that
+    e.g. two uploads with the same filename from different folders, or two
+    manual entries with the same title, remain distinguishable.
+    """
     chunks = await get_rag_chunks(area)
-    # Group by title
-    docs: dict[str, Any] = {}
+    docs: dict[tuple[str, str], Any] = {}
     for c in chunks:
-        t = c["title"]
-        if t not in docs:
-            docs[t] = {"title": t, "source": c["source"], "chunks": 0, "preview": ""}
-        docs[t]["chunks"] += 1
-        if not docs[t]["preview"]:
-            docs[t]["preview"] = c["content"][:200]
+        key = (c.get("title") or "", c.get("source") or "")
+        if key not in docs:
+            docs[key] = {
+                "title": key[0],
+                "source": key[1],
+                "chunks": 0,
+                "preview": "",
+            }
+        docs[key]["chunks"] += 1
+        if not docs[key]["preview"]:
+            docs[key]["preview"] = (c.get("content") or "")[:200]
     return list(docs.values())
 
 
@@ -127,6 +136,111 @@ async def delete_area(area: str):
         await db.execute("DELETE FROM rag_chunks WHERE area = ?", (area,))
         await db.commit()
     return {"status": "deleted", "area": area}
+
+
+@router.get("/area/{area}/doc")
+async def get_area_document(area: str, title: str = "", source: str = ""):
+    """Return all chunks of a single document, ordered by chunk_index.
+
+    Identified by ``(area, title, source)`` exactly like the delete
+    endpoint. Use when the Studio wants to preview the full content
+    of a RAG document instead of just the 200-char preview.
+
+    Returns ``{title, source, area, chunks: [{index, content, created_at}]}``.
+    """
+    import aiosqlite
+    from app.services.database import DB_PATH
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT chunk_index, content, created_at "
+            "FROM rag_chunks "
+            "WHERE area = ? AND title = ? AND source = ? "
+            "ORDER BY chunk_index ASC, id ASC",
+            (area, title, source),
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+
+    return {
+        "area": area,
+        "title": title,
+        "source": source,
+        "chunk_count": len(rows),
+        "total_chars": sum(len(r.get("content") or "") for r in rows),
+        "chunks": [
+            {
+                "index": r.get("chunk_index", 0),
+                "content": r.get("content") or "",
+                "created_at": r.get("created_at") or "",
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.delete("/area/{area}/doc")
+async def delete_area_document(area: str, title: str = "", source: str = ""):
+    """Delete a single document (all its chunks) from a knowledge area.
+
+    Query params ``title`` and ``source`` together identify the document
+    — they must match the values returned by ``GET /area/{area}``. Empty
+    strings are valid (the match is exact). Also cleans up the vector
+    index rows so semantic search doesn't return orphan matches.
+    """
+    import aiosqlite
+    from app.services.database import DB_PATH, _connect_vec
+
+    # Grab the ids first so we can also purge the vec-index rows.
+    chunk_ids: list[int] = []
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT id FROM rag_chunks WHERE area = ? AND title = ? AND source = ?",
+            (area, title, source),
+        )
+        chunk_ids = [row[0] for row in await cur.fetchall()]
+
+    if not chunk_ids:
+        return {
+            "status": "noop",
+            "area": area,
+            "title": title,
+            "source": source,
+            "deleted": 0,
+        }
+
+    # Delete chunks + vec-index rows in lockstep. sqlite-vec has its own
+    # handle so we can't do a single JOIN delete.
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM rag_chunks WHERE area = ? AND title = ? AND source = ?",
+            (area, title, source),
+        )
+        await db.commit()
+
+    try:
+        async with _connect_vec() as vdb:
+            placeholders = ",".join("?" for _ in chunk_ids)
+            await vdb.execute(
+                f"DELETE FROM rag_vec WHERE chunk_id IN ({placeholders})",
+                chunk_ids,
+            )
+            await vdb.commit()
+    except Exception as e:
+        # Not fatal — the orphaned vec rows won't match anything without
+        # their chunk content, but log so we notice accumulating cruft.
+        import logging
+        logging.getLogger(__name__).warning(
+            "rag_vec cleanup after doc delete failed: %s", e,
+        )
+
+    return {
+        "status": "deleted",
+        "area": area,
+        "title": title,
+        "source": source,
+        "deleted": len(chunk_ids),
+    }
 
 
 @router.post("/embed")

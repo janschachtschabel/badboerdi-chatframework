@@ -9,7 +9,7 @@ signal_high_fit: ["neugierig", "orientierungssuchend", "delegierend"]
 signal_medium_fit: []
 signal_low_fit: []
 page_bonus: []
-precondition_slots: []
+precondition_slots: ["thema"]
 default_tone: spielerisch
 default_length: mittel
 default_detail: standard
@@ -42,4 +42,9 @@ tools: ["search_wlo_collections", "search_wlo_topic_pages", "get_collection_cont
 
 ## Nicht tun
 - Nicht ueberladen — max. 1 Frage/Angebot am Ende
-- Nicht "Was moechtest du als naechstes?" ��� zu generisch
+- Nicht "Was moechtest du als naechstes?" — zu generisch
+- NICHT aktivieren, wenn kein konkretes Thema erkennbar ist. Fuer "ich
+  bin Schuelerin, such mir was" / "zeig mir irgendwas" greift stattdessen
+  PAT-20 (Orientierungs-Guide), damit der:die Nutzer:in erst ein Thema
+  oder Fach nennt. Zufaellige Top-Treffer ohne Themenkontext wirken
+  willkuerlich.

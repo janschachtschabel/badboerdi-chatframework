@@ -10,10 +10,13 @@ import ConfigTextEditor from '@/components/ConfigTextEditor';
 import HomeOverview from '@/components/HomeOverview';
 import SecurityLevelPicker from '@/components/SecurityLevelPicker';
 import QualityView from '@/components/QualityView';
+import EvaluationView from '@/components/EvaluationView';
 import InfoView from '@/components/InfoView';
+import PrivacyView from '@/components/PrivacyView';
+import { SnapshotsModal } from '@/components/SnapshotsModal';
 
 // ── Types ────────────────────────────────────────────────────────────
-type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'canvas' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'info';
+type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'canvas' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'evaluation' | 'privacy' | 'info';
 
 export interface Elements {
   patterns: PatternData[];
@@ -109,7 +112,7 @@ const LAYERS: { id: Layer; num: number; icon: string; label: string; desc: strin
   { id: 'patterns',   num: 3, icon: '🧩', label: 'Patterns',           desc: 'Gesprächsmuster' },
   { id: 'dimensions', num: 4, icon: '🎭', label: 'Dimensionen',        desc: 'Personas, Intents, States…' },
   { id: 'canvas',     num: 5, icon: '🎨', label: 'Canvas-Formate',     desc: 'Material-Typen, Aliase, Persona-Priorität' },
-  { id: 'knowledge',  num: 6, icon: '📚', label: 'Wissen',             desc: 'RAG-Wissensbereiche' },
+  { id: 'knowledge',  num: 6, icon: '📚', label: 'Wissen',             desc: 'MCP-Tools & RAG-Wissensbereiche' },
 ];
 
 // ── Main Studio Page ─────────────────────────────────────────────────
@@ -182,36 +185,8 @@ export default function StudioPage() {
     }
   }, [loadFile, saveFile]);
 
-  const exportAll = async () => {
-    try {
-      const resp = await fetch('/api/config/export');
-      if (!resp.ok) return;
-      const data = await resp.json();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'badboerdi-config-export.json'; a.click();
-      URL.revokeObjectURL(url);
-    } catch { /* ignore */ }
-  };
-
-  const importAll = () => {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = '.json';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const text = await file.text();
-      const data = JSON.parse(text);
-      await fetch('/api/config/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: data }),
-      });
-      await loadElements();
-    };
-    input.click();
-  };
+  // Server-side snapshots (quick save/restore without down-/upload)
+  const [snapshotsOpen, setSnapshotsOpen] = useState(false);
 
   return (
     <div className="studio-layout">
@@ -219,16 +194,19 @@ export default function StudioPage() {
       <header className="studio-header">
         <h1 onClick={() => setLayer('home')} style={{ cursor: 'pointer' }}>BadBoerdi Studio</h1>
         <div className="header-right">
-          <button className="btn btn-header btn-sm" onClick={importAll}>Import</button>
-          <button className="btn btn-header btn-sm" onClick={exportAll}>Export</button>
           <button
             className="btn btn-header btn-sm"
-            title="Komplette Konfiguration als ZIP herunterladen"
-            onClick={() => { window.location.href = '/api/config/backup'; }}
+            title="Server-Snapshots: schnelles Sichern/Zurückspielen ohne Up-/Download"
+            onClick={() => setSnapshotsOpen(true)}
+          >📸 Snapshots</button>
+          <button
+            className="btn btn-header btn-sm"
+            title="Konfiguration + Datenbank als ZIP herunterladen"
+            onClick={() => { window.location.href = '/api/config/backup?include_db=true'; }}
           >Backup</button>
           <button
             className="btn btn-header btn-sm"
-            title="Konfiguration aus ZIP wiederherstellen"
+            title="Konfiguration (+ optional Datenbank) aus ZIP wiederherstellen"
             onClick={() => {
               const input = document.createElement('input');
               input.type = 'file';
@@ -236,16 +214,33 @@ export default function StudioPage() {
               input.onchange = async (e: any) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const wipe = confirm('Vorhandene Konfiguration vorher LÖSCHEN?\n\nOK = wipe + restore\nAbbrechen = nur mergen');
+                const wipe = confirm(
+                  'Vorhandene Konfiguration vorher LÖSCHEN?\n\n' +
+                  'OK = wipe + restore (empfohlen bei Foreign-Snapshots)\n' +
+                  'Abbrechen = nur mergen',
+                );
+                const includeDb = confirm(
+                  'Datenbank-Anteil wiederherstellen (falls im ZIP enthalten)?\n\n' +
+                  '⚠️ Ersetzt die aktuelle DB komplett: Sessions, Messages,\n' +
+                  'Memory, Quality/Safety-Logs, RAG-Chunks.\n\n' +
+                  'OK = DB mitrestoren   Abbrechen = nur Config',
+                );
                 const fd = new FormData();
                 fd.append('file', file);
-                const resp = await fetch(`/api/config/restore?wipe=${wipe ? 'true' : 'false'}`, {
+                const params = new URLSearchParams();
+                params.set('wipe', wipe ? 'true' : 'false');
+                params.set('include_db', includeDb ? 'true' : 'false');
+                const resp = await fetch(`/api/config/restore?${params}`, {
                   method: 'POST',
                   body: fd,
                 });
                 if (resp.ok) {
                   const data = await resp.json();
-                  alert(`Restore OK: ${data.files_extracted} Dateien wiederhergestellt.`);
+                  alert(
+                    `Restore OK:\n` +
+                    `  ${data.config_files ?? 0} Config-Dateien\n` +
+                    `  Datenbank: ${data.db_restored ? 'wiederhergestellt' : (data.db_in_archive ? 'vorhanden, aber übersprungen' : 'nicht im Archiv')}`,
+                  );
                   await loadElements();
                 } else {
                   alert(`Restore fehlgeschlagen: ${resp.status}`);
@@ -318,6 +313,26 @@ export default function StudioPage() {
             <div>
               <div className="layer-label">Quality</div>
               <div className="layer-desc">Pattern-Scoring & Analytics</div>
+            </div>
+          </button>
+          <button
+            className={`layer-item ${layer === 'evaluation' ? 'active' : ''}`}
+            onClick={() => setLayer('evaluation')}
+          >
+            <span className="layer-badge" style={{ background: '#EC4899', color: '#fff' }}>🧪</span>
+            <div>
+              <div className="layer-label">Evaluation</div>
+              <div className="layer-desc">Persona-Dialoge automatisch testen</div>
+            </div>
+          </button>
+          <button
+            className={`layer-item ${layer === 'privacy' ? 'active' : ''}`}
+            onClick={() => setLayer('privacy')}
+          >
+            <span className="layer-badge" style={{ background: '#059669', color: '#fff' }}>🔒</span>
+            <div>
+              <div className="layer-label">Datenschutz</div>
+              <div className="layer-desc">Logging-Optionen & Purge</div>
             </div>
           </button>
           <div className="nav-divider" />
@@ -438,10 +453,24 @@ export default function StudioPage() {
           <QualityView />
         )}
 
+        {backendOnline && layer === 'evaluation' && (
+          <EvaluationView />
+        )}
+
+        {backendOnline && layer === 'privacy' && (
+          <PrivacyView />
+        )}
+
         {layer === 'info' && (
           <InfoView />
         )}
       </main>
+
+      <SnapshotsModal
+        open={snapshotsOpen}
+        onClose={() => setSnapshotsOpen(false)}
+        onAfterRestore={() => { setSnapshotsOpen(false); loadElements(); }}
+      />
     </div>
   );
 }

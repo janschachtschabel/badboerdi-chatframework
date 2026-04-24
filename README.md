@@ -30,34 +30,52 @@ Verarbeitungsphasen) konfiguriert und besteht aus drei Komponenten:
 
 ## 1. Quickstart
 
+### Variante A — Docker (empfohlen für Ops/Prod, zero manuelle Schritte)
+
+```bash
+cp .env.example .env                 # OPENAI_API_KEY etc. eintragen (Root-Repo oder backend/)
+docker compose up --build            # baut alle drei Images + startet
+```
+
+Der Backend-Build baut den RAG-Reranker in einer Multi-Stage-Pipeline automatisch
+mit ein (keine torch-Laufzeit im Final-Image). Siehe Abschnitt **9. Docker-Deployment**.
+
+### Variante B — Lokal / Dev
+
 ```bash
 # 1) Backend starten
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # OPENAI_API_KEY etc. eintragen
-python run.py          # → http://localhost:8000
+cp .env.example .env                 # OPENAI_API_KEY etc. eintragen
+
+# Einmalig: RAG-Reranker exportieren (ca. 1 Min, ~135 MB Modelldatei)
+pip install -r requirements-setup.txt \
+  --extra-index-url https://download.pytorch.org/whl/cpu
+python -m scripts.setup
+
+python run.py                        # → http://localhost:8000
 
 # 2) Frontend (Dev-Modus mit Proxy auf :8000)
 cd ../frontend
 npm install
-npm start              # → http://localhost:4200
+npm start                            # → http://localhost:4200
 
 # 3) Studio (Konfigurations-UI)
 cd ../studio
 npm install
-npm run dev            # → http://localhost:3001
+npm run dev                          # → http://localhost:3001
 
 # 4) Optional: Embeddable Widget bauen + via FastAPI ausliefern
 cd ../frontend
-npm run build:widget   # erzeugt dist/widget/browser/main.js
+npm run build:widget                 # erzeugt dist/widget/browser/main.js
 # → http://localhost:8000/widget/   (Demo-Seite)
 # → http://localhost:8000/widget/boerdi-widget.js   (Bundle)
 ```
 
 Bequemer Wrapper im Repo-Root:
 ```bash
-./scripts/build-widget.sh        # Linux/macOS
-./scripts/build-widget.ps1       # Windows PowerShell
+./scripts/build-widget.sh            # Linux/macOS
+./scripts/build-widget.ps1           # Windows PowerShell
 ```
 
 ---
@@ -266,13 +284,46 @@ im Browser:
 
 Das Backend spricht drei OpenAI-kompatible Provider, umschaltbar per `LLM_PROVIDER`:
 
-| Provider | `LLM_PROVIDER` | Default Chat-Modell | Default Embedding | Auth |
-|----------|----------------|---------------------|-------------------|------|
-| OpenAI nativ | `openai` | `gpt-4.1-mini` | `text-embedding-3-small` | `OPENAI_API_KEY` |
-| B-API → OpenAI | `b-api-openai` | `gpt-4.1-mini` | `text-embedding-3-small` | `B_API_KEY` (Header `X-API-KEY`) |
-| B-API → AcademicCloud | `b-api-academiccloud` | `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` | `e5-mistral-7b-instruct` | `B_API_KEY` |
+| Provider | `LLM_PROVIDER` | Default Chat-Modell | Default Embedding | Base-URL-Env | Auth |
+|----------|----------------|---------------------|-------------------|--------------|------|
+| OpenAI nativ | `openai` | `gpt-5.4-mini` | `text-embedding-3-small` | `OPENAI_BASE_URL` (optional, default SDK-URL) | `OPENAI_API_KEY` |
+| B-API → OpenAI | `b-api-openai` | `gpt-4.1-mini` | `text-embedding-3-small` | `B_API_BASE_URL` | `B_API_KEY` (Header `X-API-KEY`) |
+| B-API → AcademicCloud | `b-api-academiccloud` | `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` | `e5-mistral-7b-instruct` | `B_API_BASE_URL` | `B_API_KEY` |
 
-**Standard ist `openai`** — wenn `LLM_PROVIDER` nicht gesetzt ist, läuft das System wie bisher. Modelle lassen sich jederzeit per `LLM_CHAT_MODEL` / `LLM_EMBED_MODEL` überschreiben. Die Basis-URL der B-API ist über `B_API_BASE_URL` (Default `https://b-api.staging.openeduhub.net/api/v1/llm`) konfigurierbar.
+**Standard ist `openai`** — wenn `LLM_PROVIDER` nicht gesetzt ist, läuft das System mit den oben gezeigten Defaults. Modelle lassen sich jederzeit per `LLM_CHAT_MODEL` / `LLM_EMBED_MODEL` überschreiben. `OPENAI_BASE_URL` ist optional und erlaubt OpenAI-kompatible Gegenstellen (Azure OpenAI, LiteLLM-Proxy, LocalAI, Ollama-Shim). Die Basis-URL der B-API ist über `B_API_BASE_URL` (Default `https://b-api.staging.openeduhub.net/api/v1/llm`) konfigurierbar.
+
+### Vollständige Env-Variablen-Liste
+
+Alle URL-/Key-/Modell-Einstellungen sind über Umgebungsvariablen steuerbar. **Alle Defaults reproduzieren das as-shipped Verhalten** — ohne `.env` läuft das System sofort los, sobald `OPENAI_API_KEY` gesetzt ist.
+
+| Bereich | Variable | Default | Wirkung |
+|---------|----------|---------|---------|
+| **Provider** | `LLM_PROVIDER` | `openai` | Backend-Switch |
+| **OpenAI nativ** | `OPENAI_API_KEY` | — | API-Key |
+| | `OPENAI_BASE_URL` | SDK-Default (`https://api.openai.com/v1`) | OpenAI-kompatible Gegenstelle (Azure, LiteLLM, LocalAI, …) |
+| | `LLM_CHAT_MODEL` | `gpt-5.4-mini` | Chat-Modell |
+| | `LLM_EMBED_MODEL` | `text-embedding-3-small` | Embedding-Modell |
+| | `OPENAI_MODEL` | _leer_ | Legacy-Alias für `LLM_CHAT_MODEL` |
+| **B-API** | `B_API_KEY` | — | API-Key (`X-API-KEY`-Header) |
+| | `B_API_BASE_URL` | `https://b-api.staging.openeduhub.net/api/v1/llm` | Basis-URL |
+| **GPT-5-Tuning** | `LLM_VERBOSITY` | `medium` | `low`/`medium`/`high` |
+| | `LLM_REASONING_EFFORT` | `low` | `none`/`low`/`medium`/`high`/`xhigh` |
+| **Embedding-Override** | `EMBED_DIM` | auto-lookup | Escape-Hatch für exotische Modelle |
+| **Speech** | `STT_MODEL` | `gpt-4o-mini-transcribe` | Speech-to-Text (Fallbacks `gpt-4o-transcribe`, `whisper-1`) |
+| | `TTS_MODEL` | `tts-1` | Text-to-Speech (`tts-1-hd` für Qualität) |
+| **MCP** | `MCP_SERVER_URL` | `https://wlo-mcp-server.vercel.app/mcp` | MCP-Server (Wissensquelle) |
+| **RAG** | `RAG_TOP_K` | `15` | Pre-Fetch Top-K |
+| | `RAG_MIN_SCORE` | `0.30` | Relevanz-Mindestwert |
+| | `RAG_MAX_CHARS_PER_AREA` | `3000` | Char-Cap pro Wissensbereich (`0`=unbegrenzt) |
+| **Evaluation** | `EVAL_CHAT_URL` | `http://localhost:8000/api/chat` | Ziel-Endpoint für simulierte Chat-Calls im Eval |
+| | `EVAL_SIMULATOR_MODEL` | `gpt-4o-mini` | Modell für User-Simulator + Szenario-Generator |
+| | `EVAL_JUDGE_MODEL` | `gpt-4o-mini` | Modell für LLM-as-Judge |
+| **Datenbank** | `DATABASE_PATH` | `badboerdi.db` | SQLite-Pfad |
+| **Security** | `STUDIO_API_KEY` | _leer_ | Schützt Admin-Routen |
+| | `CORS_ORIGINS` | `*` | CORS-Whitelist |
+| | `LOG_LEVEL` | `INFO` | Log-Level |
+
+Vollständiges Beispiel unter [`backend/.env.example`](backend/.env.example).
 
 #### Einschränkungen bei B-API-Providern
 
@@ -300,7 +351,130 @@ bequem über die **Backup / Restore**-Buttons im Studio-Header. Details in
 
 ---
 
-## 6. Komponenten-READMEs
+## 6. Docker-Deployment
+
+Die drei Komponenten (Backend, Studio, Chatbot) haben je einen Dockerfile, die zentrale
+`docker-compose.yml` orchestriert sie plus optionalen Watchtower für Auto-Updates.
+
+### Start
+
+```bash
+cp .env.example .env           # API-Keys + optionale Overrides eintragen
+docker compose up --build      # erster Build ca. 3-5 Min, danach Cache-Hits
+```
+
+Alle in Abschnitt 5 gelisteten Env-Variablen werden per `docker-compose.yml` durchgereicht.
+`.env` im Repo-Root wird automatisch gelesen.
+
+### Multi-Stage Backend-Build
+
+Der Backend-Dockerfile nutzt **zwei Stages**, damit das finale Runtime-Image schlank bleibt:
+
+| Stage | Inhalt | Bleibt im Final-Image? |
+|-------|--------|------------------------|
+| `reranker-builder` | python + torch + optimum + sentence-transformers → exportiert den RAG-Reranker zu ONNX int8 (135 MB) | ❌ nein |
+| `base` (runtime) | python-slim + `onnxruntime` + `transformers` + App + gebackenes Modell | ✅ |
+
+Effekt: das Runtime-Image enthält **kein torch**, kein sentence-transformers. Der
+`COPY --from=reranker-builder /build/models ./models` übernimmt nur die ~135 MB ONNX-Artefakte.
+BuildKit-Cache-Mount (`HF_HOME=/hf-cache`) hält das HuggingFace-Modell über Rebuilds.
+
+### GitHub Actions
+
+`.github/workflows/docker-publish.yml` baut alle drei Images für `linux/amd64` + `linux/arm64`
+und pusht zu Docker Hub (ausgelöst bei push auf `main`/`master` oder `v*.*.*`-Tags). Secrets:
+`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. Der arm64-Build läuft unter QEMU-Emulation — Stage 1
+wird dadurch ~10× langsamer (einmalig), sobald sie aus dem GHA-Layer-Cache gezogen wird
+(bei unverändertem `requirements-setup.txt`), spielt das keine Rolle mehr.
+
+### Production-Hinweise
+
+- Volume `backend_data:/data` persistiert die SQLite-DB über Container-Restarts hinweg.
+- Die Factory-Snapshot-Logik (`backend/knowledge/factory-snapshot.zip`) wird bei leerem
+  Volume automatisch beim ersten Start eingespielt. Siehe `backend/knowledge/README.md`.
+- Der Reranker wird zum Build-Zeitpunkt ins Image gebacken, **nicht beim Start heruntergeladen** —
+  Air-Gapped-Deployments funktionieren nach Registry-Pull ohne weitere Netzwerkzugriffe.
+
+---
+
+## 7. Evaluation — automatisierte Persona-Dialog-Tests
+
+Das Studio hat einen **Evaluation-Tab (🧪)**, der Gesprächs-Qualität systematisch und
+reproduzierbar misst — ohne dass man von Hand testen muss.
+
+### Was es macht
+
+- **Lädt alle Personas und Intents** dynamisch aus der aktiven Chatbot-Config (`04-personas/`,
+  `04-intents/intents.yaml`) — läuft also unverändert auch nach Konfig-Änderungen oder auf
+  anderen Chatbot-Konfigs.
+- **Generiert realistische Eröffnungsnachrichten** pro (Persona × Intent)-Kombination via LLM.
+- **Zwei Test-Modi:**
+  - *Szenarien* — 1 Turn pro Kombination, schnell, gut für Regression-Checks
+  - *Dialoge* — Multi-Turn-Konversationen mit einem LLM-Nutzer-Simulator (3–10 Turns)
+  - *Beides* — sequentiell hintereinander
+- **LLM-as-Judge** bewertet jeden Bot-Turn auf 5 Dimensionen (0–2 Punkte): Intent-Fit,
+  Persona-Tonalität, Pattern-Passung, Safety, Info-Qualität. Gesamtscore als
+  Durchschnitt ∈ [0, 1].
+- **Matrix-Heatmap** Persona × Intent mit Durchschnittsscores + **Pattern-Häufigkeit** pro
+  Run und unabhängig über alle Sessions (aus `quality_logs`).
+- **Volle Transkripte** pro Konversation inkl. gewähltes Pattern, aufgerufene Tools, Safety-
+  Status, Judge-Scores pro Dimension + Freitext-Notiz.
+
+### Architektur
+
+- Alle simulierten Turns gehen durch den **echten `/api/chat`-Endpoint** — gleiche Safety-
+  Pipeline, Pattern-Engine, RAG wie im Produktionsbetrieb.
+- **Keine neue Parallel-DB**: jeder Turn landet automatisch in `quality_logs` wie
+  Produktions-Traffic. Analytics funktionieren daher auch ohne aktiven Eval-Run.
+- **Eval-Runs laufen im Hintergrund** (`asyncio.create_task`), Start-Endpoint kehrt sofort
+  zurück. Studio pollt alle 3 s für Status-Updates.
+- **Cost-Estimate vor dem Start** mit Unschärfe-Band (min/erwartet/max) — typisch
+  $0.05–0.50 pro Run, je nach Größe.
+- **Generisch**: keine WLO-spezifischen Hardcodings. Funktioniert für jede Chatbot-Config
+  unter `chatbots/<name>/v1/`.
+
+### Was es bewusst NICHT macht
+
+- **Keine automatischen Config-Patches** — der Judge schreibt Notizen, kein Meta-LLM ändert
+  YAML oder Pattern-Definitionen. Alle Anpassungen bleiben manuell.
+- **Keine CI-Pass/Fail-Gates** basierend auf LLM-Scores — zu hohes Rauschen, zu großes Risiko
+  für false-precision-Optimierung.
+- **Keine Gesamt-Gesundheits-Zahl** — nur `avg_score` pro Run als Signal, keine Ampel über
+  alles. Metriken sind Kartographie, keine Navigation.
+
+### API
+
+```bash
+# Aktuelle Personas + Intents
+GET /api/eval/config
+
+# Vorschätzung (gleiche Parameter wie Start)
+POST /api/eval/estimate   { "mode": "both", "persona_ids": [...], "intent_ids": [...], ... }
+
+# Run starten (Background-Task)
+POST /api/eval/runs       { "mode": "scenarios|conversations|both", ... }
+
+# Runs listen / Detail / Löschen
+GET  /api/eval/runs
+GET  /api/eval/runs/{id}
+DELETE /api/eval/runs/{id}
+
+# Pattern-Usage-Analytics (wirkt auch ohne Eval-Runs)
+GET  /api/eval/analytics/pattern-usage?eval_only=false
+```
+
+Alle Endpoints sind Studio-geschützt (Header `X-Studio-Key`, wenn `STUDIO_API_KEY` gesetzt).
+
+### Skalierung
+
+Ein voller Sweep (alle 9 Personas × 14 Intents × 2 Szenarien) erzeugt 252 Turns und kostet
+typisch ~$1.30 bei `gpt-4o-mini` als Judge und `gpt-5.4-mini` als Chat-Model. Der volle
+Sweep inkl. 3-Turn-Dialogen (630 Turns) liegt bei ~$4. Laufzeit ~5–15 Minuten, je nach
+Tool-Call- und RAG-Retrieval-Dauer.
+
+---
+
+## 8. Komponenten-READMEs
 
 * **[backend/README.md](backend/README.md)** — API-Routen, Safety-Pipeline, Pattern-Engine,
   Konfigurationsformat, Rate-Limits, Sessions, MCP & RAG.
@@ -311,7 +485,7 @@ bequem über die **Backup / Restore**-Buttons im Studio-Header. Details in
 
 ---
 
-## 7. Lizenz & Mitwirkende
+## 9. Lizenz & Mitwirkende
 
 Internes Projekt — siehe `LICENSE` (sofern vorhanden) bzw. den Rahmenvertrag mit
 WirLernenOnline.

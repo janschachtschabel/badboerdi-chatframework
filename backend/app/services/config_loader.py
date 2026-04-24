@@ -382,6 +382,25 @@ def load_quality_log_config() -> dict[str, Any]:
     return _load_yaml("01-base/quality-log-config.yaml")
 
 
+def load_privacy_config() -> dict[str, bool]:
+    """Load privacy/logging toggles from 01-base/privacy-config.yaml.
+
+    Returns a flat dict with the four toggles (messages, memory, quality,
+    safety). Missing file or keys default to True (log-all).
+    Safety is hardcoded to True — the YAML value is ignored on read so
+    an accidental `safety: false` in the config file can't silence the
+    audit trail.
+    """
+    data = _load_yaml("01-base/privacy-config.yaml") or {}
+    section = (data.get("logging") if isinstance(data, dict) else None) or {}
+    return {
+        "messages": bool(section.get("messages", True)),
+        "memory": bool(section.get("memory", True)),
+        "quality": bool(section.get("quality", True)),
+        "safety": True,  # not user-togglable
+    }
+
+
 def load_contexts() -> list[dict[str, Any]]:
     """Load named context definitions (T-04/05) from 04-contexts/contexts.yaml."""
     data = _load_yaml("04-contexts/contexts.yaml")

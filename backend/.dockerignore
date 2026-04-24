@@ -13,3 +13,9 @@ server.log
 .mypy_cache
 .ruff_cache
 notebooks
+
+# Reranker models are built fresh in the multi-stage Dockerfile
+# (reranker-builder stage). Keep any local dev-exports out of the
+# build context so they don't bloat the upload or clash with the
+# freshly-exported artefact.
+models

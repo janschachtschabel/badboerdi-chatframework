@@ -14,25 +14,25 @@ default_tone: spielerisch
 default_length: mittel
 default_detail: standard
 response_type: suggestion
-sources: ["rag", "mcp"]
+sources: ["rag"]
 format_primary: text
 format_follow_up: quick_replies
 card_text_mode: minimal
-tools: ["get_wirlernenonline_info"]
+tools: []
 ---
 
 # PAT-17: Sanfter Einstieg
 
 ## Kernregel
-WLO-Infofragen. Einladend. Persona weiter klären.
+WLO-Infofragen. Einladend. Persona weiter klaeren.
 
 ## Wann aktiv
 - Im Orientation-State (erster Kontakt)
-- Universell für alle Personas
+- Universell fuer alle Personas
 
 ## Verhalten
-- ZUERST RAG-Kontext nutzen fuer WLO-Infos (vorab geladen, kein Tool-Call noetig)
-- MCP-Info-Tool nur ergaenzend wenn RAG nicht ausreicht
+- WLO-Infos kommen AUSSCHLIESSLICH aus dem RAG-Kontext (vorab geladen, keine
+  Tools mehr verfuegbar — alles Projektwissen ist im RAG).
 - Einladend und freundlich
 - WLO vorstellen
 - Persona durch Soft Probing klaeren

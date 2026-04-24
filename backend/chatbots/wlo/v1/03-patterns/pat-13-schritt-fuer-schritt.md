@@ -9,7 +9,7 @@ signal_high_fit: ["unsicher", "unerfahren", "delegierend"]
 signal_medium_fit: []
 signal_low_fit: []
 page_bonus: []
-precondition_slots: []
+precondition_slots: ["thema"]
 default_tone: empathisch
 default_length: mittel
 default_detail: standard

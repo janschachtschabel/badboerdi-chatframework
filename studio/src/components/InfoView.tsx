@@ -97,9 +97,9 @@ export default function InfoView() {
             </tr>
             <tr>
               <td style={tdStyle}><strong>Intent</strong></td>
-              <td style={tdStyle}>10</td>
-              <td style={tdStyle}>Was will der Nutzer? (Material suchen, Fakten, Feedback…)</td>
-              <td style={tdStyle}>Pattern-Gate, MCP-Tool-Präferenz, spekulative Vorab-Abfragen</td>
+              <td style={tdStyle}>14</td>
+              <td style={tdStyle}>Was will der Nutzer? (Material suchen, Fakten, Inhalt erstellen, Canvas-Edit, Feedback…)</td>
+              <td style={tdStyle}>Pattern-Gate, MCP-Tool-Präferenz, spekulative Vorab-Abfragen, Canvas-Routing</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>Signals</strong></td>
@@ -115,8 +115,8 @@ export default function InfoView() {
             </tr>
             <tr>
               <td style={tdStyle}><strong>State</strong></td>
-              <td style={tdStyle}>11</td>
-              <td style={tdStyle}>Gesprächszustand: Orientierung → Suche → Kuratierung → Feedback</td>
+              <td style={tdStyle}>12</td>
+              <td style={tdStyle}>Gesprächszustand: Orientierung → Suche → Kuratierung → Feedback → Canvas-Arbeit</td>
               <td style={tdStyle}>Pattern-Gate, zustandsabhängiges Verhalten</td>
             </tr>
             <tr>
@@ -132,7 +132,7 @@ export default function InfoView() {
       {/* ═══════════════ PATTERN ENGINE ═══════════════ */}
       <Section title="Pattern-Engine (3 Phasen)" icon="🧩">
         <p style={pStyle}>
-          Die Pattern-Engine wählt aus 20 Gesprächsmustern <strong>genau eines</strong> aus. Nur das Gewinner-Pattern wird in den Prompt eingefügt.
+          Die Pattern-Engine wählt aus 26 Gesprächsmustern <strong>genau eines</strong> aus. Nur das Gewinner-Pattern wird in den Prompt eingefügt.
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
@@ -141,7 +141,7 @@ export default function InfoView() {
             <p style={pStyle}>
               <strong>Eliminierung</strong> — Patterns werden entfernt, wenn Persona, Intent oder State nicht zu den <code style={codeStyle}>gate_*</code>-Listen passen. Hard Gate: fehlende <code style={codeStyle}>precondition_slots</code> eliminieren ebenfalls.
             </p>
-            <p style={mutedStyle}>Ergebnis: Kandidatenliste (oft 8-12 von 20)</p>
+            <p style={mutedStyle}>Ergebnis: Kandidatenliste (oft 10-16 von 26)</p>
           </div>
           <div className="card" style={{ borderTop: '3px solid #f59e0b' }}>
             <div style={h3Style}>Phase 2: Score</div>
@@ -236,7 +236,7 @@ export default function InfoView() {
               <td style={tdStyle}><strong>Intent-Gate</strong></td>
               <td style={tdStyle}><code style={codeStyle}>gate_intents</code></td>
               <td style={tdStyle}><code style={codeStyle}>["*"]</code> = alle, oder explizite Liste</td>
-              <td style={tdStyle}>PAT-18 nur für <code style={codeStyle}>["INT-W-10"]</code> (Unterrichtsplanung)</td>
+              <td style={tdStyle}>PAT-21 nur für <code style={codeStyle}>["INT-W-11"]</code> (Canvas-Create); PAT-15 für <code style={codeStyle}>["INT-W-01","INT-W-06","INT-W-09"]</code> (Analyse)</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>State-Gate</strong></td>
@@ -419,12 +419,65 @@ export default function InfoView() {
           </div>
           <div className="card" style={{ borderTop: '3px solid #10b981' }}>
             <div style={h3Style}>MCP (externe Tools)</div>
-            <p style={pStyle}>Externer Server (WLO edu-sharing) stellt 11 Tools bereit, die der LLM bei Bedarf aufruft.</p>
+            <p style={pStyle}>Externer Server (WLO edu-sharing) stellt 10 Tools bereit, die der LLM bei Bedarf aufruft.</p>
             <div style={{ fontSize: 12 }}>
               <div><strong>Zugang:</strong> Nur wenn Pattern <code style={codeStyle}>sources: ["mcp"]</code> hat</div>
               <div style={{ marginTop: 4 }}><strong>Blockierbar:</strong> Safety oder Policy können einzelne Tools sperren</div>
               <div style={{ marginTop: 4 }}><strong>Spekulativ:</strong> Bei bestimmten Intents wird die Suche parallel zur LLM-Antwort gestartet</div>
             </div>
+          </div>
+          <div className="card" style={{ borderTop: '3px solid #b45309', gridColumn: '1 / -1' }}>
+            <div style={h3Style}>Themenseiten-Resolver (ergänzt Layer 6)</div>
+            <p style={pStyle}>
+              Wenn das Widget auf einer WLO-Themenseite / Sammlung / edu-sharing-Render eingebettet ist,
+              löst <code style={codeStyle}>page_context_service</code> die URL beim ersten Turn via MCP
+              (<code style={codeStyle}>get_node_details</code>, <code style={codeStyle}>search_wlo_topic_pages</code>)
+              zu einem semantischen Block auf (Titel · Fächer · Bildungsstufen · Keywords · Material-Typen).
+            </p>
+            <div style={{ fontSize: 12 }}>
+              <div><strong>TTL:</strong> 30 Min bei Erfolg · 2 Min bei MCP-Fehler (schneller Recovery)</div>
+              <div style={{ marginTop: 4 }}><strong>Erkannte URL-Muster:</strong> <code style={codeStyle}>/themenseite/&lt;slug&gt;</code>, <code style={codeStyle}>/fachportal/&lt;fach&gt;/&lt;slug&gt;</code>, <code style={codeStyle}>/components/render/&lt;uuid&gt;</code>, <code style={codeStyle}>?node=</code>, <code style={codeStyle}>?collection=</code></div>
+              <div style={{ marginTop: 4 }}><strong>Wirkung:</strong> Bot kann „Worum geht's hier?" oder „Quiz dazu" ohne Rückfrage beantworten — Seitentitel wird als Default-Thema genutzt</div>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* ═══════════════ Canvas & Privacy (operational additions) ═══════════════ */}
+      <Section title="Canvas-Arbeitsfläche & Datenschutz" icon="🎨">
+        <p style={pStyle}>
+          Zwei operative Ergänzungen zur Kern-Pipeline:
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="card" style={{ borderTop: '3px solid #ec4899' }}>
+            <div style={h3Style}>Canvas-Intents & -Formate</div>
+            <p style={pStyle}>
+              Schicht 5 definiert <strong>18 Material-Typen</strong> (13 didaktisch + 5 analytisch:
+              Bericht/Factsheet/Steckbrief/Pressemitteilung/Vergleich).
+            </p>
+            <div style={{ fontSize: 12 }}>
+              <div><strong>INT-W-11 Canvas-Create</strong> → PAT-21 erzeugt Markdown + <code style={codeStyle}>page_action: canvas_open</code></div>
+              <div style={{ marginTop: 4 }}><strong>INT-W-12 Canvas-Edit</strong> → direkter Handler, verfeinert <code style={codeStyle}>_canvas_last_markdown</code> bei „mach es einfacher" / „Lösungen hinzu"</div>
+              <div style={{ marginTop: 4 }}><strong>Type-/Topic-Priorität:</strong> aktueller Turn &gt; Classifier &gt; sticky Session (verhindert Stale-Wins bei Chip-Klicks)</div>
+            </div>
+          </div>
+          <div className="card" style={{ borderTop: '3px solid #059669' }}>
+            <div style={h3Style}>Privacy-Gates</div>
+            <p style={pStyle}>
+              Logging kann in <code style={codeStyle}>01-base/privacy-config.yaml</code> tiergranular
+              deaktiviert werden (Studio-Panel „Datenschutz"):
+            </p>
+            <div style={{ fontSize: 12 }}>
+              <div><code style={codeStyle}>logging.messages</code> — Chatverläufe</div>
+              <div><code style={codeStyle}>logging.memory</code> — Session-Key/Value</div>
+              <div><code style={codeStyle}>logging.quality</code> — Quality-Analytics</div>
+              <div><code style={codeStyle}>logging.safety</code> — <strong>immer an</strong> (Audit-Pflicht)</div>
+            </div>
+            <p style={{ ...pStyle, marginTop: 6 }}>
+              Zusätzlich: <strong>Purge-Endpoints</strong> löschen bestehende Daten und
+              <strong> Snapshots</strong> (<code style={codeStyle}>/api/config/snapshots</code>)
+              sichern Config + DB ohne Up-/Download.
+            </p>
           </div>
         </div>
       </Section>

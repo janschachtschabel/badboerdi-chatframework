@@ -1,0 +1,27 @@
+# RAG-Bereich: WissenLebtOnline
+# ============================================================================
+# Inhalte der WissenLebtOnline-Webseite (wp-test.wirlernenonline.de) sowie
+# allgemeine OER-Grundlagen, die Teil der Plattform-Philosophie sind.
+#
+# Branding-Hinweis: Bis ca. Ende April 2026 lief das Projekt unter
+# "WirLernenOnline" (WLO). Ab Mai 2026 firmiert es unter
+# "WissenLebtOnline" — Dienstleistungen, Produkte und Entwicklungen,
+# inklusive der Arbeit aus dem ITsJOINTLY-Projekt, werden unter diesem
+# Namen fortgefuehrt.
+
+id: wissenlebtonline.de-webseite
+label: "WissenLebtOnline Webseite"
+mode: always
+description: >
+  Plattforminformationen, Dienstleistungen, Produkte und allgemeine
+  OER-Grundlagen zu WissenLebtOnline (vormals WirLernenOnline).
+  Wird bei jeder Nutzernachricht als Kontext eingeblendet, damit der
+  Chatbot Fragen zur Plattform und zu OER souveraen beantworten kann.
+source_urls:
+  - https://wp-test.wirlernenonline.de/
+  - https://wp-test.wirlernenonline.de/bildungsinhalte/oer/
+brand_note: >
+  Branding-Wechsel April/Mai 2026: WirLernenOnline (WLO) ->
+  WissenLebtOnline. Der Chatbot soll beide Namen kennen und den neuen
+  bevorzugen, aber Altlinks / Altdokumente unter wirlernenonline.de
+  weiterhin korrekt referenzieren.

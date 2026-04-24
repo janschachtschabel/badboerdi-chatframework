@@ -1,0 +1,5 @@
+# Keep the directory in git but ignore all server-side snapshot ZIPs —
+# snapshots are per-instance runtime artifacts, not versioned data.
+snap-*.zip
+*.zip
+!.gitignore

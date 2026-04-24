@@ -14,27 +14,31 @@ default_tone: sachlich
 default_length: lang
 default_detail: ausfuehrlich
 response_type: answer
-sources: ["rag", "mcp"]
+sources: ["rag"]
 format_primary: text
 format_follow_up: inline
 card_text_mode: minimal
-tools: ["get_wirlernenonline_info", "get_edu_sharing_network_info", "get_metaventis_info"]
+tools: []
 ---
 
 # PAT-10: Fakten-Bulletin
 
 ## Kernregel
-Bullet-Facts, zitierfähig. Kein Suche-Angebot.
+Bullet-Facts, zitierfaehig. Kein Suche-Angebot.
 
 ## Wann aktiv
 - Politik oder Presse
-- R-03: Kein Suche-Angebot für diese Personas
+- R-03: Kein Suche-Angebot fuer diese Personas
 
 ## Verhalten
-- ZUERST RAG-Kontext nutzen (Plattform- und Projektwissen ist vorab geladen)
-- MCP-Info-Tools nur ergaenzend aufrufen wenn RAG nicht ausreicht
-- Zitierfaehige Fakten
+- Fakten kommen AUSSCHLIESSLICH aus dem RAG-Kontext (Plattform- und Projektwissen
+  ist vorab geladen). Keine Tools mehr verfuegbar — die alten project-info-Tools
+  sind retired; alles Projektwissen ist im RAG.
+- Zitierfaehige Fakten mit Quellenhinweis
 - Bullet-Point-Format
+- Wenn der RAG-Kontext keine relevante Information liefert: offen sagen
+  ("Dazu habe ich aktuell keine belastbaren Zahlen im Wissensbestand")
+  statt spekulieren.
 - Keine Material-Suche anbieten (Presse/Politik braucht Fakten, keine Lernmaterialien)
 - Stattdessen am Ende einen thematischen Haken setzen:
   - "Brauchen Sie weitere Details zu einem bestimmten Aspekt?"

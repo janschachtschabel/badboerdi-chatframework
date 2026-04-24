@@ -1,35 +1,43 @@
 # RAG-Bereichskonfiguration
 # mode: always = immer im Kontext, on-demand = nur bei Bedarf
 
-edu-sharing-com-webseite:
+WissenLebtOnline:
   mode: always
   description: >
-    Das Dokument beschreibt edu-sharing als Open-Source-Loesung fuer Bildungscloud, E-Learning,
-    Suche und Content-Management, mit der Lerninhalte, Metadaten und Tools systemuebergreifend
-    vernetzt, gefunden und geteilt werden koennen. Es zeigt die Anwendungsbereiche, Funktionen,
-    Integrationen, Releases, Downloads und Mehrwerte der Software fuer Lehrende, Redaktionen,
-    Autor:innen und Betreiber.
+    WissenLebtOnline (WLO) ist eine offene, KI-gestützte Infrastruktur, die Bildungsinhalte
+    erschließt, strukturiert und über Schnittstellen in Plattformen sowie Anwendungen
+    verbreitet. Das Dokument beschreibt Akteure, Funktionen und Mehrwerte des Ökosystems — von
+    OER-Community über Redaktionssoftware bis zur souveränen KI- und Dateninfrastruktur.
 
-edu-sharing-net-webseite:
+WirLernenOnline:
   mode: always
   description: >
-    Der edu-sharing.net e.V. ist ein gemeinnuetziges Netzwerk, das Bildungsorganisationen mit
-    Open-Source-Technologien vernetzt, um Lerninhalte, Tools und Daten gemeinsam zu teilen. Er
-    entwickelt digitale Bildungsclouds, foerdert OER und treibt Innovationen wie KI-basierte
+    WirLernenOnline (WLO) ist eine offene Bildungsplattform mit Suchmaschine, Fachportalen und
+    Community für frei nutzbare, qualitätsgeprüfte Lernmaterialien. Es erklärt außerdem OER,
+    Qualitätssicherung, Quellenerschließung, Plug-ins, Fachredaktionen und Mitmachmöglichkeiten
+    für Lehrende, Lernende und Partner.
+
+OER-Wissen:
+  mode: always
+  description: "Wissen rund um OER, freie Bildungsinhalte, CC Lizenzen und vieles mehr."
+
+FAQ:
+  mode: always
+  description: "Allgemeine FAQ mit Fragen und Antworten von verschiedenen Zielgruppen."
+
+Edu-Sharing-Network:
+  mode: always
+  description: >
+    Der Verein edu-sharing.net e.V. ist ein gemeinnütziges Netzwerk, das Bildungsorganisationen
+    mit Open-Source-Technologien vernetzt, um Lerninhalte, Tools und Daten gemeinsam zu teilen.
+    Er entwickelt digitale Bildungsclouds, fördert OER und treibt Innovationen wie KI-basierte
     Bildungsinfrastrukturen durch Projekte, Community-Arbeit und Kooperationen voran.
 
-wirlernenonline.de-webseite:
+Edu-Sharing-Metaventis:
   mode: always
   description: >
-    Das Dokument beschreibt WirLernenOnline als offene Bildungsplattform mit Suchmaschine,
-    Fachportalen und Community fuer frei nutzbare, qualitaetsgepruefe Lernmaterialien. Es
-    erklaert ausserdem OER, Qualitaetssicherung, Quellenerschliessung, Plug-ins,
-    Fachredaktionen und Mitmachmoeglichkeiten fuer Lehrende, Lernende und Partner.
-
-wissenlebtonline-webseite:
-  mode: always
-  description: >
-    WLO ist eine offene, KI-gestuetzte Infrastruktur, die Bildungsinhalte erschliesst,
-    strukturiert und ueber Schnittstellen in Plattformen sowie Anwendungen verbreitet. Das
-    Dokument beschreibt Akteure, Funktionen und Mehrwerte des Oekosystems — von OER-Community
-    ueber Redaktionssoftware bis zur souveraenen KI- und Dateninfrastruktur.
+    Metaventis entwickelt edu-sharing als Open-Source-Lösung fuer Bildungscloud, E-Learning,
+    Suche und Content-Management, mit der Lerninhalte, Metadaten und Tools systemübergreifend
+    vernetzt, gefunden und geteilt werden können. Es zeigt die Anwendungsbereiche, Funktionen,
+    Integrationen, Releases, Downloads und Mehrwerte der Software fuer Lehrende, Redaktionen,
+    Autor:innen und Betreiber.

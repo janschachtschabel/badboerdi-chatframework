@@ -11,3 +11,16 @@ pyyaml==6.0.2
 sqlite-vec==0.1.9
 tiktoken==0.7.0
 websockets==13.1
+
+# ── RAG-Reranker (ONNX int8, immer an) ────────────────────────────
+# Cross-Encoder-Rerank nach dem Embedding-Retrieval.
+# Modell: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 (int8, ~130 MB)
+# Modell-Dir: backend/models/cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8/
+# Fehlt der Ordner → Backend läuft weiter, loggt WARNING, nutzt nur Embeddings.
+#
+# Export-Kommando (einmalig auf Dev-Maschine, nicht im Production-Runtime):
+#   pip install optimum[onnxruntime] sentence-transformers \
+#     --extra-index-url https://download.pytorch.org/whl/cpu
+#   python -m scripts.export_reranker_onnx
+onnxruntime==1.20.1
+transformers==4.46.3

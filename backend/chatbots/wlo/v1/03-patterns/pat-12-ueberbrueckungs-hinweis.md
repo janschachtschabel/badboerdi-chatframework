@@ -1,7 +1,7 @@
 ---
 id: PAT-12
 label: Ueberbrueckungs-Hinweis
-priority: 580
+priority: 420
 gate_personas: ["*"]
 gate_states: ["*"]
 gate_intents: ["*"]

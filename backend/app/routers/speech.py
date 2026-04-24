@@ -13,7 +13,16 @@ from openai import AsyncOpenAI
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Speech always talks directly to an OpenAI-compatible endpoint (STT/TTS
+# are OpenAI-native features; the B-API proxies don't forward them). The
+# base URL can be overridden via OPENAI_BASE_URL for Azure/LiteLLM/LocalAI,
+# which must provide /v1/audio/{transcriptions,speech} too.
+_openai_base = (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/") or None
+client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=_openai_base,
+)
 
 # ── Speech-to-text configuration ────────────────────────────────────
 # Primary model: gpt-4o-mini-transcribe (OpenAI 2025) — notably better than
@@ -24,6 +33,10 @@ STT_MODEL = os.getenv("STT_MODEL", "gpt-4o-mini-transcribe")
 # Fallback chain used when the primary model errors out (e.g. unsupported
 # audio format, quota, or model access). Ordered most→least capable.
 STT_FALLBACKS = ["gpt-4o-transcribe", "whisper-1"]
+
+# Text-to-speech model override. Defaults to tts-1 (fast, cheap). Set
+# TTS_MODEL=tts-1-hd for higher-quality synthesis at 2× the cost.
+TTS_MODEL = os.getenv("TTS_MODEL", "tts-1")
 
 # Domain prompt biases the model towards WLO / OER / German school
 # vocabulary. Keeps wrong transcriptions like "Bord-Rechnung" →
@@ -96,7 +109,7 @@ async def synthesize(
     """Synthesize text to speech using OpenAI TTS."""
     try:
         response = await client.audio.speech.create(
-            model="tts-1",
+            model=TTS_MODEL,
             voice=voice,
             input=text,
             speed=speed,

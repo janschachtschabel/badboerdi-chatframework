@@ -208,11 +208,19 @@ def _build_classify_system_prompt(
             + (f"\nMaterial-Typ: {c_type}" if c_type else "")
             + (f"\nKachel-Anzahl: {c_cards}" if c_mode == "cards" else "")
             + (f"\nAuszug aus dem Canvas-Dokument:\n{c_md}" if c_md else "")
-            + "\n\nWICHTIG: Wenn die Nutzernachricht sich auf etwas im Canvas bezieht "
-              "(\"hier\", \"das\", \"die Aufgabe\", \"der Text\", \"mach es ...\"), "
-              "ist turn_type = \"follow_up\" oder \"clarification\" und Intent richtet "
-              "sich nach dem Canvas-Inhalt (INT-W-11 bei Material-Edits; INT-W-10 bei "
-              "Lernpfad-Edits; sonst wie aus der Nachricht ableitbar)."
+            + "\n\nKRITISCH — Intent-Auswahl bei aktivem Canvas:"
+              "\n- Wenn die Nutzernachricht sich auf den Canvas-Inhalt bezieht"
+              " (\"hier\", \"das\", \"der Text\", \"die Aufgabe\", \"der Titel\")"
+              " ODER Edit-Verben nutzt (\"mach es\", \"kürzer\", \"ausführlicher\","
+              " \"ändere\", \"ergänze\", \"entferne\", \"fasse präziser\",  \"einfacher\","
+              " \"anpassen\", \"umformulieren\", \"schreib um\"):"
+              " → intent_id = \"INT-W-12\" (Canvas-Edit), turn_type=\"follow_up\"."
+              "\n- INT-W-11 (NEU erstellen) ist NUR richtig, wenn der Nutzer"
+              " explizit ein NEUES Material zu einem ANDEREN Thema will"
+              " (\"Mach mir stattdessen ein Quiz zu X\")."
+              "\n- Zurückfragen oder Meta-Fragen zum Canvas-Inhalt (\"Was bedeutet"
+              " hier X?\") sind turn_type=\"clarification\", Intent wie aus der"
+              " Sachfrage ableitbar (meist INT-W-06 Faktenfragen)."
         )
 
     # Semantic page-context block (populated if the widget is embedded on a
@@ -251,26 +259,63 @@ PERSONA-REGELN:
 - EXPLIZIT: "Ich bin Lehrer/Politiker/Journalist/..." → direkte Zuordnung.
 - IMPLIZIT: Nutze die Erkennungshinweise oben! Wenn der Nutzer Woerter/Phrasen verwendet
   die zu einer Persona passen, waehle diese Persona auch ohne explizite Selbstidentifikation.
-  Beispiele:
-  - "Unterricht planen", "fuer meine Klasse", "Arbeitsblatt" → P-W-LK (Lehrkraft)
-  - "Lernpfad erstellen", "Lernplan", "Unterrichtsentwurf", "Stundenentwurf" → P-W-LK (Lehrkraft)
-  - "ich verstehe nicht", "erklaer mir", "Hausaufgaben" → P-W-SL (Lerner)
-  - "mein Kind", "fuer zu Hause", "Nachhilfe" → P-ELT (Eltern)
-  - "Bildungspolitik", "Ministerium" → P-W-POL (Politik)
-  - "Presseanfrage", "Artikel schreiben" → P-W-PRESSE (Presse)
-  - "kuratieren", "Inhalte einstellen" → P-W-RED (Redaktion)
-  - "evaluieren", "Vergleich", "fuer unsere Schule" → P-BER (Berater)
-  - "Statistiken", "Statistik", "KPIs", "Reporting", "Zahlen", "wie viele" → P-VER (Verwaltung)
-  - "Fakten", "Daten", "Nutzungszahlen", "Reichweite", "OER Statistik" → P-VER (Verwaltung)
-- WICHTIG: Wer nach Statistiken, Zahlen, Fakten oder Daten fragt ist FAST IMMER P-VER oder P-W-POL, NIEMALS P-AND!
-- P-AND NUR wenn KEINE der Erkennungshinweise zutreffen und KEINE Zuordnung moeglich ist.
-  Typische P-AND Nachrichten: "hallo", "hi", reine Begruessung ohne inhaltlichen Hinweis.
+
+  P-W-SL (Schueler:in/Lerner) — WICHTIGE Signale:
+  - "fuer meine Pruefung", "fuer den Test", "fuer meinen Jahrgang", "fuer mich"
+  - "fuer meine Klasse" (gemeint "die Klasse in die ICH gehe", nicht "die ich unterrichte")
+  - "ich lerne", "ich verstehe nicht", "erklaer mir", "hab ich", "ich hab"
+  - "Hausaufgaben", "Schulaufgabe", "Klausur"
+  - Typisch: Du-Form, informeller Ton, kurze Saetze, "hey"/"hi"/"ne"/"ok"/"hab"
+  - Altersgerechte Vagheit: "wie geht das?", "was ist X?"
+  - Bei P-W-SL NIEMALS annehmen, dass eine ganze Klasse unterrichtet wird!
+
+  P-W-LK (Lehrkraft) — SPEZIFISCHE Signale (nicht Default!):
+  - "Unterricht planen", "Unterrichtseinheit", "Unterrichtsstunde", "Stundenentwurf"
+  - "meine SchueleR:innen" (Plural, BESITZ-Relation), "meine Klasse unterrichten"
+  - "Lehrplan", "Curriculum", "didaktisch", "Lernziele"
+  - Typisch: Siezen, sachlich-professionell, Fachvokabular
+  - "Arbeitsblatt" ALLEIN reicht NICHT — auch Eltern/Schueler suchen Arbeitsblaetter
+
+  P-ELT (Eltern):
+  - "mein Kind", "meine Tochter", "mein Sohn", "fuer meinen [Alter]-Jaehrigen"
+  - "Nachhilfe", "Hausaufgaben meines Kindes"
+  - Siezen, Sorge-Unterton
+
+  P-W-RED (Redaktion/Autor:in):
+  - "Ich bin Redakteur:in", "Artikel schreiben", "kuratieren"
+  - "Inhalte einstellen", "Materialien hochladen"
+  - "Quellen recherchieren"
+
+  P-W-POL (Politik):
+  - "Bildungspolitik", "Ministerium", "Gesetzgebung", "Positionspapier"
+  - "aus Sicht der Politik", "fuer unsere Partei", "Multiplikator:in"
+
+  P-W-PRESSE (Presse):
+  - "Artikel schreiben", "Journalist", "Pressemitteilung", "zitierfähig"
+  - "fuer meine Leser:innen", "Presseanfrage"
+
+  P-BER (Berater:in):
+  - "fuer unsere Schule evaluieren", "Vergleich verschiedener Angebote"
+  - "Beratungsprozess", "Empfehlung"
+
+  P-VER (Verwaltung):
+  - "Statistiken", "Zahlen", "Nutzungsdaten", "Reporting", "KPIs"
+  - "fuer unsere Verwaltung", "amtliche Daten"
+
+- **KRITISCH — P-W-LK ist KEIN Default!** Wenn keine eindeutigen Lehrkraft-Signale
+  vorliegen (siehe Liste oben), waehle P-AND statt P-W-LK. Besser unklar als falsch
+  zugewiesen. Viele "Lehrer-klingende" Nachrichten ("fuer die Klasse", "Lernpfad",
+  "Material zu X") kommen auch von Eltern, SchuelerInnen oder Beratenden.
+
+- **Szenario-Hinweis**: Nach "Ich bin Journalist und..." → IMMER P-W-PRESSE
+  (auch wenn der Rest nach Redaktion klingt). Explicit self-id trumps topic.
+
 - Bei expliziter Selbstidentifikation: turn_type = "correction" setzen.
-- Im Zweifel: Lieber eine spezifische Persona als P-AND waehlen!
-- Wenn die aktuelle Persona P-AND ist und der Nutzer thematische Signale sendet → SOFORT umklassifizieren!
-- WICHTIG: Wer einen Lernpfad, Lernplan, Unterrichtsentwurf oder Stundenentwurf erstellen will,
-  ist mit hoher Wahrscheinlichkeit P-W-LK (Lehrkraft) — NICHT P-AND oder P-W-SL!
-  Auch Schueler koennen Lernpfade wollen, aber nur wenn sie explizit "ich lerne", "fuer mich" o.ae. sagen.
+- Wenn die aktuelle Persona P-AND ist und der Nutzer klare spezifische Signale
+  sendet → umklassifizieren. Aber im Zweifel P-AND bleiben.
+- WICHTIG: "Lernpfad erstellen" ALLEIN macht noch keine Lehrkraft — auch Eltern,
+  SchuelerInnen und Beratende koennen Lernpfade wollen. Nur mit zusaetzlichem
+  Lehrkraft-Signal ("meine SchuelerInnen", "Unterricht planen") wird es P-W-LK.
 
 ## Intents
 {intent_lines}
@@ -282,8 +327,50 @@ INTENT-REGELN:
 - "Was ist WLO", "Was ist WirLernenOnline" → INT-W-01 (WLO kennenlernen)
 - Wenn der Nutzer auf die Begruessung mit Orientierungswunsch antwortet → INT-W-02.
 
+- INT-W-05 (Routing Redaktion) — Nutzer:in meldet einen Fehler, Inhaltsluecke,
+  Wunsch oder bittet um Weiterleitung an das Redaktionsteam.
+  TYPISCHE TRIGGER:
+  - "an die Redaktion weiterleiten", "an Redaktion schicken", "an die Redaktion melden"
+  - "Ich habe einen Fehler gefunden" (in Materialien / Texten / Übungen)
+  - "Hier ist was falsch", "Da stimmt etwas nicht", "Ungereimtheiten entdeckt"
+  - "Es fehlen Materialien zu X", "Koennt ihr das ergaenzen?"
+  - "Wo kann ich einen Inhaltswunsch einreichen?"
+  - "Wie kann ich eigene Materialien hochladen?" (Redakteur:in-Upload-Flow)
+  TYPISCHE BEISPIELE:
+  - "Ich habe einen Fehler in dem Artikel über nachhaltige Energie gefunden,
+     könnten Sie das bitte an die Redaktion weiterleiten?" → INT-W-05
+  - "Hey, ich habe hier ein paar Fehler in den Übungen gefunden, könntet ihr
+     das mal checken?" → INT-W-05 (nicht INT-W-04 Feedback, nicht INT-W-11!)
+  - "Kann ich einen Hinweis an die Redaktion schicken, weil ich einen Fehler
+     in den Matheaufgaben gefunden habe?" → INT-W-05
+  - "Wie kann ich meine eigenen Unterrichtsmaterialien hochladen?" → INT-W-05
+
+  ABGRENZUNG INT-W-05 vs. INT-W-04 (Feedback):
+  - INT-W-04 = allgemeine Meinung/Einschätzung zum Chatbot/Ergebnis, kein
+    Weiterleitungs-Wunsch: "Das war hilfreich", "Die Ergebnisse sind nicht gut"
+  - INT-W-05 = konkrete Meldung/Wunsch MIT impliziertem Weiterleitungs-Wunsch
+    an die Redaktion: "Fehler gefunden + weiterleiten", "Inhalt fehlt"
+
 - INT-W-11 (Inhalt erstellen) — Nutzer:in will ein NEUES Material KI-generieren lassen.
-  TRIGGER-VERBEN: "erstelle", "erstell mir", "generiere", "mach mir ein(e)",
+
+  ⚠️ ACHTUNG: INT-W-11 ist SELTENER als auf den ersten Blick. Der häufigste
+  Classifier-Fehler ist: jeder Satz mit "Arbeitsblatt", "Quiz", "Pressemitteilung"
+  etc. wird zu INT-W-11 gestempelt. Das ist FALSCH. Nur mit echtem
+  CREATE-VERB am Satz-Anfang ist es INT-W-11. Bei folgenden Signalen
+  ist ein anderer Intent richtig:
+
+    * "runterladen", "herunterladen", "zur Verfügung stellen",
+      "bereitstellen", "liefern", "geben", "bekommen" → INT-W-07 (Download)
+    * "bewerten", "überprüfen", "prüfen", "wie gut ist", "ist X geeignet"
+      → INT-W-08 (Inhalte evaluieren)
+    * "Statistiken", "Zahlen", "Übersicht zu ... Daten", "wie viele",
+      "aktuelle Nutzungsdaten", "Reporting" → INT-W-09 (Analyse & Reporting)
+    * "kürzer", "ausführlicher", "mach es einfacher", "ergänze",
+      "ändere den Titel", "umformulieren" (wenn Canvas aktiv) → INT-W-12 (Canvas-Edit)
+    * "Fehler gefunden", "falsch", "weiterleiten an Redaktion" → INT-W-04/05
+    * "Was ist X", "Wer ist", "Was macht" (Fakten/Info) → INT-W-06 (Faktenfragen)
+
+  TRIGGER-VERBEN für INT-W-11: "erstelle", "erstell mir", "generiere", "mach mir ein(e)",
   "schreib ein(e)", "bau mir", "entwirf", "fasse zusammen als", "produziere".
   Typische Beispiele:
   - "Erstelle ein Arbeitsblatt zu ..."
@@ -300,10 +387,19 @@ INTENT-REGELN:
     erwartet STRUKTURIERTE MATERIALZUSAMMENSTELLUNG aus bestehenden Quellen.
     Trigger: "Lernpfad", "Stundenentwurf", "Unterrichtsplanung", "Unterrichtseinheit",
     "Unterrichtsstunde", "plane eine Stunde".
+    **AUCH INT-W-10**: "Materialzusammenstellung", "Material zusammenstellen",
+    "strukturierte Sammlung", "Sammlung zusammenstellen", "Materialpaket",
+    "Übersicht von/aus Materialien", "mehrere Materialien zu ..." —
+    der Plural + "Zusammenstellung/Sammlung" signalisiert kuratierte Mehrfach-
+    Quellen, NICHT ein einzelnes neues Dokument.
   - INT-W-11 = einzelnes, neu generiertes Material wird gewuenscht.
-    Trigger: siehe oben (Verb + konkreter Material-Typ).
-  - Faustregel: "Lernpfad"/"Stunde"/"Einheit" → INT-W-10; konkreter Typ wie
-    "Arbeitsblatt"/"Quiz"/"Glossar" ohne Stunden-Kontext → INT-W-11.
+    Trigger: siehe oben (Verb + konkreter Material-Typ, SINGULAR).
+  - Faustregel: "Lernpfad"/"Stunde"/"Einheit"/"Zusammenstellung"/"Sammlung" → INT-W-10;
+    konkreter SINGULÄRER Typ wie "Arbeitsblatt"/"Quiz"/"Glossar" ohne Stunden- oder
+    Zusammenstellungs-Kontext → INT-W-11.
+  - Beispiel: "Erstelle eine Materialzusammenstellung zu X" → INT-W-10 (mehrere
+    Materialien aus dem Bestand). "Erstelle ein Arbeitsblatt zu X" → INT-W-11
+    (ein neues Dokument).
 
 - ABGRENZUNG INT-W-11 vs. INT-W-03b (Unterrichtsmaterial suchen):
   - INT-W-03b = Nutzer:in SUCHT bestehende Materialien im WLO-Bestand.
@@ -312,6 +408,47 @@ INTENT-REGELN:
     Trigger: siehe oben (aktive Verben).
   - Faustregel: "Zeig mir Arbeitsblaetter zu X" → INT-W-03b;
     "Erstelle ein Arbeitsblatt zu X" → INT-W-11.
+
+- KRITISCHE NEGATIV-ABGRENZUNG für INT-W-11 (setze NICHT INT-W-11 wenn):
+  Auch wenn ein Material-Typ-Wort ("Arbeitsblatt", "Quiz", "Übung", "Material",
+  "Lernpfad", "Übersicht", "Pressemitteilung", "Vergleich") im Text auftaucht,
+  ist INT-W-11 oft FALSCH. Prüfe zuerst diese Ausschlüsse:
+
+  * Wenn Downloaden / Herunterladen / Bereitstellen:
+    "Kann ich X runterladen?", "Stellen Sie mir X zum Download bereit",
+    "Wo finde ich X zum Download?", "Können Sie mir X liefern?"
+    → INT-W-07 (Material herunterladen), NICHT INT-W-11.
+
+  * Wenn Bewertung / Qualitätsprüfung / Review:
+    "Wie gut ist dieses X?", "Kannst du die Qualität von X bewerten?",
+    "Überprüfe mal bitte X", "Ist X geeignet für Y?"
+    → INT-W-08 (Inhalte evaluieren), NICHT INT-W-11.
+
+  * Wenn Statistik / Daten / Zahlen / Reporting:
+    "Wie viele X gibt es?", "Statistiken zu X", "Übersicht über Nutzung",
+    "Leistungsdaten", "Wochendaten", "aktuelle Zahlen"
+    → INT-W-09 (Analyse & Reporting), NICHT INT-W-11.
+    Auch wenn Wort "Übersicht" vorkommt — "Übersicht über aktuelle Zahlen"
+    ist KEIN Canvas-Create-Request für eine Strukturübersicht-Material!
+
+  * Wenn Canvas-Edit (User arbeitet bereits mit einem Canvas-Inhalt):
+    "Mach X kürzer", "fasse X präziser", "ergänze X um Y",
+    "Kannst du X ausführlicher gestalten?", "Ändere den Titel im Canvas"
+    → INT-W-12 (Canvas-Edit), NICHT INT-W-11.
+    Siehe Canvas-Kontext oben — wenn Canvas aktiv ist und der User
+    Änderungs-Verben nutzt: IMMER INT-W-12.
+
+  * Wenn Feedback / Fehlermeldung / Routing:
+    "Ich hab einen Fehler gefunden", "Könnten Sie das an Redaktion
+    weiterleiten", "Hier ist was falsch", "Meine Frage zum Test von gestern"
+    → INT-W-04 (Feedback) oder INT-W-05 (Routing Redaktion), NICHT INT-W-11.
+
+  FAUSTREGEL: INT-W-11 nur wenn ein klares CREATE-Verb ("erstelle", "mach mir",
+  "generiere", "bau mir", "schreib mir", "entwirf", "produziere") mit einem
+  konkreten Thema (NICHT Substring, siehe Thema-Regeln) vorliegt.
+  Wenn der Satz auf Frage-/Review-/Meta-Verb endet ("bewerten", "überprüfen",
+  "runterladen", "bereitstellen", "liefern", "bekommen", "zur Verfügung"):
+  NICHT INT-W-11.
 
 - SAMMLUNGEN vs. THEMENSEITEN vs. EINZELINHALTE — richtiges INT-W-03?:
   - Wenn der User explizit "Sammlung(en)", "Kollektion" oder "Themenseite(n)",
@@ -342,7 +479,113 @@ ENTITY-REGELN:
 - "Bruchrechnung", "Dreisatz", "Zellteilung" → thema setzen (und ggf. fach ableiten).
 - "Mathe Bruchrechnung" → fach="Mathematik", thema="Bruchrechnung".
 
+KRITISCHE REGEL FÜR `thema` (Lerninhalt):
+Niemals einen Substring der Nachricht als thema verwenden, nur weil dort ein
+Material-Typ auftaucht. `thema` ist ein eigenständiger Lerngegenstand, NICHT
+ein Satzfragment. Wenn kein klarer Lerngegenstand erkennbar ist, LASSE `thema`
+komplett LEER. Dann fragt das System degradierend nach.
+
+POSITIV (thema korrekt füllen):
+- "Erstelle ein Arbeitsblatt zur **Photosynthese**" → thema="Photosynthese"
+- "Quiz zu **Bruchrechnung** für Klasse 6" → thema="Bruchrechnung"
+- "Material zum **Klimawandel**" → thema="Klimawandel"
+- "Lerngeschichte über die **Römer**" → thema="die Römer"
+
+NEGATIV (thema MUSS leer bleiben — sonst landet Müll im Canvas-Titel):
+- "Kannst du mir das Arbeitsblatt runterladen?" → thema="" (kein Lerninhalt genannt!)
+- "Ich brauche Ideen für ein neues Arbeitsblatt" → thema="" (nur Absicht, kein Thema)
+- "Hey, ich hab ne Frage zu den Übungen für mein Kind" → thema="" (vages Feedback)
+- "Gibt's ne Übersicht zu den aktuellen Statistiken?" → thema="" (Meta-Frage)
+- "Hilf mir die Qualität des Arbeitsblatts zu bewerten" → thema="" (Review, kein Lerninhalt)
+- "Erstelle mir ein neues Material" → thema="" (kein Thema genannt → degradieren)
+- "Mach mir ein Quiz" (ohne Thema) → thema="" (Material-Typ klar, Thema fehlt)
+- "Ich brauche Hilfe bei Mathe" → fach="Mathematik", thema="" (nur Fach!)
+- "Ich lerne Biologie" → fach="Biologie", thema="" (kein Thema darin)
+- "Kannst du mir bei Deutsch helfen?" → fach="Deutsch", thema="" (Fach, kein Thema)
+- "Ich suche Materialien" → thema="" (keine Lerngegenstand-Nennung)
+- "Ich will Infos" → thema="" (kein Inhalt, kein Fach)
+
+WICHTIG — Unterschied Fach vs. Thema nochmal explizit:
+  Schulfächer (Mathe/Mathematik, Deutsch, Biologie, Chemie, Physik, Englisch,
+  Geschichte, Erdkunde, Geographie, Sport, Kunst, Musik, Informatik, Religion,
+  Ethik, Politik, Wirtschaft, Sozialkunde) → IMMER fach, NIE thema.
+  Nur eigenständige Lerngegenstände wie "Bruchrechnung", "Photosynthese",
+  "Mittelalter", "Satz des Pythagoras", "Gedichtanalyse" sind thema.
+
+FAUSTREGEL: Wenn du die Frage "Worum geht das thematisch?" nicht mit einem
+EIGENSTÄNDIGEN Lerngegenstand beantworten kannst (der ohne Umgebungstext für
+sich steht und ein Inhaltsthema bezeichnet), lasse `thema` LEER. Ein Thema
+wird durch Substantive wie "Photosynthese", "Mittelalter", "Bruchrechnung"
+markiert — nicht durch Füllwörter, Verben oder Pronomen wie "das", "diese(s)",
+"Ideen für ...", "eine Frage zu ...".
+
 Rufe classify_input auf mit den erkannten Werten."""
+
+
+def _formality_guidance(formality: str, persona_id: str) -> str:
+    """Concrete, persona-aware writing guidance for the LLM.
+
+    The LLM historically treats ``Formality: Sie`` as a soft hint and slips
+    into casual "hey, schön dass du da bist" even for journalists and civil
+    servants. This helper expands the terse token into explicit examples
+    and NEVER-lists, which the LLM follows much more reliably.
+    """
+    f = (formality or "").strip().lower()
+    # Formal personas: strict Sie + professional register
+    if f in ("sie", "formal", "foermlich"):
+        # Extra strictness for personas whose scores were worst in the eval
+        strict = persona_id in (
+            "P-W-POL", "P-W-PRESSE", "P-VER",  # Politik, Presse, Verwaltung
+            "P-BER", "P-W-LK",                   # Berater, Lehrkraft
+        )
+        base = (
+            "Schreibe ausschließlich in der Sie-Form (\"Ich kann Ihnen …\", "
+            "\"Haben Sie …\", \"Möchten Sie …\"). KEINE Du-Formen."
+        )
+        if strict:
+            return (
+                f"{base}\n"
+                "KRITISCH — Register professionell halten:\n"
+                "- KEINE Grußfloskeln wie \"Hey\", \"Oh\", \"Ah\", \"Hi\", \"Klar doch\"\n"
+                "- KEINE Füllwörter wie \"echt\", \"voll\", \"cool\", \"ok\", \"einfach mal\",\n"
+                "  \"so'n bisschen\", \"ne\", \"mal schauen\", \"check ich\"\n"
+                "- KEINE Ich-du-Komplizenschaft (\"wir zwei\", \"du weißt ja\")\n"
+                "- KEINE Laden-/Regal-Metaphern: NICHT \"im Regal\", \"aus dem Regal\",\n"
+                "  \"Regal schauen\", \"geholt\", \"gezogen\", \"gegriffen\", \"gestöbert\",\n"
+                "  \"hier ist was\" — bei Fach-Personas sachlich benennen:\n"
+                "  \"Ich habe folgende Materialien gefunden\", \"Zu Ihrem Thema liegen\n"
+                "  vor:\", \"Die Suche ergibt:\"\n"
+                "- Sachlich-präzise Formulierungen, keine Umgangssprache\n"
+                "- Fachbegriffe (OER, Lizenz, Bildungsstufe) unkommentiert verwenden — "
+                "die Persona kennt sie\n"
+                "- Satz-Enden mit konkreter Info oder Frage, keine Emoji/Smileys"
+            )
+        return base
+    # Informal personas: du but still respectful
+    if f in ("du", "informal", "duzen"):
+        # P-W-SL wants explicitly jugendlich-friendly tone; eval showed it was
+        # getting over-formal responses.
+        if persona_id == "P-W-SL":
+            return (
+                "Schreibe in der Du-Form, einfach und freundlich. Kurze Sätze, "
+                "keine Fachchinesisch-Häufung.\n"
+                "- Beispiele: \"Ich kann dir helfen …\", \"Hast du schon probiert …\", "
+                "\"Willst du, dass ich …\"\n"
+                "- Locker, aber nicht albern. Keine gespielte Jugendsprache ('cringe', "
+                "'lit'). Einfach natürlich.\n"
+                "- KEINE Siezen-Formulierungen — der Nutzer ist Schüler:in."
+            )
+        return (
+            "Schreibe in der Du-Form (\"Ich kann dir …\", \"Hast du …\", "
+            "\"Willst du …\"). KEINE Sie-Formen.\n"
+            "Freundlich-persönlich, aber keine übertriebene Umgangssprache."
+        )
+    # Neutral (P-AND etc.)
+    return (
+        "Persona nicht klar — bleibe neutral. Vermeide explizite Anrede ("
+        "\"Ich kann helfen …\" statt \"Ich kann Ihnen/dir helfen …\") bis die "
+        "Persona klar ist. Freundlich und offen, aber nicht übermäßig casual."
+    )
 
 
 async def classify_input(
@@ -377,6 +620,70 @@ async def classify_input(
 
     tool_call = resp.choices[0].message.tool_calls[0]
     raw = json.loads(tool_call.function.arguments)
+
+    # ── Deterministic post-classifier overrides ────────────────
+    # The LLM-classifier systematically over-selects INT-W-11 when a
+    # material-type word like "Arbeitsblatt" or "Pressemitteilung"
+    # appears in the message, even when the actual intent is clearly
+    # routing, download or evaluation. These regex-based overrides
+    # catch the unambiguous cases and force the correct intent.
+    import re as _re
+    _msg = (message or "").lower()
+    if raw.get("intent_id") == "INT-W-11":
+        # Routing to Redaktion — "weiterleiten an Redaktion" + "Fehler gefunden"
+        # + Redaktions-Upload-Flow ("Materialien hochladen", "eigene Inhalte
+        # einstellen") der über die Redaktion laeuft
+        if _re.search(
+            r"\b(an\s+(die\s+)?redaktion\s+(weiterleiten|schicken|melden|senden|geben)|"
+            r"an\s+redaktion\s+weiter|redaktion\s+schauen|"
+            r"hinweis\s+an\s+(die\s+)?redaktion|fehler\s+gefunden|"
+            r"hochladen|upload(en)?|einstellen|einreichen|einpflegen|"
+            r"anmerkungen\s+(zu|hinterlassen)|wo\s+kann\s+ich\s+.{0,20}hinterlassen)\b",
+            _msg,
+        ):
+            raw["intent_id"] = "INT-W-05"
+        # Download/Get existing material — NOT create
+        elif _re.search(
+            r"\b(runterladen|herunterladen|zum\s+download|zum\s+herunterladen|"
+            r"bereitstellen|zur\s+verf(ü|ue)gung\s+stellen|zukommen\s+lassen|"
+            r"zusenden|gib\s+mir\s+(den|die|das)\s+\w+|"
+            r"wo\s+(finde|kann|bekomme)\s+ich)\b",
+            _msg,
+        ):
+            raw["intent_id"] = "INT-W-07"
+        # Evaluation of existing material
+        elif _re.search(
+            r"\b(qualit(ä|ae)t\s+(von|des)|bewerten|wie\s+gut\s+(sind|ist)|"
+            r"(ist|sind)\s+(das|die|der|es)\s+geeignet|einsch(ä|ae)tzen|pr(ü|ue)fen)\b",
+            _msg,
+        ):
+            raw["intent_id"] = "INT-W-08"
+        # Statistics/reports — not create
+        elif _re.search(
+            r"\b(statistiken\s+(zu|ü|ueber)|zahlen\s+zu|daten\s+zu|"
+            r"reporting|auswertung\s+(von|der)|(ü|ue)bersicht\s+(ü|ue)ber\s+aktuelle)\b",
+            _msg,
+        ):
+            raw["intent_id"] = "INT-W-09"
+        # Materialzusammenstellung / Sammlung → INT-W-10 (Lernpfad-/
+        # Unterrichtsplanung). Das sind kuratierte Mehrfach-Materialien,
+        # nicht ein einzelnes neues Dokument. Klassische Classifier-
+        # Verwechslung mit INT-W-11.
+        elif _re.search(
+            r"\b(material(ien)?\s*-?\s*(zusammenstellung|sammlung|paket|set)|"
+            r"(mehrere|diverse|passende|strukturierte)\s+material(ien)?|"
+            r"zusammenstellung\s+(von|aus)\s+material|"
+            r"material(ien)?\s+(zusammen\s*stellen|kompilieren|kuratieren)|"
+            r"unterrichts(einheit|plan|paket|baustein)|lerneinheit)\b",
+            _msg,
+        ):
+            raw["intent_id"] = "INT-W-10"
+            # Classifier stellt bei "Materialzusammenstellung" oft state-12
+            # (Canvas-Arbeit) ein, weil die Formulierung nach Erstellung
+            # klingt. INT-W-10 gehoert aber in state-5 (Suche/Curation), damit
+            # PAT-19 (Unterrichts-Lernpfad) greifen kann.
+            if raw.get("next_state") == "state-12":
+                raw["next_state"] = "state-5"
 
     try:
         return ClassificationResult.model_validate(raw)
@@ -430,7 +737,10 @@ async def generate_response(
 Kernregel: {pattern_output.get('core_rule', '')}
 Response-Typ: {pattern_output.get('response_type', 'answer')}
 Ton: {pattern_output.get('tone', 'sachlich')}
+
+### Anrede-Form (STRIKT einhalten — Persona-abhängig)
 Formality: {pattern_output.get('formality', 'neutral')}
+{_formality_guidance(pattern_output.get('formality', 'neutral'), persona_id)}
 Länge: {pattern_output.get('length', 'mittel')} (kurz=kompakte 2-4 Saetze, ein Absatz; mittel=strukturierte Erklaerung mit 2-4 Absaetzen, gerne mit H3-Unterpunkten wenn das Thema mehrere Aspekte hat; lang=ausfuehrliche Darstellung mit mehreren Absaetzen, Beispielen und Aufzaehlungen)
 Wenn internes Wissen (RAG-Kontext, query_knowledge-Ergebnisse) verfuegbar ist, nutze es inhaltlich REICH aus — der Nutzer hat explizit gefragt und erwartet eine substantielle Antwort, keine Ein-Satz-Zusammenfassung.
 Detail: {pattern_output.get('detail_level', 'standard')}
@@ -860,8 +1170,14 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     # "on-demand" areas: only queried when LLM explicitly calls query_knowledge
     knowledge_prefetched = False
     always_areas: list[str] = []  # tracked for redundant-call guard in tool loop
-    _RAG_TOP_K = 15  # global budget for pre-fetched RAG chunks
-    _RAG_MIN_SCORE = 0.30  # drop chunks below this relevance threshold
+    # Retrieval-Defaults — ueberschreibbar via ENV oder rag-config.yaml
+    # (siehe app.services.rag_service.get_retrieval_settings). Aktuelle
+    # Werte bleiben 15 / 0.30, damit bestehende Installationen unveraendert laufen.
+    from app.services.rag_service import get_retrieval_settings as _get_rag_settings
+    _rag_settings = _get_rag_settings()
+    _RAG_TOP_K = _rag_settings["top_k"]
+    _RAG_MIN_SCORE = _rag_settings["min_score"]
+    _RAG_MAX_CHARS_PER_AREA = _rag_settings["max_chars_per_area"]
     if available_rag_areas and rag_config:
         always_areas = [a for a in available_rag_areas if rag_config.get(a, {}).get("mode") == "always"]
 
@@ -870,6 +1186,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
             prefetch_ctx = await _get_rag_ctx(
                 message, areas=always_areas, top_k=_RAG_TOP_K,
                 min_score=_RAG_MIN_SCORE,
+                max_chars_per_area=_RAG_MAX_CHARS_PER_AREA,
             )
             _logger.info("RAG pre-fetch for areas %s: %d chars", always_areas, len(prefetch_ctx) if prefetch_ctx else 0)
             if prefetch_ctx:
@@ -1038,7 +1355,11 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                         })
                         continue
 
-                    result_text = await get_rag_context(query, areas=[area], top_k=_RAG_TOP_K)
+                    result_text = await get_rag_context(
+                        query, areas=[area], top_k=_RAG_TOP_K,
+                        min_score=_RAG_MIN_SCORE,
+                        max_chars_per_area=_RAG_MAX_CHARS_PER_AREA,
+                    )
                     if not result_text:
                         result_text = f"Keine relevanten Informationen im Bereich '{area}' gefunden."
                     _logger.info("query_knowledge(%s): %d chars", area, len(result_text))

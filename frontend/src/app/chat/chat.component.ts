@@ -222,9 +222,10 @@ export class ChatComponent implements OnInit, AfterViewChecked {
       // Handle page action (share with host page / widget parent)
       this.dispatchPageAction(resp.page_action);
 
-      // Auto-speak if enabled
+      // Auto-speak if enabled — always interrupt any previous playback
+      // so a new response after a quick user follow-up is also spoken.
       if (this.autoSpeak && resp.content) {
-        this.speakText(resp.content);
+        this.autoSpeakText(resp.content);
       }
     } catch (err) {
       this.removeMessage(loadingId);
@@ -383,12 +384,33 @@ export class ChatComponent implements OnInit, AfterViewChecked {
   private audioQueue: Blob[] = [];
   private audioAbort: AbortController | null = null;
 
+  /**
+   * Manual toggle (speaker button on a message): click while speaking stops;
+   * click while idle starts TTS.
+   */
   speakText(text: string) {
     if (this.isSpeaking) {
       this.stopSpeaking();
       return;
     }
     const plain = this.stripMarkdown(text);
+    this.isSpeaking = true;
+    this.speakChunked(plain);
+  }
+
+  /**
+   * Auto-speak entry point: always plays the given text. If a prior
+   * TTS playback is still running, it is aborted first so the new
+   * response is spoken immediately. Used when `autoSpeak` is on and
+   * a new bot response arrives (the user may have interrupted the
+   * previous response by sending the next message).
+   */
+  private autoSpeakText(text: string) {
+    if (this.isSpeaking) {
+      this.stopSpeaking();
+    }
+    const plain = this.stripMarkdown(text);
+    if (!plain) return;
     this.isSpeaking = true;
     this.speakChunked(plain);
   }
@@ -658,7 +680,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       for (let i = msgs.length - 1; i >= 0; i--) {
         const m = msgs[i];
         if (m.sender === 'bot' && m.content && !m.isLoading) {
-          this.speakText(m.content);
+          this.autoSpeakText(m.content);
           break;
         }
       }

@@ -1,0 +1,5 @@
+# Exported reranker / model artifacts — do not commit.
+# Regenerate with: python -m scripts.export_reranker_onnx
+*
+!.gitignore
+!README.md

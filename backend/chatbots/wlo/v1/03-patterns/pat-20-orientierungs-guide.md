@@ -4,7 +4,7 @@ label: Orientierungs-Guide
 priority: 480
 gate_personas: ["P-AND", "P-W-LK", "P-W-SL", "P-ELT", "P-BER", "P-VER"]
 gate_states: ["state-1", "state-4"]
-gate_intents: ["INT-W-02", "INT-W-01"]
+gate_intents: ["INT-W-02", "INT-W-01", "INT-W-03a", "INT-W-03b", "INT-W-03c"]
 signal_high_fit: ["orientierungssuchend", "neugierig", "delegierend", "unerfahren"]
 signal_medium_fit: ["unsicher"]
 signal_low_fit: []
@@ -14,7 +14,7 @@ default_tone: einladend
 default_length: mittel
 default_detail: standard
 response_type: suggestion
-sources: []
+sources: ["rag"]
 format_primary: text
 format_follow_up: quick_replies
 card_text_mode: minimal

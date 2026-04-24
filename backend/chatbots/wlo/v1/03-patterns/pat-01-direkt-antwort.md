@@ -14,7 +14,7 @@ default_tone: sachlich
 default_length: kurz
 default_detail: standard
 response_type: answer
-sources: ["mcp"]
+sources: ["rag", "mcp"]
 format_primary: text
 format_follow_up: inline
 card_text_mode: minimal

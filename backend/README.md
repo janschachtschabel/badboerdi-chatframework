@@ -13,10 +13,53 @@ cd backend
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env       # OPENAI_API_KEY, LLM_PROVIDER, MCP-URL, …
+
+# Einmalig nach Clone: RAG-Reranker exportieren (~1 Min, 135 MB Modelldatei)
+pip install -r requirements-setup.txt \
+  --extra-index-url https://download.pytorch.org/whl/cpu
+python -m scripts.setup
+
 python run.py              # uvicorn auf :8000
 ```
 
 Health-Check: `GET http://localhost:8000/api/health`
+
+### RAG-Reranker (ONNX int8)
+
+Nach dem Embedding-Retrieval ordnet ein Cross-Encoder (`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`,
+int8-quantisiert, ~135 MB) die Top-25 Treffer um. LLM-as-Judge-Eval zeigte 8/10 Wins gegenueber
+reiner Embedding-Suche; er ist daher immer an.
+
+**Deployment-Varianten:**
+
+- **Docker (`docker compose up --build` oder `docker build`)** — das `reranker-builder`-Stage
+  im `backend/Dockerfile` fuehrt den Export automatisch beim Image-Bau aus und legt das
+  Artefakt ab; das finale Runtime-Image traegt nur die ~135 MB ONNX-Dateien, **kein torch**.
+  **Null manuelles Eingreifen noetig**, auch in CI/CD.
+- **Lokale Dev-Installation** — einmalig `pip install -r requirements-setup.txt` +
+  `python -m scripts.setup` wie oben im Setup-Block. Idempotent; ueberspringt den
+  Export, wenn die Dateien bereits da sind.
+
+**Weitere Details:**
+
+- Export-Abhaengigkeiten (`optimum`, `sentence-transformers`, `torch`) liegen in
+  `requirements-setup.txt` und sind **nicht** Teil des Production-Runtime. Runtime
+  braucht nur `onnxruntime` + `transformers` (bereits in `requirements.txt`).
+- Fehlt das Modellverzeichnis beim Start (z.B. wenn man `models/` aus einem Bare-Metal-Deploy
+  versehentlich ausschliesst), loggt der Server eine WARNING mit Setup-Befehl und arbeitet
+  mit reiner Embedding-Suche weiter — kein harter Fehler.
+- Warmup-Last (~1–8 s Modell-Load) laeuft im `lifespan`-Handler parallel zu Config-
+  und LLM-Warmup, blockiert also keinen Request.
+- Neu-Export nach Modellwechsel:
+  ```bash
+  python -m scripts.export_reranker_onnx --force
+  # oder mit anderem Modell:
+  python -m scripts.export_reranker_onnx --model BAAI/bge-reranker-v2-m3
+  ```
+  Der Pfad in `rag_service.py` (`_RERANK_MODEL_SLUG`) muesste dann angepasst werden.
+- Docker-Build nutzt einen BuildKit-Cache-Mount (`HF_HOME=/hf-cache`), damit ein
+  Rebuild ohne Modellwechsel das HuggingFace-Modell nicht erneut herunterlaedt.
+  `DOCKER_BUILDKIT=1` ist fuer moderne Docker-Versionen Default.
 
 ### Env-Variablen
 
@@ -24,6 +67,7 @@ Health-Check: `GET http://localhost:8000/api/health`
 |----------|---------|---------|
 | `LLM_PROVIDER` | `openai` | LLM-Backend. Werte: `openai` (nativ), `b-api-openai` (B-API → OpenAI), `b-api-academiccloud` (B-API → AcademicCloud / GWDG). Siehe Abschnitt 10. |
 | `OPENAI_API_KEY` | _Pflicht bei `openai`_ | OpenAI-Key fuer Chat-Modell, Moderation, Legal-Classifier, Whisper und TTS. |
+| `OPENAI_BASE_URL` | _leer_ (= `https://api.openai.com/v1`) | Optional: OpenAI-kompatibler Endpoint (Azure OpenAI, LiteLLM-Proxy, LocalAI, Ollama-Shim, …). Wenn gesetzt, müssen an dem Endpoint die gewünschten Modelle/Features (Embeddings, ggf. STT/TTS, ggf. Moderation) verfügbar sein. |
 | `B_API_KEY` | _Pflicht bei `b-api-*`_ | API-Key fuer die B-API. Wird als Header `X-API-KEY` gesendet. |
 | `B_API_BASE_URL` | `https://b-api.staging.openeduhub.net/api/v1/llm` | Basis-URL der B-API. `/openai` bzw. `/academiccloud` werden je nach Provider angehaengt. |
 | `LLM_CHAT_MODEL` | provider-spezifisch | Override fuer das Chat-Modell. Defaults: `gpt-4.1-mini` (openai, b-api-openai), `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` (b-api-academiccloud). |
@@ -33,6 +77,11 @@ Health-Check: `GET http://localhost:8000/api/health`
 | `STUDIO_API_KEY` | _leer_ | Schuetzt `/api/config/*`, `/api/rag/*`, `/api/safety/*`, `/api/quality/*`, `/api/debug/*` und die geschuetzten `/api/sessions/*`-Routen. Leer = API offen (Dev-Default, Startup-Warnung). Siehe Abschnitt 9. |
 | `CORS_ORIGINS` | `*` | Komma-separierte Liste erlaubter Origins fuer CORS. Bei `*` (Default) werden keine Credentials erlaubt. Fuer Produktion spezifische Origins setzen (z.B. `https://wirlernenonline.de,https://studio.meinedomain.de`), dann werden auch Credentials unterstuetzt. |
 | `DATABASE_PATH` | `badboerdi.db` | Pfad zur SQLite-Datenbank (Sessions, Messages, Safety-Logs, Quality-Logs, RAG). |
+| `STT_MODEL` | `gpt-4o-mini-transcribe` | Speech-to-Text-Modell. Fallbacks: `gpt-4o-transcribe`, `whisper-1`. Nur native OpenAI-Endpoints; B-API forwardet keinen Audio-Endpoint. |
+| `TTS_MODEL` | `tts-1` | Text-to-Speech-Modell. `tts-1-hd` für höhere Qualität (2× Kosten). |
+| `EVAL_CHAT_URL` | `http://localhost:8000/api/chat` | Ziel-Endpoint für simulierte Chat-Calls im Eval. Self-Loopback; nur ändern, wenn Eval gegen remote Backend läuft. |
+| `EVAL_SIMULATOR_MODEL` | `gpt-4o-mini` | Modell für User-Simulator + Szenario-Generator. |
+| `EVAL_JUDGE_MODEL` | `gpt-4o-mini` | Modell für den LLM-as-Judge-Scorer. |
 
 ---
 
@@ -852,6 +901,113 @@ logging:
 | `POST /api/quality/logs/clear?pattern_id=&intent_id=&session_id=` | Bulk-Delete mit Filter. Ohne Filter verlangt `?confirm=true` (Sicherheitsbremse). |
 
 Diese Endpoints sind in der Studio-UI unter **Sessions** und **Quality** mit Confirm-Dialogen verdrahtet.
+
+---
+
+## 16. Evaluation — automatisierte Persona-Dialog-Tests
+
+Eigenstaendiges Eval-Subsystem zum systematischen Testen der Gespraechsqualitaet auf Basis
+der in der Konfig definierten Personas/Intents/Patterns. Im Studio unter dem Tab
+**Evaluation (🧪)** erreichbar.
+
+### Architektur-Eckdaten
+
+- **Config-agnostisch**: Liest Personas (`load_persona_definitions()`) und Intents
+  (`load_intents()`) zur Laufzeit. Funktioniert unveraendert auch auf anderen Chatbot-Konfigs
+  unter `chatbots/<name>/v1/`.
+- **Echte Pipeline**: Alle simulierten Turns laufen durch den realen `/api/chat`-Endpoint
+  (Safety, Pattern-Engine, RAG, MCP). Keine Shortcuts.
+- **Unified Logging**: Jeder Turn landet in `quality_logs` (mit `session_id = 'eval-<uuid>'`)
+  neben dem Produktions-Traffic. Pattern-Usage-Analytics arbeiten auf der gleichen Tabelle.
+- **Dedizierte Tabelle `eval_runs`** fuer Run-Metadaten + Full-Transkripte (JSON) + Matrix-
+  Aggregat. Nicht mit `quality_logs` verwoben, damit Eval-Ergebnisse unabhaengig geloescht
+  werden koennen.
+
+### Tabelle `eval_runs`
+
+| Feld | Beschreibung |
+|------|-------------|
+| `id` | `eval-<hex12>` |
+| `created_at` / `completed_at` | ISO-Timestamps |
+| `status` | `running` \| `done` \| `failed` |
+| `mode` | `scenarios` \| `conversations` \| `both` |
+| `config_slug` | Optional, z.B. `wlo/v1` — fuer Cross-Config-Tracking |
+| `personas`, `intents` | JSON-Arrays der einbezogenen IDs |
+| `turns_per_conv`, `judge_model`, `simulator_model` | Run-Parameter |
+| `total_turns`, `avg_score` | Aggregate |
+| `summary_json` | `{ matrix: persona×intent→score, pattern_usage: {pat: n}, avg_score, total_judged_turns }` |
+| `conversations_json` | Array von `{ kind, persona_id, intent_id, turns: [{user, bot, debug, judge}] }` |
+| `error_message` | nur bei `status=failed` |
+
+### Endpoints (alle Studio-geschuetzt)
+
+| Methode | Pfad | Zweck |
+|---------|------|-------|
+| `GET /api/eval/config` | Aktuelle Personas + Intents aus dem aktiven Config-Tree |
+| `POST /api/eval/estimate` | Kosten-/Token-Schaetzung (Spanne min/erwartet/max) |
+| `POST /api/eval/runs` | Run starten (Background-Task, kehrt sofort zurueck) |
+| `GET /api/eval/runs` | Liste aller Runs (neueste zuerst) |
+| `GET /api/eval/runs/{id}` | Detail inkl. vollstaendiger Transkripte + Matrix |
+| `DELETE /api/eval/runs/{id}` | Run entfernen |
+| `GET /api/eval/analytics/pattern-usage` | Pattern × Intent × Persona aus `quality_logs` — wirkt auch ohne Eval-Run |
+
+`POST /api/eval/runs` akzeptiert:
+```json
+{
+  "mode": "scenarios|conversations|both",
+  "persona_ids": ["P-W-LK", "P-W-SL"],     // leer = alle
+  "intent_ids":  ["INT-W-02", "INT-W-04"], // leer = alle
+  "scenarios_per_combo": 2,                 // nur fuer mode=scenarios/both
+  "turns_per_conv": 3,                      // nur fuer mode=conversations/both
+  "config_slug": ""                         // optional, fuer Cross-Config-Tracking
+}
+```
+
+Response enthaelt `run_id`, `status: "running"`, `personas_used`, `intents_used` und
+`warnings` (z.B. bei ungueltigen IDs — werden stillschweigend gedropt mit Warnung).
+
+### Judge-Dimensionen
+
+Jeder Bot-Turn wird auf 5 Dimensionen bewertet (jeweils 0/1/2 Punkte):
+
+| Dimension | Frage |
+|-----------|-------|
+| `intent_fit` | Beantwortet die Antwort das Anliegen der Persona? |
+| `persona_tone` | Passt der Tonfall zur Persona? |
+| `pattern_match` | Passt das gewaehlte Pattern zu Intent/Situation? |
+| `safety` | Keine Guardrail-Verletzungen? |
+| `info_quality` | Konkret und hilfreich (kein Geschwurbel)? |
+
+Gesamt-Score = Summe / 10 ∈ [0, 1]. Judge liefert zusaetzlich `notes` (max 200 Zeichen
+Freitext-Begruendung).
+
+### Kosten
+
+Default-Modelle: `EVAL_SIMULATOR_MODEL = EVAL_JUDGE_MODEL = gpt-4o-mini`. Kostenschaetzung
+im Studio vor dem Start sichtbar. Typische Kosten (Chat-Modell `gpt-5.4-mini`, erwartet):
+
+| Umfang | Turns | Kosten (USD) |
+|--------|-------|--------------|
+| 2 Personas × 2 Intents × 1 Szenario | 4 | ~$0.02 |
+| Alle 9 × 14 × 1 Szenario | 126 | ~$0.70 |
+| Alle 9 × 14 + 3-Turn-Dialoge | 504 | ~$3.20 |
+| Alle 9 × 14 × 2 Szenarien + 3-Turn-Dialoge | 630 | ~$3.95 |
+
+Die Schaetzung im Studio zeigt eine **Spanne** (min/erwartet/max mit -40%/+100%), weil
+Prompt-Laengen, RAG-Kontext und Tool-Calls real variieren. In der Praxis landen die Ist-
+Kosten meist im unteren Drittel der Spanne (wenige RAG-Treffer, keine Tools).
+
+### Was nicht implementiert ist
+
+- **Keine automatischen Config-Patches.** Der Judge schreibt Notes; kein Meta-LLM
+  aendert YAML.
+- **Keine CI-Pass/Fail-Gates.** LLM-Judge-Scores sind zu noisy dafuer.
+- **Kein Persona-Health-Ampel-Dashboard.** Metriken sind Kartographie, keine Navigation.
+
+### Script-Variante (Legacy)
+
+`scripts/eval_reranker.py` misst speziell Retrieval-Qualitaet (Baseline vs. Rerank,
+LLM-as-Judge). Weiterhin nutzbar fuer Retrieval-Tuning, unabhaengig vom Evaluation-Subsystem.
 
 ---
 

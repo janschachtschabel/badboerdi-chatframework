@@ -110,15 +110,22 @@ material_types:
     emoji: "🗺️"
     category: didaktisch
     structure: |
-      Erstelle eine Text-Mindmap / Themenübersicht:
+      Erstelle eine Text-Mindmap / Themenübersicht mit KLAREN H2-Haupt-
+      abschnitten (so dass der Leser beim Überfliegen direkt die
+      Hauptäste erkennt):
       1. H1 '# Strukturübersicht: [Thema]'
-      2. Kurzer Einleitung
-      3. Baumstruktur in verschachtelten Listen (3 Ebenen):
-         - Hauptast
-           - Unterast
-             - Detail
-      4. 4-7 Hauptäste, jeweils mit 2-4 Unterästen
-      5. Abschluss: '## Wie liest man diese Übersicht?' (1 Absatz)
+      2. Kurze Einleitung (2-3 Sätze) — worum geht es, wozu die Übersicht?
+      3. 4-7 HAUPTÄSTE als H2-Überschriften, z.B.:
+         '## 1. [Hauptast-Name]'
+         '## 2. [Hauptast-Name]'
+         ...
+      4. Pro H2-Hauptast:
+         - 2-4 Unteräste als Bullet-Points
+           - Darunter jeweils 1-3 Details eingerückt
+      5. Abschlussabschnitt '## Wie liest man diese Übersicht?' (1 Absatz)
+         mit Hinweis, wie die Hauptäste zusammenhängen.
+      WICHTIG: Die H2-Hauptäste dürfen NICHT fehlen — sonst sieht die Chat-
+      Vorschau nur einen einzigen Abschnitt und wirkt leer.
 
   - id: uebung
     label: Übungsaufgaben

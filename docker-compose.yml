@@ -8,13 +8,36 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # ── LLM Provider ─────────────────────────────────────────
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - B_API_KEY=${B_API_KEY:-}
       - B_API_BASE_URL=${B_API_BASE_URL:-}
       - LLM_CHAT_MODEL=${LLM_CHAT_MODEL:-}
       - LLM_EMBED_MODEL=${LLM_EMBED_MODEL:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-}
+      # ── GPT-5 tuning (nur bei LLM_PROVIDER=openai + GPT-5-Modellen wirksam)
+      - LLM_VERBOSITY=${LLM_VERBOSITY:-}
+      - LLM_REASONING_EFFORT=${LLM_REASONING_EFFORT:-}
+      # ── Embedding override (fuer exotische Modelle)
+      - EMBED_DIM=${EMBED_DIM:-}
+      # ── Speech (STT/TTS) — sprechen immer direkt OpenAI
+      - STT_MODEL=${STT_MODEL:-}
+      - TTS_MODEL=${TTS_MODEL:-}
+      # ── MCP / RAG ─────────────────────────────────────────────
+      - MCP_SERVER_URL=${MCP_SERVER_URL:-}
+      - RAG_TOP_K=${RAG_TOP_K:-}
+      - RAG_MIN_SCORE=${RAG_MIN_SCORE:-}
+      - RAG_MAX_CHARS_PER_AREA=${RAG_MAX_CHARS_PER_AREA:-}
+      # ── Evaluation (automatisierte Persona-Dialog-Tests) ───────
+      - EVAL_CHAT_URL=${EVAL_CHAT_URL:-}
+      - EVAL_SIMULATOR_MODEL=${EVAL_SIMULATOR_MODEL:-}
+      - EVAL_JUDGE_MODEL=${EVAL_JUDGE_MODEL:-}
+      # ── Security / Ops ─────────────────────────────────────────
       - STUDIO_API_KEY=${STUDIO_API_KEY:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DATABASE_PATH=/data/badboerdi.db
     volumes:
       - backend_data:/data

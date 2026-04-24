@@ -283,7 +283,7 @@ function RagAreaInput({ selected, onChange }: {
     <div>
       <div className="checkbox-group">
         {allOptions.length === 0 && (
-          <span className="text-sm text-muted">Keine Wissensbereiche vorhanden. Erstelle zuerst Bereiche unter Schicht 5.</span>
+          <span className="text-sm text-muted">Keine Wissensbereiche vorhanden. Erstelle zuerst Bereiche unter Schicht 6 (Wissen).</span>
         )}
         {allOptions.map(a => (
           <label key={a} className={`checkbox-item ${selected.includes(a) ? 'checked' : ''}`}

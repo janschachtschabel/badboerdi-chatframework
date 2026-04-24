@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.services.auth import require_studio_key
 from app.services.database import init_db
-from app.routers import chat, config, rag, speech, sessions, safety, quality, widget
+from app.routers import chat, config, rag, speech, sessions, safety, quality, widget, eval as eval_router
 
 load_dotenv()
 
@@ -40,6 +40,15 @@ async def lifespan(app: FastAPI):
         )
 
     await init_db()
+
+    # Sweep any 'running' eval_runs rows from a previous (crashed or killed)
+    # backend process. A running row at startup is by definition orphaned —
+    # its asyncio task cannot have survived a process restart.
+    try:
+        from app.services.eval_service import sweep_orphaned_runs
+        await sweep_orphaned_runs()
+    except Exception as e:
+        log.debug("eval sweep skipped: %s", e)
 
     # Background: generate embeddings for seed chunks (non-blocking)
     async def _embed_seed_chunks():
@@ -98,10 +107,21 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             log.warning("LLM warmup skipped: %s", e)
 
-    # All three run concurrently, none blocks the server from accepting requests
+    # Background: preload the RAG cross-encoder reranker (ONNX int8,
+    # ~130 MB) so the first real chat turn doesn't pay the ~1-1.5 s
+    # model-load + first-inference cost.
+    async def _warmup_reranker():
+        try:
+            from app.services.rag_service import warmup_reranker
+            await warmup_reranker()
+        except Exception as e:
+            log.warning("Reranker warmup skipped: %s", e)
+
+    # All background tasks run concurrently; none blocks request acceptance.
     asyncio.create_task(_embed_seed_chunks())
     asyncio.create_task(_warmup_configs())
     asyncio.create_task(_warmup_llm())
+    asyncio.create_task(_warmup_reranker())
     yield
 
 
@@ -136,6 +156,8 @@ app.include_router(config.router,  prefix="/api/config",  tags=["config"],  depe
 app.include_router(rag.router,     prefix="/api/rag",     tags=["rag"],     dependencies=_studio_deps)
 app.include_router(safety.router,  prefix="/api/safety",  tags=["safety"],  dependencies=_studio_deps)
 app.include_router(quality.router, prefix="/api/quality", tags=["quality"], dependencies=_studio_deps)
+# Eval router brings its own /api/eval prefix and per-endpoint Studio guards
+app.include_router(eval_router.router)
 
 
 @app.api_route("/", methods=["GET", "HEAD"])

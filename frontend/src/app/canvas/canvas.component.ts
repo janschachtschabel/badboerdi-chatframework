@@ -35,7 +35,19 @@ export type CanvasCardAction = 'browse' | 'learning_path' | 'remix' | 'open' | '
 })
 export class CanvasComponent {
   @Input() set markdown(value: string) {
-    this._markdown.set(value || '');
+    const next = value || '';
+    // If this value comes from outside (i.e. bot-generated content replacing
+    // the previous doc), accept it as the current bot-snapshot. User-edits
+    // go through saveEdit() which calls _markdown.set() directly — bypassing
+    // this setter — so the snapshot stays aligned with the last bot version.
+    if (next !== this._markdown()) {
+      this._markdown.set(next);
+      this._botSnapshot = next;
+      // Cancel any pending edit if the bot pushed a new doc underneath us
+      if (this.editMode()) {
+        this.editMode.set(false);
+      }
+    }
   }
   get markdown(): string { return this._markdown(); }
 
@@ -65,8 +77,19 @@ export class CanvasComponent {
   @Output() goBack = new EventEmitter<void>();
   @Output() showMore = new EventEmitter<void>();
   @Output() loadMore = new EventEmitter<void>();
+  /** User hat den Canvas-Markdown manuell editiert und gespeichert. Das Widget
+   *  fängt das Event ab und propagiert den neuen Text zurück in das
+   *  `markdown`-Signal, damit der nächste Chat-Edit auf der neuen Version aufsetzt. */
+  @Output() markdownEdited = new EventEmitter<string>();
 
   private _markdown = signal<string>('');
+
+  /** Edit-Mode: zeigt eine Textarea anstelle der gerenderten Markdown-Ansicht. */
+  editMode = signal<boolean>(false);
+  /** Lokaler Draft während des Editierens. Wird beim Speichern nach _markdown gepusht. */
+  editDraft = signal<string>('');
+  /** Letzte bot-generierte Version — für den Undo-Button. Null = User hat noch nichts verändert. */
+  private _botSnapshot: string | null = null;
 
   renderedHtml = computed<SafeHtml>(() => {
     const md = this._markdown();
@@ -80,6 +103,51 @@ export class CanvasComponent {
 
   onClose(): void {
     this.closeCanvas.emit();
+  }
+
+  /** Toggle between rendered view and editable textarea. */
+  onToggleEdit(): void {
+    if (this.editMode()) {
+      // Ignore — Save/Cancel buttons handle exit
+      return;
+    }
+    this.editDraft.set(this._markdown());
+    this.editMode.set(true);
+  }
+
+  onEditInput(ev: Event): void {
+    const ta = ev.target as HTMLTextAreaElement | null;
+    this.editDraft.set(ta?.value ?? '');
+  }
+
+  onSaveEdit(): void {
+    const next = this.editDraft();
+    this._markdown.set(next);
+    this.editMode.set(false);
+    // Bot-Snapshot is preserved unchanged — it represents the last bot
+    // version, not the user's working copy. That way "Restore" always
+    // returns to the last bot output, not the user's previous edit.
+    this.markdownEdited.emit(next);
+  }
+
+  onCancelEdit(): void {
+    this.editDraft.set('');
+    this.editMode.set(false);
+  }
+
+  /** Revert to the last bot-generated version (pre-user-edit). */
+  onRestoreBotVersion(): void {
+    if (this._botSnapshot == null) return;
+    if (this._botSnapshot === this._markdown()) return;
+    if (!confirm('Deine Änderungen verwerfen und zur Bot-Version zurückkehren?')) return;
+    this._markdown.set(this._botSnapshot);
+    this.editMode.set(false);
+    this.markdownEdited.emit(this._botSnapshot);
+  }
+
+  /** True if the user has edited the canvas and a bot-version exists to restore. */
+  get userEditedSinceBot(): boolean {
+    return this._botSnapshot != null && this._botSnapshot !== this._markdown();
   }
 
   onSwitchView(view: 'material' | 'cards'): void {
@@ -183,6 +251,54 @@ export class CanvasComponent {
   /** URL for the topic-page card (uses currently selected variant). */
   topicPageUrl(card: WloCard): string {
     return this.selectedVariant(card)?.url || getCardPrimaryUrl(card);
+  }
+
+  /** Map target-group code → human label (frontend-side fallback, mirrors
+   *  backend's _tp_label()). Keeps the dropdown readable even when the
+   *  MCP response only carries a generic "Themenseite" label.
+   */
+  private static readonly _TG_LABELS: Record<string, string> = {
+    teacher: 'Lehrkräfte',
+    learner: 'Lernende',
+    general: 'Allgemein',
+    parent: 'Eltern',
+    pupil: 'Lernende',
+    student: 'Lernende',
+  };
+
+  /** Pick the most informative label we can build for a variant.
+   *  Priority:
+   *    1. backend-label if it's something other than the generic "Themenseite"
+   *    2. localised target-group name ("Lehrkräfte" / "Lernende" / "Allgemein")
+   *    3. raw target_group value
+   *    4. trimmed variant_id as a last resort (so multiple variants are
+   *       at least distinguishable in the dropdown)
+   */
+  variantLabel(card: WloCard, v: { url: string; target_group: string; label: string; variant_id: string }): string {
+    const lbl = (v?.label || '').trim();
+    if (lbl && lbl.toLowerCase() !== 'themenseite') return lbl;
+    const tg = (v?.target_group || '').toLowerCase().trim();
+    if (tg) return CanvasComponent._TG_LABELS[tg] || (v.target_group as string);
+    // Multiple variants with no target group → disambiguate via URL query
+    // param or variant_id, so the user at least sees different entries.
+    if (v?.url) {
+      try {
+        const u = new URL(v.url);
+        const q = u.searchParams.get('target')
+          || u.searchParams.get('zielgruppe')
+          || u.searchParams.get('variant');
+        if (q) return CanvasComponent._TG_LABELS[q.toLowerCase()] || q;
+      } catch { /* ignore */ }
+    }
+    if (v?.variant_id) {
+      const vid = v.variant_id;
+      // If variant_ids are short (e.g. "v1", "teacher") keep them verbatim.
+      if (vid.length <= 20) return vid;
+      return vid.slice(0, 8) + '…';
+    }
+    // Fallback: number them so 4 entries aren't all "Themenseite".
+    const idx = (card?.topic_pages || []).indexOf(v);
+    return idx >= 0 ? `Variante ${idx + 1}` : 'Themenseite';
   }
 
   get hasHiddenCards(): boolean {

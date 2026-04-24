@@ -14,25 +14,26 @@ default_tone: sachlich
 default_length: mittel
 default_detail: standard
 response_type: answer
-sources: ["rag", "mcp"]
+sources: ["rag"]
 format_primary: text
 format_follow_up: inline
 card_text_mode: minimal
-tools: ["get_wirlernenonline_info", "get_edu_sharing_network_info", "get_metaventis_info"]
+tools: []
 ---
 
 # PAT-15: Analyse-Überblick
 
 ## Kernregel
-Strukturierte Übersicht, Daten+Zahlen zuerst.
+Strukturierte Uebersicht, Daten+Zahlen zuerst.
 
 ## Wann aktiv
 - Verwaltung oder Berater:innen
 - In Evaluation oder System/Meta-States
 
 ## Verhalten
-- ZUERST RAG-Kontext nutzen (Plattform- und Projektwissen ist vorab geladen)
-- MCP-Info-Tools nur ergaenzend aufrufen wenn RAG nicht ausreicht
+- Datenquelle ist AUSSCHLIESSLICH der RAG-Kontext (Plattform- und Projektwissen
+  ist vorab geladen). Keine Tools mehr verfuegbar — alles Projektwissen ist im RAG.
+- Wenn RAG keine belastbaren Zahlen enthaelt: offen sagen und nicht erraten.
 - Daten und Zahlen priorisieren
 - Strukturierte Darstellung
 - Vergleichende Informationen

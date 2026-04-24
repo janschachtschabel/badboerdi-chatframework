@@ -14,7 +14,16 @@ import sqlite_vec
 
 DB_PATH = os.getenv("DATABASE_PATH", "badboerdi.db")
 
-EMBED_DIM = 1536  # text-embedding-3-small
+# Dimension of the configured embedding model. Derived at import time so
+# a model swap via ``LLM_EMBED_MODEL`` automatically picks up the new
+# size without code changes. Escape hatch: set ``EMBED_DIM`` env var to
+# override the lookup table for custom models. Default stays 1536 for
+# ``text-embedding-3-small`` (no behaviour change on existing setups).
+try:
+    from app.services.llm_provider import get_embed_dim as _get_embed_dim
+    EMBED_DIM = _get_embed_dim()
+except Exception:
+    EMBED_DIM = 1536
 
 
 def _make_vec_connector(db_path: str = DB_PATH):
@@ -152,6 +161,32 @@ CREATE INDEX IF NOT EXISTS idx_quality_logs_session ON quality_logs(session_id);
 CREATE INDEX IF NOT EXISTS idx_quality_logs_created ON quality_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_quality_logs_pattern ON quality_logs(pattern_id);
 CREATE INDEX IF NOT EXISTS idx_quality_logs_intent ON quality_logs(intent_id);
+
+-- Eval runs: automated persona-driven conversation testing.
+-- One row per kicked-off eval run; results (transcripts, scores) in
+-- conversations_json + summary_json. Individual Turns are ALSO written
+-- to quality_logs (via the normal /api/chat path), so pattern-usage
+-- analytics work on the same table as production traffic.
+CREATE TABLE IF NOT EXISTS eval_runs (
+    id                  TEXT PRIMARY KEY,
+    created_at          TEXT NOT NULL,
+    completed_at        TEXT,
+    status              TEXT NOT NULL,     -- 'running' | 'done' | 'failed'
+    mode                TEXT NOT NULL,     -- 'scenarios' | 'conversations' | 'both'
+    config_slug         TEXT DEFAULT '',   -- e.g. 'wlo/v1' — for cross-config tracking
+    personas            TEXT DEFAULT '[]', -- JSON array of persona_ids included
+    intents             TEXT DEFAULT '[]', -- JSON array of intent_ids included
+    turns_per_conv      INTEGER DEFAULT 3,
+    judge_model         TEXT DEFAULT '',
+    simulator_model     TEXT DEFAULT '',
+    total_turns         INTEGER DEFAULT 0,
+    avg_score           REAL DEFAULT 0.0,
+    summary_json        TEXT DEFAULT '{}', -- matrix + aggregates
+    conversations_json  TEXT DEFAULT '[]', -- full transcripts
+    error_message       TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_created ON eval_runs(created_at);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_status ON eval_runs(status);
 """
 
 
@@ -184,19 +219,89 @@ async def init_db():
         # Migrate existing embeddings from rag_chunks.embedding BLOB → rag_vec
         await _migrate_embeddings_to_vec(db)
 
-    # Import RAG seed if database is empty
-    await _import_rag_seed_if_empty()
+    # Initial content on empty DB:
+    # 1. Try Factory-Snapshot (full config + DB + embeddings) — best UX
+    # 2. Fall back to rag-seed.json (chunks only, embeddings regenerated)
+    imported = await _restore_factory_snapshot_if_empty()
+    if not imported:
+        await _import_rag_seed_if_empty()
+
+    # Drift-Check: warnen, wenn Areas aus rag-config.yaml nicht in der DB
+    # vorhanden sind (oder umgekehrt). Kein Fail — nur Hinweis im Log, damit
+    # Ops den Unterschied bemerken. Niemals defensiv Daten anfassen.
+    try:
+        await _warn_on_rag_area_drift()
+    except Exception as e:
+        _db_logger.debug("rag-area drift check skipped: %s", e)
 
 
 import logging as _logging
 
 _db_logger = _logging.getLogger(__name__)
 
+
+async def _warn_on_rag_area_drift() -> None:
+    """Log a WARNING if rag-config.yaml areas differ from DB areas.
+
+    Two drift cases:
+      - YAML declares an area that has no chunks in the DB (cold area;
+        retrieval silently returns nothing).
+      - DB has chunks in an area that isn't declared in YAML (orphan;
+        on-demand tool can't reach it because routing is YAML-driven).
+
+    We never mutate state here — just surface the delta so Ops can fix it
+    in the Studio. The `always`-mode Pre-Fetch still works regardless,
+    because `get_always_on_rag_areas()` reads the YAML directly.
+    """
+    try:
+        from app.services.config_loader import load_rag_config
+    except Exception:
+        return
+    try:
+        yaml_areas = set(load_rag_config().keys())
+    except Exception:
+        yaml_areas = set()
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT DISTINCT area FROM rag_chunks")
+        rows = await cursor.fetchall()
+    db_areas = {row[0] for row in rows if row and row[0]}
+
+    missing_in_db = yaml_areas - db_areas
+    orphan_in_db = db_areas - yaml_areas
+
+    if missing_in_db:
+        _db_logger.warning(
+            "RAG area drift: declared in rag-config.yaml but NO chunks in DB: %s",
+            sorted(missing_in_db),
+        )
+    if orphan_in_db:
+        _db_logger.warning(
+            "RAG area drift: chunks in DB but NOT declared in rag-config.yaml: %s",
+            sorted(orphan_in_db),
+        )
+    if not missing_in_db and not orphan_in_db and yaml_areas:
+        _db_logger.info(
+            "RAG area check OK — %d area(s) aligned between config and DB.",
+            len(yaml_areas),
+        )
+
+
 # Seed file paths (checked in order)
 _SEED_PATHS = [
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "knowledge", "rag-seed.json"),
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "chatbots", "wlo", "v1", "05-knowledge", "rag-seed.json"),
 ]
+
+# Factory-Snapshot: ZIP mit config/ + db/badboerdi.db (inkl. Embeddings).
+# Wird bei komplett leerer DB automatisch eingespielt, damit der Chatbot
+# mit vorkuratierten Wissensbasen + Studio-Einstellungen startklar ist.
+# Pflege ueber `POST /api/config/factory/save` (aktueller Snapshot wird
+# zur neuen Factory gemacht) oder durch direktes Ablegen der Datei.
+FACTORY_SNAPSHOT_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "knowledge", "factory-snapshot.zip",
+)
 
 
 async def _get_meta(db: aiosqlite.Connection, key: str) -> str | None:
@@ -212,6 +317,71 @@ async def _set_meta(db: aiosqlite.Connection, key: str, value: str):
         "INSERT OR REPLACE INTO meta (key, value, updated_at) VALUES (?, ?, ?)",
         (key, value, datetime.utcnow().isoformat()),
     )
+
+
+async def _restore_factory_snapshot_if_empty() -> bool:
+    """Restore the factory snapshot when the DB is completely empty.
+
+    Runs on every startup — but only the first time the database is
+    created (no rag_chunks, no sessions, no messages). On already-populated
+    databases this is a no-op so user content is never overwritten.
+
+    Returns True if a restore happened (caller then skips the rag-seed
+    import). False if no factory snapshot exists, or the DB already has
+    data.
+    """
+    if not os.path.isfile(FACTORY_SNAPSHOT_PATH):
+        _db_logger.info("No factory snapshot at %s — skipping", FACTORY_SNAPSHOT_PATH)
+        return False
+
+    # Is the DB "fresh"? Check for any user data AND any RAG content.
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT COUNT(*) FROM rag_chunks")
+        rag_count = (await cur.fetchone())[0]
+        cur = await db.execute("SELECT COUNT(*) FROM sessions")
+        sess_count = (await cur.fetchone())[0]
+        cur = await db.execute("SELECT COUNT(*) FROM messages")
+        msg_count = (await cur.fetchone())[0]
+
+    if rag_count > 0 or sess_count > 0 or msg_count > 0:
+        _db_logger.info(
+            "DB not empty (rag=%d sessions=%d messages=%d) — factory skipped",
+            rag_count, sess_count, msg_count,
+        )
+        return False
+
+    # Version-Marker: stop re-applying the same factory snapshot on every
+    # startup if the DB was manually wiped but the marker stayed.
+    async with aiosqlite.connect(DB_PATH) as db:
+        try:
+            stored = await _get_meta(db, "factory_version")
+        except Exception:
+            stored = None
+    current_version = str(int(os.path.getmtime(FACTORY_SNAPSHOT_PATH)))
+    if stored == current_version:
+        _db_logger.info("Factory snapshot %s already applied — skipped", current_version)
+        return False
+
+    _db_logger.info("Empty DB + factory snapshot present → restoring from %s", FACTORY_SNAPSHOT_PATH)
+    try:
+        with open(FACTORY_SNAPSHOT_PATH, "rb") as f:
+            raw = f.read()
+        # Late import: config.py is in the routers layer and depends on
+        # database.py — doing this at module load time would cause a
+        # circular import at interpreter start.
+        from app.routers.config import _restore_from_zip_bytes
+        out = _restore_from_zip_bytes(raw, wipe=False, include_db=True)
+        _db_logger.info(
+            "Factory restore: %d config files, db_restored=%s",
+            out.get("config_files", 0), out.get("db_restored"),
+        )
+        async with aiosqlite.connect(DB_PATH) as db:
+            await _set_meta(db, "factory_version", current_version)
+            await db.commit()
+        return True
+    except Exception as e:
+        _db_logger.error("Factory restore failed: %s", e)
+        return False
 
 
 async def _import_rag_seed_if_empty():
@@ -520,11 +690,27 @@ async def log_quality_event(
         await db.commit()
 
 
+def _scope_clause(scope: str) -> tuple[str, list]:
+    """Build a WHERE fragment for the quality_logs scope filter.
+
+    scope='production' → session_id NOT LIKE 'eval-%'
+    scope='eval'       → session_id LIKE 'eval-%'
+    scope='all' (or unknown) → no restriction
+    """
+    s = (scope or "all").strip().lower()
+    if s == "production":
+        return "session_id NOT LIKE 'eval-%'", []
+    if s == "eval":
+        return "session_id LIKE 'eval-%'", []
+    return "", []
+
+
 async def get_quality_logs(
     limit: int = 100,
     session_id: str = "",
     pattern_id: str = "",
     intent_id: str = "",
+    scope: str = "all",
 ) -> list[dict]:
     """Return recent quality log rows with optional filters."""
     where = []
@@ -538,6 +724,9 @@ async def get_quality_logs(
     if intent_id:
         where.append("intent_id LIKE ?")
         args.append(f"{intent_id}%")
+    sc, sc_args = _scope_clause(scope)
+    if sc:
+        where.append(sc); args.extend(sc_args)
     sql = "SELECT * FROM quality_logs"
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -574,11 +763,12 @@ async def clear_quality_logs(
     session_id: str = "",
     pattern_id: str = "",
     intent_id: str = "",
+    scope: str = "all",
 ) -> int:
     """Bulk-delete quality logs by the same filter shape as get_quality_logs.
 
-    With NO filter given, deletes ALL quality logs — callers must confirm.
-    Returns number of deleted rows.
+    With NO filter given AND scope='all', deletes ALL quality logs — callers
+    must confirm. Returns number of deleted rows.
     """
     where: list[str] = []
     args: list[Any] = []
@@ -588,6 +778,9 @@ async def clear_quality_logs(
         where.append("pattern_id LIKE ?"); args.append(f"{pattern_id}%")
     if intent_id:
         where.append("intent_id LIKE ?"); args.append(f"{intent_id}%")
+    sc, sc_args = _scope_clause(scope)
+    if sc:
+        where.append(sc); args.extend(sc_args)
     sql = "DELETE FROM quality_logs"
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -597,63 +790,337 @@ async def clear_quality_logs(
         return cur.rowcount or 0
 
 
-async def get_quality_stats() -> dict:
-    """Aggregate quality metrics for dashboard / offline analysis."""
+async def get_quality_stats(scope: str = "all") -> dict:
+    """Aggregate quality metrics for dashboard / offline analysis.
+
+    ``scope`` filters the underlying ``quality_logs`` rows:
+      'all'         → all turns (default)
+      'production'  → only real chat sessions (session_id NOT LIKE 'eval-%')
+      'eval'        → only simulated eval turns
+    """
+    sc, sc_args = _scope_clause(scope)
+    where_sql = f"WHERE {sc}" if sc else ""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        stats: dict = {}
+        stats: dict = {"scope": scope}
 
-        # Total turns logged
-        c = await db.execute("SELECT COUNT(*) as cnt FROM quality_logs")
+        # Total turns logged (within scope)
+        c = await db.execute(f"SELECT COUNT(*) as cnt FROM quality_logs {where_sql}", sc_args)
         stats["total_turns"] = (await c.fetchone())["cnt"]
 
         # Pattern distribution
         c = await db.execute(
-            "SELECT pattern_id, COUNT(*) as cnt FROM quality_logs "
-            "GROUP BY pattern_id ORDER BY cnt DESC LIMIT 20"
+            f"SELECT pattern_id, COUNT(*) as cnt FROM quality_logs {where_sql} "
+            f"GROUP BY pattern_id ORDER BY cnt DESC LIMIT 20", sc_args,
         )
         stats["pattern_distribution"] = {r["pattern_id"]: r["cnt"] for r in await c.fetchall()}
 
         # Intent distribution
         c = await db.execute(
-            "SELECT intent_id, COUNT(*) as cnt FROM quality_logs "
-            "GROUP BY intent_id ORDER BY cnt DESC LIMIT 20"
+            f"SELECT intent_id, COUNT(*) as cnt FROM quality_logs {where_sql} "
+            f"GROUP BY intent_id ORDER BY cnt DESC LIMIT 20", sc_args,
         )
         stats["intent_distribution"] = {r["intent_id"]: r["cnt"] for r in await c.fetchall()}
 
         # Average confidence
-        c = await db.execute("SELECT AVG(final_confidence) as avg_conf FROM quality_logs")
+        c = await db.execute(
+            f"SELECT AVG(final_confidence) as avg_conf FROM quality_logs {where_sql}", sc_args,
+        )
         stats["avg_confidence"] = round((await c.fetchone())["avg_conf"] or 0, 3)
 
         # Average score gap (low gap = pattern selection is ambiguous)
-        c = await db.execute("SELECT AVG(phase2_score_gap) as avg_gap FROM quality_logs")
+        c = await db.execute(
+            f"SELECT AVG(phase2_score_gap) as avg_gap FROM quality_logs {where_sql}", sc_args,
+        )
         stats["avg_score_gap"] = round((await c.fetchone())["avg_gap"] or 0, 4)
 
         # Degradation rate
         c = await db.execute(
-            "SELECT COUNT(*) as cnt FROM quality_logs WHERE degradation = 1"
+            f"SELECT COUNT(*) as cnt FROM quality_logs {where_sql} "
+            f"{'AND' if where_sql else 'WHERE'} degradation = 1", sc_args,
         )
         deg_count = (await c.fetchone())["cnt"]
         stats["degradation_rate"] = round(deg_count / max(stats["total_turns"], 1), 3)
 
         # Tight races (score_gap < 0.02 — patterns almost tied)
         c = await db.execute(
-            "SELECT COUNT(*) as cnt FROM quality_logs WHERE phase2_score_gap < 0.02"
+            f"SELECT COUNT(*) as cnt FROM quality_logs {where_sql} "
+            f"{'AND' if where_sql else 'WHERE'} phase2_score_gap < 0.02", sc_args,
         )
         stats["tight_races"] = (await c.fetchone())["cnt"]
 
         # Empty entity rate
         c = await db.execute(
-            "SELECT COUNT(*) as cnt FROM quality_logs WHERE entities = '{}'"
+            f"SELECT COUNT(*) as cnt FROM quality_logs {where_sql} "
+            f"{'AND' if where_sql else 'WHERE'} entities = '{{}}'", sc_args,
         )
         empty_ent = (await c.fetchone())["cnt"]
         stats["empty_entity_rate"] = round(empty_ent / max(stats["total_turns"], 1), 3)
 
         # Average response length
-        c = await db.execute("SELECT AVG(response_length) as avg_len FROM quality_logs")
+        c = await db.execute(
+            f"SELECT AVG(response_length) as avg_len FROM quality_logs {where_sql}", sc_args,
+        )
         stats["avg_response_length"] = round((await c.fetchone())["avg_len"] or 0, 0)
 
         return stats
+
+
+async def get_degradation_breakdown(
+    scope: str = "all", limit: int = 50,
+) -> dict:
+    """Return actionable degradation diagnostics.
+
+    A degradation is when the pattern engine had to fall back to a simpler
+    response because required precondition slots were missing (e.g. thema,
+    material_typ). Grouping by (pattern, missing_slots-combo) tells admins
+    which patterns keep asking for data that users don't provide.
+    """
+    sc, sc_args = _scope_clause(scope)
+    where = ["degradation = 1", "pattern_id != ''"]
+    args: list[Any] = []
+    if sc:
+        where.append(sc); args.extend(sc_args)
+    where_sql = "WHERE " + " AND ".join(where)
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # Group by (pattern, missing_slots) — the text form of missing_slots is
+        # a JSON array; identical JSON strings group correctly without parsing.
+        c = await db.execute(
+            f"""SELECT pattern_id,
+                       missing_slots,
+                       COUNT(*) AS count,
+                       MAX(id) AS example_id
+                FROM quality_logs
+                {where_sql}
+                GROUP BY pattern_id, missing_slots
+                ORDER BY count DESC
+                LIMIT ?""",
+            (*args, limit),
+        )
+        rows = [dict(r) for r in await c.fetchall()]
+
+        groups = []
+        for row in rows:
+            # Parse the missing_slots JSON for a clean display list
+            try:
+                slots = json.loads(row.get("missing_slots") or "[]")
+                if not isinstance(slots, list):
+                    slots = []
+            except Exception:
+                slots = []
+            c2 = await db.execute(
+                "SELECT message, intent_id, persona_id, state_id "
+                "FROM quality_logs WHERE id = ?",
+                (row.pop("example_id"),),
+            )
+            sample = await c2.fetchone()
+            entry = {
+                "pattern_id": row["pattern_id"],
+                "missing_slots": slots,
+                "count": row["count"],
+            }
+            if sample:
+                entry["example_message"] = (sample["message"] or "")[:200]
+                entry["example_intent"] = sample["intent_id"]
+                entry["example_persona"] = sample["persona_id"]
+                entry["example_state"] = sample["state_id"]
+            groups.append(entry)
+
+        # Total count for the header
+        c = await db.execute(
+            f"SELECT COUNT(*) AS cnt FROM quality_logs {where_sql}", args,
+        )
+        total = (await c.fetchone())["cnt"]
+
+    return {"groups": groups, "total": total, "scope": scope}
+
+
+async def get_empty_entities_breakdown(
+    scope: str = "all", limit: int = 50,
+) -> dict:
+    """Return intents where entity extraction consistently fails.
+
+    Empty entities are normal for greetings/smalltalk but problematic for
+    content intents (search, canvas-create) where users typically mention
+    topic, grade level, material type.
+    """
+    sc, sc_args = _scope_clause(scope)
+    where = ["entities = '{}'"]
+    args: list[Any] = []
+    if sc:
+        where.append(sc); args.extend(sc_args)
+    where_sql = "WHERE " + " AND ".join(where)
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        c = await db.execute(
+            f"""SELECT intent_id,
+                       pattern_id,
+                       COUNT(*) AS count,
+                       MAX(id) AS example_id
+                FROM quality_logs
+                {where_sql}
+                GROUP BY intent_id, pattern_id
+                ORDER BY count DESC
+                LIMIT ?""",
+            (*args, limit),
+        )
+        rows = [dict(r) for r in await c.fetchall()]
+
+        groups = []
+        for row in rows:
+            c2 = await db.execute(
+                "SELECT message, persona_id, state_id "
+                "FROM quality_logs WHERE id = ?",
+                (row.pop("example_id"),),
+            )
+            sample = await c2.fetchone()
+            entry = {
+                "intent_id": row["intent_id"],
+                "pattern_id": row["pattern_id"],
+                "count": row["count"],
+            }
+            if sample:
+                entry["example_message"] = (sample["message"] or "")[:200]
+                entry["example_persona"] = sample["persona_id"]
+                entry["example_state"] = sample["state_id"]
+            groups.append(entry)
+
+        c = await db.execute(
+            f"SELECT COUNT(*) AS cnt FROM quality_logs {where_sql}", args,
+        )
+        total = (await c.fetchone())["cnt"]
+
+    return {"groups": groups, "total": total, "scope": scope}
+
+
+async def get_low_confidence_turns(
+    scope: str = "all", max_confidence: float = 0.60, limit: int = 30,
+) -> dict:
+    """Return individual turns where the classifier was least confident.
+
+    Unlike the grouped breakdowns, this returns raw turn-level data because
+    confidence issues tend to be message-specific (unclear phrasing, novel
+    topic). Useful for spotting input patterns the classifier struggles with.
+    """
+    sc, sc_args = _scope_clause(scope)
+    where = ["final_confidence < ?", "final_confidence > 0"]
+    args: list[Any] = [max_confidence]
+    if sc:
+        where.append(sc); args.extend(sc_args)
+    where_sql = "WHERE " + " AND ".join(where)
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        c = await db.execute(
+            f"""SELECT id, message, intent_id, pattern_id, persona_id,
+                       final_confidence, phase2_winner_score, phase2_score_gap,
+                       state_id, created_at
+                FROM quality_logs
+                {where_sql}
+                ORDER BY final_confidence ASC, phase2_score_gap ASC
+                LIMIT ?""",
+            (*args, limit),
+        )
+        rows = []
+        for r in await c.fetchall():
+            d = dict(r)
+            d["message"] = (d.get("message") or "")[:200]
+            d["final_confidence"] = round(d.get("final_confidence") or 0, 3)
+            d["phase2_winner_score"] = round(d.get("phase2_winner_score") or 0, 3)
+            d["phase2_score_gap"] = round(d.get("phase2_score_gap") or 0, 4)
+            rows.append(d)
+
+        c = await db.execute(
+            f"SELECT COUNT(*) AS cnt FROM quality_logs {where_sql}", args,
+        )
+        total = (await c.fetchone())["cnt"]
+
+    return {
+        "turns": rows, "total": total, "scope": scope,
+        "max_confidence": max_confidence,
+    }
+
+
+async def get_tight_races_breakdown(
+    scope: str = "all", threshold: float = 0.02, limit: int = 50,
+) -> dict:
+    """Return actionable tight-race diagnostics.
+
+    A "tight race" is a turn where the winning pattern beat the runner-up
+    by less than ``threshold`` — meaning the pattern selection was
+    ambiguous. Grouping by (winner, runner_up) pairs shows WHICH patterns
+    keep colliding, so admins can tighten their signals/gates.
+
+    Returns:
+      {
+        'pairs': [
+          {'winner': 'PAT-01', 'runner_up': 'PAT-20', 'count': 8,
+           'avg_gap': 0.012, 'example_message': "...",
+           'example_intent': "INT-W-02", 'example_persona': "P-W-LK"},
+          ...
+        ],
+        'total_tight': <int>,
+        'threshold': 0.02,
+      }
+    """
+    sc, sc_args = _scope_clause(scope)
+    filters = ["phase2_score_gap < ?", "phase2_score_gap >= 0",
+               "pattern_id != ''", "phase2_runner_up != ''"]
+    args: list[Any] = [threshold]
+    if sc:
+        filters.append(sc)
+        args.extend(sc_args)
+    where_sql = "WHERE " + " AND ".join(filters)
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Grouped pairs with an example message per pair (latest occurrence)
+        c = await db.execute(
+            f"""SELECT
+                    pattern_id AS winner,
+                    phase2_runner_up AS runner_up,
+                    COUNT(*) AS count,
+                    AVG(phase2_score_gap) AS avg_gap,
+                    MAX(id) AS example_id
+                FROM quality_logs
+                {where_sql}
+                GROUP BY pattern_id, phase2_runner_up
+                ORDER BY count DESC, avg_gap ASC
+                LIMIT ?""",
+            (*args, limit),
+        )
+        rows = [dict(r) for r in await c.fetchall()]
+
+        # Enrich each pair with a sample message + persona + intent
+        for row in rows:
+            c2 = await db.execute(
+                "SELECT message, intent_id, persona_id, state_id FROM quality_logs WHERE id = ?",
+                (row.pop("example_id"),),
+            )
+            sample = await c2.fetchone()
+            if sample:
+                row["example_message"] = (sample["message"] or "")[:200]
+                row["example_intent"] = sample["intent_id"]
+                row["example_persona"] = sample["persona_id"]
+                row["example_state"] = sample["state_id"]
+            row["avg_gap"] = round(row.get("avg_gap") or 0, 4)
+
+        # Total tight-race turn count (for the header)
+        c = await db.execute(
+            f"SELECT COUNT(*) AS cnt FROM quality_logs {where_sql}", args,
+        )
+        total_tight = (await c.fetchone())["cnt"]
+
+    return {
+        "pairs": rows,
+        "total_tight": total_tight,
+        "threshold": threshold,
+        "scope": scope,
+    }
 
 
 # ── Message helpers ────────────────────────────────────────────
@@ -710,6 +1177,41 @@ async def delete_session(session_id: str) -> dict[str, int]:
             "DELETE FROM sessions WHERE session_id = ?", (session_id,),
         )
         counts["sessions"] = cur.rowcount or 0
+        await db.commit()
+    return counts
+
+
+async def purge_all(
+    messages: bool = True,
+    memory: bool = True,
+    quality_logs: bool = True,
+    safety_logs: bool = False,
+    sessions: bool = False,
+) -> dict[str, int]:
+    """Truncate chat-related tables wholesale.
+
+    Each flag is opt-in. ``safety_logs`` and ``sessions`` default to False
+    because safety logs are legally/operationally sensitive and wiping
+    the sessions table disconnects active users mid-conversation.
+    Returns row counts per table that were actually deleted.
+    """
+    counts: dict[str, int] = {}
+    async with aiosqlite.connect(DB_PATH) as db:
+        if messages:
+            cur = await db.execute("DELETE FROM messages")
+            counts["messages"] = cur.rowcount or 0
+        if memory:
+            cur = await db.execute("DELETE FROM memory")
+            counts["memory"] = cur.rowcount or 0
+        if quality_logs:
+            cur = await db.execute("DELETE FROM quality_logs")
+            counts["quality_logs"] = cur.rowcount or 0
+        if safety_logs:
+            cur = await db.execute("DELETE FROM safety_logs")
+            counts["safety_logs"] = cur.rowcount or 0
+        if sessions:
+            cur = await db.execute("DELETE FROM sessions")
+            counts["sessions"] = cur.rowcount or 0
         await db.commit()
     return counts
 

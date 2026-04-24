@@ -95,7 +95,8 @@ interface CanvasSnapshot {
               (switchView)="onCanvasViewSwitch($event)"
               (goBack)="onCanvasGoBack()"
               (showMore)="onCanvasShowMore()"
-              (loadMore)="onCanvasLoadMoreFromServer()">
+              (loadMore)="onCanvasLoadMoreFromServer()"
+              (markdownEdited)="onCanvasMarkdownEdited($event)">
             </badboerdi-canvas>
           </div>
 
@@ -623,6 +624,15 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
     this.canvasQuery.set(prev.query);
     this.canvasPreviewCard.set(prev.previewCard);
     this.canvasPreferredView.set(prev.preferredView);
+  }
+
+  /** User has saved a direct markdown edit from the canvas editor. Push the
+   *  new text into the canvas signal so the next chat turn sees it via
+   *  `canvasStateForBackend` and the backend treats it as the new
+   *  current_markdown. NO server round-trip — this is purely local state.
+   */
+  onCanvasMarkdownEdited(newMarkdown: string): void {
+    this.canvasMarkdown.set(newMarkdown || '');
   }
 
   closeCanvas() {
