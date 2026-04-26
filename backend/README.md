@@ -137,8 +137,21 @@ Alle Routen unter `/api/config/*` sind **Studio**-geschuetzt.
 | `PUT`    | `/api/config/mcp-servers` | MCP-Server-Konfiguration schreiben. |
 | `POST`   | `/api/config/mcp-servers/discover` | Tools eines MCP-Servers automatisch entdecken (SSRF-geschuetzt). |
 | `POST`   | `/api/config/import` | Batch-Import (JSON, pfad-validiert). |
-| `GET`    | `/api/config/backup` | Komplettes `chatbots/wlo/v1`-Tree als ZIP. |
-| `POST`   | `/api/config/restore[?wipe=true]` | ZIP einspielen (merge oder wipe+restore). |
+| `GET`    | `/api/config/canvas/material-types` | Typed JSON der 18 Canvas-Material-Typen (für GUI-Editor). |
+| `PUT`    | `/api/config/canvas/material-types` | Liste schreiben — Multi-line-`structure` wird als YAML-Block-Scalar serialisiert. |
+| `GET`    | `/api/config/privacy` | Logging-Toggles (messages/memory/quality). |
+| `PUT`    | `/api/config/privacy` | Logging-Toggles updaten. `safety` ist read-only true. |
+| `GET`    | `/api/config/backup` | Komplettes `chatbots/wlo/v1`-Tree (+ optional DB) als ZIP. |
+| `POST`   | `/api/config/restore[?wipe=true&include_db=true]` | ZIP einspielen (merge oder wipe+restore). |
+| `POST`   | `/api/config/snapshots[?label=…&include_db=true]` | Server-seitigen Snapshot anlegen (`backend/snapshots/`). |
+| `GET`    | `/api/config/snapshots` | Alle User-Snapshots auflisten. |
+| `POST`   | `/api/config/snapshots/{id}/restore` | User-Snapshot zurückspielen. |
+| `DELETE` | `/api/config/snapshots/{id}` | User-Snapshot löschen. |
+| `GET`    | `/api/config/factory` | Metadata des Werkseinstellungs-Snapshots. |
+| `POST`   | `/api/config/factory/save[?from_snapshot=…]` | Aktuellen Live-Stand (oder einen User-Snapshot) zur Werkseinstellung promoten. |
+| `POST`   | `/api/config/factory/restore` | Werkseinstellung aktiv wiederherstellen. |
+| `POST`   | `/api/config/factory/upload` | Neue Werkseinstellung als ZIP hochladen (Ops-Workflow). |
+| `GET`    | `/api/config/factory/download` | Werkseinstellung herunterladen. |
 
 ### RAG (`/api/rag`) — Wissensbereiche
 

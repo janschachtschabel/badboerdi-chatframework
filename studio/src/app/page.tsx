@@ -11,12 +11,14 @@ import HomeOverview from '@/components/HomeOverview';
 import SecurityLevelPicker from '@/components/SecurityLevelPicker';
 import QualityView from '@/components/QualityView';
 import EvaluationView from '@/components/EvaluationView';
+import RoutingRulesView from '@/components/RoutingRulesView';
 import InfoView from '@/components/InfoView';
 import PrivacyView from '@/components/PrivacyView';
+import CanvasFormatsEditor from '@/components/CanvasFormatsEditor';
 import { SnapshotsModal } from '@/components/SnapshotsModal';
 
 // ── Types ────────────────────────────────────────────────────────────
-type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'canvas' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'evaluation' | 'privacy' | 'info';
+type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'canvas' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'evaluation' | 'routing_rules' | 'privacy' | 'info';
 
 export interface Elements {
   patterns: PatternData[];
@@ -284,25 +286,32 @@ export default function StudioPage() {
               </div>
             </button>
           ))}
+          {/* Routing-Rules belongs to architecture (control plane that wraps
+              pattern selection) — no number because it's not a prompt layer.
+              Visual: same muted-blue badge style as layers 1–6, neutral mark
+              "•" indicates "between/across all layers". Emoji ⚙️ goes into
+              the label like the other architecture items. */}
+          <button
+            className={`layer-item ${layer === 'routing_rules' ? 'active' : ''}`}
+            onClick={() => setLayer('routing_rules')}
+          >
+            <span className="layer-badge">•</span>
+            <div>
+              <div className="layer-label">⚙️ Routing-Rules</div>
+              <div className="layer-desc">Pre/Post-Route-Engine für Pattern-Routing</div>
+            </div>
+          </button>
+
           <div className="nav-divider" />
+          <div className="nav-section-label">Betrieb</div>
           <button
             className={`layer-item ${layer === 'sessions' ? 'active' : ''}`}
             onClick={() => setLayer('sessions')}
           >
-            <span className="layer-badge" style={{ background: '#6B7280', color: '#fff' }}>S</span>
+            <span className="layer-badge" style={{ background: '#6B7280', color: '#fff' }}>💬</span>
             <div>
               <div className="layer-label">Sessions</div>
               <div className="layer-desc">Gesprächsverläufe</div>
-            </div>
-          </button>
-          <button
-            className={`layer-item ${layer === 'safety_logs' ? 'active' : ''}`}
-            onClick={() => setLayer('safety_logs')}
-          >
-            <span className="layer-badge" style={{ background: '#ef4444', color: '#fff' }}>🛡</span>
-            <div>
-              <div className="layer-label">Safety-Logs</div>
-              <div className="layer-desc">Risiko-Events & Rate Limits</div>
             </div>
           </button>
           <button
@@ -326,6 +335,19 @@ export default function StudioPage() {
             </div>
           </button>
           <button
+            className={`layer-item ${layer === 'safety_logs' ? 'active' : ''}`}
+            onClick={() => setLayer('safety_logs')}
+          >
+            <span className="layer-badge" style={{ background: '#ef4444', color: '#fff' }}>🛡</span>
+            <div>
+              <div className="layer-label">Safety-Logs</div>
+              <div className="layer-desc">Risiko-Events & Rate Limits</div>
+            </div>
+          </button>
+
+          <div className="nav-divider" />
+          <div className="nav-section-label">System</div>
+          <button
             className={`layer-item ${layer === 'privacy' ? 'active' : ''}`}
             onClick={() => setLayer('privacy')}
           >
@@ -335,7 +357,6 @@ export default function StudioPage() {
               <div className="layer-desc">Logging-Optionen & Purge</div>
             </div>
           </button>
-          <div className="nav-divider" />
           <button
             className={`layer-item ${layer === 'info' ? 'active' : ''}`}
             onClick={() => setLayer('info')}
@@ -356,6 +377,7 @@ export default function StudioPage() {
             elements={elements}
             backendOnline={backendOnline}
             onNavigate={(id) => setLayer(id as Layer)}
+            onOpenSnapshots={() => setSnapshotsOpen(true)}
           />
         )}
 
@@ -401,19 +423,26 @@ export default function StudioPage() {
         )}
 
         {backendOnline && layer === 'canvas' && (
-          <ConfigTextEditor
-            title="Canvas-Formate"
-            subtitle="Die Material-Typen, die BOERDi im Canvas-Bereich rechts vom Chat erzeugen kann — inklusive Aliase, Create-Trigger-Verben und Persona-Priorisierung. Änderungen wirken live, ohne Backend-Restart."
-            files={[
-              { label: 'Material-Typen', desc: '18 Canvas-Output-Formate (Arbeitsblatt, Quiz, Bericht, …) mit Struktur-Vorgabe und Kategorie (didaktisch/analytisch)', path: '05-canvas/material-types.yaml' },
-              { label: 'Typ-Aliase & LRT-Mapping', desc: 'Welches Wort triggert welchen Typ + edu-sharing-LRT → Canvas-Typ für Remix', path: '05-canvas/type-aliases.yaml' },
-              { label: 'Create-Trigger-Verben', desc: 'Phrasen, die "Erstelle neues Material" signalisieren (inkl. indikativ: "brauche", "hätte gern") + Search-Gegenliste', path: '05-canvas/create-triggers.yaml' },
-              { label: 'Edit-Trigger-Verben', desc: 'Phrasen, die im Canvas-State als Refinement interpretiert werden ("mach es einfacher", "füge Lösungen hinzu") + "neues X"-Overrides, die trotz Canvas-State zurück auf Create gehen', path: '05-canvas/edit-triggers.yaml' },
-              { label: 'Persona-Priorisierung', desc: 'Welche Personas sehen analytische Typen (Bericht/Factsheet/…) zuerst in der Canvas-Auswahl', path: '05-canvas/persona-priorities.yaml' },
-            ]}
-            loadFile={loadFile}
-            saveFile={saveFile}
-          />
+          <>
+            {/* GUI editor for the 18 material types — typed CRUD via dedicated endpoint. */}
+            <CanvasFormatsEditor />
+            {/* Trigger / alias / persona-priority files keep the raw-YAML editor since
+                they're shorter, less structured and edited rarely. */}
+            <div style={{ marginTop: 24 }}>
+              <ConfigTextEditor
+                title="Trigger, Aliase & Priorisierung (Roh-YAML)"
+                subtitle="Diese vier Dateien sind kurz und werden seltener angepasst — bleiben deshalb im Roh-Editor. Material-Typen oben haben ihren eigenen GUI-Editor."
+                files={[
+                  { label: 'Typ-Aliase & LRT-Mapping', desc: 'Welches Wort triggert welchen Typ + edu-sharing-LRT → Canvas-Typ für Remix', path: '05-canvas/type-aliases.yaml' },
+                  { label: 'Create-Trigger-Verben', desc: 'Phrasen, die "Erstelle neues Material" signalisieren (inkl. indikativ: "brauche", "hätte gern") + Search-Gegenliste', path: '05-canvas/create-triggers.yaml' },
+                  { label: 'Edit-Trigger-Verben', desc: 'Phrasen, die im Canvas-State als Refinement interpretiert werden ("mach es einfacher", "füge Lösungen hinzu") + "neues X"-Overrides', path: '05-canvas/edit-triggers.yaml' },
+                  { label: 'Persona-Priorisierung', desc: 'Welche Personas sehen analytische Typen (Bericht/Factsheet/…) zuerst in der Canvas-Auswahl', path: '05-canvas/persona-priorities.yaml' },
+                ]}
+                loadFile={loadFile}
+                saveFile={saveFile}
+              />
+            </div>
+          </>
         )}
 
         {backendOnline && layer === 'patterns' && elements && (
@@ -455,6 +484,10 @@ export default function StudioPage() {
 
         {backendOnline && layer === 'evaluation' && (
           <EvaluationView />
+        )}
+
+        {backendOnline && layer === 'routing_rules' && (
+          <RoutingRulesView />
         )}
 
         {backendOnline && layer === 'privacy' && (

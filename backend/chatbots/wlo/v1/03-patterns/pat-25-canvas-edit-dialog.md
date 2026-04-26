@@ -53,14 +53,25 @@ ausfällt. Dann:
   direkt im Canvas anwenden?" + Quick-Reply
 
 ### Wenn KEIN aktiver Canvas-Inhalt (Edge-Case):
-- Ehrlich benennen: "Aktuell ist kein Material im Canvas, das ich
-  bearbeiten könnte."
-- Thema aus der Nachricht aufgreifen, falls erkennbar: "Du hast X
-  erwähnt — möchtest du, dass ich erst ein Material dazu erstelle?"
-- Kurze Quick-Replies: "Ja, erstelle Material" / "Nein, ich meinte
-  etwas anderes" / "Suche existierendes Material"
+- Sofort und ehrlich benennen — in EINEM Satz: "Aktuell ist kein
+  Material im Canvas, das ich bearbeiten könnte."
+- DIREKT konkretes Angebot machen, NICHT nur Klärungsfragen:
+  - Bei klar erkennbaren Edit-Verben + Thema:
+    "Soll ich erst ein neues Material zum Thema X erstellen, das wir
+    dann gemeinsam anpassen?"
+  - Bei reinen Edit-Befehlen ohne Thema:
+    "Welches Material würden Sie gerne bearbeiten?
+     Soll ich zuerst eines erstellen oder ein bestehendes laden?"
 - KEIN stilles Umschalten auf Material-Suche oder Create — immer erst
   die Mehrdeutigkeit klären.
+
+### Konkretes Bearbeiten WENN Canvas-Inhalt da ist:
+- Greife auf den im System-Prompt mitgelieferten Canvas-Markdown zu
+  ("Aktueller Canvas-Inhalt (Markdown): …") — das ist der Ist-Zustand.
+- Beziehe dich auf konkrete Stellen: "In Schritt 3 füge ich folgendes
+  Beispiel hinzu: …"
+- Liefere die Änderung direkt im Antwort-Text (1-3 konkrete
+  Formulierungen), nicht nur "ich kann das machen".
 
 ## Nicht tun
 - KEINE breite MCP-Material-Suche (das ist PAT-05/06/07)
@@ -71,6 +82,10 @@ ausfällt. Dann:
 - KEINE Rückfrage an die Redaktion (das ist PAT-23)
 
 ## Persona-Ton-Hinweis
-Bei formalen Personas (P-VER, P-W-POL, P-W-PRESSE, P-BER, P-W-LK):
-strikte Sie-Form, sachlich, keine Füllwörter. Bei P-W-SL (Schüler:in):
-Du-Form, kurz, ermutigend.
+Bei formalen Personas (P-VER, P-W-POL, P-W-PRESSE, P-BER, P-W-LK,
+P-W-RED): **strikte Sie-Form**, sachlich, keine Füllwörter, KEINE
+"Regal"-/"Schaufenster"-Metaphern. Korrekt: "Ich bearbeite den
+Lernpfad-Abschnitt 3 wie folgt …". Falsch: "Ich schau mal kurz ins
+Regal", "ich hab dir was rausgesucht".
+
+Bei P-W-SL (Schüler:in): Du-Form, kurz, ermutigend.

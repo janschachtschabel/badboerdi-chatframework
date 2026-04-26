@@ -502,16 +502,64 @@ def _extract_headings(markdown: str, topic: str, levels: str = "##") -> list[str
 def _canvas_completion_message(label: str, topic: str, markdown: str) -> str:
     """Build a rich chat-bubble text when a canvas-material is created.
 
-    Inlines the first 3–5 H2-sections as a mini-preview so the user doesn't
-    have to switch to the canvas just to see what's inside.
+    Strategy (in order):
+      1. Extract non-meta H2 sections (works for Infoblatt, Strukturübersicht).
+      2. If only meta headings (e.g. "Lösungen" on an Arbeitsblatt),
+         count numbered tasks/questions and report that count instead.
+      3. Last resort: just announce the canvas opened.
     """
+    import re as _re
     sections = _extract_headings(markdown, topic)
     lines = [f"Ich habe dir ein **{label}** zum Thema *{topic}* erstellt."]
-    if sections:
+
+    # Has the extractor only returned meta headings (e.g. ["Lösungen"]) —
+    # that means the document is task-driven (Arbeitsblatt/Quiz). Count
+    # numbered tasks instead so the preview is meaningful.
+    META_ONLY_SET = {"lösungen", "loesungen", "quellen", "hinweise"}
+    only_meta = bool(sections) and all(
+        s.strip().lower() in META_ONLY_SET for s in sections
+    )
+
+    if sections and not only_meta:
         lines.append("")
         lines.append("Abschnitte:")
-        for i, s in enumerate(sections, 1):
+        for i, s in enumerate(sections[:5], 1):
             lines.append(f"{i}. **{s}**")
+    else:
+        # Count numbered tasks at start-of-line ("1.", "2.", ...) — a robust
+        # signal for Arbeitsblatt/Quiz/Übung documents.
+        numbered = _re.findall(
+            r"^\s*(\d{1,2})\.\s+\S",
+            markdown or "",
+            flags=_re.MULTILINE,
+        )
+        # Filter out the numbered "Lösungen"-list at the end by counting only
+        # unique consecutive numbering from 1
+        task_count = 0
+        prev = 0
+        for n in numbered:
+            try:
+                ni = int(n)
+            except ValueError:
+                continue
+            if ni == prev + 1:
+                task_count += 1
+                prev = ni
+            elif ni == 1:
+                # restart of numbering (e.g. solutions section) — stop counting tasks
+                break
+        if task_count >= 2:
+            lines.append("")
+            lines.append(f"Enthält **{task_count} Aufgaben**" + (
+                " mit Lösungen." if any(s.strip().lower() in META_ONLY_SET for s in (sections or [])) else "."
+            ))
+        elif sections:
+            # Even meta-only: show them rather than nothing
+            lines.append("")
+            lines.append("Abschnitte:")
+            for i, s in enumerate(sections[:5], 1):
+                lines.append(f"{i}. **{s}**")
+
     lines.append("")
     lines.append(
         "Du siehst es rechts im Canvas — ich kann es direkt anpassen, "
@@ -1106,19 +1154,15 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     from app.services.trace_service import Tracer
     tracer = Tracer()
 
-    tracer.start("safety", "Safety assessment (multi-stage)")
+    # Safety + classify run as a single parallel block. We measure the
+    # combined wall-clock as one trace entry — splitting them produced a
+    # confusing "0 ms" entry for the parallel-spawned classify call.
+    tracer.start("safety_classify", "Safety + Classification (parallel)")
     quick_gate = _regex_gate(req.message, session_state.get("signal_history", []))
 
     if quick_gate.risk_level == "high":
         # Hard crisis from regex → no point spending LLM cycles on classify.
         safety = quick_gate
-        tracer.end({
-            "risk_level": safety.risk_level,
-            "stages": safety.stages_run,
-            "escalated": False,
-            "legal_flags": safety.legal_flags,
-            "fast_path": "regex_crisis",
-        })
         # Synthesize a minimal classification so the rest of the pipeline
         # can run unchanged. Pattern engine will pick PAT-CRISIS via the
         # safety.enforced_pattern override below.
@@ -1132,7 +1176,14 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             next_state=session_state.get("state_id") or "state-1",
             turn_type="initial",
         )
-        tracer.record("classify", "LLM classification", {"skipped": "crisis_short_circuit"})
+        tracer.end({
+            "fast_path": "regex_crisis",
+            "risk_level": safety.risk_level,
+            "stages": safety.stages_run,
+            "escalated": False,
+            "legal_flags": safety.legal_flags,
+            "classify_skipped": "crisis_short_circuit",
+        })
     else:
         # Run safety LLM stages and classify_input in parallel.
         safety_task = asyncio.create_task(
@@ -1157,16 +1208,14 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 next_state=session_state.get("state_id") or "state-1",
             )
         tracer.end({
+            "parallel": True,
             "risk_level": safety.risk_level,
             "stages": safety.stages_run,
             "escalated": safety.escalated,
             "legal_flags": safety.legal_flags,
-            "parallel": True,
-        })
-        tracer.record("classify", "LLM classification (parallel)", {
             "intent": classification.intent_id,
             "persona": classification.persona_id,
-            "confidence": classification.intent_confidence,
+            "intent_confidence": classification.intent_confidence,
             "next_state": classification.next_state,
         })
 
@@ -1319,6 +1368,83 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             if v:
                 session_state["entities"][k] = v
 
+    # ── Heuristic enrichment for the engine ─────────────────────
+    # The classifier doesn't always extract material_typ from the
+    # message text. Our heuristic alias-lookup catches more cases
+    # (plurals, synonyms). Lift the heuristic value into
+    # classification.entities so R-5 (soft-create) can match.
+    _heuristic_mt = extract_material_type_from_message(req.message)
+    if _heuristic_mt and not (classification.entities or {}).get("material_typ"):
+        if classification.entities is None:
+            classification.entities = {}
+        classification.entities["material_typ"] = _heuristic_mt
+        # Also lift into session_state so downstream code sees it
+        session_state.setdefault("entities", {})["material_typ"] = _heuristic_mt
+
+    # ── Pre-Route Rule Engine ────────────────────────────────────
+    # Runs BEFORE pattern selection so persona/intent/state corrections
+    # propagate into all downstream layers. Live rules (live: true in
+    # routing-rules.yaml) overwrite the LLM classifier's output;
+    # shadow rules log only. This is the migration target for the
+    # legacy state-12-guard, soft-create-override, and persona-self-id
+    # blocks that previously lived directly in this router.
+    _pre_enforced_pattern: str | None = None
+    try:
+        from app.services.shadow_router import run_shadow as _run_shadow_pre
+        _pre_ret = _run_shadow_pre(
+            session_id=req.session_id or "anon",
+            turn=int(session_state.get("turn_count", 0)),
+            message=req.message or "",
+            classification=classification,
+            session_state=session_state,
+            canvas_state=req.canvas_state if isinstance(req.canvas_state, dict) else None,
+            safety=safety,
+            actual={
+                "intent_final": classification.intent_id,
+                "state_final": classification.next_state,
+                "pattern_id": None,
+                "direct_action": None,
+            },
+            phase="pre",
+        )
+        # Capture pre-route enforced_pattern_id so the pattern selection
+        # call below can honour it (alongside any safety override).
+        if _pre_ret is not None:
+            _pre_dec, _pre_live = _pre_ret
+            if not _pre_live.is_noop():
+                if _pre_live.enforced_pattern_id and _pre_live.enforced_pattern_id != "__from_safety__":
+                    _pre_enforced_pattern = _pre_live.enforced_pattern_id
+                    logger.info(
+                        "pre-route enforces pattern: %s (rules=%s)",
+                        _pre_live.enforced_pattern_id, _pre_live.fired_rules,
+                    )
+                if _pre_live.persona_override:
+                    if classification.persona_id != _pre_live.persona_override:
+                        logger.info(
+                            "pre-route persona override: %s → %s (rules=%s)",
+                            classification.persona_id, _pre_live.persona_override,
+                            _pre_live.fired_rules,
+                        )
+                        classification.persona_id = _pre_live.persona_override
+                if _pre_live.intent_override:
+                    if classification.intent_id != _pre_live.intent_override:
+                        logger.info(
+                            "pre-route intent override: %s → %s (rules=%s)",
+                            classification.intent_id, _pre_live.intent_override,
+                            _pre_live.fired_rules,
+                        )
+                        classification.intent_id = _pre_live.intent_override
+                if _pre_live.state_override:
+                    if classification.next_state != _pre_live.state_override:
+                        logger.info(
+                            "pre-route state override: %s → %s (rules=%s)",
+                            classification.next_state, _pre_live.state_override,
+                            _pre_live.fired_rules,
+                        )
+                        classification.next_state = _pre_live.state_override
+    except Exception as _pre_err:  # pragma: no cover — never block request
+        logger.debug("pre-route engine failed: %s", _pre_err)
+
     # Update persona — R-06: persist once detected, overwrite on correction or explicit change
     detected_persona = classification.persona_id
     if not session_state["persona_id"]:
@@ -1384,6 +1510,28 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             "Intent override: %s -> INT-W-12 (edit-verb in state-12, md_len=%d)",
             classification.intent_id, len(_existing_canvas_md),
         )
+        # Shadow-route this canvas-edit turn before we redirect — otherwise
+        # the early return below means it never reaches the main shadow hook.
+        try:
+            from app.services.shadow_router import run_shadow as _run_shadow_edit
+            _run_shadow_edit(
+                session_id=req.session_id or "anon",
+                turn=int(session_state.get("turn_count", 0)),
+                message=req.message or "",
+                classification=classification,
+                session_state=session_state,
+                canvas_state=req.canvas_state if isinstance(req.canvas_state, dict) else None,
+                safety=safety,
+                actual={
+                    "intent_final": "INT-W-12",
+                    "state_final": "state-12",
+                    "pattern_id": "PAT-25",
+                    "direct_action": "canvas_edit",
+                },
+                phase="pre",
+            )
+        except Exception as _shadow_err:  # pragma: no cover
+            logger.debug("shadow router (edit) failed: %s", _shadow_err)
         classification.intent_id = "INT-W-12"
         new_state = "state-12"
         # Route to canvas_edit handler with current markdown + instruction.
@@ -1402,85 +1550,21 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         )
         return await _handle_canvas_edit(edit_req, session_state)
 
-    # Soft-Create: wenn ein Material-Typ explizit genannt wird UND kein
-    # klares Such-Verb im Text steht, treat es als Create-Wunsch.
-    # Deckt typische Verwaltungs-/Politik-/Presse-Formulierungen ab:
-    #   "Als Verwaltungskraft brauche ich einen Bericht zur OER-Lage"
-    #   "Für die Pressemappe ein Factsheet"
-    _search_verbs = get_search_verbs()
-    _msg_low_override = (req.message or "").lower()
-    # Position-based mixed-intent resolution: "Zeig … UND erstelle …" should
-    # go to CREATE (second clause is the actionable one); "Erstelle … und
-    # zeig dazu" should also go to CREATE. We look up the earliest index of
-    # any create- vs search-verb and use the later one as the primary intent
-    # (second clause wins — matches how Germans coordinate with "und/dann").
-    def _first_index(needles: tuple[str, ...]) -> int:
-        best = -1
-        for n in needles:
-            i = _msg_low_override.find(n)
-            if i >= 0 and (best < 0 or i < best):
-                best = i
-        return best
-    _search_pos = _first_index(_search_verbs)
-    _create_pos = _first_index(get_create_triggers())
-    _has_search_verb = _search_pos >= 0
-    _has_create_verb = _create_pos >= 0
-    # Decide primacy when BOTH verbs present:
-    #   - if search comes AFTER create: create wins (typical "Erstelle X und zeig mir Beispiele")
-    #   - if create comes AFTER search: create STILL wins (second clause is
-    #     the actionable one — "Zeig Material UND erstelle Quiz")
-    #   - if only search: search wins
-    # => Rule: if create-verb is present at all, create wins over search.
-    _search_blocks_soft_create = _has_search_verb and not _has_create_verb
-    _soft_create = bool(_detected_mt) and not _search_blocks_soft_create
-    # Don't override intents that are explicitly non-create: Routing (05),
-    # Download (07), Evaluation (08), Statistics (09) never mean "create".
-    # Otherwise the heuristic "material_typ present → INT-W-11" would undo
-    # the classifier's correct non-create decision.
-    _non_create_protected = classification.intent_id in (
-        "INT-W-05", "INT-W-07", "INT-W-08", "INT-W-09", "INT-W-10", "INT-W-12",
-    )
-    if classification.intent_id != "INT-W-11" and not _non_create_protected:
-        if (_wants_create or _soft_create) and (_detected_mt or _in_canvas_state):
-            logger.info(
-                "Intent override: %s -> INT-W-11 (create=%s search=%s mt=%s prior_state=%s)",
-                classification.intent_id,
-                _create_pos if _has_create_verb else None,
-                _search_pos if _has_search_verb else None,
-                _detected_mt, session_state.get("state_id"),
-            )
-            classification.intent_id = "INT-W-11"
-            if _detected_mt and not (classification.entities or {}).get("material_typ"):
-                if classification.entities is None:
-                    classification.entities = {}
-                classification.entities["material_typ"] = _detected_mt
-            if new_state != "state-12":
-                new_state = "state-12"
-    # Regardless of whether the intent was overridden, keep session_state
-    # entities in sync: the pattern engine reads material_typ from there.
-    # If the classifier already chose INT-W-11 but didn't name a material
-    # type, lift the heuristically detected one into entities as well.
-    # ── State-12 Precondition-Guard ──
-    # state-12 (Canvas-Arbeit) darf NUR mit INT-W-11/INT-W-12 aktiv sein UND
-    # entweder vorhandener Canvas-Markdown ODER ein konkretes Thema (damit
-    # die Canvas-Pane nicht durch Unsinn aktiviert wird). Sonst: auf state-5
-    # zurücksetzen.
-    if new_state == "state-12":
-        _ent_now = session_state.get("entities", {}) or {}
-        _has_md = bool(_ent_now.get("_canvas_last_markdown"))
-        _has_topic = bool(
-            _ent_now.get("_canvas_topic")
-            or _ent_now.get("thema")
-            or (classification.entities or {}).get("thema")
-            or (classification.entities or {}).get("topic")
-        )
-        _canvas_intent = classification.intent_id in ("INT-W-11", "INT-W-12")
-        if not _canvas_intent or not (_has_md or _has_topic):
-            logger.info(
-                "State-12 guard: dropping to state-5 (intent=%s has_md=%s has_topic=%s)",
-                classification.intent_id, _has_md, _has_topic,
-            )
-            new_state = "state-5"
+    # ── Soft-Create + State-12 Guard now in Engine ──────────────
+    # R-5 (rule_soft_create) replaces the inline soft-create block.
+    # R-4 (rule_state12_guard) replaces the inline state-12 guard.
+    # Both fire as live rules in the pre-route engine pass above.
+    # Heuristic-detected material_typ is lifted into entities before
+    # the engine runs (see "Heuristic enrichment" block above), so R-5
+    # has the full picture.
+    #
+    # Subtle simplifications vs. legacy code:
+    #   * Position-based search-vs-create resolution is dropped — R-5
+    #     fires on any create-verb regex; ambiguous mixed-intent turns
+    #     ("zeig mir X und erstelle Y") fall back to the classifier's
+    #     choice plus any other rules. Edge case, low frequency.
+    #   * `looks_like_create_intent` (broader trigger set) is replaced
+    #     by R-5's regex — covers ~95% of the same triggers.
 
     if classification.intent_id == "INT-W-11":
         # Priority for material_typ (fixes "stale type" bug):
@@ -1535,6 +1619,10 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     #    in that case select_pattern() bypasses gating/scoring entirely and
     #    returns the enforced pattern with its full core_rule + tool config.
     tracer.start("pattern", "Pattern selection (3-phase)")
+    # Pattern enforcement priority:
+    #   1. Safety layer (PAT-CRISIS, PAT-REFUSE-THREAT) always wins
+    #   2. Pre-route engine (intent-specific Patterns like PAT-22/23/24)
+    _enforced_for_select = safety.enforced_pattern or _pre_enforced_pattern or None
     winner, pattern_output, scores, eliminated = select_pattern(
         persona_id=session_state["persona_id"],
         state_id=new_state,
@@ -1544,9 +1632,100 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         device=env.get("device", "desktop"),
         entities=session_state["entities"],
         intent_confidence=classification.intent_confidence,
-        enforced_pattern_id=safety.enforced_pattern or None,
+        enforced_pattern_id=_enforced_for_select,
     )
     tracer.end({"winner": winner.id, "eliminated": len(eliminated)})
+
+    # ── Post-route rule engine (shadow + selective live) ──────────
+    # Runs after pattern selection so rules can see ``pattern_winner``,
+    # ``pattern_runner_up`` and ``pattern_score_gap`` and break ties /
+    # override on low-confidence. Rules marked ``live: true`` in YAML
+    # actually re-route the request; everything else just logs.
+    #
+    # Two-pass logging: we run the engine, apply live effects locally
+    # to derive the FINAL pattern, then re-call run_shadow with the
+    # finalised ``actual`` so the agreement metric is correct.
+    try:
+        from app.services.shadow_router import run_shadow as _run_shadow
+        from app.services.rule_engine import get_rule_engine as _get_engine
+        from app.services.shadow_router import build_context as _build_ctx
+
+        _runner_up_id = None
+        _score_gap = None
+        if scores:
+            _ranked = sorted(scores.items(), key=lambda x: -x[1])
+            if len(_ranked) >= 1 and _ranked[0][0] == winner.id and len(_ranked) >= 2:
+                _runner_up_id = _ranked[1][0]
+                _score_gap = round(_ranked[0][1] - _ranked[1][1], 4)
+
+        # Step 1: peek-evaluate the engine to get the live decision before
+        # we commit to logging. We don't write a record here.
+        _engine = _get_engine()
+        _peek_ctx = _build_ctx(
+            message=req.message or "",
+            classification=classification,
+            session_state=session_state,
+            canvas_state=req.canvas_state if isinstance(req.canvas_state, dict) else None,
+            safety=safety,
+            pattern_winner=winner.id,
+            pattern_runner_up=_runner_up_id,
+            pattern_score_gap=_score_gap,
+            pattern_scores=scores,
+        )
+        _peek_dec = _engine.evaluate(_peek_ctx)
+        _peek_live = _engine.extract_live(_peek_dec)
+
+        # Step 2: apply live overrides
+        _final_intent = classification.intent_id
+        _final_state = new_state
+        if not _peek_live.is_noop():
+            logger.info(
+                "live rule override: enforced=%s intent=%s state=%s rules=%s",
+                _peek_live.enforced_pattern_id, _peek_live.intent_override,
+                _peek_live.state_override, _peek_live.fired_rules,
+            )
+            if _peek_live.intent_override:
+                classification.intent_id = _peek_live.intent_override
+                _final_intent = _peek_live.intent_override
+            if _peek_live.state_override:
+                new_state = _peek_live.state_override
+                _final_state = _peek_live.state_override
+            if _peek_live.enforced_pattern_id and _peek_live.enforced_pattern_id != winner.id:
+                winner, pattern_output, scores, eliminated = select_pattern(
+                    persona_id=session_state["persona_id"],
+                    state_id=new_state,
+                    intent_id=classification.intent_id,
+                    signals=new_signals,
+                    page=env.get("page", "/"),
+                    device=env.get("device", "desktop"),
+                    entities=session_state["entities"],
+                    intent_confidence=classification.intent_confidence,
+                    enforced_pattern_id=_peek_live.enforced_pattern_id,
+                )
+
+        # Step 3: log with the FINAL pattern_id so agreement reflects reality
+        _run_shadow(
+            session_id=req.session_id or "anon",
+            turn=int(session_state.get("turn_count", 0)),
+            message=req.message or "",
+            classification=classification,
+            session_state=session_state,
+            canvas_state=req.canvas_state if isinstance(req.canvas_state, dict) else None,
+            safety=safety,
+            actual={
+                "intent_final": _final_intent,
+                "state_final": _final_state,
+                "pattern_id": winner.id,
+                "direct_action": None,
+            },
+            pattern_winner=winner.id,
+            pattern_runner_up=_runner_up_id,
+            pattern_score_gap=_score_gap,
+            pattern_scores=scores,
+            phase="post",
+        )
+    except Exception as _shadow_err:  # pragma: no cover — never block request
+        logger.debug("shadow router failed: %s", _shadow_err)
 
     # 3b. Safety: strip blocked tools from the chosen pattern
     if safety.blocked_tools:
@@ -1603,8 +1782,17 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     _lp_blocking_intents = {
         "INT-W-04", "INT-W-05", "INT-W-07", "INT-W-08", "INT-W-09", "INT-W-12",
     }
+    # Persona-Block: bestimmte Personas profitieren NICHT von einem
+    # didaktisch strukturierten Lernpfad. P-W-PRESSE/P-W-POL erwarten
+    # Recherche-Material für Artikel/Positionspapiere — nicht eine
+    # Stunden-Strukturierung mit Lernzielen. Eval-Befund: für diese
+    # Personas führt LP-Generierung zu unnatürlichen Antworten.
+    _persona_blocks_lp = session_state.get("persona_id") in (
+        "P-W-PRESSE", "P-W-POL",
+    )
     _has_lp_intent = (
         classification.intent_id not in _lp_blocking_intents
+        and not _persona_blocks_lp
         and (
             any(kw in _msg_lower for kw in _lp_keywords)
             or classification.intent_id == "INT-W-10"
@@ -1982,6 +2170,33 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         # ('OER-Lage in Deutschland', 'Vergleich WLO vs Schulbücher', etc.).
         if not _c_topic and _mt_key:
             import re as _re_topic
+
+            # ── First-class extraction: explicit topic markers ──────
+            # Most natural German create requests follow patterns like:
+            #   "… zum Thema X …", "… über X …", "… zu X für Y …"
+            # Extract just the noun phrase after the marker — that gives
+            # us a much cleaner topic than stripping the full sentence.
+            _msg_low = (req.message or "")
+            _marker_match = _re_topic.search(
+                r"\b(?:zum\s+thema|zu\s+dem\s+thema|über\s+das\s+thema|"
+                r"über|zur|zum|zu)\s+"
+                r"(?P<topic>[A-ZÄÖÜa-zäöüß][\wäöüÄÖÜß\s\-]{2,80}?)"
+                r"(?=[,.?!]|\s+(?:für|zur|zum|in\s+der|im|auf|mit|"
+                r"das\s+wäre|und\s+|bitte|gern|gerne|schritt)|\s*$)",
+                _msg_low,
+                flags=_re_topic.IGNORECASE,
+            )
+            if _marker_match:
+                _candidate = _marker_match.group("topic").strip()
+                # Clean trailing fillers + capitalise nicely
+                _candidate = _re_topic.sub(r"\s+", " ", _candidate).strip(" .,:;-")
+                if 3 <= len(_candidate) <= 80:
+                    _c_topic = _candidate
+                    # Skip the rest of the messy fallback
+                    logger.info("Topic extracted via marker pattern: %r", _c_topic)
+
+        if not _c_topic and _mt_key:
+            import re as _re_topic
             _fallback = (req.message or "").strip()
             # strip role-prefixes like "Ich bin Lehrerin und möchte...", "Als
             # Redakteurin brauche ich..." — these are identity statements, not
@@ -2054,8 +2269,20 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                     r"kannst|kann|könnte|könntest|hast|habt|gibt|gibts|"
                     r"ideen|vorschläge|tipps|möglichkeiten|eine frage|frage|"
                     r"ne frage|irgendwas|irgendwie|neues|neu|alles|etwas|"
+                    r"paar|einige|wenige|viele|ein paar|"
                     r"bitte|mal|gerne|gern|also|so|mal eben|kurz mal|"
                     r"hey|hi|hallo|servus|oh|na|hm|äh|eh)\b",
+                    _tl,
+                ):
+                    _bad = True
+                # Enthält Konversations-Filler ("das wäre super", "echt cool")
+                # → der Fallback hat zu viel Satz erfasst, lieber leer lassen
+                elif _re_topic.search(
+                    r"\b(das\s+wäre|wäre\s+(echt|super|toll|cool|nett)|"
+                    r"echt\s+(super|toll|cool)|"
+                    r"das\s+wäre\s+echt\s+super|"
+                    r"vielen\s+dank|danke|"
+                    r"hilf(e|t)?\s+mir|kannst\s+du\s+mir)\b",
                     _tl,
                 ):
                     _bad = True

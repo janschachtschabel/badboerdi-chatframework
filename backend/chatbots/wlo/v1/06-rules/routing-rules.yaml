@@ -1,0 +1,612 @@
+# Generic routing rules — Phase 1 (shadow-mode)
+#
+# These rules mirror the deterministic override blocks that today live
+# scattered across chat.py and llm_service.py. The intent is not to add
+# new behavior in Phase 1 — only to express the existing logic as data,
+# so the rule engine can be evaluated in shadow against the live router.
+#
+# Schema:
+#   id          : unique identifier (string)
+#   description : free-text human note (string)
+#   priority    : integer; higher runs first
+#   when        : condition tree using {all,any,not,<path>:{<op>:arg}}
+#   then        : effect dict, keys from rule_engine._KNOWN_EFFECTS
+#                 plus optional ``stop_on_match: true``.
+#
+# Available paths in the context dict:
+#   intent, state, persona                — top-level scalars
+#   entities.<key>, entity.<key>          — extracted slot values
+#   message                               — raw user message (lowercased
+#                                           by the integration layer)
+#   signals                               — list of classifier signals
+#   session_state.<dotted>                — prior turn entities/state
+#   canvas_state.<dotted>                 — current canvas markdown etc.
+#   safety.<dotted>                       — safety verdict + enforced pattern
+
+rules:
+  # ── R-1: Safety override always wins ────────────────────────────
+  - id: rule_safety_override
+    description: "Safety layer enforced a specific pattern (e.g. PAT-CRISIS)."
+    priority: 100
+    when:
+      safety.enforced_pattern: { non_empty: true }
+    then:
+      # NOTE: in shadow mode we cannot resolve template strings yet, so
+      # we simply mark that an enforcement exists. The integration layer
+      # is responsible for reading safety.enforced_pattern itself when
+      # the engine indicates a safety hit (via fired_rules).
+      enforced_pattern_id: "__from_safety__"
+      stop_on_match: true
+
+  # ── R-2: Canvas-Edit on existing markdown ───────────────────────
+  # SHADOW for now — the live router has its own canvas-edit fast-path
+  # in chat.py:_wants_edit. Activating this rule live would double-route.
+  # Leave shadow until that legacy path is replaced by the engine.
+  - id: rule_canvas_edit
+    description: "Edit-verb on existing canvas markdown → INT-W-12 + canvas_edit."
+    priority: 90
+    live: false
+    when:
+      all:
+        - canvas_state.markdown: { non_empty: true }
+        - any:
+            - intent: { eq: "INT-W-12" }
+            - message:
+                regex: "(kürzer|kuerzer|einfacher|verständlicher|verstaendlicher|überarbeite|ueberarbeite|ändere|aendere|umformuliere|ergänze|ergaenze|streiche|loesch|lösch)"
+        - not:
+            message:
+              regex: "neues?\\s+(arbeitsblatt|quiz|material|infoblatt|lerngeschichte|versuchsanleitung|glossar|präsentation|praesentation|checkliste)"
+    then:
+      intent_override: "INT-W-12"
+      direct_action: "canvas_edit"
+
+  # ──────────────────────────────────────────────────────────────
+  # Pre-Route: INT-W-11 Disambiguation (migrated from llm_service.py)
+  #
+  # The LLM classifier systematically over-selects INT-W-11 when a
+  # material-type word appears anywhere in the message ("Arbeitsblatt",
+  # "Pressemitteilung", "Lernpfad" …). The rules below catch the
+  # unambiguous non-create cases by message-regex and re-route to the
+  # right intent. Equivalent of the post-classifier elif-chain that
+  # used to live in llm_service.py:_intent_disambiguation.
+  # ──────────────────────────────────────────────────────────────
+
+  # ── R-3: Materialzusammenstellung → INT-W-10 (compilation) ──────
+  - id: rule_lp_compilation
+    description: "Materialzusammenstellung / Sammlung is INT-W-10, not INT-W-11."
+    priority: 80
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-11" }
+        - message:
+            regex: "\\b(material(ien)?\\s*-?\\s*(zusammenstellung|sammlung|paket|set)|(mehrere|diverse|passende|strukturierte)\\s+material(ien)?|zusammenstellung\\s+(von|aus)\\s+material|material(ien)?\\s+(zusammen\\s*stellen|kompilieren|kuratieren)|unterrichts(einheit|plan|paket|baustein)|lerneinheit)\\b"
+    then:
+      intent_override: "INT-W-10"
+
+  # ── R-3-routing: INT-W-11 → INT-W-05 (Redaktion) ────────────────
+  - id: rule_intent_w11_to_w05
+    description: "INT-W-11 mit Redaktions-Trigger (weiterleiten / Fehler gefunden / hochladen)."
+    priority: 81
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-11" }
+        - message:
+            regex: "\\b(an\\s+(die\\s+)?redaktion\\s+(weiterleiten|schicken|melden|senden|geben)|an\\s+redaktion\\s+weiter|redaktion\\s+schauen|hinweis\\s+an\\s+(die\\s+)?redaktion|fehler\\s+gefunden|hochladen|upload(en)?|einstellen|einreichen|einpflegen|anmerkungen\\s+(zu|hinterlassen)|wo\\s+kann\\s+ich\\s+.{0,20}hinterlassen)\\b"
+    then:
+      intent_override: "INT-W-05"
+
+  # ── R-3-routing: INT-W-11 → INT-W-07 (Download) ─────────────────
+  - id: rule_intent_w11_to_w07
+    description: "INT-W-11 mit Download-Trigger (runterladen / bereitstellen / wo finde ich)."
+    priority: 81
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-11" }
+        - message:
+            regex: "\\b(runterladen|herunterladen|zum\\s+download|zum\\s+herunterladen|bereitstellen|zur\\s+verf(ü|ue)gung\\s+stellen|zukommen\\s+lassen|zusenden|gib\\s+mir\\s+(den|die|das)\\s+\\w+|wo\\s+(finde|kann|bekomme)\\s+ich)\\b"
+    then:
+      intent_override: "INT-W-07"
+
+  # ── R-3-routing: INT-W-11 → INT-W-08 (Inhalts-Evaluation) ───────
+  - id: rule_intent_w11_to_w08
+    description: "INT-W-11 mit Eval-Trigger (Qualität bewerten / einschätzen)."
+    priority: 81
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-11" }
+        - message:
+            regex: "\\b(qualit(ä|ae)t\\s+(von|des)|bewerten|wie\\s+gut\\s+(sind|ist)|(ist|sind)\\s+(das|die|der|es)\\s+geeignet|einsch(ä|ae)tzen|pr(ü|ue)fen)\\b"
+    then:
+      intent_override: "INT-W-08"
+
+  # ── R-3-routing: INT-W-11 → INT-W-09 (Reporting) ────────────────
+  - id: rule_intent_w11_to_w09
+    description: "INT-W-11 mit Statistik/Reporting-Trigger."
+    priority: 81
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-11" }
+        - message:
+            regex: "\\b(statistiken\\s+(zu|ü|ueber)|zahlen\\s+zu|daten\\s+zu|reporting|auswertung\\s+(von|der)|(ü|ue)bersicht\\s+(ü|ue)ber\\s+aktuelle)\\b"
+    then:
+      intent_override: "INT-W-09"
+
+  # ── R-3-routing: INT-W-11 → INT-W-06 (Faktenfragen) ─────────────
+  - id: rule_intent_w11_to_w06
+    description: "INT-W-11 mit Faktenfrage-Trigger (was ist X / wer ist X / erklär mir)."
+    priority: 81
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-11" }
+        - message:
+            regex: "\\b(fakten\\s+zu|fakten\\s+über|was\\s+(ist|sind|bedeutet|heißt)\\s+\\w+|wer\\s+(ist|sind|steht|stehen)\\s+\\w+|welche\\s+\\w+\\s+(gibt\\s+es|gibts|hat\\s+wlo)|wie\\s+(funktioniert|läuft|geht\\s+das|nutze\\s+ich|verwende\\s+ich|benutze\\s+ich)\\s+\\w+|erklär\\s+mir|erkläre\\s+mir|erklären\\s+sie\\s+mir|woraus\\s+besteht|woher\\s+kommt|wozu\\s+(dient|braucht))\\b"
+    then:
+      intent_override: "INT-W-06"
+
+  # ── R-3-routing: INT-W-11 → INT-W-02 (Soft-Probing / Orient.) ───
+  - id: rule_intent_w11_to_w02
+    description: "INT-W-11 mit Orientierungs-Trigger (ich bin neu / was kann WLO)."
+    priority: 81
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-11" }
+        - message:
+            regex: "\\b(ich\\s+bin\\s+(neu|hier\\s+neu)|gerade\\s+neu\\s+hier|frisch\\s+hier|noch\\s+(nicht|nie)\\s+benutzt|was\\s+(kann|bietet|macht)\\s+(wlo|wirlernenonline|der\\s+chatbot|die\\s+plattform|ihr|du)|was\\s+gibt\\s+(es|s)\\s+(hier|auf\\s+wlo)|übersicht\\s+(über|zu)\\s+(edu-sharing|wlo|wirlernenonline|den\\s+chatbot|die\\s+plattform)|erste\\s+orientierung|orientierung\\s+(über|auf|in)\\s+wlo|einstieg\\s+in\\s+wlo|wlo\\s+kennenlernen)\\b"
+    then:
+      intent_override: "INT-W-02"
+
+  # ── R-3b: state-12 ist nur für Canvas-Intents legitim ───────────
+  # Re-checks the same trigger condition because rule evaluation is
+  # independent (effects don't propagate into the context during a
+  # single evaluation pass — keeps the engine purely declarative).
+  - id: rule_lp_compilation_state_fix
+    description: "Materialzusammenstellung in state-12 → drop to state-5."
+    priority: 79
+    when:
+      all:
+        - intent: { eq: "INT-W-11" }
+        - state: { eq: "state-12" }
+        - message:
+            regex: "\\b(material(ien)?\\s*-?\\s*(zusammenstellung|sammlung|paket|set)|(mehrere|diverse|passende|strukturierte)\\s+material(ien)?|zusammenstellung\\s+(von|aus)\\s+material|material(ien)?\\s+(zusammen\\s*stellen|kompilieren|kuratieren)|unterrichts(einheit|plan|paket|baustein)|lerneinheit)\\b"
+    then:
+      state_override: "state-5"
+
+  # ── R-4: state-12 guard for non-canvas intents ──────────────────
+  # state-12 (Canvas-Arbeit) ist nur legitim wenn der User wirklich am
+  # Canvas arbeitet (INT-W-11 Create oder INT-W-12 Edit). Bei anderen
+  # Intents (Statistiken-Frage, Search, Feedback) muss der State auf
+  # state-5 fallen, sonst werden falsche Pattern wie PAT-21 selektiert.
+  # Markdown-Check entfällt: auch mit existierendem Canvas-Markdown
+  # gilt: andere Intents → andere Patterns.
+  - id: rule_state12_guard
+    description: "state-12 only valid for INT-W-11/INT-W-12 (canvas-create/edit)."
+    priority: 70
+    live: true
+    when:
+      all:
+        - state: { eq: "state-12" }
+        - intent: { not_in: ["INT-W-11", "INT-W-12"] }
+    then:
+      state_override: "state-5"
+
+  # ── R-5: soft-create override (material_typ + create-verb) ─────
+  # Wenn der Classifier ein Such-Intent erkannt hat (INT-W-03b), aber
+  # Material-Typ und ein klares Create-Verb auftauchen, korrigiert die
+  # Engine zu INT-W-11 + state-12. Die `not_in`-Liste schützt explizite
+  # Non-Create-Intents (Routing/Download/Eval/Stats/Feedback/Soft-Probing/
+  # WLO-kennenlernen/Lernpfad/Faktenfragen) vor dem Override.
+  - id: rule_soft_create
+    description: "Material-Typ + Create-Verb → INT-W-11 (+ state-12)."
+    priority: 60
+    live: true
+    when:
+      all:
+        - entity.material_typ: { non_empty: true }
+        - intent:
+            not_in: ["INT-W-01", "INT-W-02", "INT-W-04",
+                     "INT-W-05", "INT-W-06", "INT-W-07", "INT-W-08",
+                     "INT-W-09", "INT-W-10", "INT-W-11", "INT-W-12"]
+        - message:
+            regex: "\\b(erstell|mach\\s+mir|generier|baue|bau\\s+mir|entwickle|schreib\\s+mir|formulier)"
+    then:
+      intent_override: "INT-W-11"
+      state_override: "state-12"
+
+  # ── R-6: vague search without topic → orientation ──────────────
+  # Excludes meta-questions ("wie funktioniert", "schritt für schritt")
+  # which should NOT be re-routed to orientation — they're how-to asks.
+  - id: rule_vague_search
+    description: "Search-intent without thema → PAT-20 (Orientierungs-Guide)."
+    priority: 50
+    live: true
+    when:
+      all:
+        - intent: { in: ["INT-W-03a", "INT-W-03b", "INT-W-03c"] }
+        - entity.thema: { empty: true }
+        - not:
+            message:
+              regex: "(wie\\s+(geht|funktioniert|finde|nutze|benutze)|erklär|schritt\\s+für\\s+schritt|anleitung|tutorial|was\\s+(kann|gibt))"
+    then:
+      enforced_pattern_id: "PAT-20"
+
+  # ── Persona Self-ID Overrides (R-PSI-1 bis R-PSI-8) ────────────
+  # Explizite Selbstidentifikation (z.B. "ich bin Lehrerin", "als Redakteur",
+  # "für unsere Verwaltung") überschreibt die LLM-Persona-Wahl deterministisch.
+  # Höhere Priorität als low-confidence-fallback (R-6b @ 96), damit Self-ID
+  # auch bei niedrig-confidence-Klassifikationen greift.
+
+  - id: rule_persona_self_id_lk
+    description: "Lehrkraft-Self-ID (ich bin Lehrer, mein Stundenentwurf, …)."
+    priority: 100
+    live: true
+    when:
+      message:
+        regex: "\\b(ich\\s+bin\\s+(lehr(er|erin|kraft)|p[äa]dagog(in|e)?|klassenlehr(er|erin)|grundschullehr(er|erin)|fachlehr(er|erin)|referendar(in)?)|als\\s+(lehrkraft|lehrer(in)?|p[äa]dagog(in|e)?|fachlehr(er|erin)|referendar(in)?)|f[üu]r\\s+meinen\\s+unterricht|in\\s+meiner\\s+klasse\\s+unterrichte|meine\\s+sch[üu]ler:?innen|mein\\s+stundenentwurf|meinen\\s+stundenentwurf|meine\\s+(unterrichts(stunde|einheit|reihe)|lehrplan)|meinen\\s+(unterrichts(stunde|einheit|reihe)|lehrplan)|(klassenarbeit(en)?\\s+(korrigier|bewerten|stell)|korrigier(e|en)\\s+klassenarbeit(en)?|klausur(en)?\\s+(korrigier|bewerten|stell)|korrigier(e|en)\\s+klausur(en)?)|meinen?\\s+lehrplan|in\\s+meiner\\s+(unterrichts(stunde|einheit|reihe))|f[üu]r\\s+meinen\\s+lehrauftrag)\\b"
+    then:
+      persona_override: "P-W-LK"
+
+  - id: rule_persona_self_id_sl
+    description: "Schüler:in-Self-ID."
+    priority: 100
+    live: true
+    when:
+      message:
+        regex: "\\b(ich\\s+bin\\s+sch[üu]ler(in)?|ich\\s+bin\\s+lernend(e|er)|als\\s+sch[üu]ler(in)?|f[üu]r\\s+meine\\s+(klassenarbeit|hausaufgabe|pr[üu]fung|klausur)|f[üu]r\\s+meinen\\s+(test|jahrgang)|ich\\s+lerne\\s+gerade\\s+(in\\s+der\\s+schule|f[üu]r\\s+die\\s+schule))\\b"
+    then:
+      persona_override: "P-W-SL"
+
+  - id: rule_persona_self_id_elt
+    description: "Eltern-Self-ID."
+    priority: 100
+    live: true
+    when:
+      message:
+        regex: "\\b(ich\\s+bin\\s+(mutter|vater|elternteil)|als\\s+(mutter|vater|elternteil)|mein\\s+(kind|sohn|tochter)|meine\\s+tochter|f[üu]r\\s+meinen?\\s+(kind|sohn|tochter|\\d+\\s*-?\\s*j[äa]hrigen?))\\b"
+    then:
+      persona_override: "P-ELT"
+
+  - id: rule_persona_self_id_red
+    description: "Redakteur:in-Self-ID (konservativ — nur explizit)."
+    priority: 100
+    live: true
+    when:
+      message:
+        regex: "\\b(ich\\s+bin\\s+(redakteur(in)?|autor(in)?)|als\\s+(redakteur(in)?|autor(in)?)|f[üu]r\\s+(unsere|meine)\\s+redaktion)\\b"
+    then:
+      persona_override: "P-W-RED"
+
+  - id: rule_persona_self_id_pol
+    description: "Politik-Self-ID (explizit + eindeutige Politik-Kontext-Wörter)."
+    priority: 100
+    live: true
+    when:
+      message:
+        regex: "\\b(ich\\s+bin\\s+(politiker(in)?|abgeordnete[r]?|multiplikator(in)?)|als\\s+(politiker(in)?|abgeordnete[r]?|multiplikator(in)?)|f[üu]r\\s+(unsere|meine)\\s+(partei|fraktion)|f[üu]r\\s+(unser|das)\\s+ministerium|f[üu]r\\s+(meinen?\\s+)?(wahlkreis|antrag|positionspapier)|in\\s+der\\s+(anh[öo]rung|gesetzgebung)|im\\s+(plenum|ausschuss)|positionspapier|bildungspolitisch)\\b"
+    then:
+      persona_override: "P-W-POL"
+
+  - id: rule_persona_self_id_presse
+    description: "Presse-Self-ID."
+    priority: 100
+    live: true
+    when:
+      message:
+        regex: "\\b(ich\\s+bin\\s+journalist(in)?|als\\s+journalist(in)?|f[üu]r\\s+meine\\s+(presse|zeitung|redaktion\\s+der\\s+zeitung)|f[üu]r\\s+meine\\s+leser:?innen|presseanfrage|f[üu]r\\s+einen\\s+artikel)\\b"
+    then:
+      persona_override: "P-W-PRESSE"
+
+  - id: rule_persona_self_id_ber
+    description: "Berater:in-Self-ID."
+    priority: 100
+    live: true
+    when:
+      message:
+        regex: "\\b(ich\\s+bin\\s+berater(in)?|als\\s+berater(in)?|f[üu]r\\s+(unsere|meine)\\s+beratung|in\\s+(unserem|meinem)\\s+beratungsprozess|f[üu]r\\s+unsere\\s+schule\\s+evaluier\\w*|vergleich\\s+(verschiedener|der)\\s+(angebote|plattform)\\w*)\\b"
+    then:
+      persona_override: "P-BER"
+
+  - id: rule_persona_self_id_ver
+    description: "Verwaltung-Self-ID."
+    priority: 100
+    live: true
+    when:
+      message:
+        regex: "\\b(ich\\s+bin\\s+(verwaltungs|beh[öo]rden)|als\\s+verwaltungs|f[üu]r\\s+(unsere|die)\\s+(verwaltung|beh[öo]rde)|in\\s+der\\s+beh[öo]rdenarbeit|amtliche\\s+daten|kennzahlen\\s+f[üu]r\\s+das\\s+ministerium)\\b"
+    then:
+      persona_override: "P-VER"
+
+  # ── R-6b: Niedrige Persona-Confidence → P-AND ──────────────────
+  # Wenn der Classifier sich bei der Persona unsicher ist (<0.40),
+  # lieber P-AND stehen lassen als eine falsche spezifische Persona
+  # zu wählen, die Tonalität und Pattern in falsche Richtung zieht.
+  # Threshold ist eng (0.40 statt z.B. 0.55), weil wir zuvor festgestellt
+  # haben dass aggressive Schwellen den Score regrieren.
+  - id: rule_low_persona_confidence
+    description: "persona_confidence < 0.40 → P-AND (vermeidet Falsch-Persona)."
+    priority: 96
+    live: true
+    when:
+      persona_confidence: { lt: 0.40 }
+    then:
+      persona_override: "P-AND"
+
+  # ── R-7: Niedrige Intent-Confidence → Klärung ──────────────────
+  # Wenn der Classifier selbst unsicher war, ist eine Rückfrage besser
+  # als eine fehlerhafte Pattern-Auswahl. Schwelle 0.55 ist konservativ —
+  # nur die wirklich unsicheren Klassifikationen.
+  - id: rule_low_intent_confidence
+    description: "Classifier intent_confidence < 0.55 → PAT-02 (Klärung)."
+    priority: 95
+    live: true
+    when:
+      intent_confidence: { lt: 0.55 }
+    then:
+      enforced_pattern_id: "PAT-02"
+
+  # ── R-8: Tight-Race PAT-01 vs PAT-02 — NUR bei Such-Intent ohne Thema ──
+  # Frühere Version war zu aggressiv: hat auch konversationelle Intents
+  # (INT-W-01 WLO kennenlernen, INT-W-02 Soft-Probing, INT-W-04 Feedback)
+  # zu PAT-02 umgeleitet, obwohl PAT-01 dort die richtige Antwort wäre.
+  # Jetzt: nur bei Such-Intents UND wenn thema fehlt (also wirklich
+  # unklarer Anfrage).
+  - id: rule_tiebreak_pat01_vs_pat02
+    description: "PAT-01 vs PAT-02 tight race bei thema-loser Suche → PAT-02."
+    priority: 40
+    # SHADOW only — rule_vague_search (R-6) catches the same cases first
+    # with higher priority, so this would only fire if R-6 didn't.
+    # Eval-Run 5 confirmed: 0 fires after R-6 was tightened. Kept in
+    # shadow as a safety net should R-6 ever be disabled.
+    live: false
+    when:
+      all:
+        - intent: { in: ["INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-10", "INT-W-11"] }
+        - entity.thema: { empty: true }
+        - pattern_score_gap: { lt: 0.05 }
+        - any:
+            - all:
+                - pattern_winner: { eq: "PAT-01" }
+                - pattern_runner_up: { eq: "PAT-02" }
+            - all:
+                - pattern_winner: { eq: "PAT-02" }
+                - pattern_runner_up: { eq: "PAT-01" }
+    then:
+      enforced_pattern_id: "PAT-02"
+
+  # ── R-9: INT-W-09 Reporting nur für P-VER zu PAT-03 ────────────
+  # Eval-Befund: INT-W-09 mit PAT-03 hilft P-VER (Verwaltung erwartet
+  # ehrliche "Daten nicht verfügbar"-Aussage), schadet aber Schüler:innen
+  # und Redaktion (die wollen lieber konkrete Inhalte/Lernmaterial).
+  # → Scope auf P-VER + analytische Personas einschränken.
+  - id: rule_tiebreak_int_w_09
+    description: "P-VER/P-W-POL/P-W-PRESSE bei INT-W-09 + tight race → PAT-03."
+    priority: 45
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-09" }
+        - persona: { in: ["P-VER", "P-W-POL", "P-W-PRESSE", "P-BER"] }
+        - pattern_score_gap: { lt: 0.05 }
+        - pattern_winner: { in: ["PAT-10", "PAT-01"] }
+    then:
+      enforced_pattern_id: "PAT-03"
+
+  # ── R-10: Tight-Race PAT-02 vs PAT-06 bei state-12 → PAT-19 ───
+  # In state-12 mit INT-W-10 und knappem Score (typisch:
+  # "Materialien für Unterrichtseinheit") sollte der Lernpfad-Pattern
+  # PAT-19 greifen, nicht die generische Bridge.
+  - id: rule_tiebreak_lp_in_state12
+    description: "Unterrichtsplanung (P-W-LK + INT-W-10 + Thema) → PAT-19 dominant."
+    priority: 50
+    # ACTIVATED 2026-04-26: Smoke zeigte mehrere Probleme:
+    # 1) Free-text-Signal-Fluktuation lässt PAT-19's Score zwischen
+    #    0.604 und 0.679 schwanken — PAT-06 (prio 595, score ~0.615)
+    #    gewinnt knapp wenn "zielgerichtet" nicht in den Signals ist.
+    # 2) Classifier setzt für "Lernpfad fuer Klasse 8" manchmal state-8
+    #    (Learning) statt state-12/state-5 — PAT-19's Gate kennt
+    #    state-8 nicht, also wird PAT-19 in phase1 eliminiert.
+    # Lösung: harte Promotion ohne State-Gate. select_pattern's
+    # enforced-pattern-Pfad umgeht phase1_gate ohnehin, also kein Risk
+    # einer "PAT-19 ohne Gate-Match"-Inkonsistenz.
+    live: true
+    when:
+      all:
+        - persona: { eq: "P-W-LK" }
+        - intent: { eq: "INT-W-10" }
+        - entity.thema: { non_empty: true }
+        - pattern_winner: { not_in: ["PAT-19", "PAT-21", "PAT-CRISIS", "PAT-REFUSE-THREAT"] }
+    then:
+      enforced_pattern_id: "PAT-19"
+
+  # ── R-11: Tight-Race PAT-25 vs PAT-06 bei INT-W-12 → PAT-25 ───
+  # Canvas-Edit-Intent gewinnt immer, wenn er sauber klassifiziert wurde.
+  - id: rule_tiebreak_canvas_edit
+    description: "INT-W-12 dominant → immer PAT-25, nie PAT-06."
+    priority: 50
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-12" }
+        - pattern_winner: { eq: "PAT-06" }
+    then:
+      enforced_pattern_id: "PAT-25"
+
+  # ── R-12: Schüler + "Schritt für Schritt" → PAT-13 ─────────────
+  # Tight-Race PAT-06 vs PAT-13 (6× im letzten Eval). PAT-13 ist
+  # didaktisch besser für Schüler/Eltern, wenn die Anfrage explizit
+  # nach Anleitung ruft.
+  - id: rule_tiebreak_schritt_fuer_schritt
+    description: "P-W-SL/P-ELT mit 'Schritt für Schritt' → PAT-13."
+    priority: 50
+    live: true
+    when:
+      all:
+        - persona: { in: ["P-W-SL", "P-ELT"] }
+        - any:
+            - message: { regex: "schritt\\s+für\\s+schritt" }
+            - message: { regex: "erkl[äa]r\\s+mir" }
+            - message: { regex: "verstehe\\s+(das|es)\\s+nicht" }
+        - pattern_score_gap: { lt: 0.05 }
+        - pattern_winner: { eq: "PAT-06" }
+        - pattern_runner_up: { eq: "PAT-13" }
+    then:
+      enforced_pattern_id: "PAT-13"
+
+  # ── R-13: INT-W-11 mit material_typ + thema → PAT-21 dominant ──
+  # Wenn der Classifier INT-W-11 setzt (Inhalt erstellen) UND
+  # material_typ + thema bekannt sind, MUSS PAT-21 gewinnen. PAT-06
+  # (Degradation) ist hier eindeutig falsch. Der frühere Tight-Race-
+  # Schutz war zu eng (forderte runner_up=PAT-21), schlug aber fehl
+  # wenn andere Patterns (PAT-18 etc.) auf Platz 2 lagen — Smoke vom
+  # 2026-04-26 zeigte: PAT-06 0.6135, PAT-18 0.601, PAT-21 0.601 →
+  # runner_up war PAT-18, R-13 feuerte nicht. Jetzt: harte Promotion
+  # bei vollen Slots, unabhängig vom Runner-Up.
+  - id: rule_tiebreak_create_intent
+    description: "INT-W-11 mit material_typ + thema → PAT-21 dominant."
+    priority: 50
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-11" }
+        - entity.thema: { non_empty: true }
+        - entity.material_typ: { non_empty: true }
+        - pattern_winner: { in: ["PAT-06", "PAT-18", "PAT-01", "PAT-02"] }
+    then:
+      enforced_pattern_id: "PAT-21"
+
+  # ── R-INT-W-05: PAT-23 dominant für Routing-Intent ─────────────
+  # Intent-spezifische Patterns sollen für ihren Intent immer gewinnen,
+  # auch wenn PAT-02 durch Signal-Bonus knapp führt. PAT-23 ist die
+  # einzige Pattern, die explizit für Redaktions-Routing gebaut ist.
+  - id: rule_int_w_05_forces_pat23
+    description: "INT-W-05 (Redaktions-Routing) → PAT-23 dominant."
+    priority: 55
+    live: true
+    when:
+      intent: { eq: "INT-W-05" }
+    then:
+      enforced_pattern_id: "PAT-23"
+
+  # ── R-INT-W-04: PAT-22 dominant für Feedback-Intent ────────────
+  - id: rule_int_w_04_forces_pat22
+    description: "INT-W-04 (Feedback) → PAT-22 dominant."
+    priority: 55
+    live: true
+    when:
+      intent: { eq: "INT-W-04" }
+    then:
+      enforced_pattern_id: "PAT-22"
+
+  # ── R-INT-W-07: PAT-24 dominant für Download-Intent ────────────
+  - id: rule_int_w_07_forces_pat24
+    description: "INT-W-07 (Material herunterladen) → PAT-24 dominant."
+    priority: 55
+    live: true
+    when:
+      intent: { eq: "INT-W-07" }
+    then:
+      enforced_pattern_id: "PAT-24"
+
+  # ── R-INT-W-08: PAT-03 dominant für Inhalts-Evaluation ─────────
+  # INT-W-08 (Inhalte evaluieren) hat kein dediziertes Pattern.
+  # Im Eval führte das zu Tight Races PAT-01 vs PAT-02. PAT-03
+  # (Transparenz-Beweis) ist die richtige Antwort: der Bot kann
+  # fremde User-Materialien nicht direkt bewerten, sondern bietet
+  # Bewertungskriterien an + fragt nach dem konkreten Material.
+  - id: rule_int_w_08_forces_pat03
+    description: "INT-W-08 (Inhalte evaluieren) → PAT-03 dominant."
+    priority: 55
+    live: true
+    when:
+      intent: { eq: "INT-W-08" }
+    then:
+      enforced_pattern_id: "PAT-03"
+
+  # ── R-INT-W-09 Halluzination-Schutz ────────────────────────────
+  # Bei INT-W-09 (Reporting) mit themen, die KLAR nicht WLO/OER-Bereich
+  # sind (Pressestatistiken, Arbeitslosigkeit, Wahlumfragen, Bezirks-
+  # daten zu unspezifischen Themen), darf der Bot nicht WLO-Statistiken
+  # als Ersatz präsentieren. PAT-03 (Transparenz) zwingt den Bot zur
+  # ehrlichen "habe ich nicht"-Antwort.
+  - id: rule_int_w_09_external_topic_to_pat03
+    description: "INT-W-09 zu nicht-WLO-Thema (Presse/Politik/Bezirk) → PAT-03."
+    priority: 58
+    live: true
+    when:
+      all:
+        - intent: { eq: "INT-W-09" }
+        - message:
+            regex: "\\b(arbeitslosigkeit|wahlumfrage|wahlergebnis|presseberichterstattung|leserzahl(en)?|reichweiten?|verkaufszahl(en)?|nutzerzahl(en)?\\s+(von|der)\\s+(?!wlo|wirlernenonline|oer|edu-sharing)|bezirksauswertung|behoerden(daten|statistik))\\b"
+    then:
+      enforced_pattern_id: "PAT-03"
+
+  # ── R-PAT-05-LK: Profi-Filter für Lehrkräfte bei Tight Race ────
+  # Bei P-W-LK + INT-W-10 + state-12 + Tight Race PAT-02 vs PAT-05:
+  # Lehrkräfte profitieren mehr von einem Profi-Filter (PAT-05) als
+  # von Klärung (PAT-02), weil sie Fach-Wissen mitbringen.
+  - id: rule_pat05_for_lk_in_state12
+    description: "P-W-LK + INT-W-10 + state-12 + tight race → PAT-05."
+    priority: 50
+    live: true
+    when:
+      all:
+        - persona: { eq: "P-W-LK" }
+        - intent: { eq: "INT-W-10" }
+        - state: { eq: "state-12" }
+        - pattern_score_gap: { lt: 0.05 }
+        - any:
+            - all:
+                - pattern_winner: { eq: "PAT-02" }
+                - pattern_runner_up: { eq: "PAT-05" }
+            - all:
+                - pattern_winner: { eq: "PAT-05" }
+                - pattern_runner_up: { eq: "PAT-02" }
+    then:
+      enforced_pattern_id: "PAT-05"
+
+  # ── R-15: PAT-09 dominant für Recherche-Personas mit Thema ─────
+  # Wenn die Persona klar im Recherche-Kontext steht (Redaktion, Presse,
+  # Politik, Beratung) und ein Thema vorliegt, ist PAT-09 die korrekte
+  # Pattern-Wahl — auch wenn PAT-06 (Degradation) durch Score-Fluktuation
+  # knapp führt. Smoke vom 2026-04-26: P-W-RED + INT-W-03b + thema
+  # "Klimawandel" → PAT-06 0.59 vs PAT-09 0.53 (PAT-09 verliert wegen
+  # fehlendem Signal-Match, obwohl es strukturell die einzig richtige
+  # Antwort ist). Gates: PAT-09 fordert intent ∈ {INT-W-01, INT-W-03a/b/c,
+  # INT-W-05, INT-W-06, INT-W-08, INT-W-09, INT-W-10}.
+  - id: rule_recherche_personas_force_pat09
+    description: "Recherche-Personas (RED/PRESSE/POL/BER) + Thema + passender Intent → PAT-09."
+    priority: 55
+    live: true
+    when:
+      all:
+        - persona: { in: ["P-W-RED", "P-W-PRESSE", "P-W-POL", "P-BER"] }
+        - intent:
+            in: ["INT-W-01", "INT-W-03a", "INT-W-03b", "INT-W-03c",
+                 "INT-W-05", "INT-W-06", "INT-W-08", "INT-W-09", "INT-W-10"]
+        - entity.thema: { non_empty: true }
+        - pattern_winner: { in: ["PAT-06", "PAT-01", "PAT-02", "PAT-10"] }
+    then:
+      enforced_pattern_id: "PAT-09"
+
+  # ── R-14: Persönliche Daten-Anfragen → PAT-03 (Transparenz) ────
+  # "Noten meiner Klasse", "Stunden mein Sohn", "meine Leistungen",
+  # "unsere Prüfungen" — der Bot HAT solche personen-/klassenspezifischen
+  # Daten nicht. Statt fake-Statistiken (PAT-10) oder generische
+  # Lehrplan-Vorlagen (PAT-15) lieber ehrlich sagen "kann ich nicht".
+  # Gilt für alle Personas, nicht nur P-VER (im Gegensatz zu R-9).
+  - id: rule_personal_data_request
+    description: "Pers. Datenfragen (mein Sohn, meine Klasse, …) → PAT-03."
+    priority: 60
+    live: true
+    when:
+      all:
+        - intent: { in: ["INT-W-06", "INT-W-08", "INT-W-09"] }
+        - message: { regex: "\\b((mein|meine[rn]?|unser|unsere[rn]?)\\s+(klasse|kurses?|schülerinnen|sch[üu]ler|kindes?|sohn(es?)?|tochter|gruppe|projekt[es]?)|f[üu]r\\s+(mein|meine[rn]?|unser|unsere[rn]?)\\s+(klasse|kurses?|sch[üu]ler|kindes?|sohn|tochter|kind)|wie\\s+(viele|lange|oft)\\s+\\w+\\s+(mein|meine|unser|unsere))\\b" }
+    then:
+      enforced_pattern_id: "PAT-03"

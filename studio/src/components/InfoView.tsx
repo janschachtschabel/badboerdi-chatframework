@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 /* ── Styling helpers ───────────────────────────────────────────────── */
 const sectionStyle: React.CSSProperties = { marginBottom: 28 };
@@ -36,12 +36,101 @@ function Section({ title, icon, children, defaultOpen = false }: { title: string
   );
 }
 
+/* ── Live system info card ─────────────────────────────────────────── */
+interface SystemInfo {
+  health: { status?: string; provider?: string; chat_model?: string; embed_model?: string } | null;
+  factory: { exists: boolean; size?: number; mtime?: number; has_db?: boolean; config_files?: number } | null;
+  rules: { rule_count: number; live_count: number; shadow_count: number } | null;
+  snapshotCount: number | null;
+}
+
+function fmtBytes(n: number | undefined): string {
+  if (!n) return '—';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function fmtRel(mtimeSec: number | undefined): string {
+  if (!mtimeSec) return '—';
+  const ageSec = Date.now() / 1000 - mtimeSec;
+  if (ageSec < 60) return 'gerade eben';
+  if (ageSec < 3600) return `vor ${Math.floor(ageSec / 60)} Min`;
+  if (ageSec < 86400) return `vor ${Math.floor(ageSec / 3600)} h`;
+  if (ageSec < 86400 * 30) return `vor ${Math.floor(ageSec / 86400)} Tagen`;
+  return `vor ${Math.floor(ageSec / 86400 / 30)} Mon`;
+}
+
+function SystemStatus() {
+  const [info, setInfo] = useState<SystemInfo>({ health: null, factory: null, rules: null, snapshotCount: null });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [h, f, r, s] = await Promise.allSettled([
+        fetch('/api/health').then(r => r.json()),
+        fetch('/api/config/factory').then(r => r.json()),
+        fetch('/api/routing-rules').then(r => r.json()),
+        fetch('/api/config/snapshots').then(r => r.json()),
+      ]);
+      if (cancelled) return;
+      setInfo({
+        health: h.status === 'fulfilled' ? h.value : null,
+        factory: f.status === 'fulfilled' ? f.value : null,
+        rules: r.status === 'fulfilled' ? {
+          rule_count: r.value.total ?? 0,
+          live_count: r.value.live_count ?? 0,
+          shadow_count: r.value.shadow_count ?? 0,
+        } : null,
+        snapshotCount: s.status === 'fulfilled' && Array.isArray(s.value) ? s.value.length : null,
+      });
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div className="card" style={{ marginBottom: 16, background: '#F0F9FF', borderColor: '#BAE6FD' }}>
+      <div style={{ ...h3Style, marginBottom: 12 }}>📊 System-Stand (live)</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, fontSize: 12 }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#0369A1', marginBottom: 4 }}>Backend</div>
+          <div style={{ color: 'var(--text-muted)' }}>Status: <strong style={{ color: info.health?.status === 'ok' ? '#10B981' : '#EF4444' }}>{info.health?.status ?? '—'}</strong></div>
+          <div style={{ color: 'var(--text-muted)' }}>Provider: <code style={codeStyle}>{info.health?.provider ?? '—'}</code></div>
+          <div style={{ color: 'var(--text-muted)' }}>Chat-Modell: <code style={codeStyle}>{info.health?.chat_model ?? '—'}</code></div>
+          <div style={{ color: 'var(--text-muted)' }}>Embed-Modell: <code style={codeStyle}>{info.health?.embed_model ?? '—'}</code></div>
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, color: '#0369A1', marginBottom: 4 }}>Werkseinstellungen</div>
+          <div style={{ color: 'var(--text-muted)' }}>Vorhanden: <strong>{info.factory?.exists ? 'ja' : 'nein'}</strong></div>
+          <div style={{ color: 'var(--text-muted)' }}>Alter: {fmtRel(info.factory?.mtime)}</div>
+          <div style={{ color: 'var(--text-muted)' }}>Größe: {fmtBytes(info.factory?.size)}</div>
+          <div style={{ color: 'var(--text-muted)' }}>{info.factory?.config_files ?? 0} Configs · {info.factory?.has_db ? 'mit DB' : 'ohne DB'}</div>
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, color: '#0369A1', marginBottom: 4 }}>Routing-Engine</div>
+          <div style={{ color: 'var(--text-muted)' }}>Total: <strong>{info.rules?.rule_count ?? '—'}</strong> Regeln</div>
+          <div style={{ color: 'var(--text-muted)' }}>Live: <strong style={{ color: '#10B981' }}>{info.rules?.live_count ?? '—'}</strong></div>
+          <div style={{ color: 'var(--text-muted)' }}>Shadow: <strong style={{ color: '#94A3B8' }}>{info.rules?.shadow_count ?? '—'}</strong></div>
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, color: '#0369A1', marginBottom: 4 }}>User-Snapshots</div>
+          <div style={{ color: 'var(--text-muted)' }}>Anzahl: <strong>{info.snapshotCount ?? '—'}</strong></div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+            Verwaltung über das 📦-Symbol oben rechts
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Component ────────────────────────────────────────────────── */
 export default function InfoView() {
   return (
     <div>
       <h2 className="card-title" style={{ marginBottom: 4 }}>ℹ️ Architektur-Referenz</h2>
       <p style={{ ...mutedStyle, marginBottom: 20 }}>Wie die Elemente zusammenspielen — vom Nutzer-Input bis zur Bot-Antwort.</p>
+
+      <SystemStatus />
 
       {/* ═══════════════ PIPELINE OVERVIEW ═══════════════ */}
       <Section title="Die Verarbeitungs-Pipeline" icon="⚡" defaultOpen={true}>
@@ -53,8 +142,10 @@ export default function InfoView() {
             {[
               { step: '1', label: 'Safety-Check', desc: 'Regex, Moderation, Legal-Classifier prüfen die Nachricht', color: '#ef4444' },
               { step: '2', label: 'Klassifikation (LLM)', desc: 'Persona, Intent, Signals, Entities, State, Turn-Type erkennen', color: '#3b82f6' },
-              { step: '3', label: 'Policy-Prüfung', desc: 'Tool-Blockaden & Disclaimers anhand von Persona+Intent', color: '#f59e0b' },
+              { step: '3a', label: 'Pre-Route Engine', desc: 'YAML-Regeln korrigieren Persona/Intent/State (z.B. explizite Self-IDs, low-confidence-Fallback)', color: '#0EA5E9' },
+              { step: '3b', label: 'Policy-Prüfung', desc: 'Tool-Blockaden & Disclaimers anhand von Persona+Intent', color: '#f59e0b' },
               { step: '4', label: 'Pattern-Engine (3 Phasen)', desc: 'Gate → Score → Modulate — wählt das beste Gesprächsmuster', color: '#8b5cf6' },
+              { step: '4b', label: 'Post-Route Engine', desc: 'YAML-Regeln können Pattern überschreiben (Tiebreaker, intent-spezifische Patterns)', color: '#0EA5E9' },
               { step: '5', label: 'Prompt-Zusammensetzung', desc: '5 Schichten werden zum System-Prompt kombiniert', color: '#2B6CB0' },
               { step: '6', label: 'LLM-Aufruf + MCP-Tools', desc: 'LLM antwortet, ruft bei Bedarf externe Tools auf', color: '#10b981' },
               { step: '7', label: 'Nachbereitung', desc: 'Karten extrahieren, Quality-Log schreiben, State speichern', color: '#6b7280' },
@@ -209,6 +300,56 @@ export default function InfoView() {
             </table>
           </div>
         </div>
+      </Section>
+
+      {/* ═══════════════ ROUTING-RULES ENGINE ═══════════════ */}
+      <Section title="Routing-Rules Engine (deklarativ)" icon="⚙️">
+        <p style={pStyle}>
+          Über der Pattern-Engine läuft eine zweite, vollständig <strong>YAML-getriebene</strong> Regel-Engine.
+          Sie hat zwei Funktionen:
+        </p>
+        <ol style={{ ...pStyle, paddingLeft: 20 }}>
+          <li>
+            <strong>Pre-Route</strong> — vor der Pattern-Auswahl: korrigiert Persona, Intent
+            oder State des Classifiers (z.B. explizite Self-IDs wie &quot;ich bin Lehrerin&quot;
+            oder Confidence-basierte Fallbacks).
+          </li>
+          <li>
+            <strong>Post-Route</strong> — nach der Pattern-Auswahl: kann Tiebreaker bei knappen
+            Score-Differenzen anwenden oder intent-spezifische Patterns (PAT-22/23/24)
+            durchsetzen, die sonst von Universal-Patterns überstimmt würden.
+          </li>
+        </ol>
+        <p style={pStyle}>
+          Eine Regel hat <code style={codeStyle}>when</code> (Bedingungen) und <code style={codeStyle}>then</code> (Effekte).
+          Beispiel:
+        </p>
+        <pre style={{ background: '#0F172A', color: '#E2E8F0', padding: 12, borderRadius: 6, fontSize: 12, overflowX: 'auto' }}>
+{`- id: rule_personal_data_request
+  description: "Pers. Datenfragen → PAT-03"
+  priority: 60
+  live: true
+  when:
+    all:
+      - intent: { in: ["INT-W-09", "INT-W-08"] }
+      - message: { regex: "\\\\bmein\\\\s+(sohn|tochter|kind)\\\\b" }
+  then:
+    enforced_pattern_id: "PAT-03"`}
+        </pre>
+        <p style={pStyle}>
+          <strong>Live vs Shadow:</strong> Jede Regel hat ein <code style={codeStyle}>live</code>-Flag.
+          <code style={codeStyle}>true</code> = wirkt sofort, <code style={codeStyle}>false</code> = nur in
+          Shadow-Log gemessen. Das ermöglicht kontrollierte Rollouts neuer Regeln ohne Risiko.
+        </p>
+        <p style={pStyle}>
+          <strong>Verfügbare Komparatoren:</strong> <code style={codeStyle}>eq, neq, in, not_in, regex,
+          not_regex, empty, non_empty, exists, lt, gt, lte, gte</code> + boolesche Kombinatoren <code style={codeStyle}>all, any, not</code>.
+        </p>
+        <p style={pStyle}>
+          Direkter Zugang: <strong>Routing Rules</strong> in der Sidebar. Dort sind alle Regeln auflistbar,
+          via Test-Bench ausführbar (kein LLM-Aufruf, sub-millisekunden), und es gibt Statistiken über
+          Fire-Counts und Override-Rates pro Regel.
+        </p>
       </Section>
 
       {/* ═══════════════ GATES ═══════════════ */}
@@ -441,6 +582,161 @@ export default function InfoView() {
             </div>
           </div>
         </div>
+      </Section>
+
+      {/* ═══════════════ Canvas Material-Typen (full list) ═══════════════ */}
+      <Section title="Canvas-Material-Typen (alle 18)" icon="📋">
+        <p style={pStyle}>
+          Schicht 5 (<code style={codeStyle}>05-canvas/material-types.yaml</code>) definiert
+          18 Output-Formate. Bei <code style={codeStyle}>INT-W-11 Canvas-Create</code> wählt der
+          Classifier einen Typ; bei <code style={codeStyle}>auto</code> entscheidet der LLM
+          anhand des Kontexts.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="card" style={{ borderTop: '3px solid #10b981' }}>
+            <div style={h3Style}>Didaktisch (13)</div>
+            <p style={{ ...mutedStyle, marginBottom: 8 }}>Für Lehrkräfte, Schüler:innen und Eltern.</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {[
+                ['auto', '🤖 Automatisch'],
+                ['arbeitsblatt', '📝 Arbeitsblatt'],
+                ['infoblatt', '📄 Infoblatt'],
+                ['praesentation', '🖼️ Präsentation'],
+                ['quiz', '❓ Quiz/Test'],
+                ['checkliste', '☑️ Checkliste'],
+                ['glossar', '📖 Glossar'],
+                ['struktur', '🗂️ Strukturübersicht'],
+                ['uebung', '✏️ Übungsaufgaben'],
+                ['lerngeschichte', '📚 Lerngeschichte'],
+                ['versuch', '🧪 Versuchsanleitung'],
+                ['diskussion', '💬 Diskussionskarten'],
+                ['rollenspiel', '🎭 Rollenspielkarten'],
+              ].map(([id, label]) => (
+                <span key={id} className="tag tag-gray" style={{ fontSize: 11 }} title={id}>{label}</span>
+              ))}
+            </div>
+          </div>
+          <div className="card" style={{ borderTop: '3px solid #2B6CB0' }}>
+            <div style={h3Style}>Analytisch (5)</div>
+            <p style={{ ...mutedStyle, marginBottom: 8 }}>Für Redaktion, Presse, Politik, Beratung, Verwaltung.</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {[
+                ['bericht', '📊 Bericht'],
+                ['factsheet', '📑 Factsheet'],
+                ['steckbrief', '🪪 Projektsteckbrief'],
+                ['pressemitteilung', '📰 Pressemitteilung'],
+                ['vergleich', '⚖️ Vergleichs-Analyse'],
+              ].map(([id, label]) => (
+                <span key={id} className="tag tag-gray" style={{ fontSize: 11 }} title={id}>{label}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+        <p style={{ ...pStyle, marginTop: 12 }}>
+          Aliase (z.B. „Lernblatt" → <code style={codeStyle}>arbeitsblatt</code>) werden in
+          <code style={codeStyle}> 05-canvas/create-triggers.yaml</code> gepflegt. Edit-Trigger
+          („mach es kürzer", „Lösungen hinzu") in
+          <code style={codeStyle}> 05-canvas/edit-triggers.yaml</code>.
+        </p>
+      </Section>
+
+      {/* ═══════════════ Snapshots & Werkseinstellungen ═══════════════ */}
+      <Section title="Snapshots & Werkseinstellungen" icon="💾">
+        <p style={pStyle}>
+          Das Studio kennt zwei Arten von Snapshots — beide enthalten <strong>alle 58
+          Config-Dateien</strong> aus den 13 Layer-Ordnern (Patterns, Rules, Personas, Intents,
+          States, Signale, Canvas-Formate, Privacy etc.) und optional die SQLite-DB
+          (RAG-Embeddings + Sessions + Eval-Historie).
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="card" style={{ borderTop: '3px solid #6B7280' }}>
+            <div style={h3Style}>User-Snapshots</div>
+            <p style={{ ...mutedStyle, marginBottom: 8 }}>
+              <code style={codeStyle}>backend/snapshots/snap-*.zip</code>
+            </p>
+            <ul style={{ ...pStyle, paddingLeft: 18 }}>
+              <li>Anlegen: 📦-Symbol oben rechts → „Neuer Snapshot"</li>
+              <li>Können beliebig viele angelegt und einzeln zurückgespielt werden</li>
+              <li>Optional ohne DB (nur Configs, ~85 KB) für schnelle Rule-Rollbacks</li>
+              <li>Können als „Werkseinstellung" promoted werden („Als Factory")</li>
+            </ul>
+          </div>
+          <div className="card" style={{ borderTop: '3px solid #F59E0B' }}>
+            <div style={h3Style}>Werkseinstellungs-Snapshot</div>
+            <p style={{ ...mutedStyle, marginBottom: 8 }}>
+              <code style={codeStyle}>backend/knowledge/factory-snapshot.zip</code>
+            </p>
+            <ul style={{ ...pStyle, paddingLeft: 18 }}>
+              <li>Genau einer pro Installation — überschreibt sich beim Promoten</li>
+              <li>Wird auf <strong>frischen Installationen automatisch entpackt</strong>, sobald die DB leer startet</li>
+              <li>Versions-Marker (<code style={codeStyle}>factory_version</code>) verhindert wiederholtes Anwenden bei späteren Restarts</li>
+              <li>„Werkseinstellungen zurücksetzen" (gelber Block im Modal) stellt diesen Stand wieder her</li>
+            </ul>
+          </div>
+        </div>
+        <div className="card" style={{ background: '#FFFBEB', borderColor: '#FDE68A', marginTop: 12, padding: 12 }}>
+          <strong>⚠️ Hinweis:</strong> <span style={pStyle}>Wird ein User-Snapshot <em>ohne DB</em> als
+          Factory promotet, hat anschließend auch die Werkseinstellung keine DB. Bei einem späteren
+          „Werkseinstellungen zurücksetzen" werden dann nur die Configs überschrieben, die DB bleibt
+          unberührt. Für eine vollständige Wiederherstellung muss der Quell-Snapshot mit
+          <code style={codeStyle}>include_db=true</code> erstellt sein.</span>
+        </div>
+      </Section>
+
+      {/* ═══════════════ Widget-Einbettung ═══════════════ */}
+      <Section title="Widget-Einbettung (Web-Component)" icon="🔌">
+        <p style={pStyle}>
+          Der Chat lässt sich als Custom Element <code style={codeStyle}>&lt;boerdi-chat&gt;</code>
+          auf jeder Webseite einbinden. Das Single-File-Bundle wird über
+          <code style={codeStyle}> npm run build:widget</code> erzeugt
+          (<code style={codeStyle}>frontend/dist/widget/</code>).
+        </p>
+        <pre style={{ background: '#0F172A', color: '#E2E8F0', padding: 12, borderRadius: 6, fontSize: 12, overflowX: 'auto' }}>
+{`<script src="/widget/boerdi-widget.js" defer></script>
+
+<!-- Minimal-Einbindung (alle Defaults) -->
+<boerdi-chat api-url="https://api.example.de"></boerdi-chat>
+
+<!-- Für Embedding ohne Debug- und Sprachbuttons -->
+<boerdi-chat
+  api-url="https://api.example.de"
+  position="bottom-right"
+  primary-color="#1c4587"
+  show-debug-button="false"
+  show-language-buttons="false">
+</boerdi-chat>`}
+        </pre>
+        <div style={{ ...h3Style, marginTop: 16 }}>Verfügbare Attribute</div>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Attribut</th>
+              <th style={thStyle}>Default</th>
+              <th style={thStyle}>Beschreibung</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              ['api-url', '—', 'Backend-Basis-URL (Pflicht)'],
+              ['position', 'bottom-right', 'Position des FABs: bottom-right | bottom-left | top-right | top-left'],
+              ['initial-state', 'collapsed', 'Anfangszustand: collapsed | expanded'],
+              ['primary-color', '#1c4587', 'Hauptfarbe (CSS-Hex)'],
+              ['greeting', '—', 'Eigene Begrüßungsnachricht'],
+              ['persist-session', 'true', 'Session in localStorage halten (true/false)'],
+              ['session-key', 'boerdi_session_id', 'localStorage-Schlüssel'],
+              ['auto-context', 'true', 'Seitenkontext automatisch erfassen'],
+              ['page-context', '—', 'JSON-Objekt mit zusätzlichem Kontext'],
+              ['show-debug-button', 'true', '🔍 Debug-Toggle in Header anzeigen (false zum Ausblenden)'],
+              ['show-language-buttons', 'true', '🔊 TTS und 🎤 Mic-Buttons anzeigen (false = ohne Sprachfunktion)'],
+            ].map(([attr, def, desc]) => (
+              <tr key={attr}>
+                <td style={tdStyle}><code style={codeStyle}>{attr}</code></td>
+                <td style={tdStyle}><code style={codeStyle}>{def}</code></td>
+                <td style={tdStyle}>{desc}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </Section>
 
       {/* ═══════════════ Canvas & Privacy (operational additions) ═══════════════ */}

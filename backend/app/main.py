@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.services.auth import require_studio_key
 from app.services.database import init_db
-from app.routers import chat, config, rag, speech, sessions, safety, quality, widget, eval as eval_router
+from app.routers import chat, config, rag, speech, sessions, safety, quality, widget, eval as eval_router, routing_rules
 
 load_dotenv()
 
@@ -156,6 +156,7 @@ app.include_router(config.router,  prefix="/api/config",  tags=["config"],  depe
 app.include_router(rag.router,     prefix="/api/rag",     tags=["rag"],     dependencies=_studio_deps)
 app.include_router(safety.router,  prefix="/api/safety",  tags=["safety"],  dependencies=_studio_deps)
 app.include_router(quality.router, prefix="/api/quality", tags=["quality"], dependencies=_studio_deps)
+app.include_router(routing_rules.router, prefix="/api/routing-rules", tags=["routing-rules"], dependencies=_studio_deps)
 # Eval router brings its own /api/eval prefix and per-endpoint Studio guards
 app.include_router(eval_router.router)
 

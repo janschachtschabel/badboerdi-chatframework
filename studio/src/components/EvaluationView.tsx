@@ -35,10 +35,27 @@ interface TurnJudge {
   missing_info?: string[];
 }
 
+interface TraceEntry {
+  step: string;
+  label: string;
+  duration_ms: number;
+  data?: Record<string, unknown>;
+}
+
 interface RunTurn {
   user: string;
   bot: string;
-  debug: { pattern?: string; persona?: string; intent?: string; safety?: string; tools_called?: string[] };
+  debug: {
+    pattern?: string;
+    persona?: string;
+    intent?: string;
+    safety?: string;
+    tools_called?: string[];
+    trace?: TraceEntry[];
+    state?: string;
+    intent_confidence?: number;
+    persona_confidence?: number;
+  };
   judge?: TurnJudge;
   error?: string;
 }
@@ -564,6 +581,7 @@ function ConversationView({ conv }: { conv: RunConversation }) {
               <> · Tools: {t.debug.tools_called.join(', ')}</>
             )}
           </div>
+          <TurnTrace trace={t.debug?.trace || []} />
           {t.judge && (
             <>
               <div style={{ marginTop: 6, fontSize: 11, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -832,5 +850,74 @@ function PillSelector({ title, items, selected, onToggle }: {
         ))}
       </div>
     </div>
+  );
+}
+
+/* ── Per-turn pipeline trace ───────────────────────────────────────
+ *
+ * Renders the trace entries the backend records for each chat turn
+ * (safety-classify, pattern, response …). Helps UX-Fachkräfte
+ * understand WHY a particular pattern was picked or where time was
+ * spent. Collapsed by default — click the summary to expand.
+ */
+function TurnTrace({ trace }: { trace: TraceEntry[] }) {
+  const [open, setOpen] = useState(false);
+  if (!trace || trace.length === 0) return null;
+  const total = trace.reduce((s, e) => s + (e.duration_ms || 0), 0);
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+      style={{ marginTop: 6 }}
+    >
+      <summary
+        style={{
+          fontSize: 11,
+          color: 'var(--text-muted)',
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+      >
+        Pipeline-Trace ({trace.length} Schritte, {total} ms)
+      </summary>
+      <div style={{ marginTop: 4, fontSize: 11, fontFamily: 'monospace' }}>
+        {trace.map((entry, i) => {
+          const isEngine = entry.step.includes('classify') || entry.step === 'pattern';
+          const isSlow = entry.duration_ms > 1000;
+          return (
+            <div
+              key={i}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '110px 1fr 60px',
+                gap: 6,
+                padding: '2px 4px',
+                background: i % 2 ? '#F9FAFB' : 'transparent',
+                color: '#1F2937',
+                borderLeft: isEngine ? '2px solid #0EA5E9' : '2px solid transparent',
+              }}
+            >
+              <span style={{ color: '#6B7280' }}>[{entry.step}]</span>
+              <span>
+                {entry.label}
+                {entry.data && Object.keys(entry.data).length > 0 && (
+                  <span style={{ color: '#6B7280', marginLeft: 4 }}>
+                    {Object.entries(entry.data)
+                      .filter(([k]) =>
+                        ['intent', 'persona', 'state_final', 'winner',
+                         'risk_level', 'fired_rules'].includes(k))
+                      .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+                      .join(' ')}
+                  </span>
+                )}
+              </span>
+              <span style={{ textAlign: 'right', color: isSlow ? '#DC2626' : '#374151' }}>
+                {entry.duration_ms} ms
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </details>
   );
 }

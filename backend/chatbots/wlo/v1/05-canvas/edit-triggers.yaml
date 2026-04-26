@@ -50,10 +50,23 @@ edit_triggers:
 
   # Ergänzen
   - füge hinzu
+  - hinzufügen
+  - hinzu fügen
+  - einfügen
+  - ein fügen
+  - hineinschreiben
+  - hineinformulieren
+  - reinformulieren
+  - reinpacken
+  - reinschreiben
+  - rein schreiben
+  - dazuschreiben
+  - dazu schreiben
   - ergänze
   - ergänze um
   - nimm noch
   - nimm zusätzlich
+  - nimm bitte
   - zusätzlich
   - dazu noch
   - mehr übungen
@@ -61,8 +74,19 @@ edit_triggers:
   - mehr beispiele
   - füge lösungen
   - füge eine lösung
+  - füge bitte
+  - füge noch
+  - füge ein
   - mit lösungen
   - mit lösung
+  - noch ergänzen
+  - etwas ergänzen
+  - etwas hinzu
+  - was hinzu
+  - noch hinzu
+  - noch dazu
+  - beispiel hinzu
+  - beispiele hinzu
 
   # Streichen
   - streiche

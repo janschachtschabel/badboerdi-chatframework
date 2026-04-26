@@ -1,7 +1,7 @@
 ---
 id: PAT-24
 label: Download-Hinweis
-priority: 430
+priority: 545
 gate_personas: ["*"]
 gate_states: ["*"]
 gate_intents: ["INT-W-07"]

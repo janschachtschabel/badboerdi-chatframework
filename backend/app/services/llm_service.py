@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
@@ -77,6 +78,16 @@ def _build_classify_tool() -> dict[str, Any]:
                         "enum": persona_ids,
                         "description": "Detected user persona",
                     },
+                    "persona_confidence": {
+                        "type": "number",
+                        "description": (
+                            "Confidence of persona classification (0.0-1.0). "
+                            "Use <0.6 when the message COULD plausibly come from "
+                            "multiple personas (e.g. 'Materialien zu X' fits "
+                            "Lehrkraft, Schüler, Eltern). Use ≥0.8 only with "
+                            "explicit self-identification or unambiguous signals."
+                        ),
+                    },
                     "intent_id": {
                         "type": "string",
                         "enum": intent_ids,
@@ -104,7 +115,8 @@ def _build_classify_tool() -> dict[str, Any]:
                         "enum": state_ids,
                     },
                 },
-                "required": ["persona_id", "intent_id", "intent_confidence", "signals",
+                "required": ["persona_id", "persona_confidence", "intent_id",
+                              "intent_confidence", "signals",
                               "entities", "turn_type", "next_state"],
             },
         },
@@ -229,6 +241,13 @@ def _build_classify_system_prompt(
         from app.services import page_context_service
         _page_meta = page_context_service.get_cached(session_state)
         _page_block = page_context_service.render_for_prompt(_page_meta)
+        # Fallback: when MCP resolution found nothing (off-platform host
+        # page) but the widget's DOM-detector extracted visible text,
+        # render that as a heuristic context block.
+        if not _page_block:
+            _page_block = page_context_service.render_raw_for_prompt(
+                environment.get("page_context"),
+            )
     except Exception:
         _page_block = ""
 
@@ -237,7 +256,8 @@ def _build_classify_system_prompt(
     _raw_pc = {
         k: v for k, v in (environment.get("page_context") or {}).items()
         if k in ("node_id", "collection_id", "search_query",
-                 "topic_page_slug", "subject_slug", "page_type", "widget")
+                 "topic_page_slug", "subject_slug", "page_kind",
+                 "page_type", "widget", "detection_source")
     }
 
     return f"""Du bist der Klassifikations-Modul des WLO-Chatbots.
@@ -299,8 +319,38 @@ PERSONA-REGELN:
   - "Beratungsprozess", "Empfehlung"
 
   P-VER (Verwaltung):
-  - "Statistiken", "Zahlen", "Nutzungsdaten", "Reporting", "KPIs"
-  - "fuer unsere Verwaltung", "amtliche Daten"
+  - "fuer unsere Verwaltung", "amtliche Daten", "in der Behoerdenarbeit"
+  - "Kennzahlen fuer das Ministerium", "Bezirksauswertung"
+  - WICHTIG: das blosse Wort "Statistiken"/"Zahlen"/"KPIs" macht NICHT
+    automatisch P-VER — auch Lehrkraefte fragen nach Klassen-Statistiken,
+    Eltern nach Hausaufgaben-Zahlen, Schueler:innen nach ihren Noten.
+    P-VER ONLY wenn explizit Verwaltungs-/Behoerden-Kontext erkennbar ist.
+
+- **KRITISCH — Intent != Persona**: Eine Frage nach **Statistiken**,
+  **Reporting** oder **Zahlen** (Intent: INT-W-09) bedeutet NICHT
+  automatisch P-VER. Persona kommt aus **Sprachstil + Selbst-ID +
+  Kontext**, nicht aus dem Anfrage-Thema. Beispiele:
+  - "Kannst du mir die Statistiken zu Hausaufgaben meiner Tochter zeigen"
+    → P-ELT (mein/meine Tochter ist die Persona-Signal, NICHT "Statistiken")
+  - "Statistiken zu meinen Pruefungen" → P-W-SL (mein/Pruefungen)
+  - "Reichweitenstatistiken meiner Artikel" → P-W-RED (meine Artikel)
+  - "Statistiken zur Bezirksauswertung" → P-VER (Bezirksauswertung)
+
+- **KRITISCH — Bildungspolitik-THEMA != P-W-POL-PERSONA**: Das Wort
+  "Bildungspolitik" alleine macht jemanden NICHT zu P-W-POL. Auch
+  Lehrkraefte, Beratende, Verwaltung und Redaktion fragen nach
+  bildungspolitischen Themen. P-W-POL nur waehlen wenn EXPLIZITE
+  Selbst-ID ("ich bin Politikerin", "als Abgeordneter") ODER
+  unmissverstaendliche Politik-Kontext-Woerter (Wahlkreis, Fraktion,
+  Plenum, Anhoerung, Antrag, Positionspapier) auftauchen. Bei "Wie
+  funktioniert WLO fuer Bildungspolitik" ist die Persona NICHT
+  ableitbar — defaulte zu P-AND statt P-W-POL.
+
+- **KRITISCH — "Statistik" ist eine Frage, kein Persona-Signal**:
+  "Welche Statistiken zu X" / "Aktuelle Zahlen" / "Reichweite" sind
+  Intent-W-09-Signale. Sie machen NIEMALS automatisch P-VER. Auch
+  Lehrkraefte, Eltern, Schueler:innen und Pressevertreter:innen fragen
+  nach Statistiken. Persona separat aus Sprache und Self-ID ableiten.
 
 - **KRITISCH — P-W-LK ist KEIN Default!** Wenn keine eindeutigen Lehrkraft-Signale
   vorliegen (siehe Liste oben), waehle P-AND statt P-W-LK. Besser unklar als falsch
@@ -627,64 +677,27 @@ async def classify_input(
     # appears in the message, even when the actual intent is clearly
     # routing, download or evaluation. These regex-based overrides
     # catch the unambiguous cases and force the correct intent.
-    import re as _re
-    _msg = (message or "").lower()
-    if raw.get("intent_id") == "INT-W-11":
-        # Routing to Redaktion — "weiterleiten an Redaktion" + "Fehler gefunden"
-        # + Redaktions-Upload-Flow ("Materialien hochladen", "eigene Inhalte
-        # einstellen") der über die Redaktion laeuft
-        if _re.search(
-            r"\b(an\s+(die\s+)?redaktion\s+(weiterleiten|schicken|melden|senden|geben)|"
-            r"an\s+redaktion\s+weiter|redaktion\s+schauen|"
-            r"hinweis\s+an\s+(die\s+)?redaktion|fehler\s+gefunden|"
-            r"hochladen|upload(en)?|einstellen|einreichen|einpflegen|"
-            r"anmerkungen\s+(zu|hinterlassen)|wo\s+kann\s+ich\s+.{0,20}hinterlassen)\b",
-            _msg,
-        ):
-            raw["intent_id"] = "INT-W-05"
-        # Download/Get existing material — NOT create
-        elif _re.search(
-            r"\b(runterladen|herunterladen|zum\s+download|zum\s+herunterladen|"
-            r"bereitstellen|zur\s+verf(ü|ue)gung\s+stellen|zukommen\s+lassen|"
-            r"zusenden|gib\s+mir\s+(den|die|das)\s+\w+|"
-            r"wo\s+(finde|kann|bekomme)\s+ich)\b",
-            _msg,
-        ):
-            raw["intent_id"] = "INT-W-07"
-        # Evaluation of existing material
-        elif _re.search(
-            r"\b(qualit(ä|ae)t\s+(von|des)|bewerten|wie\s+gut\s+(sind|ist)|"
-            r"(ist|sind)\s+(das|die|der|es)\s+geeignet|einsch(ä|ae)tzen|pr(ü|ue)fen)\b",
-            _msg,
-        ):
-            raw["intent_id"] = "INT-W-08"
-        # Statistics/reports — not create
-        elif _re.search(
-            r"\b(statistiken\s+(zu|ü|ueber)|zahlen\s+zu|daten\s+zu|"
-            r"reporting|auswertung\s+(von|der)|(ü|ue)bersicht\s+(ü|ue)ber\s+aktuelle)\b",
-            _msg,
-        ):
-            raw["intent_id"] = "INT-W-09"
-        # Materialzusammenstellung / Sammlung → INT-W-10 (Lernpfad-/
-        # Unterrichtsplanung). Das sind kuratierte Mehrfach-Materialien,
-        # nicht ein einzelnes neues Dokument. Klassische Classifier-
-        # Verwechslung mit INT-W-11.
-        elif _re.search(
-            r"\b(material(ien)?\s*-?\s*(zusammenstellung|sammlung|paket|set)|"
-            r"(mehrere|diverse|passende|strukturierte)\s+material(ien)?|"
-            r"zusammenstellung\s+(von|aus)\s+material|"
-            r"material(ien)?\s+(zusammen\s*stellen|kompilieren|kuratieren)|"
-            r"unterrichts(einheit|plan|paket|baustein)|lerneinheit)\b",
-            _msg,
-        ):
-            raw["intent_id"] = "INT-W-10"
-            # Classifier stellt bei "Materialzusammenstellung" oft state-12
-            # (Canvas-Arbeit) ein, weil die Formulierung nach Erstellung
-            # klingt. INT-W-10 gehoert aber in state-5 (Suche/Curation), damit
-            # PAT-19 (Unterrichts-Lernpfad) greifen kann.
-            if raw.get("next_state") == "state-12":
-                raw["next_state"] = "state-5"
 
+    # ── Persona + Intent overrides — MIGRATED to YAML rule engine ──
+    # All deterministic post-classifier overrides now live in
+    # ``chatbots/wlo/v1/06-rules/routing-rules.yaml`` and apply via the
+    # pre-route engine pass in chat.py:
+    #
+    #   * R-PSI-1..R-PSI-8 — persona self-id ("ich bin Lehrer", "als
+    #     Redakteur", "für unsere Verwaltung", …)
+    #   * R-6b — persona_confidence < 0.40 → P-AND fallback
+    #   * R-3                — INT-W-11 + Materialzusammenstellung → INT-W-10
+    #   * rule_intent_w11_to_w05 — INT-W-11 + Redaktion-Trigger → INT-W-05
+    #   * rule_intent_w11_to_w07 — INT-W-11 + Download-Trigger    → INT-W-07
+    #   * rule_intent_w11_to_w08 — INT-W-11 + Eval-Trigger        → INT-W-08
+    #   * rule_intent_w11_to_w09 — INT-W-11 + Statistik-Trigger   → INT-W-09
+    #   * rule_intent_w11_to_w06 — INT-W-11 + Faktenfrage-Trigger → INT-W-06
+    #   * rule_intent_w11_to_w02 — INT-W-11 + Orientierungs-Trigger → INT-W-02
+    #
+    # The chat router applies the resulting ``intent_override`` /
+    # ``persona_override`` values via the pre-route hook before pattern
+    # selection. To debug a specific override, see the Studio Routing
+    # Rules tab → Test-Bench (no LLM call needed).
     try:
         return ClassificationResult.model_validate(raw)
     except ValidationError as e:
@@ -763,6 +776,14 @@ State: {classification.get('next_state', 'state-1')}""",
         _pb = page_context_service.render_for_prompt(_pm)
         if _pb:
             system_parts.append(_pb)
+        else:
+            # Fallback: widget extracted visible page text but MCP could
+            # not resolve to platform metadata — use the heuristic block.
+            _raw_pb = page_context_service.render_raw_for_prompt(
+                environment.get("page_context"),
+            )
+            if _raw_pb:
+                system_parts.append(_raw_pb)
     except Exception:
         pass
 
@@ -1685,8 +1706,21 @@ Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien)
       z.B. "Mach es einfacher", "Fuege Loesungen hinzu"
   (d) **Richtungswechsel** — anderes Thema / andere Fachrichtung
       z.B. "Anderes Thema: Klimawandel", "Was gibt's zu Physik?"
-  (e) **Plattforminfo** — Fragen ueber WLO, Projekte, Zahlen
-      z.B. "Welche Faecher deckt WLO ab?", "Wer steht hinter der Plattform?"
+  (e) **Plattforminfo** — KONKRETE, existierende Aspekte von WLO.
+      ZULAESSIG (existieren wirklich):
+        - "Welche Faecher deckt WLO ab?"
+        - "Wie viele Materialien gibt es?"
+        - "Wer steht hinter WLO?" / "Wer betreibt WLO?"
+        - "Was ist OER?" / "Was bedeuten die Lizenzen?"
+        - "Was ist eine Themenseite?" / "Was sind Fachportale?"
+        - "Welche Bildungsstufen werden abgedeckt?"
+        - "Kann ich eigene Materialien einreichen?"
+      VERBOTEN (existieren NICHT als WLO-Konzept):
+        - "Plattforminfrastruktur", "Architektur", "Backend", "API"
+        - "Roadmap", "Strategie", "Datenmodell"
+        - irgendein erfundener Tech-Begriff
+      Wenn du dir unsicher bist ob ein Begriff existiert: lass die
+      Plattforminfo-Kategorie weg und nimm eine andere.
   (f) **Konkrete Antwort auf Rueckfrage des Bots** — wenn der Bot eine Frage
       stellt (Thema? Fach? Stufe?), liefere KONKRETE Antworten als Vorschlaege,
       z.B. bei Mathe-Frage: "Bruchrechnung Klasse 6", "Geometrie Sek I".
@@ -1704,6 +1738,14 @@ Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien)
    + Lernpfad + Medienvielfalt. Keine Berichte/Factsheets.
 8. Wenn der Bot eine Rueckfrage stellt, liefere KONKRETE Antworten (Kategorie f) —
    KEINE generischen Phrasen wie "Was kannst du noch?".
+9. NIEMALS erfundene oder vage Begriffe. Wenn du nicht 100% sicher bist
+   dass etwas auf WLO existiert: nimm einen anderen Vorschlag. Lieber
+   ein konkretes Fach-Beispiel ("Mathe Klasse 8") als ein abstraktes,
+   nicht-existierendes Konzept.
+10. Vorschlaege sollen **selbst-erklaerend** sein. Wenn man den Vorschlag
+    aus dem Kontext reisst, muss klar bleiben was angefragt wird.
+    SCHLECHT: "Mehr davon zeigen" (ohne Bezug)
+    GUT: "Mehr Mathe-Videos zeigen" / "Anderes Thema waehlen"
 
 Gib NUR die 4 Zeilen zurueck, sonst nichts."""
 
@@ -1752,10 +1794,31 @@ async def generate_learning_path_text(
         learner_info.append(f"Bildungsstufe: {entities['stufe']}")
     learner_ctx = " | ".join(learner_info) if learner_info else "allgemeine Lernende"
 
+    # If fach/stufe are missing, the LLM should infer plausible defaults
+    # from the topic (e.g. "Photosynthese" → Biologie, Sek I) AND state
+    # this assumption transparently in the response. Eval-Befund Run 10:
+    # ohne dieses Hinzunehmen liefert PAT-19 leere Schritt 1/2/3-Templates.
+    has_fach = bool(entities.get("fach"))
+    has_stufe = bool(entities.get("stufe"))
+    default_hint = ""
+    if not has_fach or not has_stufe:
+        default_hint = (
+            "\n\n**WICHTIG — Fach/Stufe ableiten und transparent nennen:**\n"
+            f"- Fach{'' if has_fach else ' (NICHT genannt — leite plausible Annahme aus dem Thema ab)'}: "
+            f"{entities.get('fach') or '— leite ab'}\n"
+            f"- Stufe{'' if has_stufe else ' (NICHT genannt — leite plausible Annahme aus dem Thema ab)'}: "
+            f"{entities.get('stufe') or '— leite ab'}\n"
+            "Beispiele: 'Photosynthese' → Biologie / Sek I; 'Bruchrechnung' → "
+            "Mathematik / Sek I; 'Mittelalter' → Geschichte / Sek I.\n"
+            "Im ersten Satz des Lernpfad-Titels die Annahme transparent benennen, "
+            "z.B. 'Lernpfad zu *X* (Annahme: Biologie / Sek I — bei Bedarf "
+            "anpassen).'"
+        )
+
     system = f"""Du bist BOERDi, ein paedagogischer Assistent fuer WirLernenOnline.de.
 Erstelle einen strukturierten Lernpfad aus den gegebenen Inhalten.
 Persona: {persona_id}
-Kontext: {learner_ctx}"""
+Kontext: {learner_ctx}{default_hint}"""
 
     prompt = f"""Erstelle einen paedagogisch strukturierten **Lernpfad** zum Thema \"{collection_title}\".
 

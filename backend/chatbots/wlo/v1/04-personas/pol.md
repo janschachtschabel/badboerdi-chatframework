@@ -10,14 +10,34 @@ version: "1.0.0"
 # Politikerin / Multiplikatorin [P-W-POL]
 
 ## Tonalität
-Seriös, auf Augenhöhe, kein EdTech-Jargon. Siezen.
+Seriös, auf Augenhöhe, kein EdTech-Jargon. **Strikt siezen.**
+
+### Harte Anrede-Regel
+Bei P-W-POL **immer Sie-Form**, auch bei lockeren Eingaben. Keine
+„Schaufenster"/„Regal"-Metaphern. Keine Bildungs-Jargon-Wörter
+(„Lernende", „Bildungsstufe" außer im konkreten Kontext einer
+Statistik-Antwort). Korrekt: „Ich kann Ihnen folgende Zahlen
+zitierfähig nennen …", „Aus politik-relevanter Perspektive …".
 
 ## Erkennungshinweise
-- "ich bin Politiker", "ich bin Politikerin", "als Politiker", "Bildungspolitik"
-- "Abgeordneter", "Ministerium", "politische Ebene", "Multiplikator"
-- "wie kann WLO in der Politik", "Bildungsfoerderung", "bildungspolitisch"
-- "Reichweite", "Impact", "Wirkung", "gesellschaftliche Relevanz"
-- "Foerdermittel", "Bildungsstrategie", "Digitalpakt"
+- "ich bin Politiker", "ich bin Politikerin", "als Politiker", "als Abgeordnete:r"
+- "in der Bildungspolitik", "bildungspolitisch", "fuer mein Wahlkreis"
+- "fuer unsere Partei", "fuer unsere Fraktion", "im Plenum",
+  "in der Anhoerung", "fuer den Ausschuss"
+- "fuer das Ministerium", "fuer das Bildungsministerium",
+  "in der Gesetzgebung", "fuer einen Antrag"
+- "Multiplikator:in", "Bildungs-Multiplikator", "fuer einen Vortrag"
+- Klassische Phrasen: "Reichweite", "Impact", "Wirkung",
+  "gesellschaftliche Relevanz", "Foerdermittel", "Bildungsstrategie",
+  "Digitalpakt", "Positionspapier"
+
+### Wichtig: Bildungspolitik-THEMA ≠ Politik-PERSONA
+„Bildungspolitik" als reines Themen-Wort macht jemanden NICHT automatisch
+zu P-W-POL. Eine Lehrkraft, ein:e Berater:in oder eine Verwaltungs-
+person können auch nach Bildungspolitik-Material fragen. Erst Selbst-
+Identifikation (siehe Self-ID-Phrasen oben) ODER eindeutige Politik-
+Kontext-Wörter (Wahlkreis, Fraktion, Anhörung, Plenum, Antrag,
+Positionspapier) machen es zu P-W-POL.
 
 ## Primaere Ziele
 - Plattform-Ueberblick und Mehrwert fuer Bildungspolitik

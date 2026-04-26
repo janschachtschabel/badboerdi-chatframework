@@ -389,3 +389,57 @@ def render_for_prompt(meta: dict[str, Any] | None) -> str:
         "-> Suche mit Titel/Schlagworten starten, passend zu den Bildungsstufen."
     )
     return "\n".join(lines)
+
+
+def render_raw_for_prompt(page_context: dict[str, Any] | None) -> str:
+    """Fallback block when no MCP-resolved metadata is available, but the
+    widget's DOM-detector extracted visible page text + heuristic fields.
+
+    This keeps the LLM grounded on pages where the widget can SEE the
+    content (most third-party WLO embeddings) but the URL doesn't match
+    a known platform pattern that the MCP-resolver could deepen.
+
+    Returns an empty string if no usable raw text is present.
+    """
+    if not isinstance(page_context, dict):
+        return ""
+    text = (page_context.get("page_text") or "").strip()
+    if not text:
+        return ""
+
+    kind = (page_context.get("page_kind") or "other").lower()
+    detection = page_context.get("detection_source") or ""
+
+    lines: list[str] = ["## Inhalt der aktuellen Seite (Heuristik)"]
+    if kind != "other":
+        kind_labels = {
+            "topic": "Themenseite",
+            "collection": "Sammlung",
+            "content": "Inhaltsseite (einzelnes Material)",
+            "subject": "Fachportal",
+            "search": "Such-Ergebnisseite",
+        }
+        lines.append(f"Seitentyp: {kind_labels.get(kind, kind)}")
+
+    if page_context.get("topic_page_slug"):
+        lines.append(f"Themenseite-Slug: {page_context['topic_page_slug']}")
+    if page_context.get("subject_slug"):
+        lines.append(f"Fach-Slug: {page_context['subject_slug']}")
+    if page_context.get("search_query"):
+        lines.append(f"Aktiver Suchbegriff: {page_context['search_query']}")
+    if detection:
+        lines.append(f"Erkennungs-Quelle: {detection}")
+
+    # Cap snippet length — the prompt budget is finite.
+    snippet = text if len(text) <= 1500 else text[:1497] + "…"
+    lines.append("")
+    lines.append("Sichtbarer Text der Seite (gekürzt):")
+    lines.append(snippet)
+    lines.append("")
+    lines.append(
+        "Regeln: Wenn der Nutzer mit 'hier', 'auf dieser Seite', 'das "
+        "Thema', 'dazu' o.ä. referenziert, beziehe dich auf diese Inhalte. "
+        "Sprich vom 'Seiteninhalt', NICHT von 'Auszug' oder 'Heuristik' — "
+        "das sind interne Begriffe."
+    )
+    return "\n".join(lines)

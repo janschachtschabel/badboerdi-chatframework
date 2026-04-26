@@ -1,7 +1,7 @@
 ---
 id: PAT-22
 label: Feedback-Echo
-priority: 420
+priority: 540
 gate_personas: ["*"]
 gate_states: ["*"]
 gate_intents: ["INT-W-04"]

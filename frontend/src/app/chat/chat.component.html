@@ -8,10 +8,10 @@
       </div>
     </div>
     <div class="header-actions">
-      <button class="btn-icon" [class.debug-off]="!autoSpeak" (click)="toggleAutoSpeak()" [title]="autoSpeak ? 'Sprachausgabe aus' : 'Sprachausgabe an'">
+      <button *ngIf="languageButtonsVisible" class="btn-icon" [class.debug-off]="!autoSpeak" (click)="toggleAutoSpeak()" [title]="autoSpeak ? 'Sprachausgabe aus' : 'Sprachausgabe an'">
         🔊
       </button>
-      <button class="btn-icon" [class.debug-off]="!showDebug" (click)="toggleDebug()" [title]="showDebug ? 'Debug aus' : 'Debug an'">🔍</button>
+      <button *ngIf="debugButtonVisible" class="btn-icon" [class.debug-off]="!showDebug" (click)="toggleDebug()" [title]="showDebug ? 'Debug aus' : 'Debug an'">🔍</button>
       <button class="btn-icon" (click)="restart()" title="Neuer Chat">🔄</button>
     </div>
   </div>
@@ -292,7 +292,7 @@
 
   <!-- Input Footer -->
   <div class="chat-footer">
-    <button class="btn-mic" [class.recording]="isRecording" (click)="toggleRecording()"
+    <button *ngIf="languageButtonsVisible" class="btn-mic" [class.recording]="isRecording" (click)="toggleRecording()"
             [title]="isRecording ? 'Aufnahme stoppen' : 'Spracheingabe starten'">
       <span *ngIf="!isRecording">🎤</span>
       <span *ngIf="isRecording" class="recording-indicator">

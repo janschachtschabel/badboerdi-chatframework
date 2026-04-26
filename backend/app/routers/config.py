@@ -119,6 +119,109 @@ async def update_privacy_config(cfg: PrivacyConfig):
     return PrivacyConfig(**load_privacy_config())
 
 
+# ── Canvas material types (typed CRUD for Studio GUI editor) ─────
+#
+# Reads / writes 05-canvas/material-types.yaml as JSON, so the Studio
+# does not need a YAML parser. The endpoint preserves the file's leading
+# comment block (lines 1–15 in the canonical file) so authors don't lose
+# the schema-doc when round-tripping through the GUI.
+
+class CanvasMaterialType(BaseModel):
+    id: str
+    label: str
+    emoji: str = ""
+    category: str  # 'didaktisch' | 'analytisch'
+    structure: str = ""
+
+
+class CanvasMaterialTypesPayload(BaseModel):
+    material_types: list[CanvasMaterialType]
+
+
+_CANVAS_TYPES_PATH = "05-canvas/material-types.yaml"
+_CANVAS_TYPES_HEADER = (
+    "# Canvas-Material-Typen\n"
+    "# ============================================================================\n"
+    "# Jede Definition wird im Canvas als möglicher Output-Typ angeboten.\n"
+    "# - id:        interner Key (nur a-z, ziffern, _). Wird vom Code referenziert.\n"
+    "# - label:     Anzeigename im UI\n"
+    "# - emoji:     Vorangestelltes Symbol in Quick-Replies + Canvas-Badge\n"
+    "# - category:  'didaktisch' (Lehrer/Schüler/Eltern) oder 'analytisch'\n"
+    "#              (Verwaltung/Politik/Presse/Beratung). Steuert die\n"
+    "#              Badge-Farbe im Canvas und die Quick-Reply-Reihenfolge pro\n"
+    "#              Persona (siehe persona-priorities.yaml).\n"
+    "# - structure: Markdown-Struktur-Vorgabe, die dem LLM im Create-Prompt als\n"
+    "#              konkrete Gliederungs-Anweisung mitgegeben wird.\n"
+    "#\n"
+    "# Änderungen an dieser Datei wirken live — Backend-Cache invalidiert sich\n"
+    "# über mtime. Kein Restart nötig.\n"
+)
+
+
+@router.get("/canvas/material-types", response_model=CanvasMaterialTypesPayload)
+async def get_canvas_material_types():
+    """Return parsed material-types as typed JSON for the Studio GUI editor."""
+    from app.services.config_loader import load_canvas_material_types
+    items = load_canvas_material_types() or []
+    return CanvasMaterialTypesPayload(
+        material_types=[CanvasMaterialType(**item) for item in items],
+    )
+
+
+@router.put("/canvas/material-types", response_model=CanvasMaterialTypesPayload)
+async def update_canvas_material_types(payload: CanvasMaterialTypesPayload):
+    """Persist material-types back to YAML.
+
+    Uses ``yaml.safe_dump`` with a custom string representer so that the
+    multi-line ``structure`` field round-trips as a literal block scalar
+    (``|``) instead of inline-quoted text. This keeps diffs readable for
+    humans editing the file directly in Git.
+    """
+    import yaml as _yaml
+
+    # Validate ids are unique and category is one of the known values.
+    seen: set[str] = set()
+    valid_categories = {"didaktisch", "analytisch"}
+    for mt in payload.material_types:
+        if mt.id in seen:
+            raise HTTPException(status_code=400, detail=f"Duplicate id: {mt.id}")
+        seen.add(mt.id)
+        if mt.category not in valid_categories:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid category '{mt.category}' for id '{mt.id}' "
+                       f"(must be one of {sorted(valid_categories)})",
+            )
+
+    # Custom string representer: multi-line strings use literal block scalar.
+    def _str_repr(dumper, data):
+        if "\n" in data:
+            return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+    class _MaterialDumper(_yaml.SafeDumper):
+        pass
+
+    _MaterialDumper.add_representer(str, _str_repr)
+
+    body = _yaml.dump(
+        {"material_types": [mt.model_dump() for mt in payload.material_types]},
+        Dumper=_MaterialDumper,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+        width=4096,
+    )
+    write_config_file(_CANVAS_TYPES_PATH, _CANVAS_TYPES_HEADER + "\n" + body)
+
+    # Re-read so the response reflects what's now on disk.
+    from app.services.config_loader import load_canvas_material_types
+    items = load_canvas_material_types() or []
+    return CanvasMaterialTypesPayload(
+        material_types=[CanvasMaterialType(**item) for item in items],
+    )
+
+
 @router.get("/elements")
 async def get_elements():
     """Return all editable elements (patterns, personas, intents, states, signals, entities)

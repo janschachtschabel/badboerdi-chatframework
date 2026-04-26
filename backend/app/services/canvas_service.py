@@ -296,8 +296,13 @@ _DEFAULT_TYPE_ALIASES: dict[str, str] = {
     "automatisch": "auto",
     "ki": "auto",
     "arbeitsblatt": "arbeitsblatt",
+    "arbeitsblätter": "arbeitsblatt",
+    "arbeitsblaetter": "arbeitsblatt",
     "aufgabenblatt": "arbeitsblatt",
+    "aufgabenblätter": "arbeitsblatt",
+    "aufgabenblaetter": "arbeitsblatt",
     "worksheet": "arbeitsblatt",
+    "worksheets": "arbeitsblatt",
     "infoblatt": "infoblatt",
     "info": "infoblatt",
     "informationsblatt": "infoblatt",
@@ -307,10 +312,15 @@ _DEFAULT_TYPE_ALIASES: dict[str, str] = {
     "folien": "praesentation",
     "vortrag": "praesentation",
     "quiz": "quiz",
+    "quizfragen": "quiz",
+    "quizze": "quiz",
     "test": "quiz",
+    "tests": "quiz",
     "quiz/test": "quiz",
     "checkliste": "checkliste",
+    "checklisten": "checkliste",
     "checklist": "checkliste",
+    "checklists": "checkliste",
     "glossar": "glossar",
     "begriffe": "glossar",
     "strukturuebersicht": "struktur",
@@ -327,11 +337,17 @@ _DEFAULT_TYPE_ALIASES: dict[str, str] = {
     "uebungsaufgaben": "uebung",
     "übungsaufgaben": "uebung",
     "lerngeschichte": "lerngeschichte",
+    "lerngeschichten": "lerngeschichte",
     "geschichte": "lerngeschichte",
+    "geschichten": "lerngeschichte",
     "story": "lerngeschichte",
+    "stories": "lerngeschichte",
     "versuch": "versuch",
+    "versuche": "versuch",
     "experiment": "versuch",
+    "experimente": "versuch",
     "versuchsanleitung": "versuch",
+    "versuchsanleitungen": "versuch",
     "diskussion": "diskussion",
     "diskussionskarten": "diskussion",
     "debatte": "diskussion",
@@ -728,7 +744,17 @@ async def generate_canvas_content(
         f"{mem_block}"
         f"{wiki_block}\n\n"
         "Liefere ausschließlich den Markdown-Inhalt des Materials, keine Einleitungssaetze "
-        "an den Benutzer. Der erste nicht-leere Ausgabe-Block MUSS eine H1-Überschrift sein."
+        "an den Benutzer. Der erste nicht-leere Ausgabe-Block MUSS eine H1-Überschrift sein.\n\n"
+        "QUALITÄTS-GATES — wichtig, sonst wirkt das Material kaputt:\n"
+        "1. JEDE H2-Überschrift MUSS mindestens 2 Sätze oder 3 Bullet-Points an Inhalt haben.\n"
+        "   Eine reine Überschrift wie '## Differenzierung:' ohne Folgeinhalt ist VERBOTEN —\n"
+        "   entweder mit Inhalt füllen oder ganz weglassen.\n"
+        "2. Kein leerer Listen-Punkt ('- ') und keine 'Tipp:' / 'Hinweis:' / 'Differenzierung:'-\n"
+        "   Zeilen ohne anschließenden Erklärungstext.\n"
+        "3. Der letzte Ausgabe-Block muss inhaltlich vollständig sein — niemals mit einem\n"
+        "   Kolon-Wort enden. Bei Token-Limit lieber einen Abschnitt weniger, dafür komplett.\n"
+        "4. Wenn 'Lösungen' im Material steht, muss zu jeder Aufgabe eine Antwort folgen —\n"
+        "   nicht nur 'Lösungen:' alleinstehend."
     )
 
     messages = [
@@ -751,6 +777,7 @@ async def generate_canvas_content(
         md = f"# {mat['label']}: {topic}\n\n*Fehler beim Erstellen: {e}*"
 
     md = _strip_latex(md)
+    md = _strip_empty_sections(md)
 
     # Safety-Net: ensure the Wikipedia citation is present when a WP article
     # was fed into the prompt. The LLM sometimes drops it despite the rule.
@@ -1388,7 +1415,7 @@ async def edit_canvas_content(
         # accidentally echoed into its output. The markers are internal
         # only — they must never leak to the user.
         new_md = _strip_fence_markers(new_md)
-        return _strip_latex(new_md)
+        return _strip_empty_sections(_strip_latex(new_md))
     except Exception as e:
         logger.exception("edit_canvas_content failed: %s", e)
         return current_markdown + f"\n\n> *Änderung konnte nicht angewendet werden: {e}*"
@@ -1424,6 +1451,81 @@ _RE_MATH_PAREN = re.compile(r"\\\(([^\n]{1,400}?)\\\)")
 _RE_MATH_BRACK = re.compile(r"\\\[([^\n]{1,400}?)\\\]")
 # Standalone LaTeX wrapper in round brackets: "(\frac{a}{b})" → "a/b"
 _RE_PAREN_LATEX = re.compile(r"\(\s*(\\\w+\{[^)]*?)\s*\)")
+
+
+def _strip_empty_sections(md: str) -> str:
+    """Drop heading lines that have no content underneath.
+
+    The LLM sometimes ends a document with a section header like
+    '## Differenzierung:' or '5. **Tipp für Lehrende:**' but no
+    follow-up content. Such hanging headers look broken in the canvas.
+
+    This pass removes:
+      - markdown H2/H3 headings whose section body is empty/whitespace
+      - bold-only list items ('- **Hinweis:**' / '5. **Tipp:**') with
+        nothing else after
+      - trailing colon-only header lines at end-of-document
+    """
+    if not md:
+        return md
+    import re as _re
+
+    lines = md.splitlines()
+    out: list[str] = []
+    i = 0
+    n = len(lines)
+
+    HEAD = _re.compile(r"^(#{2,3})\s+(.+?)\s*$")
+    BOLD_LIST = _re.compile(r"^\s*([-*+]|\d+\.)\s+\*\*([^*]+?):?\*\*\s*$")
+
+    while i < n:
+        line = lines[i]
+        m = HEAD.match(line)
+        if m:
+            # Look ahead: does the following block (until next heading or EOF)
+            # contain non-whitespace, non-heading content?
+            j = i + 1
+            has_content = False
+            while j < n:
+                nxt = lines[j]
+                if HEAD.match(nxt):
+                    break
+                if nxt.strip():
+                    has_content = True
+                    break
+                j += 1
+            if has_content:
+                out.append(line)
+            # else: drop the heading entirely (and any blank lines in between)
+            i += 1
+            continue
+
+        m2 = BOLD_LIST.match(line)
+        if m2:
+            # Bold-only list item with nothing after the colon — drop unless
+            # the next non-blank line is an indented sub-bullet.
+            j = i + 1
+            has_sub = False
+            while j < n:
+                nxt = lines[j]
+                if not nxt.strip():
+                    j += 1
+                    continue
+                if nxt.startswith(("    ", "\t")):
+                    has_sub = True
+                break
+            if has_sub:
+                out.append(line)
+            i += 1
+            continue
+
+        out.append(line)
+        i += 1
+
+    cleaned = "\n".join(out)
+    # Collapse 3+ blank lines that may now exist
+    cleaned = _re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.rstrip() + ("\n" if cleaned.endswith("\n") else "")
 
 
 def _strip_latex(md: str) -> str:

@@ -3,13 +3,23 @@ id: PAT-19
 label: Unterrichts-Lernpfad
 priority: 480
 gate_personas: ["P-W-LK"]
-gate_states: ["state-5", "state-6"]
-gate_intents: ["*"]
+gate_states: ["state-5", "state-6", "state-12"]
+# Lernpfad ist konzeptuell INT-W-10 (Unterrichtsplanung) — wird aber
+# auch bei INT-W-03b (Suche nach Unterrichtsmaterial) sinnvoll, wenn
+# eine Lehrkraft mit konkretem Thema kommt. Andere Intents (insbes.
+# INT-W-11 Inhalt erstellen — Single-Material) sollen NICHT auf
+# Lernpfad geroutet werden, sonst schlägt PAT-21 (Canvas-Create) der
+# eigentlich richtige Pattern-Sieger PAT-19 nicht mehr.
+gate_intents: ["INT-W-10", "INT-W-03b"]
 signal_high_fit: ["zielgerichtet", "erfahren"]
 signal_medium_fit: []
 signal_low_fit: []
 page_bonus: []
-precondition_slots: ["fach", "stufe", "thema"]
+# Pragma-Lockerung: nur "thema" ist Pflicht — fach und stufe können vom
+# LLM aus dem Thema (z.B. "Photosynthese" → Biologie/Sek I) abgeleitet
+# werden. Das verhindert dass PAT-19 bei jeder Lehrkraft-Anfrage durch
+# missing-slots eliminiert wird und PAT-02 mit "zu welchem Fach?" landet.
+precondition_slots: ["thema"]
 default_tone: sachlich
 default_length: mittel
 default_detail: standard
@@ -27,14 +37,17 @@ tools: ["search_wlo_collections", "search_wlo_topic_pages", "get_collection_cont
 Stundenentwurf mit Lernzielen, Zeitangaben, didakt. Hinweisen.
 
 ## Wann aktiv
-- Lehrkräfte im Search oder Result Curation State
-- Fach, Stufe UND Thema bekannt
+- Lehrkräfte im Search-, Result-Curation- oder Canvas-Arbeit-State
+- THEMA bekannt (Pflicht); fach + stufe optional
 - Zielgerichtet, erfahren
 
 ## Verhalten
 - Vollstaendiger Stundenentwurf
 - Lernziele, Zeitangaben, didaktische Hinweise
-- Bei fehlenden Slots: Degradation (PAT-06)
+- **Wenn fach/stufe fehlen**: das LLM leitet plausible Defaults aus dem
+  Thema ab und nennt sie transparent: "Lernpfad zu Photosynthese,
+  passend für Biologie / Sek I (Annahme — bei Bedarf gerne anpassen)".
+- Nach dem Lernpfad Fortsetzung anbieten:
 - Nach dem Lernpfad Fortsetzung anbieten:
   - "Soll ich den Lernpfad fuer eine andere Klassenstufe anpassen?"
   - "Brauchst du noch ergaenzende Materialien oder einen Lernpfad zu einem anderen Thema?"

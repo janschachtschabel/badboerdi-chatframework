@@ -344,7 +344,15 @@ def build_chat_kwargs(
                 effective_effort_is_none = False
 
         # temperature/top_p are only permitted at effort=none.
-        if effective_effort_is_none:
+        # ALSO: certain reasoning-only models (gpt-5-mini, gpt-5, o1/o3/o4)
+        # reject custom temperature even at effort=none — they only accept
+        # the default of 1. gpt-5.4-mini DOES accept custom temperature.
+        # Detect by name: only families known to accept temperature get it.
+        _name_lower = resolved_model.lower()
+        _accepts_temperature = (
+            _name_lower.startswith("gpt-5.4")  # gpt-5.4-mini etc.
+        )
+        if effective_effort_is_none and _accepts_temperature:
             if temperature is not None:
                 kwargs["temperature"] = temperature
             # top_p not plumbed through today; add here if a caller needs it.

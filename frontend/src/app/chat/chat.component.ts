@@ -51,6 +51,12 @@ export class ChatComponent implements OnInit, AfterViewChecked {
   @Input() sessionKey = 'boerdi_session_id';
   /** Override the initial greeting. */
   @Input() greeting = '';
+  /** Show the debug-toggle (🔍) button in the header. Default true.
+   *  Set to false to hide the developer debug panel toggle in production. */
+  @Input() showDebugButton: boolean | string = true;
+  /** Show the language/voice buttons in header (🔊 TTS) and footer (🎤 STT).
+   *  Default true. Set to false to disable speech features in the UI. */
+  @Input() showLanguageButtons: boolean | string = true;
   /** When the canvas is showing markdown, next user message becomes an edit request. */
   @Input() canvasActiveMarkdown = '';
   /** When true, card lists in the chat are hidden (canvas shows them instead). */
@@ -940,6 +946,16 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
   // ── Debug ────────────────────────────────────────────────
   toggleDebug() {
     this.showDebug = !this.showDebug;
+  }
+
+  // ── UI-Visibility helpers (web-component attributes coerce to string) ──
+  /** Whether the 🔍 debug-toggle button should be rendered in the header. */
+  get debugButtonVisible(): boolean {
+    return this.showDebugButton === true || this.showDebugButton === 'true';
+  }
+  /** Whether the 🔊 TTS toggle and 🎤 mic-record buttons should render. */
+  get languageButtonsVisible(): boolean {
+    return this.showLanguageButtons === true || this.showLanguageButtons === 'true';
   }
 
   // ── Restart ──────────────────────────────────────────────

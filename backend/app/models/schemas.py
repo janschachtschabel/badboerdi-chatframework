@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, model_validator
 class ClassificationResult(BaseModel):
     """Validated output from LLM classification (the 7 input dimensions)."""
     persona_id: str = "P-AND"
+    persona_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     intent_id: str = "INT-W-03a"
     intent_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     signals: list[str] = Field(default_factory=list)

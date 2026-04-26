@@ -4,6 +4,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatComponent } from '../chat/chat.component';
+import { detectPageContext } from './page-context-detector';
 import { CanvasComponent, CanvasViewMode, CanvasCardAction } from '../canvas/canvas.component';
 import { WloCard, PaginationInfo } from '../services/api.service';
 
@@ -108,6 +109,8 @@ interface CanvasSnapshot {
               [persistSession]="persistSession"
               [sessionKey]="sessionKey"
               [greeting]="greeting"
+              [showDebugButton]="showDebugButton"
+              [showLanguageButtons]="showLanguageButtons"
               [canvasActiveMarkdown]="canvasMode() === 'content' ? canvasMarkdown() : ''"
               [hideCards]="canvasOpen()"
               [canvasShowingCards]="canvasOpen() && canvasMode() === 'cards'"
@@ -344,6 +347,10 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() sessionKey = 'boerdi_session_id';
   @Input() greeting = '';
   @Input() autoContext: boolean | string = true;
+  /** Show the 🔍 debug-toggle button in the chat header. Default true. */
+  @Input() showDebugButton: boolean | string = true;
+  /** Show the 🔊 TTS and 🎤 mic buttons. Default true. */
+  @Input() showLanguageButtons: boolean | string = true;
 
   expanded = false;
   resolvedPageContext: Record<string, any> = {};
@@ -452,6 +459,22 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
           referrer: document.referrer || '',
         };
       } catch { /* ignore */ }
+
+      // Page-context-detector: recognise WLO topic / collection / content
+      // pages and pull the relevant ids + visible text. Backend's
+      // page_context_service resolves these via MCP into structured
+      // metadata (title, disciplines, keywords, …). Manual `pageContext`
+      // input below still wins — it's the explicit override path.
+      try {
+        const detected = detectPageContext();
+        // Only attach non-empty, scalar fields. Drop undefined keys so
+        // the backend doesn't store empty strings as "set" values.
+        const cleaned: Record<string, any> = {};
+        for (const [k, v] of Object.entries(detected)) {
+          if (v !== undefined && v !== null && v !== '') cleaned[k] = v;
+        }
+        this.resolvedPageContext = { ...this.resolvedPageContext, ...cleaned };
+      } catch { /* ignore — never fail widget bootstrap on detection */ }
     }
     // Mark this session as widget-driven so the backend routes cards to
     // the canvas regardless of env.page (important for dev on localhost:4200,

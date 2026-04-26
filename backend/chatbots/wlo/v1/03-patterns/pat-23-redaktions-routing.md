@@ -1,7 +1,7 @@
 ---
 id: PAT-23
 label: Redaktions-Routing
-priority: 440
+priority: 550
 gate_personas: ["*"]
 gate_states: ["*"]
 gate_intents: ["INT-W-05"]

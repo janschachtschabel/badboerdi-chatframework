@@ -1,11 +1,51 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { Elements } from '@/app/page';
 
 interface Props {
   elements: Elements | null;
   backendOnline: boolean;
   onNavigate: (layer: string) => void;
+  onOpenSnapshots?: () => void;
+}
+
+interface EngineStats {
+  rule_count: number;
+  live_count: number;
+  shadow_count: number;
+}
+
+interface HealthStats {
+  status?: string;
+  provider?: string;
+  chat_model?: string;
+}
+
+interface FactoryMeta {
+  exists: boolean;
+  size?: number;
+  mtime?: number;
+  has_db?: boolean;
+  has_config?: boolean;
+  config_files?: number;
+}
+
+interface SnapshotMeta {
+  id: string;
+  size: number;
+  include_db: boolean;
+  mtime: number;
+  label: string;
+}
+
+interface EvalRun {
+  id: string;
+  status: string;
+  avg_score?: number;
+  total_turns?: number;
+  completed_at?: string;
+  created_at?: string;
 }
 
 interface LayerCard {
@@ -13,9 +53,9 @@ interface LayerCard {
   id: string;
   icon: string;
   label: string;
-  headline: string;        // 1-line key capability (shown on every card, same position)
-  primaryCount: string;    // big number/chip under the headline
-  tags: string[];          // supplementary stat tags (max 4 for visual balance)
+  headline: string;
+  primaryCount: string;
+  tags: string[];
   color: string;
 }
 
@@ -27,7 +67,75 @@ interface OpsCard {
   color: string;
 }
 
-export default function HomeOverview({ elements, backendOnline, onNavigate }: Props) {
+// ── Helpers ──────────────────────────────────────────────────────────
+function formatRelativeTime(mtimeSec: number | undefined): string {
+  if (!mtimeSec) return '—';
+  const ageSec = Date.now() / 1000 - mtimeSec;
+  if (ageSec < 60) return 'gerade eben';
+  if (ageSec < 3600) return `vor ${Math.floor(ageSec / 60)} Min`;
+  if (ageSec < 86400) return `vor ${Math.floor(ageSec / 3600)} h`;
+  if (ageSec < 86400 * 30) return `vor ${Math.floor(ageSec / 86400)} Tagen`;
+  return `vor ${Math.floor(ageSec / 86400 / 30)} Mon`;
+}
+
+function formatBytes(n: number | undefined): string {
+  if (!n) return '—';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatScore(s: number | undefined): string {
+  if (typeof s !== 'number') return '—';
+  return s.toFixed(2);
+}
+
+export default function HomeOverview({ elements, backendOnline, onNavigate, onOpenSnapshots }: Props) {
+  // ── Live system data (fetched in parallel on mount) ──
+  const [engineStats, setEngineStats] = useState<EngineStats | null>(null);
+  const [health, setHealth] = useState<HealthStats | null>(null);
+  const [factory, setFactory] = useState<FactoryMeta | null>(null);
+  const [snapshots, setSnapshots] = useState<SnapshotMeta[] | null>(null);
+  const [latestEval, setLatestEval] = useState<EvalRun | null>(null);
+
+  useEffect(() => {
+    if (!backendOnline) return;
+    let cancelled = false;
+    (async () => {
+      // Parallel fetches; each fails silently to keep the dashboard
+      // partially-readable even if one endpoint errors.
+      const [rules, hp, fac, snaps, evals] = await Promise.allSettled([
+        fetch('/api/routing-rules').then(r => r.json()),
+        fetch('/api/health').then(r => r.json()),
+        fetch('/api/config/factory').then(r => r.json()),
+        fetch('/api/config/snapshots').then(r => r.json()),
+        fetch('/api/eval/runs').then(r => r.json()),
+      ]);
+      if (cancelled) return;
+      if (rules.status === 'fulfilled') {
+        setEngineStats({
+          rule_count: rules.value.total ?? 0,
+          live_count: rules.value.live_count ?? 0,
+          shadow_count: rules.value.shadow_count ?? 0,
+        });
+      }
+      if (hp.status === 'fulfilled') setHealth(hp.value);
+      if (fac.status === 'fulfilled') setFactory(fac.value);
+      if (snaps.status === 'fulfilled' && Array.isArray(snaps.value)) {
+        setSnapshots(snaps.value);
+      }
+      if (evals.status === 'fulfilled') {
+        const runs: EvalRun[] = evals.value?.runs ?? [];
+        const done = runs.filter(r => r.status === 'done');
+        if (done.length > 0) {
+          // runs are ordered newest-first by the backend
+          setLatestEval(done[0]);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [backendOnline]);
+
   // ── Live counts (fallback to sensible hard-coded numbers if backend
   //     hasn't responded yet — keeps the home view readable on first load). ──
   const patternCount = elements?.patterns?.length ?? 26;
@@ -40,7 +148,7 @@ export default function HomeOverview({ elements, backendOnline, onNavigate }: Pr
   const layers: LayerCard[] = [
     {
       num: 1, id: 'identity',
-      icon: '\u{1F6E1}\uFE0F',
+      icon: '\u{1F6E1}️',
       label: 'Identität & Schutz',
       headline: 'Wer ist der Chatbot? Was darf er nie tun?',
       primaryCount: 'Persona · Guardrails · Safety',
@@ -115,8 +223,15 @@ export default function HomeOverview({ elements, backendOnline, onNavigate }: Pr
       color: '#8B5CF6',
     },
     {
+      id: 'evaluation',
+      icon: '\u{1F3AF}',
+      label: 'Evaluation',
+      desc: 'Eval-Runs, Persona-Simulationen, LLM-Judge',
+      color: '#F59E0B',
+    },
+    {
       id: 'safety_logs',
-      icon: '\u{1F6E1}\uFE0F',
+      icon: '\u{1F6E1}️',
       label: 'Safety-Logs',
       desc: 'Risiko-Events, Rate-Limit, Legal-Klassifikator',
       color: '#EF4444',
@@ -140,16 +255,129 @@ export default function HomeOverview({ elements, backendOnline, onNavigate }: Pr
         </div>
       </div>
 
-      {/* Status banner */}
+      {/* Status banner — only when offline */}
       {!backendOnline && (
         <div className="card mb-4" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: '1.2rem' }}>{'\u26A0\uFE0F'}</span>
+            <span style={{ fontSize: '1.2rem' }}>{'⚠️'}</span>
             <div>
               <div style={{ fontWeight: 600, fontSize: '.88rem' }}>Backend nicht erreichbar</div>
               <div className="text-sm text-muted">Stelle sicher, dass der Backend-Server auf Port 8000 läuft.</div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ═══ Live status strip ═══ */}
+      {backendOnline && (
+        <div className="home-status-strip">
+          <div className="home-status-card">
+            <div className="home-status-icon" style={{ color: '#10B981' }}>
+              <span className="status-dot status-dot--ok" /> Backend
+            </div>
+            <div className="home-status-primary">{health?.chat_model ?? '—'}</div>
+            <div className="home-status-meta">{health?.provider ?? 'unbekannt'} · läuft</div>
+          </div>
+
+          <button
+            type="button"
+            className="home-status-card home-status-card--clickable"
+            onClick={() => onOpenSnapshots?.()}
+            title="Snapshot-Verwaltung öffnen"
+          >
+            <div className="home-status-icon" style={{ color: '#7C3AED' }}>📦 Werkseinstellungen</div>
+            <div className="home-status-primary">
+              {factory?.exists ? formatRelativeTime(factory.mtime) : 'kein Factory-Snapshot'}
+            </div>
+            <div className="home-status-meta">
+              {factory?.exists
+                ? `${formatBytes(factory.size)} · ${factory.config_files ?? 0} Configs · ${factory.has_db ? 'mit DB' : 'ohne DB'}`
+                : 'erst anlegen!'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            className="home-status-card home-status-card--clickable"
+            onClick={() => onNavigate('routing_rules')}
+            title="Routing-Rules öffnen"
+          >
+            <div className="home-status-icon" style={{ color: '#0EA5E9' }}>⚙️ Routing-Engine</div>
+            <div className="home-status-primary">
+              {engineStats ? `${engineStats.live_count} live` : '—'}
+            </div>
+            <div className="home-status-meta">
+              {engineStats
+                ? `${engineStats.rule_count} Regeln gesamt · ${engineStats.shadow_count} shadow`
+                : 'lädt…'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            className="home-status-card home-status-card--clickable"
+            onClick={() => onNavigate('evaluation')}
+            title="Evaluation öffnen"
+          >
+            <div className="home-status-icon" style={{ color: '#F59E0B' }}>🎯 Letzte Eval</div>
+            <div className="home-status-primary">
+              {latestEval ? `Score ${formatScore(latestEval.avg_score)}` : 'noch keine'}
+            </div>
+            <div className="home-status-meta">
+              {latestEval
+                ? `${latestEval.total_turns ?? 0} Turns · ${formatRelativeTime(
+                    latestEval.completed_at
+                      ? new Date(latestEval.completed_at).getTime() / 1000
+                      : undefined,
+                  )}`
+                : 'unter „Evaluation" starten'}
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* ═══ Quick actions ═══ */}
+      {backendOnline && (
+        <div className="home-quick-actions">
+          <button
+            type="button"
+            className="home-quick-btn"
+            onClick={() => onOpenSnapshots?.()}
+            title="Backup / Snapshot / Werkseinstellungen verwalten"
+          >
+            <span className="home-quick-icon">💾</span>
+            <span className="home-quick-label">Snapshots & Backups</span>
+            {snapshots !== null && (
+              <span className="home-quick-badge">{snapshots.length}</span>
+            )}
+          </button>
+          <button
+            type="button"
+            className="home-quick-btn"
+            onClick={() => onNavigate('evaluation')}
+            title="Eval-Run starten oder ansehen"
+          >
+            <span className="home-quick-icon">🎯</span>
+            <span className="home-quick-label">Evaluation öffnen</span>
+          </button>
+          <button
+            type="button"
+            className="home-quick-btn"
+            onClick={() => onNavigate('routing_rules')}
+            title="Routing-Rules editieren"
+          >
+            <span className="home-quick-icon">⚙️</span>
+            <span className="home-quick-label">Routing-Rules</span>
+          </button>
+          <button
+            type="button"
+            className="home-quick-btn"
+            onClick={() => onNavigate('canvas')}
+            title="Canvas-Formate konfigurieren"
+          >
+            <span className="home-quick-icon">🎨</span>
+            <span className="home-quick-label">Canvas-Formate</span>
+          </button>
         </div>
       )}
 

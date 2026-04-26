@@ -149,7 +149,39 @@ hinterlegt und werden über `services/config_loader.py` eingelesen — d.h. _jed
 Konfigurationsänderung im Studio wirkt ohne Code-Deploy (mtime-gecachter YAML-Loader,
 automatische Cache-Invalidierung bei Writes).
 
-### 2.4 Canvas-Arbeitsfläche (seit 2026-04-17)
+### 2.4 Routing-Rules Engine (deklarativ, Pre + Post Pattern-Selection)
+
+Über der Pattern-Engine liegt eine **YAML-getriebene Regel-Engine** (`backend/app/services/rule_engine.py` +
+`backend/chatbots/wlo/v1/06-rules/routing-rules.yaml`). Sie läuft zweimal pro Turn:
+
+| Phase | Wann | Zweck |
+|-------|------|-------|
+| **Pre-Route** | _Vor_ der Pattern-Selektion | Korrigiert Persona/Intent/State des Classifiers — z.B. explizite Self-IDs („ich bin Lehrerin" → `P-W-LK`), Low-Confidence-Fallbacks, Sicherheits-Overrides |
+| **Post-Route** | _Nach_ der Pattern-Selektion | Tiebreaker bei knappen Score-Differenzen, Intent-spezifische Patterns durchsetzen (PAT-22/23/24), Enforce-Routing für klare Persona-Intent-Konstellationen |
+
+Eine Regel besteht aus `when` (Bedingungen) und `then` (Effekte) und kann **shadow** (`live: false`) für
+beobachtende Roll-Outs oder **live** (`live: true`) geschaltet werden. Beispiel:
+
+```yaml
+- id: rule_recherche_personas_force_pat09
+  description: "Recherche-Personas (RED/PRESSE/POL/BER) + Thema → PAT-09."
+  priority: 55
+  live: true
+  when:
+    all:
+      - persona: { in: ["P-W-RED", "P-W-PRESSE", "P-W-POL", "P-BER"] }
+      - intent:  { in: ["INT-W-03b", "INT-W-09"] }
+      - entity.thema: { non_empty: true }
+      - pattern_winner: { in: ["PAT-06", "PAT-01", "PAT-02", "PAT-10"] }
+  then:
+    enforced_pattern_id: "PAT-09"
+```
+
+Komparatoren: `eq, neq, in, not_in, regex, not_regex, empty, non_empty, exists, lt, gt, lte, gte` +
+boolesche Kombinatoren `all, any, not`. Direkter Zugang im Studio über die Sidebar **Architektur ⚙️ Routing-Rules** —
+inklusive Test-Bench (sub-ms, kein LLM-Call) und Fire-Count-Stats pro Regel.
+
+### 2.5 Canvas-Arbeitsfläche (seit 2026-04-17)
 
 Das Widget öffnet neben dem Chat auf breiten Displays eine **Canvas-Pane** für strukturierte
 Ausgaben. Getrieben durch zwei Intents:
@@ -172,7 +204,7 @@ P-W-RED Redaktion) sehen die analytischen Typen zuerst in den Quick-Replies; did
 Personas (Lehrkraft, Schüler:in, Eltern, anonym) die didaktischen. PAT-21 ist für alle
 Personas erreichbar (`gate_personas: ["*"]`).
 
-### 2.5 Themenseiten-Auflösung
+### 2.6 Themenseiten-Auflösung
 
 Wenn das Widget auf einer WLO-Themenseite (`/themenseite/<slug>`), in einem Fachportal
 (`/fachportal/<fach>/<slug>`), auf einem edu-sharing-Render (`/components/render/<uuid>`) oder
@@ -265,6 +297,37 @@ Die Convenience-Skripte unter `scripts/` rufen `npm run build:widget` aus dem `f
 Verzeichnis auf und prüfen anschließend, dass `main.js` existiert. Mehr in
 [`backend/README.md`](backend/README.md) und [`frontend/README.md`](frontend/README.md).
 
+### Custom-Element-Attribute
+
+Das Widget akzeptiert die folgenden Attribute auf `<boerdi-chat>`. Werte sind Strings (HTML-Attribute);
+Booleans erkennen `"true"` / `"false"`.
+
+| Attribut | Default | Wirkung |
+|----------|---------|---------|
+| `api-url` | _Pflicht_ | Backend-Basis-URL (z.B. `https://api.example.de`). Wird zu `…/api` normalisiert. |
+| `position` | `bottom-right` | FAB-Position: `bottom-right` · `bottom-left` · `top-right` · `top-left` |
+| `initial-state` | `collapsed` | `collapsed` (FAB) oder `expanded` (Panel offen) |
+| `primary-color` | `#1c4587` | Hauptfarbe (CSS-Hex) |
+| `greeting` | _leer_ | Eigene Begrüßungsnachricht beim ersten Öffnen |
+| `persist-session` | `true` | Session-ID in `localStorage` halten — Verlauf bleibt über Page-Reload |
+| `session-key` | `boerdi_session_id` | localStorage-Schlüssel |
+| `auto-context` | `true` | Seitenkontext (URL, Title) automatisch ans Backend senden |
+| `page-context` | _leer_ | Zusätzlicher Kontext als JSON-String oder Objekt |
+| `show-debug-button` | `true` | 🔍 Debug-Toggle im Header. `false` = Button ausgeblendet (für Produktiv-Embeddings) |
+| `show-language-buttons` | `true` | 🔊 Text-to-Speech und 🎤 Mic-Aufnahme. `false` = beide Buttons aus (kein Sprach-Feature) |
+
+```html
+<!-- Beispiel: Produktiv-Embedding ohne Debug, ohne Sprache -->
+<boerdi-chat
+  api-url="https://api.example.de"
+  primary-color="#1c4587"
+  show-debug-button="false"
+  show-language-buttons="false">
+</boerdi-chat>
+```
+
+Im Studio dokumentiert unter **System → Info → Widget-Einbettung**.
+
 ---
 
 ## 5. Sicherheit & Konfiguration
@@ -342,11 +405,26 @@ Die B-API stellt nur die OpenAI-kompatiblen `chat/completions`- und `embeddings`
 
 
 
-### Backup & Restore
+### Backup, Snapshots & Werkseinstellungen
 
-Der komplette `chatbots/wlo/v1`-Tree lässt sich als ZIP sichern und zurückspielen — entweder
-direkt per Backend-API (`GET /api/config/backup`, `POST /api/config/restore?wipe=…`) oder
-bequem über die **Backup / Restore**-Buttons im Studio-Header. Details in
+Das System kennt **drei Sicherungs-Ebenen**, die alle den vollständigen `chatbots/wlo/v1`-Tree
+(58 YAML/MD-Dateien über 13 Layer-Ordner: Patterns, Personas, Intents, States, Signals,
+Canvas-Formate, Routing-Rules, Privacy, …) und optional die SQLite-DB (Sessions, Memory,
+RAG-Embeddings, Quality- und Eval-Logs) umfassen:
+
+| Ebene | Pfad | Zweck | Endpoints |
+|-------|------|-------|-----------|
+| **Download/Upload** | _Klient-seitig_ | Adhoc-Backup als ZIP herunter- oder hochladen — gut für Migrationen oder Off-Site-Sicherung. | `GET /api/config/backup?include_db=…`<br>`POST /api/config/restore?wipe=…&include_db=…` |
+| **User-Snapshots** | `backend/snapshots/snap-*.zip` | Server-seitig gespeichert, beliebig viele, einzeln zurückspielbar. Ideal für vor-/nach-Iterations-Rollbacks ohne Up-/Download-Roundtrip. | `POST /api/config/snapshots?label=…&include_db=…`<br>`GET /api/config/snapshots`<br>`POST /api/config/snapshots/{id}/restore`<br>`DELETE /api/config/snapshots/{id}` |
+| **Werkseinstellung** | `backend/knowledge/factory-snapshot.zip` | Genau eine pro Installation. Wird auf einer **frischen Installation mit leerer DB automatisch entpackt** — Neuer User braucht keine Setup-Schritte. | `GET /api/config/factory`<br>`POST /api/config/factory/save[?from_snapshot=…]`<br>`POST /api/config/factory/restore?wipe=…&include_db=…`<br>`POST /api/config/factory/upload` |
+
+**Wichtig**: Wer einen User-Snapshot mit `include_db=false` als Werkseinstellung promotet,
+hat anschließend eine Factory **ohne DB**. Bei einem späteren „Werkseinstellungen wiederherstellen"
+werden dann _nur_ die Configs überschrieben, die DB bleibt unverändert. Für eine vollständige
+Setup-Wiederherstellung muss der Quell-Snapshot mit `include_db=true` erstellt sein.
+
+Im Studio sind alle drei Ebenen über das **📦-Symbol** im Header zugänglich (Snapshot anlegen,
+Liste browsen, „Als Factory" promoten, „Werkseinstellungen zurücksetzen"). Details in
 [`backend/README.md`](backend/README.md) und [`studio/README.md`](studio/README.md).
 
 ---

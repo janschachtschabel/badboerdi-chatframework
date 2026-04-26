@@ -15,20 +15,38 @@ Voraussetzung: Das Backend läuft unter `http://localhost:8000` (sonst sind die 
 
 ## 2. Layout
 
+Die Sidebar gruppiert in drei Sektionen:
+
+- **Architektur-Schichten** — die 6 nummerierten Prompt-Schichten (Identität → Wissen) plus
+  die Routing-Rules-Engine als „Steuerungsebene" (kein Prompt-Layer, aber Teil der Architektur).
+- **Betrieb** — Sessions, Quality, Evaluation, Safety-Logs.
+- **System** — Datenschutz, Info.
+
+Die Übersichtsseite (`HomeOverview`) zeigt einen **Live-Status-Streifen** (Backend-Modell,
+Werkseinstellungs-Alter, Routing-Engine, letzte Eval) plus Quick-Action-Buttons (📦 Snapshots,
+🎯 Evaluation, ⚙️ Routing-Rules, 🎨 Canvas-Formate).
+
 ```
 src/
 ├── app/
-│   ├── page.tsx           # Tab-basierte Navigation: 5 Layer + Sessions + Safety-Logs
+│   ├── page.tsx                 # 3-Sektion-Sidebar + Layer-Routing
 │   └── layout.tsx
 └── components/
-    ├── HomeOverview.tsx
-    ├── ConfigTextEditor.tsx       # generischer Markdown/YAML-Editor (Schichten 1, 2, 5)
-    ├── PatternEditor.tsx          # Schicht 3 — die 20 Konversations-Patterns
-    ├── ElementEditor.tsx          # Schicht 4 — Personas/Intents/Entities/Slots/…
-    ├── KnowledgeManager.tsx       # Schicht 5 — RAG-Wissensbereiche hochladen
-    ├── SecurityLevelPicker.tsx    # Sicherheits-Preset (Layer 1)
-    ├── SafetyLogsView.tsx         # Risk-Events aus dem Backend
-    └── SessionsView.tsx           # Live-Inspektion der Sessions inkl. Debug-Trace
+    ├── HomeOverview.tsx         # Status-Dashboard + Architektur-Karten
+    ├── InfoView.tsx             # Architektur-Referenz mit Live-System-Stand, Material-Typen-Liste, Snapshot-Doku, Widget-Embedding
+    ├── ConfigTextEditor.tsx     # generischer Markdown/YAML-Editor
+    ├── PatternEditor.tsx        # Schicht 3 — Konversations-Patterns
+    ├── ElementEditor.tsx        # Schicht 4 — Personas/Intents/States/Signals/Entities
+    ├── CanvasFormatsEditor.tsx  # Schicht 5 — typed GUI-Editor für die 18 Material-Typen
+    ├── KnowledgeManager.tsx     # Schicht 6 — RAG-Wissensbereiche hochladen
+    ├── RoutingRulesView.tsx     # Routing-Engine — Liste + Test-Bench + Stats
+    ├── EvaluationView.tsx       # Persona-Dialog-Eval mit LLM-Judge
+    ├── QualityView.tsx          # Pattern-Scoring/Confidence/Degradation
+    ├── SecurityLevelPicker.tsx  # Sicherheits-Preset (Layer 1)
+    ├── SafetyLogsView.tsx       # Risk-Events read-only
+    ├── PrivacyView.tsx          # Logging-Toggles + Purge
+    ├── SessionsView.tsx         # Live-Sessions + Debug-Trace
+    └── SnapshotsModal.tsx       # User-Snapshots + Werkseinstellungs-Verwaltung
 ```
 
 ## 3. Welcher Editor schreibt was?
@@ -38,11 +56,13 @@ src/
 | **1 — Identität & Schutz** | Layer 1 | `chatbots/wlo/v1/01-base/base-persona.md`, `guardrails.md`, `safety-config.yaml`, `device-config.yaml` |
 | `SecurityLevelPicker` | Layer 1 | `safety-config.yaml → security_level` |
 | **2 — Domain & Regeln** | Layer 2 | `02-domain/domain-rules.md`, `policy.yaml`, `wlo-plattform-wissen.md` |
-| **3 — Patterns** | Layer 3 | `03-patterns/pat-01…pat-20-*.md` |
+| **3 — Patterns** | Layer 3 | `03-patterns/pat-01…pat-25-*.md` (27 inkl. PAT-CRISIS, PAT-REFUSE-THREAT) |
 | **4 — Dimensionen** | Layer 4 | `04-personas/`, `04-intents/`, `04-entities/`, `04-slots/`, `04-signals/`, `04-states/`, `04-contexts/` |
-| **5 — Wissen** | Layer 5 | `05-knowledge/rag-config.yaml`, hochgeladene RAG-Quellen |
-| **Sessions** | — | Liest `/api/sessions/*` (read-only) |
-| **Safety-Logs** | — | Liest `/api/safety/logs` (read-only) |
+| **5 — Canvas-Formate** | Layer 5 | `05-canvas/material-types.yaml` (GUI-Editor) + `type-aliases.yaml`, `create-triggers.yaml`, `edit-triggers.yaml`, `persona-priorities.yaml` (Roh-YAML) |
+| **6 — Wissen** | Layer 6 | `05-knowledge/rag-config.yaml`, hochgeladene RAG-Quellen |
+| **⚙️ Routing-Rules** | _Steuerung_ | `06-rules/routing-rules.yaml` (Pre/Post-Route Rule-Engine) |
+| **Datenschutz** | — | `01-base/privacy-config.yaml` (Logging-Toggles + Purge-Endpoints) |
+| **Sessions / Quality / Evaluation / Safety-Logs** | — | read-only Views auf Backend-Logs |
 
 ## 4. Workflow-Empfehlungen
 
