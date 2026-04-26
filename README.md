@@ -99,7 +99,7 @@ nachvollziehbar (siehe Kommentare `# Layer 1: …` bis `# Layer 6: …`).
 |---|---------|----------------|--------------|--------|
 | **1** | **Identität & Schutz** | `chatbots/wlo/v1/01-base/base-persona.md`, `guardrails.md`, `safety-config.yaml`, `quality-log-config.yaml`, `device-config.yaml` | **Immer** — bei jedem Turn als erstes in den Prompt | Wer ist BOERDi, was darf er nie tun (Guardrails als _letzter_ Block, nicht überschreibbar), Sicherheits-Preset (off/basic/standard/strict/paranoid), Quality-Logging, Geräte-Heuristiken |
 | **2** | **Domain & Regeln** | `chatbots/wlo/v1/02-domain/domain-rules.md`, `policy.yaml`, `wlo-plattform-wissen.md` | **Immer** — direkt nach Schicht 1 | Plattform-Wissen (WLO-Sammlungen, Lizenzen, Zielgruppen), Dauerregeln, Policy-Decisions (`policy_service.py`) |
-| **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/pat-*.md` (26 Patterns) | **Nach Bedarf** — nur das _eine_ Pattern, das der Pattern-Engine-Selector gewinnt (`pattern_engine.py → select_pattern()`) | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
+| **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/pat-*.md` (27 Patterns) | **Nach Bedarf** — nur das _eine_ Pattern, das der Pattern-Engine-Selector gewinnt (`pattern_engine.py → select_pattern()`), ggf. korrigiert durch die Routing-Rules-Engine (siehe 2.4) | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
 | **4** | **Dimensionen** | Klassifikator-Output aus `llm_service.py → classify_input()` + `04-*/*.yaml` (Personas, Intents, States, Entities, Signals) | **Pro Turn neu** | Persona-ID, Intent-ID + Confidence, Signals, Entities, Slots, next_state — strukturierte Werte für genau diesen Turn |
 | **5** | **Canvas-Formate** | `chatbots/wlo/v1/05-canvas/*.yaml` (material-types, type-aliases, create-triggers, edit-triggers, persona-priorities) | **Nur bei Canvas-Intents (INT-W-11, INT-W-12)** — liefert Struktur-Vorgabe des gewählten Material-Typs | 18 Material-Typen (13 didaktisch + 5 analytisch), Alias-Mapping, Create-/Edit-Trigger-Phrasen, Persona-abhängige Reihenfolge |
 | **6** | **Wissen** | `chatbots/wlo/v1/05-knowledge/rag-config.yaml`, MCP-Tool-Outcomes, RAG-Memory (`rag_service.py`, `mcp_client.py`), Themenseiten-Resolver (`page_context_service.py`) | **Nur bei Bedarf** — wenn Pattern Tools ruft, RAG-Bereich aktiv ist oder `node_id`/`topic_page_slug` über `page_context` aufgelöst werden kann | Tool-Outcomes, RAG-Snippets, gemerkte Materialien aus Session-Memory, semantisch aufgelöste Themenseiten-Metadaten |
@@ -237,24 +237,31 @@ badboerdi/
 │   │   ├── routers/     # chat, sessions, safety, quality, config, rag, speech, widget
 │   │   ├── services/    # llm, pattern_engine, safety, policy, rag, canvas, page_context, …
 │   │   └── main.py
-│   ├── chatbots/wlo/v1/ # ↳ Konfigurations-Bundle (6 Schichten als Verzeichnisse)
-│   │   ├── 01-base/     # Layer 1: Persona, Guardrails, Safety, Device
+│   ├── chatbots/wlo/v1/ # ↳ Konfigurations-Bundle (6 Prompt-Schichten + Routing-Rules)
+│   │   ├── 01-base/     # Layer 1: Persona, Guardrails, Safety, Device, Privacy
 │   │   ├── 02-domain/   # Layer 2: Domain-Wissen, Policy
-│   │   ├── 03-patterns/ # Layer 3: 26 Patterns (PAT-01…PAT-24, PAT-CRISIS, PAT-REFUSE-THREAT)
+│   │   ├── 03-patterns/ # Layer 3: 27 Patterns (PAT-01…PAT-25, PAT-CRISIS, PAT-REFUSE-THREAT)
 │   │   ├── 04-*/        # Layer 4: 9 Personas, 14 Intents, 12 States, 5 Entities, 17 Signals, Contexts
 │   │   ├── 05-canvas/   # Layer 5: 18 Material-Typen, Aliase, Create-/Edit-Trigger, Persona-Priorität
-│   │   └── 05-knowledge/# Layer 6: RAG- und MCP-Konfiguration
+│   │   ├── 05-knowledge/# Layer 6: RAG- und MCP-Konfiguration
+│   │   └── 06-rules/    # Routing-Rules-Engine (deklarative Pre/Post-Route-Regeln)
+│   ├── snapshots/       # User-Snapshots (server-seitig, frei anlegbar/restorierbar)
+│   ├── knowledge/       # factory-snapshot.zip (Werkseinstellung) + RAG-Quelldokumente
 │   └── run.py
 ├── frontend/            # Angular-App + Web-Component-Widget
 │   ├── src/app/chat/    # Chat-UI (Standalone-Component)
-│   ├── src/app/widget/  # <boerdi-chat>-Wrapper für die Web-Component
+│   ├── src/app/widget/
+│   │   ├── widget.component.ts        # <boerdi-chat>-Wrapper (Custom Element)
+│   │   └── page-context-detector.ts   # URL+DOM-Heuristik für WLO-Themenseiten/Sammlungen/Inhaltsseiten
 │   ├── src/widget-main.ts  # Bootstrap via @angular/elements
 │   └── angular.json     # build-widget Target
-├── studio/              # Next.js-Studio (Layer-Editoren)
-│   └── src/components/  # ConfigTextEditor, PatternEditor, SecurityLevelPicker, …
+├── studio/              # Next.js-Studio (Architektur-Editoren + Status-Dashboard)
+│   └── src/components/  # HomeOverview (Dashboard), CanvasFormatsEditor, RoutingRulesView, …
 └── scripts/
-    ├── build-widget.sh
-    └── build-widget.ps1
+    ├── build-widget.sh                  # Standardpfad: Mono-Repo, Backend liest frontend/dist direkt
+    ├── build-widget.ps1
+    ├── sync-widget-to-backend.sh        # Sonderfall: Backend isoliert deployt → Kopie in backend/widget_dist/
+    └── sync-widget-to-backend.ps1
 ```
 
 ---

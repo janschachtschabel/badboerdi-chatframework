@@ -33,7 +33,9 @@ src/
 ├── app/
 │   ├── chat/                  # ChatComponent — UI, Audio, Pattern-Debug, Pagination
 │   ├── canvas/                # CanvasComponent — Markdown/Kachel-Pane neben dem Chat
-│   ├── widget/                # WidgetComponent — Floating-Eule + Panel-Wrapper + Canvas-Layout
+│   ├── widget/
+│   │   ├── widget.component.ts        # WidgetComponent — Floating-Eule + Panel-Wrapper + Canvas-Layout
+│   │   └── page-context-detector.ts   # URL+DOM-Heuristik für WLO-Themenseiten/Sammlungen/Inhaltsseiten
 │   └── services/
 │       └── api.service.ts     # fetch-Wrapper, sessionId, URL-Regex für page_context
 ├── widget-main.ts             # Bootstrap als Custom Element via @angular/elements
@@ -67,7 +69,9 @@ Voraussetzung: Backend läuft und das Widget-Bundle ist gebaut (`npm run build:w
   persist-session="true"
   session-key="boerdi_session_id"
   greeting="Hi! Wonach suchst du heute?"
-  auto-context="true">
+  auto-context="true"
+  show-debug-button="true"
+  show-language-buttons="true">
 </boerdi-chat>
 ```
 
@@ -83,28 +87,62 @@ Voraussetzung: Backend läuft und das Widget-Bundle ist gebaut (`npm run build:w
 | `persist-session` | `true` | Session-ID in `localStorage` halten (Cross-Page) |
 | `session-key` | `boerdi_session_id` | Storage-Key |
 | `greeting` | _Default-Grußtext_ | Erste Bot-Nachricht überschreiben |
-| `auto-context` | `true` | URL-Regex + Dokumententitel automatisch in den Page-Context packen |
+| `auto-context` | `true` | URL-Pattern, Meta-Tags, DOM-Inhalt und Titel automatisch in den Page-Context packen (siehe Auto-Context-Sektion unten) |
+| `show-debug-button` | `true` | 🔍 Debug-Toggle im Header anzeigen. `false` = Button ausgeblendet (für Produktiv-Embeddings sinnvoll) |
+| `show-language-buttons` | `true` | 🔊 Text-to-Speech und 🎤 Mic-Aufnahme anzeigen. `false` = beide Buttons aus (Embedding ohne Sprach-Feature) |
 
-### Auto-Context — welche URLs werden automatisch erkannt
+> **Boolean-Attribute akzeptieren `"true"` / `"false"` als String**, weil HTML-Attribute immer
+> Strings sind. Property-Setting via JS nimmt auch echte Booleans entgegen
+> (`document.querySelector('boerdi-chat').showDebugButton = false`).
 
-`ApiService.extractPageContext()` parst bei jedem Request:
+### Auto-Context — Page-Context-Detector (`page-context-detector.ts`)
 
-| Input | Extrahierter Key |
-|-------|------------------|
-| `?node=<uuid>` | `node_id` |
-| `?collection=<id>` | `collection_id` |
-| `?q=<term>` | `search_query` |
-| `/material/<id>` | `node_id` |
-| `/sammlung/<id>` | `collection_id` |
-| `/themenseite/<slug>` | `topic_page_slug`, `page_type=themenseite` |
-| `/fachportal/<fach>/<slug>` | `subject_slug`, `topic_page_slug`, `page_type=fachportal` |
-| `/components/render/<uuid>` | `node_id` (edu-sharing) |
-| Fallback | `document_title` (Seitentitel, max 200 Zeichen) |
+Wenn `auto-context="true"` ist (Default), läuft beim Widget-Start ein Multi-Stufen-Detektor.
+Erkannte Felder landen in `environment.page_context` und werden vom Backend für die
+Klassifikation und das System-Prompt-Layer 6 (Wissen) genutzt:
 
-Das Backend löst `node_id` / `topic_page_slug` danach via MCP (`get_node_details`,
-`search_wlo_topic_pages`) zu semantischen Metadaten auf (Titel, Fach, Stufen, Keywords) und
-hängt sie an den System-Prompt — der Bot kann dann „Worum geht es auf dieser Seite?" direkt
-beantworten, ohne Rückfragen.
+**1. URL-Pattern** (`window.location`):
+
+| Input | Extrahierte Felder | `page_kind` |
+|-------|------------------|------|
+| `/components/render/<uuid>[/...]` | `node_id` | `content` |
+| `?node=<uuid>` / `?node_id=<uuid>` | `node_id` | `content` |
+| `?collection=<uuid>` / `?collection_id=<uuid>` | `collection_id` | `collection` |
+| `/themenseite/<slug>[/...]` | `topic_page_slug` | `topic` |
+| `/fachportal/<subject>[/<slug>]` | `subject_slug` (+ optional `topic_page_slug`) | `subject` |
+| `?q=<term>` / `?search=` / `?query=` | `search_query` | `search` |
+
+**2. DOM-Marker** (Opt-in für die Host-Seite — höher priorisiert als URL-Hits):
+
+```html
+<!-- Im <head> der Host-Seite -->
+<meta name="boerdi:node-id"        content="d0ed50e6-a49f-4566-8f3b-c545cdf75067">
+<meta name="boerdi:collection-id"  content="…">
+<meta name="boerdi:topic-slug"     content="klimawandel">
+
+<!-- Oder als data-Attr am Body -->
+<body data-edu-node-id="…" data-edu-topic-slug="…">
+```
+
+**3. Visible-Text-Extraktion** (für Seiten ohne strukturierte Marker):
+
+Bei erkanntem `page_kind ≠ search` extrahiert der Detector Titel + Meta-Description +
+Hauptcontent (`<main>`, `<article>`, `[role=main]`, `#content`, `.content`, `body` —
+in dieser Reihenfolge) und legt sie als `page_text` (max 3 KB) ins `page_context`.
+
+Strippt vor der Extraktion: `<boerdi-chat>` (das Widget selbst), `<script>`, `<style>`,
+`<nav>`, `<header>`, `<footer>`, `[aria-hidden="true"]`, `.visually-hidden`.
+
+**Backend-Verarbeitung:**
+
+- `node_id` / `collection_id` / `topic_page_slug` / `subject_slug` werden via MCP
+  (`get_node_details`, `search_wlo_topic_pages`) zu semantischen Metadaten aufgelöst
+  (Titel, Fach, Stufen, Keywords) — landet als „## Aktuelle Themenseite"-Block im
+  System-Prompt.
+- Bei MCP-Fehlschlag oder unbekannten URLs greift `page_text` als heuristischer Fallback
+  („## Inhalt der aktuellen Seite (Heuristik)"-Block in `page_context_service.render_raw_for_prompt`).
+- Beide Wege machen den Bot in der Lage, „Worum geht es hier?", „Mehr Material dazu",
+  „Erstelle ein Quiz dazu" ohne Rückfragen zu beantworten.
 
 ### Cross-Page-Continuity
 

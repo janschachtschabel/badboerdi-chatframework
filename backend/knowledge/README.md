@@ -28,15 +28,21 @@ werden async post-start berechnet).
 
 ### Im Studio (empfohlen)
 
-1. **Snapshots-Modal** öffnen (📸 im Header)
+1. **Snapshots-Modal** öffnen (📦 im Header)
 2. Variante A — aus vorhandenem User-Snapshot:
    - Bei einer Zeile in der Snapshot-Liste auf **🏭 Als Factory** klicken.
    - Der ZIP wird 1:1 nach `knowledge/factory-snapshot.zip` kopiert.
+   - ⚠️ **Achtung:** Wurde der User-Snapshot mit `include_db=false` angelegt
+     (config-only, ~85 KB), enthält die Factory danach **keine DB**. Bei einem
+     späteren „Werkseinstellungen wiederherstellen" werden dann nur die Configs
+     überschrieben — eine frische Installation hätte keine RAG-Embeddings und
+     müsste die Wissensbasis neu indexieren. Für eine vollständige Factory immer
+     einen Snapshot **mit** DB als Quelle verwenden.
 3. Variante B — aus dem Live-Zustand:
    - Im **Werkseinstellungen**-Block (gelb markiert) auf **⇲ Live sichern**
      klicken.
    - Erstellt frischen Snapshot aus aktueller Config + DB und ersetzt
-     damit die Factory.
+     damit die Factory. Diese Variante hat **immer** eine DB.
 
 ### Via API
 

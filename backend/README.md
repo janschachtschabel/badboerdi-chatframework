@@ -197,10 +197,11 @@ Jeder Chat-Turn wird automatisch protokolliert (konfigurierbar via `01-base/qual
 
 ---
 
-## 3. Konfigurationslayout — die 5 Schichten
+## 3. Konfigurationslayout — die 6 Prompt-Schichten + Routing-Rules-Engine
 
 Alle Schichten liegen unter `backend/chatbots/wlo/v1/` und werden ueber
-`app/services/config_loader.py` geladen.
+`app/services/config_loader.py` geladen. Schichten 1-6 entsprechen den Prompt-Layern;
+`06-rules/` ist die deklarative Routing-Rules-Engine, die die Pattern-Auswahl umrahmt.
 
 ```
 chatbots/wlo/v1/
@@ -209,42 +210,50 @@ chatbots/wlo/v1/
 │   ├── guardrails.md                  ←   Harte Regeln R-01 bis R-10 (LETZTER Block im Prompt)
 │   ├── safety-config.yaml             ←   Presets off/regex/standard/strict/paranoid + Rate-Limits
 │   ├── quality-log-config.yaml        ←   Quality-Logging: an/aus, Retention, Alert-Schwellwerte
-│   └── device-config.yaml             ←   Geraete-Limits (max_items) + Persona-Anrede (Sie/du)
+│   ├── device-config.yaml             ←   Geraete-Limits (max_items) + Persona-Anrede (Sie/du)
+│   └── privacy-config.yaml            ←   Logging-Toggles (messages/memory/quality)
 │
 ├── 02-domain/                         ← Schicht 2: Domain & Regeln
 │   ├── domain-rules.md                ←   Such-Strategie, Themenseiten, RAG-Wissensquellen, Disambiguierung
 │   ├── policy.yaml                    ←   Tool-Blockaden pro Persona/Intent, Disclaimer-Texte
 │   └── wlo-plattform-wissen.md        ←   Faktenwissen ueber WLO (Struktur, Angebote, Zielgruppen)
 │
-├── 03-patterns/                       ← Schicht 3: 20 Konversations-Patterns (siehe Abschnitt 5)
-│   ├── pat-01-direkt-antwort.md
-│   ├── pat-02-gefuehrte-klaerung.md
-│   ├── pat-03-transparenz-beweis.md
-│   ├── pat-04-inspiration-opener.md
-│   ├── pat-05-profi-filter.md
-│   ├── pat-06-degradation-bruecke.md
-│   ├── pat-07-ergebnis-kuratierung.md
-│   ├── pat-08-null-treffer.md
-│   ├── pat-09-redaktions-recherche.md
-│   ├── pat-10-fakten-bulletin.md
-│   ├── pat-11-nachfrage-schleife.md
+├── 03-patterns/                       ← Schicht 3: 27 Konversations-Patterns (siehe Abschnitt 5)
+│   ├── pat-01-direkt-antwort.md       ←   Direkte Antwort
+│   ├── pat-02-gefuehrte-klaerung.md   ←   Gefuehrte Klaerung
+│   ├── pat-03-transparenz-beweis.md   ←   Transparenz / „habe ich nicht"
+│   ├── pat-04-inspiration-opener.md   ←   Inspirations-Opener
+│   ├── pat-05-profi-filter.md         ←   Profi-Filter (LK)
+│   ├── pat-06-degradation-bruecke.md  ←   Degradation-Bruecke
+│   ├── pat-07-ergebnis-kuratierung.md ←   Ergebnis-Kuratierung
+│   ├── pat-08-null-treffer.md         ←   Null-Treffer
+│   ├── pat-09-redaktions-recherche.md ←   Redaktions/Presse/Politik/Beratung
+│   ├── pat-10-fakten-bulletin.md      ←   Fakten-Bulletin
+│   ├── pat-11-nachfrage-schleife.md   ←   Nachfrage-Schleife
 │   ├── pat-12-ueberbrueckungs-hinweis.md
-│   ├── pat-13-schritt-fuer-schritt.md
-│   ├── pat-14-eltern-empfehlung.md
-│   ├── pat-15-analyse-ueberblick.md
-│   ├── pat-16-themen-exploration.md
-│   ├── pat-17-sanfter-einstieg.md
-│   ├── pat-18-unterrichts-paket.md
-│   ├── pat-19-unterrichts-lernpfad.md
-│   └── pat-20-orientierungs-guide.md
+│   ├── pat-13-schritt-fuer-schritt.md ←   Schritt-fuer-Schritt
+│   ├── pat-14-eltern-empfehlung.md    ←   Eltern-Empfehlung
+│   ├── pat-15-analyse-ueberblick.md   ←   Analyse / Ueberblick
+│   ├── pat-16-themen-exploration.md   ←   Themen-Exploration
+│   ├── pat-17-sanfter-einstieg.md     ←   Sanfter Einstieg
+│   ├── pat-18-unterrichts-paket.md    ←   Unterrichts-Paket
+│   ├── pat-19-unterrichts-lernpfad.md ←   Unterrichts-Lernpfad
+│   ├── pat-20-orientierungs-guide.md  ←   Orientierungs-Guide
+│   ├── pat-21-canvas-create.md        ←   Canvas-Create (INT-W-11)
+│   ├── pat-22-feedback-echo.md        ←   Feedback-Echo (INT-W-04)
+│   ├── pat-23-redaktions-routing.md   ←   Redaktions-Routing (INT-W-05)
+│   ├── pat-24-download-hinweis.md     ←   Download/Bereitstellung (INT-W-07)
+│   ├── pat-25-canvas-edit-dialog.md   ←   Canvas-Edit (INT-W-12)
+│   ├── pat-crisis-empathie.md         ←   Krisen-Pattern (Safety-erzwungen)
+│   └── pat-refuse-threat.md           ←   Bedrohungs-Refuse (Safety-erzwungen)
 │
 ├── 04-personas/                       ← Schicht 4a: 9 Personas (je eine Markdown-Datei)
 │   ├── lk.md                          ←   P-W-LK  — Lehrkraft
 │   ├── sl.md                          ←   P-W-SL  — Schueler:in
 │   ├── elt.md                         ←   P-ELT   — Elternteil
-│   ├── pol.md                         ←   P-W-POL — Politik
-│   ├── presse.md                      ←   P-W-PRESSE — Presse
-│   ├── red.md                         ←   P-W-RED — Redakteur:in
+│   ├── pol.md                         ←   P-W-POL — Politik / Multiplikator:in
+│   ├── presse.md                      ←   P-W-PRESSE — Presse / Journalist:in
+│   ├── red.md                         ←   P-W-RED — Redakteur:in / Autor:in
 │   ├── ber.md                         ←   P-BER   — Berater:in
 │   ├── ver.md                         ←   P-VER   — Verwaltung
 │   └── and.md                         ←   P-AND   — Allgemein (Default)
@@ -266,18 +275,26 @@ chatbots/wlo/v1/
 │
 ├── 05-canvas/                         ← Schicht 5: Canvas-Ausgabe-Formate
 │   ├── material-types.yaml            ←   18 Material-Typen (13 didaktisch + 5 analytisch)
+│   │                                       — typed GUI-Editor im Studio
 │   ├── type-aliases.yaml              ←   Keyword-Aliase + LRT-Mapping (Remix)
 │   ├── create-triggers.yaml           ←   Verben die „Neu erstellen" signalisieren
 │   ├── edit-triggers.yaml             ←   Edit-Verben + explizite Create-Overrides
 │   └── persona-priorities.yaml        ←   Welche Personas sehen analytische Typen zuerst
 │
-└── 05-knowledge/                      ← Schicht 6: Wissen
-    ├── rag-config.yaml                ←   4 RAG-Wissensbereiche (mode: always/on-demand)
-    └── mcp-servers.yaml               ←   MCP-Server-Registry (1 Server, 10 Tools)
+├── 05-knowledge/                      ← Schicht 6: Wissen
+│   ├── rag-config.yaml                ←   4 RAG-Wissensbereiche (mode: always/on-demand)
+│   └── mcp-servers.yaml               ←   MCP-Server-Registry (1 Server, 10 Tools)
+│
+└── 06-rules/                          ← Routing-Rules-Engine (Steuerungs-Ebene)
+    └── routing-rules.yaml             ←   Pre/Post-Route-Regeln (~37 Regeln, live/shadow-Flag)
 ```
 
 Welche Datei wann in den Prompt wandert, ist im Quelltext nachvollziehbar:
 `app/services/llm_service.py → generate_response()`, Variable `system_parts`.
+
+**Routing-Rules-Engine** (`app/services/rule_engine.py`): laeuft 2x pro Turn (Pre-Route +
+Post-Route) und kann Persona, Intent, State und Pattern-Selection ueberschreiben — dokumentiert
+im Studio unter „Architektur ⚙️ Routing-Rules" inkl. Test-Bench (sub-ms, kein LLM-Call).
 
 ---
 
@@ -413,8 +430,11 @@ Beeinflussen Pattern-Scoring (page_bonus) und Bot-Verhalten.
 
 ## 5. Pattern-Engine (3-Phasen-Modell)
 
-Die Pattern-Engine waehlt pro Nachricht deterministisch eines von 26 Patterns aus und
-moduliert die Ausgabe. Implementiert in `app/services/pattern_engine.py`.
+Die Pattern-Engine waehlt pro Nachricht deterministisch eines von **27 Patterns** aus und
+moduliert die Ausgabe. Implementiert in `app/services/pattern_engine.py`. Vor und nach der
+Pattern-Auswahl laeuft die deklarative Routing-Rules-Engine
+(`app/services/rule_engine.py` + `06-rules/routing-rules.yaml`), die Persona, Intent, State
+oder Pattern-Selection ueber YAML-Regeln korrigieren kann (siehe Abschnitt 5d).
 
 ### Phase 1: Gate-Pruefung (binaere Elimination)
 
@@ -464,7 +484,7 @@ Geraet und Persona beeinflussen max_items und Formalitaet.
 | `one_option` | bool | Nur 1 Option zeigen (bei Unsicherheit) |
 | `add_sources` | bool | Quellen/Lizenzen explizit nennen (bei Skepsis) |
 
-### Alle 26 Patterns im Ueberblick
+### Alle 27 Patterns im Ueberblick
 
 | ID | Label | Prio | Kernregel | Personas | States | Intents | Precond. | Sources | Follow-Up |
 |----|-------|------|-----------|----------|--------|---------|----------|---------|-----------|
@@ -486,12 +506,13 @@ Geraet und Persona beeinflussen max_items und Formalitaet.
 | PAT-16 | Themen-Exploration | 400 | Themengebiete identifizieren, Luecken erkennen | RED, BER | 4, 10 | * | — | mcp | quick_replies |
 | PAT-17 | Sanfter Einstieg | 390 | WLO-Infofragen, einladend, Persona weiter klaeren | * | 1 | * | — | rag, mcp | quick_replies |
 | PAT-18 | Unterrichts-Paket | 470 | Fach+Stufe+Thema → Sammlungssuche → 3-5 Treffer | LK, AND, ELT | * | * | fach, stufe, thema | mcp | quick_replies |
-| PAT-19 | Unterrichts-Lernpfad | 480 | Stundenentwurf mit Lernzielen und Zeitangaben | LK | 5, 6 | * | fach, stufe, thema | mcp | quick_replies |
+| PAT-19 | Unterrichts-Lernpfad | 480 | Stundenentwurf mit Lernzielen und Zeitangaben | LK | 5, 6, 12 | 10, 03b | thema | mcp | quick_replies |
 | PAT-20 | Orientierungs-Guide | 480 | Faehigkeiten vorstellen, Einstiegspunkte anbieten, KEIN Tool | AND, LK, SL, ELT, BER, VER | 1, 4 | 02, 01 | — | — | quick_replies |
 | PAT-21 | Canvas-Create | 470 | Neues Material KI-generiert im Canvas-Pane | * | 5, 6, 8, 12 | 11 | thema, material_typ | llm | quick_replies |
 | PAT-22 | Feedback-Echo | 420 | Feedback bestaetigen, paraphrasieren, Folgeangebot | * | * | 04 | — | llm | quick_replies |
 | PAT-23 | Redaktions-Routing | 440 | An Redaktion weiterleiten + Alternative anbieten | * | * | 05 | — | llm | quick_replies |
 | PAT-24 | Download-Hinweis | 430 | Download-Weg ueber Kachel erklaeren + Lizenz-Hinweis | * | * | 07 | — | llm | quick_replies |
+| PAT-25 | Canvas-Edit-Dialog | 470 | Bestehenden Canvas-Inhalt verfeinern (kuerzer/Loesungen/…) | * | 12 | 12 | — | llm | inline |
 | PAT-CRISIS | Crisis-Empathie | — | Notfall-Pattern: Bei Krisen-Signalen sofort deeskalieren | * | * | * | — | — | — |
 | PAT-REFUSE-THREAT | Refuse-Threat | — | Abweisung von Bedrohungs-/Policy-Verletzungen | * | * | * | — | — | — |
 
@@ -500,7 +521,7 @@ Geraet und Persona beeinflussen max_items und Formalitaet.
 **Priority-Hierarchie (hoeher = bevorzugt bei Gleichstand):**
 - 600: PAT-06 (Degradation) — universeller Fallback
 - 580–590: PAT-12 (Ueberbrueckung), PAT-08 (Null-Treffer) — Fehlerbehandlung
-- 470–500: PAT-01, PAT-18, PAT-19, PAT-20, PAT-21 — Kern-Use-Cases (inkl. Canvas-Create)
+- 470–500: PAT-01, PAT-18, PAT-19, PAT-20, PAT-21, PAT-25 — Kern-Use-Cases (inkl. Canvas-Create/Edit)
 - 420–460: PAT-02 bis PAT-17, PAT-22, PAT-23, PAT-24 — situative Patterns
 - 380–400: PAT-09, PAT-11, PAT-13–PAT-16 — niedrigste Prioritaet
 
@@ -524,6 +545,49 @@ Steuert, wie Gespraechsfortsetzung angeboten wird:
 | `quick_replies` | LLM generiert 2-4 klickbare Vorschlaege (aus User-Perspektive formuliert) |
 | `inline` | LLM schreibt Gespraechshaken in den Antworttext UND generiert Quick Replies |
 | `none` | Keine Vorschlaege (derzeit bei keinem Pattern verwendet) |
+
+### 5d. Routing-Rules-Engine (deklarativ, Pre + Post)
+
+Die Routing-Rules-Engine (`app/services/rule_engine.py` + `06-rules/routing-rules.yaml`)
+laeuft zweimal pro Turn und kann das Verhalten korrigieren, bevor / nachdem die
+Pattern-Engine entschieden hat:
+
+| Phase | Code-Anker | Wirkung |
+|-------|-----------|---------|
+| **Pre-Route** | `chat.py:_pre_run_shadow_pre` | Korrigiert `persona`, `intent`, `state` des Classifiers (z.B. explizite Self-IDs „ich bin Lehrerin", state-12-Guard fuer Non-Canvas-Intents, low-confidence-Fallbacks) |
+| **Post-Route** | `chat.py:_engine.evaluate(_peek_ctx)` | Tiebreaker bei knappen Score-Differenzen, intent-spezifische Patterns durchsetzen (PAT-22/23/24/25), enforce-Routing fuer klare Persona-Intent-Konstellationen |
+
+**Live vs Shadow:** Jede Regel hat ein `live`-Flag. `true` = wirkt sofort, `false` = nur in
+Shadow-Log gemessen — ermoeglicht kontrollierten Roll-Out neuer Regeln ohne Risiko.
+
+**Rule-Schema** (Beispiel — alle 37 Regeln im Studio unter „Architektur ⚙️ Routing-Rules"):
+
+```yaml
+- id: rule_recherche_personas_force_pat09
+  description: "Recherche-Personas + Thema → PAT-09."
+  priority: 55
+  live: true
+  when:
+    all:
+      - persona: { in: ["P-W-RED", "P-W-PRESSE", "P-W-POL", "P-BER"] }
+      - intent:  { in: ["INT-W-03b", "INT-W-09"] }
+      - entity.thema: { non_empty: true }
+      - pattern_winner: { in: ["PAT-06", "PAT-01", "PAT-02", "PAT-10"] }
+  then:
+    enforced_pattern_id: "PAT-09"
+```
+
+**Komparatoren:** `eq, neq, in, not_in, regex, not_regex, empty, non_empty, exists, lt, gt, lte, gte`
++ boolesche Kombinatoren `all, any, not`. Verfuegbare Kontextpfade: `intent, state, persona,
+entities.<key>, message, signals, pattern_winner, pattern_runner_up, pattern_score_gap,
+intent_confidence, persona_confidence, safety.*, canvas_state.*, session_state.*`.
+
+**Effekte:** `intent_override`, `state_override`, `persona_override`, `enforced_pattern_id`,
+`direct_action`, `direct_action_params`, `quick_replies`, `degradation`, optional
+`stop_on_match: true`. Konflikt-Policy: First-write-wins fuer Skalare, Listen/Dicts mergen.
+
+**Reload zur Laufzeit:** `POST /api/routing-rules/reload` lädt die YAML neu (force_reload=True),
+kein Backend-Restart nötig.
 
 ---
 
@@ -1038,14 +1102,15 @@ dem Chat. Zwei Intents steuern den Flow:
 
 | Datei | Inhalt |
 |-------|--------|
-| `material-types.yaml` | 18 Typen (13 didaktisch + 5 analytisch), jeder mit `id`, `label`, `emoji`, `category`, `structure` (LLM-Vorgabe) |
+| `material-types.yaml` | 18 Typen (13 didaktisch + 5 analytisch), jeder mit `id`, `label`, `emoji`, `category`, `structure` (LLM-Vorgabe). **Typed GUI-Editor** im Studio (`CanvasFormatsEditor.tsx`) ueber `GET/PUT /api/config/canvas/material-types` — Multi-line `structure` round-trippt als YAML-Block-Scalar `\|`. |
 | `type-aliases.yaml` | Alias-Mapping (74 Keywords → Typ-ID), Short-Whitelist (z.B. `quiz`, `test`, `pm`), LRT→Typ-Mapping fuer Remix |
 | `create-triggers.yaml` | 44 Create-Verb-Phrasen + Negative-Search-Verb-Liste |
 | `edit-triggers.yaml` | 56 Edit-Verben + 13 Explicit-Create-Override-Phrasen (`neues Quiz`, `anderes Thema`) |
 | `persona-priorities.yaml` | Welche Personas sehen analytische Typen zuerst (VER, POL, BER, PRESSE, RED) |
 
 Alle 5 Dateien sind live im Studio-Layer **Canvas-Formate** editierbar (mtime-Cache → keine
-Backend-Restarts).
+Backend-Restarts). `material-types.yaml` hat einen GUI-Editor (Liste + Form), die anderen vier
+nutzen den Roh-YAML-Editor.
 
 **Detection-Logik** (Wort-Grenzen-Matching in `canvas_service.py`):
 - `looks_like_create_intent(msg)` — erkennt Create-Verben nur an Wort-Grenzen („mach ein" matcht nicht „mach es einfacher")
