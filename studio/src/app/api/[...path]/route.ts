@@ -24,7 +24,15 @@ export const dynamic = 'force-dynamic';
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
   const search = req.nextUrl.search || '';
-  const target = `${BACKEND_URL}/api/${path.join('/')}${search}`;
+  // Preserve the trailing slash from the original request. Next.js's
+  // dynamic catch-all (`[...path]`) strips it from the segments array,
+  // so without this restoration the proxy would call /api/sessions
+  // (no slash) when the studio actually hit /api/sessions/. FastAPI
+  // would then 307-redirect to the slashed variant — but `redirect:
+  // 'manual'` below stops the proxy from following, and the studio
+  // sees an empty redirect response instead of the session list.
+  const trailingSlash = req.nextUrl.pathname.endsWith('/') ? '/' : '';
+  const target = `${BACKEND_URL}/api/${path.join('/')}${trailingSlash}${search}`;
 
   // Forward headers EXCEPT host/connection. Add the studio key if configured.
   const headers = new Headers();
