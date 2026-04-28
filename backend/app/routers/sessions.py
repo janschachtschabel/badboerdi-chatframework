@@ -27,6 +27,13 @@ _studio = [Depends(require_studio_key)]
 # otherwise FastAPI/Starlette matches them as session_id="purge" (etc.)
 # and returns 405 because the dynamic route doesn't support the method.
 
+# Both /api/sessions and /api/sessions/ resolve to this handler.
+# Next.js 15 mit `trailingSlash: false` (default) redirected (308) jede
+# Trailing-Slash-Variante des Studio-Proxy-Catchalls auf die slashlose
+# Form. Ohne den slashlosen Route-Eintrag würde FastAPI dann 307 nach
+# /api/sessions/ redirecten — und der Browser-Fetch landet im Loop. Die
+# zwei Decorators registrieren beide Pfade auf denselben Handler.
+@router.get("", dependencies=_studio, include_in_schema=False)
 @router.get("/", dependencies=_studio)
 async def list_sessions():
     """List all sessions."""
