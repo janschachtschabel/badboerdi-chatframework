@@ -242,8 +242,10 @@ Das passiert nur **einmalig**. Spätere Restarts überspringen den Schritt
 
 ```bash
 # Backend antwortet?
-curl -s http://localhost:8000/api/health | jq
-# → {"status":"ok","provider":"openai","chat_model":"gpt-5.4-mini",...}
+curl -s http://localhost:8000/health
+# → {"status":"ok"}
+# (Wird auch vom Docker-HEALTHCHECK alle 30s aufgerufen — siehe `docker compose ps`,
+# Spalte STATUS sollte "healthy" zeigen.)
 
 # Studio aktiv (mit Cookie-Login)?
 curl -I http://localhost:3001
@@ -255,6 +257,14 @@ docker stats --no-stream
 #   backend  ~300-600 MB
 #   studio   ~100-200 MB
 #   watchtower idle
+
+# Sessions werden in der DB persistiert?
+docker compose exec backend python -c "
+import sqlite3
+db = sqlite3.connect('/data/badboerdi.db')
+print('sessions:', db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0])
+print('messages:', db.execute('SELECT COUNT(*) FROM messages').fetchone()[0])
+"
 ```
 
 ---
@@ -343,7 +353,7 @@ docker compose logs caddy | tail -20
 
 ```bash
 # IP entsprechend ersetzen
-curl -I https://chat.85.215.211.50.nip.io/api/health
+curl -I https://chat.85.215.211.50.nip.io/health
 # → HTTP/2 200
 
 curl -I https://studio.85.215.211.50.nip.io
@@ -352,7 +362,7 @@ curl -I https://studio.85.215.211.50.nip.io
 
 **Browser-URLs** (deine IP entsprechend einsetzen):
 - **Studio:** <https://studio.85.215.211.50.nip.io>
-- **Backend Health:** <https://chat.85.215.211.50.nip.io/api/health>
+- **Backend Health:** <https://chat.85.215.211.50.nip.io/health>
 - **Widget-Demo-Seite:** <https://chat.85.215.211.50.nip.io/widget/>
 
 ---
@@ -405,7 +415,7 @@ ufw allow 3001/tcp     # Studio
 ```
 
 Browser:
-- Backend: `http://<DEINE-IP>:8000/api/health`
+- Backend: `http://<DEINE-IP>:8000/health`
 - Studio: `http://<DEINE-IP>:3001`
 
 **Wichtig**: Nach dem Caddy-Setup wieder schließen:
@@ -434,6 +444,41 @@ EOF
 
 Alternativ kannst du im **Studio** im Snapshots-Modal jederzeit einen
 Server-Snapshot anlegen — der enthält Configs **+ DB**.
+
+---
+
+## 10a. Wöchentlicher Docker-Cleanup (empfohlen bei kleiner Disk)
+
+Watchtower zieht regelmäßig neue Images. Ohne Cleanup häufen sich alte
+Image-Layer und können auf 10-GB-Disks zu `no space left on device` führen
+(typisch nach 3-4 Auto-Updates). Empfohlen für Server unter 20 GB Root-Disk:
+
+```bash
+sudo tee /etc/cron.weekly/docker-cleanup > /dev/null <<'EOF'
+#!/bin/sh
+# Boerdi: weekly Docker image+builder cleanup. Volumes (DB) bleiben unangetastet.
+docker image prune -af   >> /var/log/docker-cleanup.log 2>&1
+docker builder prune -af >> /var/log/docker-cleanup.log 2>&1
+EOF
+sudo chmod +x /etc/cron.weekly/docker-cleanup
+```
+
+Test des Scripts:
+```bash
+sudo /etc/cron.weekly/docker-cleanup && tail /var/log/docker-cleanup.log
+```
+
+**Falls die Disk gerade voll ist** (Symptom: `docker compose pull` schlägt mit
+`no space left on device` fehl):
+```bash
+docker image prune -af       # zieht typisch 500 MB - 1 GB
+docker builder prune -af     # zusätzlich, falls Build-Cache da
+df -h /var/lib/docker        # prüfen ob's gereicht hat
+docker compose pull          # erneut versuchen
+```
+
+⚠️ **Niemals** `docker system prune -af --volumes` — das löscht das
+`backend_data`-Volume samt SQLite-DB. Nur Image-/Builder-Pruning ist sicher.
 
 ---
 
@@ -482,7 +527,8 @@ DB und Configs bleiben unberührt — sind in Volumes / Bind-Mounts.
 | Backend startet nicht | `docker compose logs backend` — meist fehlender / falscher OPENAI_API_KEY |
 | `/api/chat` → HTTP 500 mit `httpx.UnsupportedProtocol` im Log | Älteres Backend-Image + `OPENAI_BASE_URL=` (leerer String) → SDK kann URL nicht parsen. **Fix:** in `.env` explizit `OPENAI_BASE_URL=https://api.openai.com/v1` setzen, dann `docker compose up -d --force-recreate backend`. Alternativ: Image rebuilden — aktuelle Versionen handhaben das selbst. |
 | `/api/chat` → 200 aber `content` enthält `unexpected keyword argument 'verbosity'` | Backend-Image nutzt `openai`-SDK < 1.65 (kein GPT-5-Support). **Fix A** (kurzfristig): Modell auf `gpt-4.1-mini` umstellen. **Fix B**: Image rebuilden mit aktuellem `requirements.txt` (`openai>=1.78`). |
-| Sessions im Studio leer trotz Chat-Aktivität | Studio sendet API-Key nicht / mismatched. Check: `docker compose exec backend env \| grep STUDIO_API_KEY` und gleicher Output für `studio`-Container — müssen identisch sein. Ggf. `docker compose up -d --force-recreate studio backend`. |
+| Sessions im Studio leer trotz Chat-Aktivität | (1) Backend-Log prüfen: `docker compose logs backend \| grep "GET /api/sessions"`. Wenn `307 Temporary Redirect` ohne nachfolgenden `200 OK` erscheint, ist's der Trailing-Slash-Bug — Studio muss auf eine Version >= 28.04.2026 (`docker compose pull && up -d studio`). (2) STUDIO_API_KEY-Mismatch: `docker compose exec backend env \| grep STUDIO_API_KEY` mit `docker compose exec studio env \| grep STUDIO_API_KEY` vergleichen — müssen identisch sein. Ggf. `docker compose up -d --force-recreate studio backend`. (3) DB-Persistenz: `docker compose exec backend python -c "import sqlite3; print(sqlite3.connect('/data/badboerdi.db').execute('SELECT COUNT(*) FROM sessions').fetchone())"` zeigt, ob Sessions überhaupt geschrieben werden. |
+| `no space left on device` beim Image-Pull | Docker-Cache zu groß für die Disk. Fix: `docker image prune -af && docker builder prune -af`. Vorbeugend Cron einrichten — siehe Kapitel 10a. |
 | Moderation läuft auf B-API-Setup nicht | B-API forwarded `/v1/moderations` nicht. **Fix:** zusätzlich `OPENAI_API_KEY=...` setzen — Backend nutzt OpenAI dann als Side-Channel für Moderation/STT/TTS. |
 | `502 Bad Gateway` von Caddy | Backend / Studio noch nicht hochgefahren — `docker compose ps`, ggf. `restart` |
 | Caddy holt keine Zertifikate | Port 80 zugemacht? UFW-Regel checken. Logs: `docker compose logs caddy` zeigt ACME-Errors |
