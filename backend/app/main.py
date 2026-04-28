@@ -143,6 +143,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ── Health endpoint ──────────────────────────────────────────────────
+# Used by the Docker HEALTHCHECK (and any external load balancer) to
+# verify the worker is alive. Intentionally simple — return 200 as soon
+# as FastAPI accepts requests. We don't gate on DB / RAG / LLM warmup
+# because the warmup tasks run in the background and a "warming up"
+# instance can still serve cached chats; making /health depend on them
+# would cause unnecessary container restarts during the first 1–2s.
+@app.get("/health", tags=["health"])
+@app.head("/health", tags=["health"])
+async def health() -> dict:
+    return {"status": "ok"}
+
 # Public routers — chat, speech, widget + sessions (so the embedded widget
 # can restore its history via GET /api/sessions/{id}/messages without an
 # API key). Per-route protection inside sessions.py covers the sensitive
