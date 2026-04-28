@@ -22,7 +22,7 @@ python -m scripts.setup
 python run.py              # uvicorn auf :8000
 ```
 
-Health-Check: `GET http://localhost:8000/api/health`
+Health-Check: `GET http://localhost:8000/health` → `{"status":"ok"}` (auch HEAD)
 
 ### RAG-Reranker (ONNX int8)
 
@@ -95,7 +95,7 @@ Schutzstatus: **offen** = immer erreichbar · **Studio** = braucht Header `X-Stu
 
 | Methode | Pfad | Schutz | Beschreibung |
 |---------|------|--------|--------------|
-| `GET` | `/api/health` | offen | Health-Check mit aktivem LLM-Provider und Modell. |
+| `GET` / `HEAD` | `/health` | offen | Liveness-Check (immer `{"status":"ok"}`). Zielfür Docker-`HEALTHCHECK` und externe Load-Balancer. |
 | `GET` | `/api/debug/mcp-test` | Studio | MCP-Verbindungstest (nur mit API-Key). |
 
 ### Chat (`/api/chat`)
