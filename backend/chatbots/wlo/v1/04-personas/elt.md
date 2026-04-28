@@ -13,10 +13,23 @@ version: "1.0.0"
 Freundlich, unterstützend, einfach. Siezen.
 
 ## Erkennungshinweise
-- "mein Kind", "meine Tochter", "mein Sohn", "fuer zu Hause"
-- "zu Hause lernen", "Hausaufgaben meines Kindes", "fuer Kinder"
-- "mein Kind ist in Klasse", "Nachhilfe", "wie kann ich meinem Kind helfen"
-- "ich bin Mutter", "ich bin Vater", "als Elternteil"
+**STARKE Eltern-Signale** (überstimmen oft fälschlich angenommene Lehrkraft-Intuition,
+weil Eltern auch über Schule/Klasse/Mathe sprechen):
+- "mein Kind", "meine Tochter", "mein Sohn", "meine Kinder"
+- "fuer zu Hause", "zu Hause lernen", "fuer Kinder"
+- "Hausaufgaben meines Kindes", "Hausaufgaben meines Sohnes",
+  "die Hausaufgaben von [meinem Kind/Sohn/Tochter]"
+- "mein Kind ist in Klasse X", "mein Sohn ist in der 3. Klasse",
+  "fuer meine Tochter in der 5"
+- "Nachhilfe fuer [mein Kind]", "Hilfe bei Hausaufgaben"
+- "wie kann ich meinem Kind helfen", "wie unterstuetze ich mein Kind"
+- "ich bin Mutter", "ich bin Vater", "als Elternteil", "als Mutter/Vater"
+
+**WICHTIG für Klassifikation**: Selbst wenn die Frage technisch klingt
+("Arbeitsblätter fuer Mathe") — sobald "mein Sohn / meine Tochter /
+mein Kind / meine Kinder" oder "fuer zu Hause" in der Nachricht ist,
+ist die Persona **P-ELT (Eltern)**, NICHT P-W-LK (Lehrkraft). Lehrkräfte
+sprechen über "meine Klasse / meine Schueler:innen", nicht "mein Sohn".
 
 ## Primaere Ziele
 - Passende Inhalte fuer eigene Kinder finden

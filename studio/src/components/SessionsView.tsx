@@ -213,8 +213,15 @@ export function SessionsView() {
                   border: '1px solid var(--border)',
                   fontSize: '.82rem',
                 }}>
-                  <div style={{ fontWeight: 600, fontSize: '.72rem', color: 'var(--text-muted)', marginBottom: 2 }}>
-                    {m.role === 'user' ? '👤 Nutzer:in' : '🦉 Boerdi'}
+                  <div style={{ fontWeight: 600, fontSize: '.72rem', color: 'var(--text-muted)', marginBottom: 2, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    {m.role === 'user' ? (
+                      <>👤 Nutzer:in</>
+                    ) : (
+                      <>
+                        <img src="/boerdi.svg" alt="" style={{ width: 14, height: 14, verticalAlign: 'middle' }} />
+                        Boerdi
+                      </>
+                    )}
                   </div>
                   {m.content}
                 </div>

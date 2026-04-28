@@ -360,7 +360,9 @@ Das Backend spricht drei OpenAI-kompatible Provider, umschaltbar per `LLM_PROVID
 | B-API → OpenAI | `b-api-openai` | `gpt-4.1-mini` | `text-embedding-3-small` | `B_API_BASE_URL` | `B_API_KEY` (Header `X-API-KEY`) |
 | B-API → AcademicCloud | `b-api-academiccloud` | `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` | `e5-mistral-7b-instruct` | `B_API_BASE_URL` | `B_API_KEY` |
 
-**Standard ist `openai`** — wenn `LLM_PROVIDER` nicht gesetzt ist, läuft das System mit den oben gezeigten Defaults. Modelle lassen sich jederzeit per `LLM_CHAT_MODEL` / `LLM_EMBED_MODEL` überschreiben. `OPENAI_BASE_URL` ist optional und erlaubt OpenAI-kompatible Gegenstellen (Azure OpenAI, LiteLLM-Proxy, LocalAI, Ollama-Shim). Die Basis-URL der B-API ist über `B_API_BASE_URL` (Default `https://b-api.staging.openeduhub.net/api/v1/llm`) konfigurierbar.
+**Standard ist `openai`** — wenn `LLM_PROVIDER` nicht gesetzt ist, läuft das System mit den oben gezeigten Defaults. Modelle lassen sich jederzeit per `LLM_CHAT_MODEL` / `LLM_EMBED_MODEL` überschreiben. `OPENAI_BASE_URL` ist optional und erlaubt OpenAI-kompatible Gegenstellen (Azure OpenAI, LiteLLM-Proxy, LocalAI, Ollama-Shim). Die Basis-URL der B-API ist über `B_API_BASE_URL` (Default `https://b-api.prod.openeduhub.net/api/v1/llm`; Staging-Variante: `https://b-api.staging.openeduhub.net/api/v1/llm`) konfigurierbar.
+
+**B-API-Setup mit OpenAI-Side-Channel:** Wer chat + embeddings über die B-API laufen lässt, aber zusätzlich einen `OPENAI_API_KEY` einträgt, bekommt automatisch Moderation, Whisper-STT und TTS direkt über `api.openai.com` — die B-API forwarded diese drei Endpoints nicht. Ohne OpenAI-Key werden sie still übersprungen (Regex-Safety-Floor bleibt aktiv).
 
 ### Vollständige Env-Variablen-Liste
 
@@ -375,13 +377,14 @@ Alle URL-/Key-/Modell-Einstellungen sind über Umgebungsvariablen steuerbar. **A
 | | `LLM_EMBED_MODEL` | `text-embedding-3-small` | Embedding-Modell |
 | | `OPENAI_MODEL` | _leer_ | Legacy-Alias für `LLM_CHAT_MODEL` |
 | **B-API** | `B_API_KEY` | — | API-Key (`X-API-KEY`-Header) |
-| | `B_API_BASE_URL` | `https://b-api.staging.openeduhub.net/api/v1/llm` | Basis-URL |
+| | `B_API_BASE_URL` | `https://b-api.prod.openeduhub.net/api/v1/llm` | Basis-URL der B-API. Staging-Variante: `https://b-api.staging.openeduhub.net/api/v1/llm` |
 | **GPT-5-Tuning** | `LLM_VERBOSITY` | `medium` | `low`/`medium`/`high` |
 | | `LLM_REASONING_EFFORT` | `low` | `none`/`low`/`medium`/`high`/`xhigh` |
 | **Embedding-Override** | `EMBED_DIM` | auto-lookup | Escape-Hatch für exotische Modelle |
 | **Speech** | `STT_MODEL` | `gpt-4o-mini-transcribe` | Speech-to-Text (Fallbacks `gpt-4o-transcribe`, `whisper-1`) |
 | | `TTS_MODEL` | `tts-1` | Text-to-Speech (`tts-1-hd` für Qualität) |
 | **MCP** | `MCP_SERVER_URL` | `https://wlo-mcp-server.vercel.app/mcp` | MCP-Server (Wissensquelle) |
+| **Text-Extraction** | `TEXT_EXTRACTION_URL` | `https://text-extraction.prod.openeduhub.net` | **Base-URL** des OEH-Volltext-Service. `/from-url` wird intern angehängt, Trailing-Slash + Legacy-Voll-URL werden toleriert. Staging-Variante: `https://text-extraction.staging.openeduhub.net` |
 | **RAG** | `RAG_TOP_K` | `15` | Pre-Fetch Top-K |
 | | `RAG_MIN_SCORE` | `0.30` | Relevanz-Mindestwert |
 | | `RAG_MAX_CHARS_PER_AREA` | `3000` | Char-Cap pro Wissensbereich (`0`=unbegrenzt) |

@@ -51,11 +51,29 @@ class WloCard(BaseModel):
     description: str = ""
     disciplines: list[str] = Field(default_factory=list)
     educational_contexts: list[str] = Field(default_factory=list)
+    user_roles: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
     learning_resource_types: list[str] = Field(default_factory=list)
+    # Primary "open this resource" URL — external (ccm:wwwurl) for content
+    # nodes, in-repo render-URL for collections.
     url: str = ""
+    # Stable in-repo URL (`/components/render/<id>`) — useful as a permalink
+    # even when `url` points to an external host.
     wlo_url: str = ""
+    # Direct binary download URL (no auth needed). Set on file nodes whose
+    # content is hosted in edu-sharing; empty for external-link nodes,
+    # collections, and anything without a binary attachment.
+    download_url: str = ""
+    # In-repo viewer URL for embedded PDF/video previews. Often the same as
+    # `wlo_url`; differs when edu-sharing has a dedicated content endpoint.
+    content_url: str = ""
     preview_url: str = ""
+    # `True` = the thumbnail is a generic mediatype icon (no real preview
+    # generated). Frontend can use this to suppress the thumbnail or render
+    # it small instead of as a hero image.
+    preview_is_icon: bool = False
+    mime_type: str = ""
+    file_size: int = 0
     license: str = ""
     publisher: str = ""
     node_type: str = "content"
@@ -288,13 +306,11 @@ class CollectionContentsArgs(BaseModel):
 
 
 class NodeDetailsArgs(BaseModel):
-    """Arguments for get_node_details."""
+    """Arguments for get_node_details (MCP server v2)."""
     nodeId: str
-
-
-class InfoQueryArgs(BaseModel):
-    """Arguments for info tools (get_wirlernenonline_info, get_edu_sharing_*, get_metaventis_info)."""
-    query: str
+    includeTextContent: bool = False
+    includeParents: bool = False
+    includeRaw: bool = False
 
 
 class SearchTopicPagesArgs(BaseModel):
@@ -303,7 +319,35 @@ class SearchTopicPagesArgs(BaseModel):
     collectionId: str = ""
     targetGroup: str = ""  # teacher | learner | general
     educationalContext: str = ""
+    mergeVariants: bool = True
+    sort: str = ""  # "alpha" | "relevance"
     maxResults: int = Field(default=5, ge=1, le=20)
+
+
+# ── MCP server v2 tools ────────────────────────────────────────────
+
+class SubjectPortalsArgs(BaseModel):
+    """Arguments for get_subject_portals (Fachportale)."""
+    educationalContext: str = ""
+    includeContentCounts: bool = False
+
+
+class CollectionTreeArgs(BaseModel):
+    """Arguments for browse_collection_tree."""
+    nodeId: str
+    depth: int = Field(default=1, ge=1, le=2)
+    includeContentCounts: bool = False
+    maxResults: int = Field(default=50, ge=1, le=100)
+
+
+class HealthCheckArgs(BaseModel):
+    """Arguments for wlo_health_check."""
+    pass
+
+
+class NodesDetailsArgs(BaseModel):
+    """Arguments for get_nodes_details (bulk metadata)."""
+    nodeIds: list[str]
 
 
 class LookupVocabularyArgs(BaseModel):

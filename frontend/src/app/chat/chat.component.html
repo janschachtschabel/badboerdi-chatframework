@@ -1,27 +1,15 @@
 <div class="chat-wrapper">
-  <!-- Header -->
-  <div class="chat-header">
-    <div class="header-bot">
-      <span class="header-avatar">🦉</span>
-      <div class="header-text">
-        <span class="header-name">Boerdi</span>
-      </div>
-    </div>
-    <div class="header-actions">
-      <button *ngIf="languageButtonsVisible" class="btn-icon" [class.debug-off]="!autoSpeak" (click)="toggleAutoSpeak()" [title]="autoSpeak ? 'Sprachausgabe aus' : 'Sprachausgabe an'">
-        🔊
-      </button>
-      <button *ngIf="debugButtonVisible" class="btn-icon" [class.debug-off]="!showDebug" (click)="toggleDebug()" [title]="showDebug ? 'Debug aus' : 'Debug an'">🔍</button>
-      <button class="btn-icon" (click)="restart()" title="Neuer Chat">🔄</button>
-    </div>
-  </div>
+  <!-- (Chat-Header wurde in den konsolidierten Widget-Panel-Header
+       hochgezogen — Avatar/Name/Status/Action-Buttons leben jetzt
+       in widget.component.ts. Das hier startet direkt mit dem
+       Messages-Bereich.) -->
 
   <!-- Messages -->
   <div class="messages-area" #messagesContainer>
     <div *ngFor="let msg of messages()" [id]="'msg-' + msg.id" class="message-row" [class.bot-row]="msg.sender === 'bot'" [class.user-row]="msg.sender === 'user'">
 
       <!-- Bot avatar -->
-      <span *ngIf="msg.sender === 'bot'" class="msg-avatar">🦉</span>
+      <img *ngIf="msg.sender === 'bot'" class="msg-avatar" [src]="boerdiLogo" alt="" />
 
       <div class="msg-bubble" [class.bot-bubble]="msg.sender === 'bot'" [class.user-bubble]="msg.sender === 'user'">
         <!-- Loading dots -->
@@ -83,37 +71,58 @@
 
         <!-- Cards -->
         <div *ngIf="msg.cards && msg.cards.length && !hideCards" class="cards-list">
-          <div *ngFor="let card of getVisibleCards(msg)" class="wlo-card-wrapper">
+          <div *ngFor="let card of getVisibleCards(msg)"
+               class="wlo-card-wrapper"
+               [class.is-themenseite]="isThemenseite(card)"
+               [class.is-sammlung]="isSammlung(card)"
+               [class.is-inhalt]="isInhalt(card)">
             <a class="wlo-card"
                [href]="cardUrl(card)"
                target="_blank"
                rel="noopener noreferrer"
                (click)="$event.stopPropagation()">
-              <div class="card-thumb">
-                <img *ngIf="card.preview_url" [src]="card.preview_url" [alt]="card.title" loading="lazy" class="card-img">
-                <span *ngIf="!card.preview_url" class="card-icon">{{ getCardIcon(card) }}</span>
-              </div>
-              <div class="card-info">
-                <div class="card-title">{{ card.title }}</div>
-                <div class="card-meta">
-                  <!-- Typ-Pille: immer zuerst, genau eine von 3 -->
-                  <span *ngIf="card.node_type === 'collection' && card.topic_pages && card.topic_pages.length"
-                        class="chip chip-typpille chip-tp-topicpage">🌐 Themenseite</span>
-                  <span *ngIf="card.node_type === 'collection' && !(card.topic_pages && card.topic_pages.length)"
-                        class="chip chip-typpille chip-tp-sammlung">📚 Sammlung</span>
-                  <span *ngIf="card.node_type !== 'collection'"
-                        class="chip chip-typpille chip-tp-inhalt">📄 Inhalt</span>
 
-                  <span *ngFor="let d of card.disciplines" class="chip chip-fach">{{ d }}</span>
-                  <span *ngFor="let e of card.educational_contexts" class="chip chip-stufe">{{ e }}</span>
-                  <ng-container *ngFor="let t of card.learning_resource_types">
-                    <span *ngIf="t !== 'Sammlung' && t !== 'collection'" class="chip chip-typ">{{ t }}</span>
-                  </ng-container>
-                  <span *ngIf="card.license" class="chip chip-lizenz">{{ card.license }}</span>
-                </div>
-                <div class="card-desc" *ngIf="card.description">{{ card.description | slice:0:120 }}{{ card.description && card.description.length > 120 ? '...' : '' }}</div>
+              <!-- Typ-Header: Inhaltstyp-Icon links, Themenseite/Sammlung/Inhalt-Badge rechts -->
+              <div class="card-header">
+                <span class="card-content-type">
+                  <span class="card-content-icon">{{ getCardIcon(card) }}</span>
+                  <span class="card-content-label">{{ getContentTypeLabel(card) }}</span>
+                </span>
+                <span class="card-kind-badge">
+                  <span *ngIf="isThemenseite(card)" class="kind kind-themenseite">🌐 Themenseite</span>
+                  <span *ngIf="isSammlung(card)" class="kind kind-sammlung">📚 Sammlung</span>
+                  <span *ngIf="isInhalt(card)" class="kind kind-inhalt">📄 Inhalt</span>
+                </span>
               </div>
-              <span class="card-arrow">›</span>
+
+              <!-- Body: Titel volle Breite oben, Desc + kleines Thumb nebeneinander -->
+              <div class="card-body">
+                <div class="card-title">{{ card.title }}</div>
+                <div class="card-body-row">
+                  <div class="card-desc-wrap">
+                    <div class="card-desc" *ngIf="card.description">{{ card.description | slice:0:120 }}{{ card.description && card.description.length > 120 ? '…' : '' }}</div>
+                  </div>
+                  <div *ngIf="card.preview_url" class="card-thumb-side">
+                    <img [src]="card.preview_url" [alt]="card.title" loading="lazy" class="card-img-side">
+                    <span *ngIf="card.license" class="card-license-badge-side"
+                          [title]="card.license">{{ getLicenseShort(card.license) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Footer: Bildungsstufe • Fach (NICHT Zielgruppe) -->
+              <div class="card-footer">
+                <span *ngIf="card.educational_contexts && card.educational_contexts.length"
+                      class="footer-meta footer-stufe">
+                  <span class="footer-icon">🎓</span>
+                  <span>{{ card.educational_contexts[0] }}</span>
+                </span>
+                <span *ngIf="card.disciplines && card.disciplines.length"
+                      class="footer-meta footer-fach">
+                  <span class="footer-icon">📘</span>
+                  <span>{{ card.disciplines[0] }}</span>
+                </span>
+              </div>
             </a>
             <!-- Collection action buttons -->
             <div *ngIf="card.node_type === 'collection' && card.node_id" class="card-actions">

@@ -27,6 +27,14 @@ interface McpServer {
   description: string;
   enabled: boolean;
   tools: string[];
+  /**
+   * Map of tool-name → tool-description, fetched server-side from the live
+   * MCP. Used to render hover-tooltips on tool tags so similar names like
+   * `get_node_details` (single) vs. `get_nodes_details` (bulk) are
+   * distinguishable at a glance. May be undefined if the MCP server was
+   * unreachable when /mcp-servers was loaded.
+   */
+  tool_descriptions?: Record<string, string>;
 }
 
 /**
@@ -958,9 +966,24 @@ export default function KnowledgeManager() {
                       </div>
                       {server.tools.length > 0 && (
                         <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                          {server.tools.map(t => (
-                            <span key={t} className="tag tag-sm">{t}</span>
-                          ))}
+                          {server.tools.map(t => {
+                            const desc = server.tool_descriptions?.[t] || '';
+                            // Erste Zeile / 200 Zeichen als Tooltip; Browser-Tooltip
+                            // wickelt den Text um, das ist gut genug für die UX.
+                            const tooltip = desc
+                              ? `${t}\n\n${desc.split('\n')[0].slice(0, 200)}`
+                              : t;
+                            return (
+                              <span
+                                key={t}
+                                className="tag tag-sm"
+                                title={tooltip}
+                                style={{ cursor: desc ? 'help' : 'default' }}
+                              >
+                                {t}
+                              </span>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

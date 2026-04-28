@@ -88,18 +88,38 @@ Stil:
 
 
 async def generate_scenarios(
-    personas: list[dict], intents: list[dict], count_per_combo: int = 2
+    personas: list[dict], intents: list[dict], count_per_combo: int = 2,
+    progress_cb: Any = None,
 ) -> list[dict]:
     """Generate realistic opening messages for each (persona, intent) combo.
 
     Uses an LLM. Every (persona, intent) pair gets ``count_per_combo``
     openings. Returns a flat list of scenario dicts.
+
+    ``progress_cb`` (optional async callable) is invoked with
+    ``(combo_idx, total_combos, persona_id, intent_id)`` BEFORE each
+    LLM call so callers can publish live progress to the UI. The first
+    LLM call alone takes 2–3 s, but with 9×16=144 combos the whole
+    stage runs ~5–7 min — without progress hook, the UI shows a stale
+    "Generiere Szenarien …" the entire time.
     """
     client = get_client()
     scenarios: list[dict] = []
+    total_combos = len(personas) * len(intents)
+    combo_idx = 0
     # Fire serially — keeps cost transparent and avoids provider rate limits
     for p in personas:
         for i in intents:
+            combo_idx += 1
+            if progress_cb is not None:
+                try:
+                    await progress_cb(
+                        combo_idx, total_combos,
+                        p.get("id", ""), i.get("id", ""),
+                    )
+                except Exception:
+                    # Progress hook must never break generation
+                    pass
             prompt = _SCENARIO_PROMPT.format(
                 count=count_per_combo,
                 persona_label=p.get("label", p.get("id", "")),
@@ -253,6 +273,20 @@ async def simulate_conversation(
             break
         bot_text = bot_resp.get("content", "") or ""
         debug = bot_resp.get("debug", {}) or {}
+        # Same canvas-content merge as in execute_run scenario stage —
+        # the simulator-driven user might continue a canvas conversation
+        # ("mach es einfacher"), and the judge needs to see what actually
+        # got delivered, not just the announcement bubble.
+        page_action = bot_resp.get("page_action") or {}
+        if (page_action.get("action") in ("canvas_open", "canvas_update")
+                and isinstance(page_action.get("payload"), dict)
+                and page_action["payload"].get("markdown")):
+            canvas_md = page_action["payload"]["markdown"]
+            bot_text = (
+                f"{bot_text}\n\n"
+                f"---\n[Canvas-Inhalt — vom Nutzer sichtbar]\n\n"
+                f"{canvas_md}"
+            )
         turns.append({
             "user": user_msg,
             "bot": bot_text,
@@ -338,6 +372,27 @@ Bewerte auf 5 Dimensionen, jeweils 0 (schlecht), 1 (mittel), 2 (gut):
                      Aktienkurse), ist ein freundlicher Redirect zur eigenen
                      Domaene KORREKT — bewerte in diesem Fall mindestens 1/2,
                      nicht 0/2.
+
+EHRLICHE DEGRADATION (faire Bewertung): Wenn der Bot eine Frage nach
+INTERNEN/PRIVATEN Daten bekommt, die er nicht haben kann (Schuldaten,
+Klassennoten, persönliche Hausaufgaben, Wahlkreis-Daten, interne
+Projektdaten, Mediennutzungs-Statistiken Dritter, "Pressemitteilung
+zum letzten Event"), und stattdessen ehrlich sagt "habe ich nicht,
+hier sind verfuegbare Adjacent-Daten" oder "nutze stattdessen XYZ":
+- intent_fit: mindestens 1/2 (Bot hat das Anliegen erkannt und abgegrenzt)
+- info_quality: mindestens 1/2, wenn Adjacent-Info konkret war
+- pattern_match: 2/2, wenn PAT-06 (Degradation-Bruecke) oder PAT-03
+  (Transparenz-Beweis) gewaehlt wurde
+- BESTRAFE NICHT, dass die ANGEFRAGTE Statistik fehlt — der Bot kann
+  sie nicht haben. Wir bewerten WAS DER BOT KANN, nicht was technisch
+  unmoeglich ist.
+
+CANVAS-CONTENT (PAT-21 / Canvas-Create): Wenn die Bot-Antwort ein
+"---\\n[Canvas-Inhalt — vom Nutzer sichtbar]" enthaelt, ist DAS der
+eigentliche Inhalt. Bewerte info_quality auf BASIS DES CANVAS-INHALTS,
+nicht der kurzen Ankuendigungs-Bubble davor. Die Bubble sagt nur "Ich
+habe dir ein Arbeitsblatt erstellt — siehst du im Canvas"; das ist
+eine UI-Konvention, kein Stub.
 
 Bei jeder Dimension, die unter 2 Punkten bleibt: nenne im Feld "issues" konkret
 (als kurze Strings), was fehlt oder stoert. Beispiele: "Antwort nennt Bildungsstufe
@@ -603,8 +658,26 @@ async def execute_run(
         # ── Stage 1: scenarios (single-turn) ──
         if mode in ("scenarios", "both"):
             await _persist_progress(run_id, conversations, target_turns,
-                                    "Generiere Szenarien …")
-            scens = await generate_scenarios(personas, intents, scenarios_per_combo)
+                                    "Generiere Szenarien (0/0) …")
+
+            # Live progress callback — updates current_activity on each
+            # (persona, intent) combo so the UI shows "Generiere Szenarien
+            # 47/144 (P-X × INT-Y) …" instead of a stale "Generiere Szenarien".
+            # Avoid a DB write on every single combo by throttling to every
+            # 4th combo + always the last combo.
+            async def _scenario_progress(
+                idx: int, total: int, pid: str, iid: str,
+            ) -> None:
+                if idx == 1 or idx == total or idx % 4 == 0:
+                    await _persist_progress(
+                        run_id, conversations, target_turns,
+                        f"Generiere Szenarien {idx}/{total} ({pid} × {iid}) …",
+                    )
+
+            scens = await generate_scenarios(
+                personas, intents, scenarios_per_combo,
+                progress_cb=_scenario_progress,
+            )
             logger.info("[eval %s] generated %d scenarios", run_id, len(scens))
             for idx, sc in enumerate(scens):
                 persona = next((p for p in personas if p["id"] == sc["persona_id"]), {})
@@ -624,6 +697,23 @@ async def execute_run(
                         "safety": debug.get("safety"),
                         "tools_called": debug.get("tools_called", []),
                     }
+                    # If the bot opened a canvas (PAT-21 Canvas-Create), the
+                    # actual content is in page_action.payload.markdown — the
+                    # chat bubble itself is just a thin announcement
+                    # ("Ich habe dir ein Arbeitsblatt erstellt …"). The judge
+                    # would otherwise see only that announcement and rate
+                    # info=0/2 systematically. Append the canvas markdown so
+                    # the judge can evaluate the actual delivered content.
+                    page_action = bot_resp.get("page_action") or {}
+                    if (page_action.get("action") == "canvas_open"
+                            and isinstance(page_action.get("payload"), dict)
+                            and page_action["payload"].get("markdown")):
+                        canvas_md = page_action["payload"]["markdown"]
+                        bot_text = (
+                            f"{bot_text}\n\n"
+                            f"---\n[Canvas-Inhalt — vom Nutzer sichtbar]\n\n"
+                            f"{canvas_md}"
+                        )
                     judge = await judge_turn(persona, intent, sc["opening"], bot_text, dbg_flat)
                 except Exception as e:
                     logger.warning("[eval %s] scenario failed: %s", run_id, e)
@@ -640,8 +730,11 @@ async def execute_run(
                         "judge": judge,
                     }],
                 })
-                # Persist every 3 scenarios to keep DB writes bounded
-                if (idx + 1) % 3 == 0 or (idx + 1) == len(scens):
+                # Persist immediately after the FIRST scenario (so the UI
+                # leaves the "Generiere Szenarien …" state as soon as the
+                # for-loop starts), then every 2 scenarios to keep DB
+                # writes bounded.
+                if (idx + 1) == 1 or (idx + 1) % 2 == 0 or (idx + 1) == len(scens):
                     await _persist_progress(run_id, conversations, target_turns, activity)
 
         # ── Stage 2: conversations (multi-turn) ──

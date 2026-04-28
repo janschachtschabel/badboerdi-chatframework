@@ -18,9 +18,19 @@ router = APIRouter()
 # are OpenAI-native features; the B-API proxies don't forward them). The
 # base URL can be overridden via OPENAI_BASE_URL for Azure/LiteLLM/LocalAI,
 # which must provide /v1/audio/{transcriptions,speech} too.
-_openai_base = (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/") or None
+#
+# Empty ``OPENAI_BASE_URL=`` (common in Docker setups using ``${VAR:-}``
+# substitution) must NOT reach the SDK — the OpenAI client reads the
+# env var itself when ``base_url=None`` is passed, and an empty string
+# crashes httpx with ``UnsupportedProtocol``. Always pass an explicit
+# fallback URL.
+_openai_key = (os.getenv("OPENAI_API_KEY") or "").strip() or None
+_openai_base = (
+    (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
+    or "https://api.openai.com/v1"
+)
 client = AsyncOpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
+    api_key=_openai_key,
     base_url=_openai_base,
 )
 

@@ -1,7 +1,23 @@
 """Text-Extraction-Service (Phase 2).
 
-Wrapper um den OEH-Text-Extraction-Dienst
-`https://text-extraction.prod.openeduhub.net/from-url` mit einem Noise-Filter.
+Wrapper um den OEH-Text-Extraction-Dienst (Default: Production-Instanz)
+mit einem Noise-Filter.
+
+Konfiguration via Env-Var:
+
+    TEXT_EXTRACTION_URL   default: https://text-extraction.prod.openeduhub.net
+                          (staging fallback:
+                           https://text-extraction.staging.openeduhub.net)
+
+Die Variable haelt die **Base-URL** des Service. Der konkrete Endpoint
+``/from-url`` wird intern angehaengt. Die Resolver-Logik toleriert:
+
+* Trailing-Slash (``https://…openeduhub.net/`` ↔ ``…openeduhub.net``)
+* Legacy-Configs, in denen der volle ``/from-url``-Pfad bereits im env-Wert
+  steht — der Suffix wird automatisch entfernt.
+* Leere Strings (Docker-Compose ``${VAR:-}``-Falle) → Fallback auf den
+  PROD-Default.
+
 Der Dienst liefert typischerweise sehr viel Boilerplate (Cookie-Banner,
 Navigation, Footer, Social-Media-Links, Sidebar-Widget) — fuer einen
 Remix-Flow muss das reduziert werden, sonst sprengt der Volltext den
@@ -18,6 +34,7 @@ Design:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import Any
 
@@ -25,7 +42,34 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-_ENDPOINT = "https://text-extraction.prod.openeduhub.net/from-url"
+_DEFAULT_BASE_URL = "https://text-extraction.prod.openeduhub.net"
+_FROM_URL_PATH = "/from-url"
+
+
+def _resolve_base_url() -> str:
+    """Normalise ``TEXT_EXTRACTION_URL`` env-var into a clean base URL.
+
+    Accepts (and normalises) all four common author shapes:
+
+      base, no slash    → https://host
+      base, with slash  → https://host/
+      full endpoint     → https://host/from-url      (legacy)
+      full + slash      → https://host/from-url/
+
+    All four collapse to the same base ``https://host``. Empty / unset
+    falls back to the PROD default.
+    """
+    raw = (os.getenv("TEXT_EXTRACTION_URL") or "").strip()
+    if not raw:
+        raw = _DEFAULT_BASE_URL
+    base = raw.rstrip("/")
+    if base.endswith(_FROM_URL_PATH):
+        base = base[: -len(_FROM_URL_PATH)].rstrip("/")
+    return base
+
+
+_BASE_URL = _resolve_base_url()
+_ENDPOINT = f"{_BASE_URL}{_FROM_URL_PATH}"
 _UA = "BadBoerdi-Widget/1.0 (+https://wirlernenonline.de)"
 
 # Zeilen die typischerweise Navigation/Cookie/Footer sind — werden entfernt.

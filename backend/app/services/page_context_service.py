@@ -93,8 +93,14 @@ def _safe_json(text: str) -> dict[str, Any] | list[Any] | None:
 def _extract_node_fields(raw: str) -> dict[str, Any]:
     """Pull title/description/keywords/disciplines/stufen from `get_node_details`.
 
-    The MCP text format is line-oriented; we accept both JSON and
-    "Key: Value" blocks. Missing fields degrade to empty strings/lists.
+    Accepts (in order of preference):
+      1. The MCP v2+ `outputFormat="json"` shape — flat FormattedNode with
+         label-resolved fields (`disciplines`, `educationalContexts`, …).
+      2. The legacy edu-sharing JSON shape with `ccm:*` properties
+         (kept as a fallback so old MCP servers still work).
+      3. The "Key: Value" Markdown block (default `outputFormat="markdown"`).
+
+    Missing fields degrade to empty strings/lists.
     """
     out: dict[str, Any] = {
         "title": "",
@@ -110,7 +116,37 @@ def _extract_node_fields(raw: str) -> dict[str, Any]:
 
     data = _safe_json(raw)
     if isinstance(data, dict):
-        # Try common edu-sharing JSON shapes
+        # 1. MCP v2+ shape: flat FormattedNode with camelCase keys and label
+        #    arrays. We detect it via the presence of `nodeId` AND any of
+        #    the camelCase label keys at the top level.
+        if data.get("nodeId") and (
+            "disciplines" in data
+            or "educationalContexts" in data
+            or "learningResourceTypes" in data
+        ):
+            def _str(k: str) -> str:
+                v = data.get(k)
+                return v if isinstance(v, str) else ""
+
+            def _strlist(k: str) -> list[str]:
+                v = data.get(k)
+                if isinstance(v, list):
+                    return [str(x) for x in v if x]
+                if isinstance(v, str) and v:
+                    return [v]
+                return []
+
+            out["title"] = _str("title")
+            out["description"] = _str("description")
+            out["keywords"] = _strlist("keywords")
+            out["disciplines"] = _strlist("disciplines")
+            out["educational_contexts"] = _strlist("educationalContexts")
+            out["learning_resource_types"] = _strlist("learningResourceTypes")
+            out["url"] = _str("url") or _str("renderUrl")
+            if out["title"]:
+                return out
+
+        # 2. Legacy edu-sharing JSON: "properties" wrapper or top-level ccm:*
         props = (
             data.get("properties")
             or data.get("node", {}).get("properties")
@@ -156,7 +192,7 @@ def _extract_node_fields(raw: str) -> dict[str, Any]:
             if out["title"]:
                 return out
 
-    # Fallback: parse "Key: Value" text body
+    # 3. Fallback: parse "Key: Value" text body (markdown output)
     def _grab(pattern: str) -> str:
         m = re.search(pattern, raw, re.IGNORECASE | re.MULTILINE)
         return (m.group(1) or "").strip() if m else ""
@@ -244,11 +280,14 @@ async def resolve_page_context(
     meta: dict[str, Any] | None = None
 
     try:
-        # Path 1: direct node_id / collection_id → get_node_details
+        # Path 1: direct node_id / collection_id → get_node_details (JSON)
+        # JSON output gives us label-resolved disciplines/educationalContexts
+        # without further URI-→-label cache lookups in Boerdi.
         target_id = node_id or collection_id
         if target_id:
             raw = await mcp_client.call_mcp_tool(
-                "get_node_details", {"nodeId": target_id}
+                "get_node_details",
+                {"nodeId": target_id, "outputFormat": "json"},
             )
             if raw and not raw.startswith("MCP error"):
                 fields = _extract_node_fields(raw)
@@ -276,7 +315,8 @@ async def resolve_page_context(
                 if m:
                     found_id = m.group(0)
                     raw2 = await mcp_client.call_mcp_tool(
-                        "get_node_details", {"nodeId": found_id}
+                        "get_node_details",
+                        {"nodeId": found_id, "outputFormat": "json"},
                     )
                     if raw2 and not raw2.startswith("MCP error"):
                         fields = _extract_node_fields(raw2)

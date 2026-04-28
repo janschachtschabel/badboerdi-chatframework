@@ -395,27 +395,27 @@
 }
 
 /* ── Section headings inside the cards pane ────────────── */
+/* Einheitlich dunkelblau für alle drei Kategorien (Themenseiten,
+ * Sammlungen, Inhalte) — der visuelle Discriminator läuft über die
+ * Kacheln selbst (Kind-Badge, Border-Akzente), nicht über die Section-
+ * Header. So ergibt sich ein ruhigeres Gesamtbild.
+ * Hex direkt, weil $canvas-brand-blue weiter unten in der Datei
+ * definiert ist und SCSS-Variablen oben nicht greifen. */
 .canvas-cards-heading {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: #1C4587;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin: 6px 0 6px;
   padding: 3px 2px 5px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid rgba(28, 69, 135, 0.35);
 
-  &--topic {
-    color: #b45309;        /* warm orange — matches chip-tp-topicpage */
-    border-bottom-color: #fcd34d;
-  }
-  &--collection {
-    color: #065f46;        /* teal — matches chip-tp-sammlung */
-    border-bottom-color: #a7f3d0;
-  }
+  &--topic,
+  &--collection,
   &--content {
-    color: #1e40af;        /* blue — matches chip-tp-inhalt */
-    border-bottom-color: #bfdbfe;
+    color: #1C4587;
+    border-bottom-color: rgba(28, 69, 135, 0.35);
   }
 }
 .canvas-cards-heading + .wlo-card-wrapper {
@@ -499,19 +499,19 @@
 
   &:hover,
   &:focus {
-    background: #fffbeb;
-    color: #78350f;
+    background: #e0f2fe;
+    color: #0369a1;
   }
 
   &.is-selected {
-    background: #fef3c7;
-    color: #78350f;
+    background: #e0f2fe;
+    color: #0369a1;
     font-weight: 600;
   }
 
   .variant-check {
     font-size: 11px;
-    color: #b45309;
+    color: #0369a1;
     width: 12px;
   }
 }
@@ -524,117 +524,225 @@
   gap: 10px;
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+ * Tile-Design — gespiegelt aus chat.component.scss. Kompaktes Layout
+ * (Header → Body mit Titel + Desc/Thumb-row → Footer). Drei Varianten:
+ *   .is-themenseite  — blauer Top-Stripe, prominenter Schatten
+ *   .is-sammlung     — lila Linker-Streifen
+ *   .is-inhalt       — schlicht
+ * ───────────────────────────────────────────────────────────────────── */
+
+$canvas-card-radius: 12px;
+$canvas-card-border: #E2E8F0;
+$canvas-brand-blue: #1C4587;
+$canvas-text-muted: #64748B;
+
 .wlo-card-wrapper {
   display: flex;
   flex-direction: column;
+  position: relative;
+  /* Variant-Menu: Wrapper mit offenem Split-Menu nach oben heben, damit
+     der Dropdown nicht hinter der nächsten Karte verschwindet. */
+  &:has(.card-btn-split__menu) { z-index: 100; }
 }
+
+/* "Sammlung" hatte früher Stack-Pseudo-Elemente — entfernt, sah wie eine
+ * doppelte Umrandung aus (User-Feedback). Diskriminator bleibt der lila
+ * Linker-Streifen über `.is-sammlung .wlo-card`. */
 
 .wlo-card {
   display: flex;
-  align-items: stretch;
-  gap: 10px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 10px;
+  flex-direction: column;
+  border: 1px solid $canvas-card-border;
+  border-radius: $canvas-card-radius;
+  background: #fff;
   text-decoration: none;
-  color: inherit;
-  transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+  color: #1F2937;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .04);
 
   &:hover {
-    box-shadow: 0 4px 14px rgba(28, 69, 135, 0.14);
-    border-color: #1c4587;
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(28, 69, 135, .12);
+    border-color: rgba($canvas-brand-blue, .25);
+  }
+  &:visited { color: #1F2937; }
+}
+
+/* Themenseite: leicht prominenterer Schatten als visueller Akzent.
+ * (Linker Streifen entfernt, optisch nicht überzeugend.) */
+.is-themenseite .wlo-card {
+  border-color: rgba($canvas-brand-blue, .3);
+  box-shadow: 0 2px 6px rgba(28, 69, 135, .08);
+  &:hover {
+    box-shadow: 0 8px 28px rgba(28, 69, 135, .18);
   }
 }
 
-.card-thumb {
-  flex: 0 0 88px;
-  width: 88px;
-  height: 88px;
-  background: #f3f4f6;
-  border-radius: 8px;
-  overflow: hidden;
+/* ── Card Header: Inhaltstyp links, Kind-Badge rechts (kompakt) ─────── */
+.card-header {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid #F1F5F9;
 }
-.card-img {
+
+.card-content-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .68rem;
+  font-weight: 600;
+  color: $canvas-text-muted;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  min-width: 0;
+}
+.card-content-icon {
+  font-size: .95rem;
+  line-height: 1;
+}
+.card-content-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+/* Kind-Badge: einheitlich grau für alle 3 Typen.
+ * Stil-Marker bleibt am Wrapper (Top-Stripe / Linker-Streifen). */
+.card-kind-badge {
+  flex-shrink: 0;
+  .kind {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: .62rem;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #F3F4F6;
+    color: #475569;
+    border: 1px solid #E2E8F0;
+  }
+}
+
+/* ── Card Body ─────────────────────────────────────────────────────── */
+/*   Layout: Titel volle Breite oben, dann Desc + kleines Thumb side-by-side */
+.card-body {
+  padding: 8px 10px 6px;
+  flex: 1;
+}
+.card-title {
+  font-weight: 700;
+  font-size: .88rem;
+  line-height: 1.25;
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: $canvas-brand-blue;
+}
+.card-body-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.card-desc-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.card-desc {
+  font-size: .72rem;
+  color: $canvas-text-muted;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+/* Kleines Thumb rechts neben Beschreibung (Card_klein_Inhalt-Style) */
+.card-thumb-side {
+  position: relative;
+  flex: 0 0 92px;
+  width: 92px;
+  height: 72px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: linear-gradient(135deg, $canvas-brand-blue 0%, #3E6EA8 100%);
+}
+.card-img-side {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform .35s ease;
 }
-.card-icon {
-  font-size: 32px;
-  color: #9ca3af;
+.wlo-card:hover .card-img-side { transform: scale(1.06); }
+
+/* OER-Badge unten rechts auf kleinem Thumb */
+.card-license-badge-side {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  background: rgba(255, 255, 255, .95);
+  color: $canvas-brand-blue;
+  font-size: .56rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  letter-spacing: .02em;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  &::before { content: '✓'; font-size: .8em; }
 }
 
-.card-info {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+/* Varianten-Badge oben links auf Thumb (nur Themenseiten mit >1 Variante) */
+.card-variant-badge-side {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  background: rgba(255, 255, 255, .95);
+  color: $canvas-brand-blue;
+  font-size: .56rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
 }
 
-.card-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #111827;
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.card-meta {
+/* ── Card Footer: Bildungsstufe + Fach (NICHT Zielgruppe) ───────────── */
+.card-footer {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px 7px;
+  border-top: 1px solid #F1F5F9;
+  background: #FAFBFD;
+  min-height: 26px;
 }
-
-.chip {
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  white-space: nowrap;
-  line-height: 1.3;
+.footer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .68rem;
+  color: #475569;
+  font-weight: 500;
 }
-/* Colour palette aligned to chat.component.scss */
-.chip-fach      { background: #EBF5FF; color: #1A56DB; }
-.chip-stufe     { background: #F0FDF4; color: #166534; }
-.chip-typ       { background: #FFF7ED; color: #9A3412; }
-.chip-lizenz    { background: #FEF3C7; color: #92400E; }
-.chip-sammlung  { background: #EDE9FE; color: #6D28D9; }
-
-/* Type-pille: always first, marks node kind */
-.chip-typpille {
-  font-weight: 600;
-  padding: 1px 7px;
-  border: 1px solid transparent;
-}
-.chip-tp-sammlung  { background: #EDE9FE; color: #6D28D9; border-color: #DDD6FE; }
-.chip-tp-topicpage { background: #CFFAFE; color: #155E75; border-color: #A5F3FC; }
-.chip-tp-inhalt    { background: #F3F4F6; color: #374151; border-color: #E5E7EB; }
-
-.card-desc {
-  font-size: 11.5px;
-  color: #6b7280;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.card-arrow {
-  flex-shrink: 0;
-  font-size: 22px;
-  color: #9ca3af;
-  align-self: center;
-  padding-right: 2px;
+.footer-icon {
+  font-size: .8rem;
+  opacity: .85;
 }
 
 /* ── Content Preview (single card metadata view) ───────── */
@@ -645,13 +753,21 @@
   color: #1f2937;
 }
 
+/* Preview-Card: nutzt die Tile-Struktur (header/body/footer) wie die
+ * Listen-Kacheln, aber mit größerem Hero-Bild und mehr Body-Text-Raum.
+ * Visuell konsistent mit den Listen-Kacheln. */
+.preview-as-card {
+  /* override list-card max-width if any */
+  max-width: 680px;
+  margin: 0 auto;
+}
+
 .preview-hero {
+  position: relative;
   width: 100%;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #f3f4f6;
-  margin-bottom: 14px;
+  background: linear-gradient(135deg, $canvas-brand-blue 0%, #3E6EA8 100%);
   aspect-ratio: 16 / 9;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -664,61 +780,66 @@
 }
 .preview-img.placeholder {
   font-size: 72px;
-  color: #9ca3af;
+  color: rgba(255, 255, 255, .85);
 }
 
+/* Detail-Body etwas großzügiger als Listen-Kachel-Body */
+.preview-body {
+  padding: 14px 16px 12px;
+}
 .preview-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: #111827;
-  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: $canvas-brand-blue;
+  margin: 0 0 8px;
   line-height: 1.3;
-}
-
-.preview-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 12px;
+  /* Override list-card line-clamp — Detail darf vollständig zeigen */
+  display: block;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
+  overflow: visible;
 }
 
 .preview-publisher {
-  font-size: 13px;
+  font-size: 12px;
   color: #4b5563;
-  margin: 0 0 10px;
+  margin: 0 0 8px;
 }
 .preview-publisher strong {
-  color: #1c4587;
+  color: $canvas-brand-blue;
   font-weight: 600;
 }
 
 .preview-desc {
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.5;
   color: #374151;
-  margin: 0 0 16px;
+  margin: 0;
 }
 
+/* Preview-Actions sind oben in `.card-actions`-Container — dieser hat
+ * bereits die einheitlichen Hellblau-Button-Styles. Nur ein bisschen
+ * mehr Abstand zur Hint-Box drunter: */
 .preview-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .preview-hint {
   font-size: 12px;
   color: #6b7280;
   background: #f9fafb;
-  border-left: 3px solid #1c4587;
+  border-left: 3px solid $canvas-brand-blue;
   padding: 8px 12px;
   border-radius: 4px;
   margin: 0;
+  max-width: 680px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* ── Card action buttons (aligned with chat.component.scss) ── */
 .wlo-card-wrapper:has(.card-actions) .wlo-card {
-  border-radius: 10px 10px 0 0;
+  border-radius: $canvas-card-radius $canvas-card-radius 0 0;
   border-bottom: 0;
 }
 
@@ -728,9 +849,11 @@
   flex-wrap: wrap;
   padding: 6px 8px;
   background: #FAFCFF;
-  border: 1px solid #e5e7eb;
+  border: 1px solid $canvas-card-border;
   border-top: none;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 $canvas-card-radius $canvas-card-radius;
+  position: relative;
+  z-index: 1;
 }
 
 .card-btn {
@@ -747,29 +870,20 @@
   display: inline-flex;
   align-items: center;
 
-  &--primary {
+  // Alle Button-Varianten in einheitlichem Hellblau-Ton.
+  // Ursprünglich hatten primary/secondary/tertiary/remix unterschiedliche
+  // Farben (blau/grün/gelb/lila) — sah zu bunt aus. Jetzt nur ein Stil.
+  &--primary,
+  &--secondary,
+  &--tertiary,
+  &--remix {
     background: #e0f2fe;
     color: #0369a1;
   }
-  &--primary:hover { background: #bae6fd; }
-
-  &--secondary {
-    background: #ecfdf5;
-    color: #065f46;
-  }
-  &--secondary:hover { background: #d1fae5; }
-
-  &--tertiary {
-    background: #fef3c7;
-    color: #92400e;
-  }
-  &--tertiary:hover { background: #fde68a; }
-
-  &--remix {
-    background: #f3e8ff;
-    color: #6b21a8;
-  }
-  &--remix:hover { background: #e9d5ff; }
+  &--primary:hover,
+  &--secondary:hover,
+  &--tertiary:hover,
+  &--remix:hover { background: #bae6fd; }
 
   &:active { transform: translateY(1px); }
 }

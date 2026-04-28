@@ -69,11 +69,12 @@ reiner Embedding-Suche; er ist daher immer an.
 | `OPENAI_API_KEY` | _Pflicht bei `openai`_ | OpenAI-Key fuer Chat-Modell, Moderation, Legal-Classifier, Whisper und TTS. |
 | `OPENAI_BASE_URL` | _leer_ (= `https://api.openai.com/v1`) | Optional: OpenAI-kompatibler Endpoint (Azure OpenAI, LiteLLM-Proxy, LocalAI, Ollama-Shim, …). Wenn gesetzt, müssen an dem Endpoint die gewünschten Modelle/Features (Embeddings, ggf. STT/TTS, ggf. Moderation) verfügbar sein. |
 | `B_API_KEY` | _Pflicht bei `b-api-*`_ | API-Key fuer die B-API. Wird als Header `X-API-KEY` gesendet. |
-| `B_API_BASE_URL` | `https://b-api.staging.openeduhub.net/api/v1/llm` | Basis-URL der B-API. `/openai` bzw. `/academiccloud` werden je nach Provider angehaengt. |
-| `LLM_CHAT_MODEL` | provider-spezifisch | Override fuer das Chat-Modell. Defaults: `gpt-4.1-mini` (openai, b-api-openai), `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` (b-api-academiccloud). |
+| `B_API_BASE_URL` | `https://b-api.prod.openeduhub.net/api/v1/llm` | Basis-URL der B-API. `/openai` bzw. `/academiccloud` werden je nach Provider angehaengt. Default = PROD; Staging-Variante: `https://b-api.staging.openeduhub.net/api/v1/llm`. |
+| `LLM_CHAT_MODEL` | provider-spezifisch | Override fuer das Chat-Modell. Defaults: `gpt-5.4-mini` (openai), `gpt-4.1-mini` (b-api-openai), `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` (b-api-academiccloud). |
 | `LLM_EMBED_MODEL` | provider-spezifisch | Override fuer das Embedding-Modell. Defaults: `text-embedding-3-small` (openai, b-api-openai), `e5-mistral-7b-instruct` (b-api-academiccloud). |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | _Legacy_, weiterhin gueltig wenn `LLM_PROVIDER=openai` und `LLM_CHAT_MODEL` nicht gesetzt ist. |
 | `MCP_SERVER_URL` | `https://wlo-mcp-server.vercel.app/mcp` | Default-Ziel des WLO-MCP-Clients. Weitere Server koennen in `05-knowledge/mcp-servers.yaml` definiert werden. |
+| `TEXT_EXTRACTION_URL` | `https://text-extraction.prod.openeduhub.net` | **Base-URL** des OEH-Volltext-Service (Canvas-Remix-Flow, Phase 2). Der `/from-url`-Endpoint wird intern angehängt; Trailing-Slash wird ignoriert. Staging: `https://text-extraction.staging.openeduhub.net`. |
 | `STUDIO_API_KEY` | _leer_ | Schuetzt `/api/config/*`, `/api/rag/*`, `/api/safety/*`, `/api/quality/*`, `/api/debug/*` und die geschuetzten `/api/sessions/*`-Routen. Leer = API offen (Dev-Default, Startup-Warnung). Siehe Abschnitt 9. |
 | `CORS_ORIGINS` | `*` | Komma-separierte Liste erlaubter Origins fuer CORS. Bei `*` (Default) werden keine Credentials erlaubt. Fuer Produktion spezifische Origins setzen (z.B. `https://wirlernenonline.de,https://studio.meinedomain.de`), dann werden auch Credentials unterstuetzt. |
 | `DATABASE_PATH` | `badboerdi.db` | Pfad zur SQLite-Datenbank (Sessions, Messages, Safety-Logs, Quality-Logs, RAG). |
@@ -656,14 +657,19 @@ Aktuell 1 Server: **WLO edu-sharing** mit 10 Tools.
 |------|-----------|-------------|
 | `search_wlo_collections` | Suche | Sammlungen nach Fach/Thema/Stufe durchsuchen |
 | `search_wlo_content` | Suche | Einzelne Materialien durchsuchen |
-| `search_wlo_topic_pages` | Suche | Themenseiten mit Zielgruppen-Varianten (teacher/learner/general) |
+| `search_wlo_topic_pages` | Suche | Themenseiten mit Zielgruppen-Varianten (teacher/learner/general; serverseitig gemerged) |
 | `get_collection_contents` | Navigation | Inhalte einer Sammlung abrufen |
-| `get_node_details` | Details | Metadaten eines einzelnen Materials abrufen |
-| `lookup_wlo_vocabulary` | Hilfs-Tool | WLO-Fachvokabular nachschlagen (Disziplinen, Bildungsstufen, Medientypen) |
-| `get_wirlernenonline_info` | Info | Fakten ueber WirLernenOnline |
-| `get_edu_sharing_product_info` | Info | Fakten ueber edu-sharing (Produkt) |
-| `get_edu_sharing_network_info` | Info | Fakten ueber edu-sharing.net e.V. (Netzwerk) |
-| `get_metaventis_info` | Info | Fakten ueber Metaventis GmbH |
+| `get_node_details` | Details | Metadaten eines einzelnen Materials abrufen (mit `outputFormat=json` strukturiert) |
+| `lookup_wlo_vocabulary` | Hilfs-Tool | WLO-Fachvokabular nachschlagen (Disziplinen, Bildungsstufen, Medientypen, Lizenzen, Zielgruppen) |
+| `get_subject_portals` | Navigation | Liste aller WLO-Fachportale (Top-Level-Sammlungen, alphabetisch) |
+| `browse_collection_tree` | Navigation | Strukturierter Drilldown unter eine Sammlung (Tiefe 1–2, optional File-Counts) |
+| `get_nodes_details` | Details | Bulk-Metadaten fuer mehrere `nodeIds` parallel |
+| `wlo_health_check` | Diagnose | API-Erreichbarkeit + Latenz |
+
+> **Migration v1 → v2:** Die ehemaligen Web-Crawler-Tools (`get_wirlernenonline_info`,
+> `get_edu_sharing_network_info`, `get_edu_sharing_product_info`, `get_metaventis_info`)
+> wurden im MCP-Server v2 entfernt. Plattform-/Projekt-Themen werden jetzt
+> ausschliesslich vom Boerdi-RAG (4 Wissensbereiche, immer vorab durchsucht) abgedeckt.
 
 **Tool-Abhaengigkeit:** Wenn ein Suche-Tool aktiviert ist, werden `lookup_wlo_vocabulary` und
 `get_node_details` automatisch hinzugefuegt (Code-Logik in Phase 3).

@@ -17,7 +17,8 @@ Env vars
 LLM_PROVIDER       openai | b-api-openai | b-api-academiccloud   (default: openai)
 OPENAI_API_KEY     required for provider=openai
 B_API_KEY          required for provider=b-api-*
-B_API_BASE_URL     default: https://b-api.staging.openeduhub.net/api/v1/llm
+B_API_BASE_URL     default: https://b-api.prod.openeduhub.net/api/v1/llm
+                   (staging fallback: https://b-api.staging.openeduhub.net/api/v1/llm)
 LLM_CHAT_MODEL     override chat model
 LLM_EMBED_MODEL    override embedding model
 
@@ -66,14 +67,63 @@ b-api-academiccloud
 
 from __future__ import annotations
 
+import inspect
+import logging
 import os
 from functools import lru_cache
 from typing import Any
 
 from openai import AsyncOpenAI
+from openai.resources.chat.completions import AsyncCompletions
+
+logger = logging.getLogger(__name__)
 
 
-_DEFAULT_B_API_BASE = "https://b-api.staging.openeduhub.net/api/v1/llm"
+# Production B-API of the OpenEduHub network. Override with B_API_BASE_URL
+# to point at the staging instance during integration testing:
+#   B_API_BASE_URL=https://b-api.staging.openeduhub.net/api/v1/llm
+_DEFAULT_B_API_BASE = "https://b-api.prod.openeduhub.net/api/v1/llm"
+
+
+# ── SDK-capability introspection (runs once at import time) ──────────
+#
+# Older openai-SDKs (<1.65) don't accept ``verbosity``/``reasoning_effort``
+# as kwargs to ``chat.completions.create``. If the running SDK predates
+# those parameters, dropping them here keeps the request working — the
+# server-side default ("medium" verbosity, "none" reasoning) is identical
+# to what we'd send anyway, so quality is unaffected.
+#
+# We rely on the named-parameter signature; if the SDK uses ``**kwargs``
+# only, we conservatively assume support (passing unknown kwargs to a
+# **kwargs-method makes them visible as JSON-body fields, which is what
+# we want).
+
+_SDK_PARAMS: set[str]
+try:
+    _SDK_PARAMS = set(inspect.signature(AsyncCompletions.create).parameters)
+except (TypeError, ValueError):  # pragma: no cover — defensive
+    _SDK_PARAMS = set()
+
+
+def _sdk_supports(kwarg: str) -> bool:
+    """Whether the installed openai SDK accepts ``kwarg`` on ``create()``.
+
+    Returns True for unknown signatures (best-effort) — the server will
+    then either accept the kwarg or 400 with a clearer error than the
+    Python-level ``TypeError``.
+    """
+    if not _SDK_PARAMS:
+        return True
+    return kwarg in _SDK_PARAMS or "kwargs" in _SDK_PARAMS
+
+
+_GPT5_KWARGS_SUPPORTED = _sdk_supports("verbosity")
+if not _GPT5_KWARGS_SUPPORTED:
+    logger.warning(
+        "openai SDK is too old for GPT-5 ``verbosity`` kwarg — those "
+        "parameters will be dropped. Upgrade with `pip install -U "
+        "'openai>=1.78,<2.0'` for full GPT-5.4-mini support.",
+    )
 
 _PROVIDER_DEFAULTS = {
     "openai": {
@@ -90,7 +140,10 @@ _PROVIDER_DEFAULTS = {
         "embed": "text-embedding-3-small",
     },
     "b-api-academiccloud": {
-        "chat": "Qwen/Qwen3.5-122B-A10B-GPTQ-Int4",
+        # Default Qwen 3.5 model on the OEH B-API → AcademicCloud
+        # endpoint. Name as published by the upstream model registry
+        # (lowercase, no quantisation suffix). Probed 2026-04-27.
+        "chat": "qwen3.5-122b-a10b",
         "embed": "e5-mistral-7b-instruct",
     },
 }
@@ -181,8 +234,14 @@ def get_embed_dim(model: str | None = None) -> int:
 def is_openai_native() -> bool:
     """True only for the native OpenAI provider.
 
-    Used to gate features that exist *only* on api.openai.com (e.g. the
-    free moderations endpoint, Whisper speech, TTS).
+    Used to gate features that exist *only* on api.openai.com AND
+    require the chat client to be on the same connection (e.g. the
+    GPT-5 ``verbosity`` / ``reasoning_effort`` parameters which are
+    not forwarded by the B-API proxy).
+
+    For moderation / Whisper / TTS prefer the side-channel helpers
+    (``get_moderation_client()``) — those work on B-API setups too,
+    as long as ``OPENAI_API_KEY`` is provided alongside.
     """
     return get_provider() == "openai"
 
@@ -213,7 +272,17 @@ def get_client() -> AsyncOpenAI:
             default_headers={"X-API-KEY": b_key} if b_key else None,
         )
     # native openai (or any OpenAI-compatible endpoint via OPENAI_BASE_URL)
-    openai_base = (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/") or None
+    #
+    # Subtlety: the OpenAI SDK reads ``OPENAI_BASE_URL`` from the environment
+    # itself when ``base_url=None`` is passed. If that env var is set to an
+    # empty string (common in Docker setups using ``${VAR:-}`` substitution),
+    # the SDK adopts the empty string as the base URL → httpx then fails with
+    # ``UnsupportedProtocol``. Always pass an explicit fallback so the empty
+    # env value can never reach the SDK's auto-resolution.
+    openai_base = (
+        (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
+        or "https://api.openai.com/v1"
+    )
     return AsyncOpenAI(
         api_key=os.getenv("OPENAI_API_KEY"),
         base_url=openai_base,
@@ -221,8 +290,123 @@ def get_client() -> AsyncOpenAI:
 
 
 def reset_client_cache() -> None:
-    """Drop the cached client (used by tests / hot-reload)."""
+    """Drop the cached clients (used by tests / hot-reload)."""
     get_client.cache_clear()
+    get_moderation_client.cache_clear()
+    get_embedding_client.cache_clear()
+
+
+# ── Native-OpenAI side-channel for moderation / speech ────────────────
+#
+# Some endpoints exist *only* on api.openai.com:
+#   - /v1/moderations  (free safety classifier)
+#   - /v1/audio/transcriptions  (Whisper / gpt-4o-transcribe — STT)
+#   - /v1/audio/speech  (TTS)
+#
+# The B-API proxies don't forward these. Historically we silently skipped
+# moderation / speech on b-api setups. Better: build a *separate* native
+# OpenAI client when ``OPENAI_API_KEY`` is set, even if the chat traffic
+# goes through B-API. This way operators can keep their B-API contract
+# for chat/embeddings *and* still get moderation as a safety floor by
+# providing an OpenAI key alongside.
+
+@lru_cache(maxsize=1)
+def get_moderation_client() -> AsyncOpenAI | None:
+    """Native-OpenAI client for the free /v1/moderations endpoint.
+
+    Returns:
+      - on ``LLM_PROVIDER=openai``: same instance as ``get_client()``
+        (avoids two separate connection pools when the chat client
+        already points at api.openai.com).
+      - on ``LLM_PROVIDER=b-api-*`` *and* ``OPENAI_API_KEY`` set:
+        a fresh native-OpenAI client using OPENAI_API_KEY +
+        OPENAI_BASE_URL (or SDK default). Lets B-API operators still
+        run the safety floor.
+      - ``None`` when no usable OpenAI key is available — callers
+        should treat that as "skip moderation" (the regex-based
+        safety floor remains).
+    """
+    # Native: just reuse the chat client, same provider, same pool.
+    if get_provider() == "openai":
+        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        return get_client() if api_key else None
+
+    # B-API path: only build a moderation client if the operator has
+    # explicitly opted in by providing an OpenAI key.
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        return None
+    # Empty OPENAI_BASE_URL must not reach the SDK — see comment in
+    # get_client() above.
+    base = (
+        (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
+        or "https://api.openai.com/v1"
+    )
+    return AsyncOpenAI(api_key=api_key, base_url=base)
+
+
+def has_moderation() -> bool:
+    """True iff a usable OpenAI moderation client can be built."""
+    return get_moderation_client() is not None
+
+
+# ── Embedding-Client side-channel ────────────────────────────────────
+#
+# B-API → AcademicCloud hosts only chat-ai LLMs — no OpenAI-style
+# embedding models. With LLM_PROVIDER=b-api-academiccloud, the existing
+# 1536-dim RAG corpus (built with text-embedding-3-small) would break
+# because we'd try to query academiccloud for an OpenAI embed model.
+#
+# Solution: same pattern as moderation. When provider=b-api-academiccloud
+# and OPENAI_API_KEY is configured, route embeddings through native
+# OpenAI directly. Chat keeps flowing through B-API.
+
+@lru_cache(maxsize=1)
+def get_embedding_client() -> AsyncOpenAI:
+    """Client for ``/v1/embeddings`` calls.
+
+    Returns:
+      - on ``LLM_PROVIDER=openai`` / ``b-api-openai``: the main chat
+        client (same pool, since both endpoints forward
+        ``text-embedding-3-small``).
+      - on ``LLM_PROVIDER=b-api-academiccloud`` + ``OPENAI_API_KEY``
+        set: a separate native-OpenAI client so embeddings keep working
+        with the existing 1536-dim RAG database.
+      - on ``LLM_PROVIDER=b-api-academiccloud`` without ``OPENAI_API_KEY``:
+        falls back to the main client. The caller must then have set
+        ``LLM_EMBED_MODEL`` to an academiccloud-supported model
+        (e.g. ``e5-mistral-7b-instruct``) — and the RAG database needs
+        to be re-indexed at that model's dimension.
+    """
+    provider = get_provider()
+    if provider in ("openai", "b-api-openai"):
+        return get_client()
+    # b-api-academiccloud: prefer native OpenAI side-channel
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if api_key:
+        base = (
+            (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
+            or "https://api.openai.com/v1"
+        )
+        return AsyncOpenAI(api_key=api_key, base_url=base)
+    return get_client()
+
+
+def get_embedding_model_for_client() -> str:
+    """Embed-model resolved against the client returned by
+    ``get_embedding_client()``.
+
+    On academiccloud setups with an OpenAI side-channel, prefer a real
+    OpenAI embed model (text-embedding-3-small) so the 1536-dim DB keeps
+    working — even when ``LLM_EMBED_MODEL`` points at academiccloud's
+    default ``e5-mistral-7b-instruct``.
+    """
+    override = (os.getenv("LLM_EMBED_MODEL") or "").strip()
+    if override:
+        return override
+    if get_provider() == "b-api-academiccloud" and os.getenv("OPENAI_API_KEY"):
+        return "text-embedding-3-small"
+    return _PROVIDER_DEFAULTS[get_provider()]["embed"]
 
 
 # ── GPT-5 parameter handling ───────────────────────────────────────
@@ -274,6 +458,74 @@ def get_reasoning_effort() -> str:
     """
     e = (os.getenv("LLM_REASONING_EFFORT") or "low").strip().lower()
     return e if e in _EFFORT_CHOICES else "low"
+
+
+# ── Per-model token-budget profiles (B-API + AcademicCloud) ──────────
+#
+# Some models served via the B-API silently spend a large chunk of their
+# completion-token budget on internal reasoning *before* producing any
+# user-visible content. Without compensation a caller that asks for e.g.
+# ``max_tokens=300`` (typical quick-reply scenario) gets ZERO output
+# because the entire budget was consumed by hidden reasoning steps.
+#
+# Empirical findings (probed 2026-04-27 against b-api.prod.openeduhub.net,
+# trivial prompt "Was ist 2+2?"):
+#
+#   qwen3.5-397b-a17b      ~ 400-1000 silent reasoning tokens
+#   qwen3.5-122b-a10b      ~ 600 silent reasoning tokens
+#   qwen3.5-35b-a3b        ~ 400-500 silent reasoning tokens
+#   qwen3.5-27b            ~ 300-500 silent reasoning tokens
+#   openai-gpt-oss-120b    ~ 50-200 reasoning tokens, EXPOSED via
+#                            response.choices[0].message.reasoning_content
+#   glm-4.7                direct, no reasoning overhead
+#   mistral-large-3        direct, no reasoning overhead
+#   gpt-4.1-mini / GPT-4o  direct
+#   gpt-5*                 reasoning_effort/verbosity controlled (separate path)
+#
+# The B-API silently ignores ``chat_template_kwargs`` /
+# ``enable_thinking=false`` / ``reasoning=False``-type opt-outs — so the
+# only working strategy is to add a buffer on top of the caller's
+# requested output budget.
+
+_MODEL_PROFILES: list[tuple[str, dict[str, int]]] = [
+    # Qwen 3.5 reasoning family — silent reasoning, varying budget.
+    # Substring match (lower-case) so canonical and namespaced spellings
+    # (``qwen3.5-397b-a17b`` vs ``Qwen/Qwen3.5-397B-A17B``) both trigger.
+    ("qwen3.5-397b-a17b", {"silent_reasoning_buffer": 1100, "min_max_tokens": 1500}),
+    # Probed 2026-04-27: Qwen 122b spent up to 1200 silent-reasoning
+    # tokens for short prompts (Schüler intents). Floor 1500 ensures
+    # the model has room to *also* produce visible output.
+    ("qwen3.5-122b-a10b", {"silent_reasoning_buffer": 900,  "min_max_tokens": 1500}),
+    ("qwen3.5-35b-a3b",   {"silent_reasoning_buffer": 600,  "min_max_tokens": 1000}),
+    ("qwen3.5-27b",       {"silent_reasoning_buffer": 500,  "min_max_tokens": 1000}),
+    # gpt-oss-120b — visible reasoning_content; the buffer covers the
+    # reasoning tokens which are already counted in completion_tokens.
+    ("gpt-oss-120b",      {"visible_reasoning_buffer": 200, "min_max_tokens": 1200}),
+    # Direct (non-reasoning) classic models — small floors so callers
+    # that pass tiny ``max_tokens`` (e.g. quick replies at 150) still
+    # leave room for one usable sentence.
+    ("mistral-large-3",   {"min_max_tokens": 1000}),
+    ("glm-4.7",           {"min_max_tokens": 800}),
+]
+
+
+def model_profile(model: str | None = None) -> dict[str, int]:
+    """Return the per-model token-budget profile for ``model``.
+
+    Substring-match against the lowercased model name. Returns an empty
+    dict for models without a known profile — in that case the caller's
+    parameters are forwarded unchanged.
+    """
+    name = (model or get_chat_model() or "").lower()
+    for key, profile in _MODEL_PROFILES:
+        if key in name:
+            return profile
+    return {}
+
+
+def silently_reasons(model: str | None = None) -> bool:
+    """True when the model spends completion tokens on hidden reasoning."""
+    return "silent_reasoning_buffer" in model_profile(model)
 
 
 def build_chat_kwargs(
@@ -330,14 +582,17 @@ def build_chat_kwargs(
     use_gpt5 = supports_gpt5_params(resolved_model)
     if use_gpt5:
         has_tools = bool(tools)
-        # Always safe: verbosity is accepted with or without tools.
-        kwargs["verbosity"] = verbosity or get_verbosity()
+        # Verbosity drives answer length on GPT-5 models. Skip sending it
+        # if the installed SDK is too old to accept the kwarg — server
+        # default (medium) is identical to ours, so quality is unchanged.
+        if _GPT5_KWARGS_SUPPORTED:
+            kwargs["verbosity"] = verbosity or get_verbosity()
 
         # reasoning_effort: only send on tool-less calls. With tools attached
         # the server defaults to ``none``, which is what we want anyway
         # because it also lets temperature/top_p ride along.
         effective_effort_is_none = True
-        if not has_tools:
+        if not has_tools and _GPT5_KWARGS_SUPPORTED:
             effort = reasoning_effort or get_reasoning_effort()
             if effort != "none":
                 kwargs["reasoning_effort"] = effort
@@ -360,11 +615,42 @@ def build_chat_kwargs(
     else:
         if temperature is not None:
             kwargs["temperature"] = temperature
+        # Per-model max_tokens shaping: bump the budget for known
+        # reasoning models so the caller's intended output size actually
+        # reaches the user even when 600+ tokens silently disappear into
+        # hidden reasoning. See _MODEL_PROFILES for the table.
         if max_tokens is not None:
-            kwargs["max_tokens"] = max_tokens
+            shaped = _shape_max_tokens(resolved_model, max_tokens)
+            kwargs["max_tokens"] = shaped
+        else:
+            # Caller passed no explicit cap. For reasoning models a
+            # missing cap means "server default" (often quite low) so we
+            # set the model's profile floor — otherwise reasoning eats
+            # the whole budget.
+            floor = model_profile(resolved_model).get("min_max_tokens", 0)
+            if floor:
+                kwargs["max_tokens"] = floor
 
     # Forward any caller-provided extras (e.g. `stop`, `n`, `top_p`).
     for k, v in extra.items():
         if v is not None:
             kwargs[k] = v
     return kwargs
+
+
+def _shape_max_tokens(model: str, requested: int) -> int:
+    """Apply per-model token-budget profile to a caller-requested value.
+
+    Adds the silent-/visible-reasoning buffer on top, then clamps to the
+    model's known minimum-useful budget. Models without a profile pass
+    through unchanged.
+    """
+    p = model_profile(model)
+    if not p:
+        return requested
+    buf = p.get("silent_reasoning_buffer", 0) + p.get("visible_reasoning_buffer", 0)
+    shaped = requested + buf
+    floor = p.get("min_max_tokens", 0)
+    if floor and shaped < floor:
+        shaped = floor
+    return shaped

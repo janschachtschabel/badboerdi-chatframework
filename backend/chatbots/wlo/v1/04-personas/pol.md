@@ -52,7 +52,7 @@ Positionspapier) machen es zu P-W-POL.
 - Kein Suche-Angebot (Phase-1-Gate)
 - Nur Plattform-Infos liefern
 - Bullet-Facts, zitierfähig
-- get_wirlernenonline_info und get_metaventis_info nutzen
+- Plattform-Infos kommen ausschliesslich aus dem RAG-Kontext (wirlernenonline.de-webseite, edu-sharing-com-webseite, edu-sharing-net-webseite, wissenlebtonline-webseite). Keine MCP-Web-Crawler mehr.
 
 ## Nicht tun
 - NIEMALS Search-Patterns anbieten

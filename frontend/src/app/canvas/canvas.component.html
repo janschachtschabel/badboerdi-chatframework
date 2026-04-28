@@ -115,43 +115,79 @@
       </div>
     </ng-container>
 
-    <!-- Single-card preview (metadata view) -->
+    <!-- Single-card preview (metadata view) — kompakt im Tile-Stil -->
     <div *ngSwitchCase="'preview'" class="canvas-preview">
-      <div class="preview-hero">
-        <img *ngIf="previewCard?.preview_url"
-             class="preview-img"
-             [src]="previewCard?.preview_url"
-             [alt]="previewCard?.title">
-        <div *ngIf="!previewCard?.preview_url" class="preview-img placeholder" aria-hidden="true">📄</div>
+      <div *ngIf="previewCard"
+           class="wlo-card-wrapper preview-as-card"
+           [class.is-themenseite]="isThemenseiteCard(previewCard)"
+           [class.is-sammlung]="isSammlungCard(previewCard)"
+           [class.is-inhalt]="isInhaltCard(previewCard)">
+        <div class="wlo-card preview-card">
+
+          <!-- Header: Inhaltstyp links, Kind-Badge rechts (wie Kacheln) -->
+          <div class="card-header">
+            <span class="card-content-type">
+              <span class="card-content-icon">{{ getCardIcon(previewCard) }}</span>
+              <span class="card-content-label">{{ getContentTypeLabel(previewCard) }}</span>
+            </span>
+            <span class="card-kind-badge">
+              <span *ngIf="isThemenseiteCard(previewCard)" class="kind">🌐 Themenseite</span>
+              <span *ngIf="isSammlungCard(previewCard)" class="kind">📚 Sammlung</span>
+              <span *ngIf="isInhaltCard(previewCard)" class="kind">📄 Inhalt</span>
+            </span>
+          </div>
+
+          <!-- Hero (gleicher visueller Stil wie Kachel-Thumb, aber 16:9 für Detail) -->
+          <div class="preview-hero">
+            <img *ngIf="previewCard.preview_url"
+                 class="preview-img"
+                 [src]="previewCard.preview_url"
+                 [alt]="previewCard.title">
+            <div *ngIf="!previewCard.preview_url" class="preview-img placeholder" aria-hidden="true">📄</div>
+            <span *ngIf="previewCard.license" class="card-license-badge-side"
+                  [title]="previewCard.license">{{ getLicenseShort(previewCard.license) }}</span>
+          </div>
+
+          <!-- Body: Titel + Beschreibung + Anbieter (statt Chip-Wolke) -->
+          <div class="card-body preview-body">
+            <h2 class="card-title preview-title">{{ previewCard.title }}</h2>
+            <p class="preview-publisher" *ngIf="previewCard.publisher">
+              <strong>Anbieter:</strong> {{ previewCard.publisher }}
+            </p>
+            <p class="preview-desc" *ngIf="previewCard.description">{{ previewCard.description }}</p>
+          </div>
+
+          <!-- Footer: Bildungsstufe + Fach (wie Kacheln) -->
+          <div class="card-footer">
+            <span *ngIf="previewCard.educational_contexts && previewCard.educational_contexts.length"
+                  class="footer-meta footer-stufe">
+              <span class="footer-icon">🎓</span>
+              <span>{{ previewCard.educational_contexts[0] }}</span>
+            </span>
+            <span *ngIf="previewCard.disciplines && previewCard.disciplines.length"
+                  class="footer-meta footer-fach">
+              <span class="footer-icon">📘</span>
+              <span>{{ previewCard.disciplines[0] }}</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Action buttons (uniform hellblau) -->
+        <div class="card-actions preview-actions">
+          <a class="card-btn card-btn--primary"
+             [href]="cardUrl(previewCard)"
+             target="_blank"
+             rel="noopener noreferrer">
+            🔗 In neuem Tab öffnen
+          </a>
+          <button type="button" class="card-btn card-btn--primary"
+                  (click)="onCardAction('remix', previewCard!, $event)">
+            🔄 Remix
+          </button>
+        </div>
       </div>
-      <h2 class="preview-title">{{ previewCard?.title }}</h2>
-      <div class="preview-chips">
-        <span *ngFor="let d of previewCard?.disciplines" class="chip chip-fach">{{ d }}</span>
-        <span *ngFor="let e of previewCard?.educational_contexts" class="chip chip-stufe">{{ e }}</span>
-        <ng-container *ngFor="let t of previewCard?.learning_resource_types">
-          <span *ngIf="t !== 'Sammlung' && t !== 'collection'" class="chip chip-typ">{{ t }}</span>
-        </ng-container>
-        <span *ngIf="previewCard?.license" class="chip chip-lizenz">{{ previewCard?.license }}</span>
-      </div>
-      <p class="preview-publisher" *ngIf="previewCard?.publisher">
-        <strong>Anbieter:</strong> {{ previewCard?.publisher }}
-      </p>
-      <p class="preview-desc" *ngIf="previewCard?.description">{{ previewCard?.description }}</p>
-      <div class="preview-actions">
-        <a class="card-btn card-btn--primary"
-           *ngIf="previewCard"
-           [href]="cardUrl(previewCard)"
-           target="_blank"
-           rel="noopener noreferrer">
-          🔗 In neuem Tab öffnen
-        </a>
-        <button type="button" class="card-btn card-btn--remix"
-                *ngIf="previewCard"
-                (click)="onCardAction('remix', previewCard!, $event)">
-          🔄 Remix
-        </button>
-      </div>
-      <p class="preview-hint">
+
+      <p class="preview-hint" *ngIf="previewCard">
         💬 Frag den Chat nach einer Zusammenfassung, einem Quiz dazu oder
         lass den Inhalt als Arbeitsblatt umwandeln.
       </p>
@@ -171,34 +207,59 @@
                  (visiblePureCollectionCards.length || visibleContentCards.length)">
         🌐 Themenseiten
       </h3>
-      <div *ngFor="let c of visibleTopicPageCards; trackBy: trackByNodeId" class="wlo-card-wrapper">
+      <div *ngFor="let c of visibleTopicPageCards; trackBy: trackByNodeId"
+           class="wlo-card-wrapper is-themenseite">
         <a class="wlo-card"
            [href]="topicPageUrl(c)"
            target="_blank"
            rel="noopener noreferrer">
-          <div class="card-thumb">
-            <img *ngIf="c.preview_url" [src]="c.preview_url" [alt]="c.title"
-                 loading="lazy" class="card-img">
-            <span *ngIf="!c.preview_url" class="card-icon" aria-hidden="true">🌐</span>
+
+          <!-- Header: Inhaltstyp links, Kind-Badge rechts -->
+          <div class="card-header">
+            <span class="card-content-type">
+              <span class="card-content-icon">{{ getCardIcon(c) }}</span>
+              <span class="card-content-label">{{ getContentTypeLabel(c) }}</span>
+            </span>
+            <span class="card-kind-badge">
+              <span class="kind kind-themenseite">🌐 Themenseite</span>
+            </span>
           </div>
-          <div class="card-info">
+
+          <!-- Body: Titel volle Breite oben, dann Desc + kleines Thumb nebeneinander -->
+          <div class="card-body">
             <div class="card-title">{{ c.title }}</div>
-            <div class="card-meta">
-              <span class="chip chip-typpille chip-tp-topicpage">🌐 Themenseite</span>
-              <span *ngIf="c.topic_pages && c.topic_pages.length > 1"
-                    class="chip chip-variant-count"
-                    [title]="c.topic_pages.length + ' Varianten verfügbar'">
-                {{ c.topic_pages.length }} Varianten
-              </span>
-              <span *ngFor="let d of c.disciplines" class="chip chip-fach">{{ d }}</span>
-              <span *ngFor="let e of c.educational_contexts" class="chip chip-stufe">{{ e }}</span>
-              <span *ngIf="c.license" class="chip chip-lizenz">{{ c.license }}</span>
-            </div>
-            <div class="card-desc" *ngIf="c.description">
-              {{ c.description.length > 140 ? (c.description | slice:0:140) + '…' : c.description }}
+            <div class="card-body-row">
+              <div class="card-desc-wrap">
+                <div class="card-desc" *ngIf="c.description">
+                  {{ c.description.length > 120 ? (c.description | slice:0:120) + '…' : c.description }}
+                </div>
+              </div>
+              <div *ngIf="c.preview_url" class="card-thumb-side">
+                <img [src]="c.preview_url" [alt]="c.title" loading="lazy" class="card-img-side">
+                <span *ngIf="c.license" class="card-license-badge-side"
+                      [title]="c.license">{{ getLicenseShort(c.license) }}</span>
+                <span *ngIf="c.topic_pages && c.topic_pages.length > 1"
+                      class="card-variant-badge-side"
+                      [title]="c.topic_pages.length + ' Varianten verfügbar'">
+                  {{ c.topic_pages.length }}×
+                </span>
+              </div>
             </div>
           </div>
-          <span class="card-arrow" aria-hidden="true">›</span>
+
+          <!-- Footer: Bildungsstufe + Fach -->
+          <div class="card-footer">
+            <span *ngIf="c.educational_contexts && c.educational_contexts.length"
+                  class="footer-meta footer-stufe">
+              <span class="footer-icon">🎓</span>
+              <span>{{ c.educational_contexts[0] }}</span>
+            </span>
+            <span *ngIf="c.disciplines && c.disciplines.length"
+                  class="footer-meta footer-fach">
+              <span class="footer-icon">📘</span>
+              <span>{{ c.disciplines[0] }}</span>
+            </span>
+          </div>
         </a>
 
         <div class="card-actions">
@@ -213,7 +274,7 @@
                target="_blank"
                rel="noopener noreferrer"
                [title]="'Themenseite öffnen — Variante: ' + (selectedVariant(c) ? variantLabel(c, selectedVariant(c)!) : 'Allgemein')">
-              🌐 Themenseite öffnen
+              🌐 Themenseite
             </a>
             <button *ngIf="c.topic_pages && c.topic_pages.length > 1"
                     type="button"
@@ -233,6 +294,7 @@
                  [href]="v.url"
                  target="_blank"
                  rel="noopener noreferrer"
+                 [title]="variantLabel(c, v) + ' — ' + (v.url || '')"
                  [class.is-selected]="v.variant_id === selectedVariant(c)?.variant_id"
                  (click)="onPickVariant(c, v.variant_id, $event)">
                 <span class="variant-check" aria-hidden="true"
@@ -266,33 +328,51 @@
                  (visibleTopicPageCards.length || visibleContentCards.length)">
         📚 Sammlungen
       </h3>
-      <div *ngFor="let c of visiblePureCollectionCards; trackBy: trackByNodeId" class="wlo-card-wrapper">
+      <div *ngFor="let c of visiblePureCollectionCards; trackBy: trackByNodeId"
+           class="wlo-card-wrapper is-sammlung">
         <a class="wlo-card"
            [href]="cardUrl(c)"
            target="_blank"
            rel="noopener noreferrer">
-          <div class="card-thumb">
-            <img *ngIf="c.preview_url" [src]="c.preview_url" [alt]="c.title"
-                 loading="lazy" class="card-img">
-            <span *ngIf="!c.preview_url" class="card-icon" aria-hidden="true">📚</span>
+
+          <div class="card-header">
+            <span class="card-content-type">
+              <span class="card-content-icon">{{ getCardIcon(c) }}</span>
+              <span class="card-content-label">{{ getContentTypeLabel(c) }}</span>
+            </span>
+            <span class="card-kind-badge">
+              <span class="kind kind-sammlung">📚 Sammlung</span>
+            </span>
           </div>
-          <div class="card-info">
+
+          <div class="card-body">
             <div class="card-title">{{ c.title }}</div>
-            <div class="card-meta">
-              <span class="chip chip-typpille chip-tp-sammlung">📚 Sammlung</span>
-              <span *ngFor="let d of c.disciplines" class="chip chip-fach">{{ d }}</span>
-              <span *ngFor="let e of c.educational_contexts" class="chip chip-stufe">{{ e }}</span>
-              <ng-container *ngFor="let t of c.learning_resource_types">
-                <span *ngIf="t !== 'Sammlung' && t !== 'collection'"
-                      class="chip chip-typ">{{ t }}</span>
-              </ng-container>
-              <span *ngIf="c.license" class="chip chip-lizenz">{{ c.license }}</span>
-            </div>
-            <div class="card-desc" *ngIf="c.description">
-              {{ c.description.length > 140 ? (c.description | slice:0:140) + '…' : c.description }}
+            <div class="card-body-row">
+              <div class="card-desc-wrap">
+                <div class="card-desc" *ngIf="c.description">
+                  {{ c.description.length > 120 ? (c.description | slice:0:120) + '…' : c.description }}
+                </div>
+              </div>
+              <div *ngIf="c.preview_url" class="card-thumb-side">
+                <img [src]="c.preview_url" [alt]="c.title" loading="lazy" class="card-img-side">
+                <span *ngIf="c.license" class="card-license-badge-side"
+                      [title]="c.license">{{ getLicenseShort(c.license) }}</span>
+              </div>
             </div>
           </div>
-          <span class="card-arrow" aria-hidden="true">›</span>
+
+          <div class="card-footer">
+            <span *ngIf="c.educational_contexts && c.educational_contexts.length"
+                  class="footer-meta footer-stufe">
+              <span class="footer-icon">🎓</span>
+              <span>{{ c.educational_contexts[0] }}</span>
+            </span>
+            <span *ngIf="c.disciplines && c.disciplines.length"
+                  class="footer-meta footer-fach">
+              <span class="footer-icon">📘</span>
+              <span>{{ c.disciplines[0] }}</span>
+            </span>
+          </div>
         </a>
 
         <div class="card-actions" *ngIf="c.node_id">
@@ -320,33 +400,51 @@
                  (visibleTopicPageCards.length || visiblePureCollectionCards.length)">
         📄 Einzelmaterialien
       </h3>
-      <div *ngFor="let c of visibleContentCards; trackBy: trackByNodeId" class="wlo-card-wrapper">
+      <div *ngFor="let c of visibleContentCards; trackBy: trackByNodeId"
+           class="wlo-card-wrapper is-inhalt">
         <a class="wlo-card"
            [href]="cardUrl(c)"
            target="_blank"
            rel="noopener noreferrer">
-          <div class="card-thumb">
-            <img *ngIf="c.preview_url" [src]="c.preview_url" [alt]="c.title"
-                 loading="lazy" class="card-img">
-            <span *ngIf="!c.preview_url" class="card-icon" aria-hidden="true">📄</span>
+
+          <div class="card-header">
+            <span class="card-content-type">
+              <span class="card-content-icon">{{ getCardIcon(c) }}</span>
+              <span class="card-content-label">{{ getContentTypeLabel(c) }}</span>
+            </span>
+            <span class="card-kind-badge">
+              <span class="kind kind-inhalt">📄 Inhalt</span>
+            </span>
           </div>
-          <div class="card-info">
+
+          <div class="card-body">
             <div class="card-title">{{ c.title }}</div>
-            <div class="card-meta">
-              <span class="chip chip-typpille chip-tp-inhalt">📄 Inhalt</span>
-              <span *ngFor="let d of c.disciplines" class="chip chip-fach">{{ d }}</span>
-              <span *ngFor="let e of c.educational_contexts" class="chip chip-stufe">{{ e }}</span>
-              <ng-container *ngFor="let t of c.learning_resource_types">
-                <span *ngIf="t !== 'Sammlung' && t !== 'collection'"
-                      class="chip chip-typ">{{ t }}</span>
-              </ng-container>
-              <span *ngIf="c.license" class="chip chip-lizenz">{{ c.license }}</span>
-            </div>
-            <div class="card-desc" *ngIf="c.description">
-              {{ c.description.length > 140 ? (c.description | slice:0:140) + '…' : c.description }}
+            <div class="card-body-row">
+              <div class="card-desc-wrap">
+                <div class="card-desc" *ngIf="c.description">
+                  {{ c.description.length > 120 ? (c.description | slice:0:120) + '…' : c.description }}
+                </div>
+              </div>
+              <div *ngIf="c.preview_url" class="card-thumb-side">
+                <img [src]="c.preview_url" [alt]="c.title" loading="lazy" class="card-img-side">
+                <span *ngIf="c.license" class="card-license-badge-side"
+                      [title]="c.license">{{ getLicenseShort(c.license) }}</span>
+              </div>
             </div>
           </div>
-          <span class="card-arrow" aria-hidden="true">›</span>
+
+          <div class="card-footer">
+            <span *ngIf="c.educational_contexts && c.educational_contexts.length"
+                  class="footer-meta footer-stufe">
+              <span class="footer-icon">🎓</span>
+              <span>{{ c.educational_contexts[0] }}</span>
+            </span>
+            <span *ngIf="c.disciplines && c.disciplines.length"
+                  class="footer-meta footer-fach">
+              <span class="footer-icon">📘</span>
+              <span>{{ c.disciplines[0] }}</span>
+            </span>
+          </div>
         </a>
         <div class="card-actions" *ngIf="c.url || c.wlo_url">
           <button type="button" class="card-btn card-btn--primary"

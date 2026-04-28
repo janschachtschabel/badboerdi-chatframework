@@ -223,13 +223,21 @@ rules:
   # Excludes meta-questions ("wie funktioniert", "schritt für schritt")
   # which should NOT be re-routed to orientation — they're how-to asks.
   - id: rule_vague_search
-    description: "Search-intent without thema → PAT-20 (Orientierungs-Guide)."
+    description: "Search-intent OHNE jeglichen Anker (kein thema, kein fach, keine stufe, kein medientyp) → PAT-20 (Orientierungs-Guide)."
     priority: 50
     live: true
+    # Erweitert 2026-04-27: bei echter Such-Anfrage mit FACH oder STUFE
+    # oder MEDIENTYP existiert ein Suchanker → richtiges Pattern wählt
+    # die Engine selbst (PAT-04 Inspiration / PAT-07 Curation / PAT-18
+    # Unterrichts-Paket etc.). PAT-20 nur wenn JEDER Slot leer ist und
+    # die Anfrage nicht nach How-To klingt.
     when:
       all:
         - intent: { in: ["INT-W-03a", "INT-W-03b", "INT-W-03c"] }
         - entity.thema: { empty: true }
+        - entity.fach: { empty: true }
+        - entity.stufe: { empty: true }
+        - entity.medientyp: { empty: true }
         - not:
             message:
               regex: "(wie\\s+(geht|funktioniert|finde|nutze|benutze)|erklär|schritt\\s+für\\s+schritt|anleitung|tutorial|was\\s+(kann|gibt))"
@@ -610,3 +618,45 @@ rules:
         - message: { regex: "\\b((mein|meine[rn]?|unser|unsere[rn]?)\\s+(klasse|kurses?|schülerinnen|sch[üu]ler|kindes?|sohn(es?)?|tochter|gruppe|projekt[es]?)|f[üu]r\\s+(mein|meine[rn]?|unser|unsere[rn]?)\\s+(klasse|kurses?|sch[üu]ler|kindes?|sohn|tochter|kind)|wie\\s+(viele|lange|oft)\\s+\\w+\\s+(mein|meine|unser|unsere))\\b" }
     then:
       enforced_pattern_id: "PAT-03"
+
+  # ── R-15: Fachportal-Übersicht → PAT-26 ────────────────────────
+  # User fragt explizit nach "alle Fächer", "Fachportale", "welche
+  # Disziplinen" — soll deterministisch zu PAT-26 (Übersicht via
+  # get_subject_portals) gehen, NICHT zu PAT-20 (textuelle Erklärung)
+  # oder zu search_wlo_collections (das liefert Sub-Sammlungen, nicht
+  # Top-Level-Portale).
+  #
+  # Regex deckt drei Schreibweisen pro Umlaut ab: ä / ae / a (für User,
+  # die ohne Umlaute tippen). "Fachportale" mit Plural-e.
+  - id: rule_fachportal_overview
+    description: "User fragt nach Fachportal-Übersicht → INT-W-13 + PAT-26."
+    priority: 65
+    live: true
+    when:
+      all:
+        - message:
+            regex: "\\b(alle\\s+f(ä|ae|a)cher|welche\\s+f(ä|ae|a)cher|f(ä|ae|a)chportal\\w*|alle\\s+(disziplinen|portale)|portal(ü|ue|u)bersicht|f(ä|ae|a)cher(ü|ue|u)bersicht|was\\s+bietet\\s+wlo\\s+f(ü|ue|u)r\\s+f(ä|ae|a)cher|in\\s+welchen\\s+f(ä|ae|a)chern|alle\\s+schulf(ä|ae|a)cher)\\b"
+        - entity.thema: { empty: true }   # nur OHNE konkretes Thema
+    then:
+      intent_override: "INT-W-13"
+      enforced_pattern_id: "PAT-26"
+
+  # ── R-16: Themen-Drilldown → PAT-27 ────────────────────────────
+  # User fragt explizit nach Sub-Themen / Bereiche / Unterthemen einer
+  # bekannten Sammlung — soll PAT-27 (browse_collection_tree) ansteuern,
+  # nicht PAT-04 (allgemeine Suche).
+  #
+  # Bewusst KEINE entity-Bedingung: die Regel läuft in der Pre-Phase,
+  # da sind entities noch nicht extrahiert. Die Regex selbst ist
+  # spezifisch genug ("welche themen unter X", "wie ist X gegliedert"),
+  # dass falsch-positive Matches selten sind.
+  - id: rule_themen_drilldown
+    description: "User fragt nach Sub-Themen einer Sammlung → INT-W-14 + PAT-27."
+    priority: 64
+    live: true
+    when:
+      message:
+        regex: "\\b(welche\\s+(themen|bereiche|unterthemen|teilbereiche|kapitel)|gliedere|wie\\s+ist\\s+\\w+\\s+(unterteilt|strukturiert|aufgeteilt|gegliedert)|wie\\s+(ist|wird)\\s+\\w+\\s+(gegliedert|aufgebaut)|unterthemen\\s+von|bereiche\\s+(unter|in|von)|sub-?sammlungen)\\b"
+    then:
+      intent_override: "INT-W-14"
+      enforced_pattern_id: "PAT-27"

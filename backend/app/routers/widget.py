@@ -126,7 +126,7 @@ _DEMO_HTML = """<!doctype html>
   </style>
 </head>
 <body>
-  <h1>🦉 BOERDi Widget — Demo & Integrations-Guide</h1>
+  <h1><img src="/api/static/boerdi.svg" alt="" style="width:36px;height:36px;vertical-align:-8px;margin-right:8px;"/>BOERDi Widget — Demo & Integrations-Guide</h1>
   <div class="hero">
     <p>Klicke unten rechts auf die Eule, um den Chatbot zu öffnen.</p>
     <p>Diese Seite demonstriert alle Integrations-Varianten. Das Widget läuft hier mit
@@ -188,6 +188,17 @@ _DEMO_HTML = """<!doctype html>
   page-context='{"page_type":"landingpage","campaign":"digital-pakt-2026"}'&gt;
 &lt;/boerdi-chat&gt;</pre>
 
+  <h3>6. Produktiv-Embedding ohne Debug- und Sprach-Buttons</h3>
+  <pre>&lt;boerdi-chat
+  api-url="https://api.wlo.de"
+  show-debug-button="false"
+  show-language-buttons="false"&gt;
+&lt;/boerdi-chat&gt;</pre>
+  <p>Auf Endkunden-Seiten meist sinnvoll: <code>show-debug-button="false"</code> blendet
+     den 🔍-Toggle aus (das Debug-Panel wäre für Endnutzer ohnehin verwirrend),
+     <code>show-language-buttons="false"</code> entfernt 🔊 (TTS) und 🎤 (Mic). Letzteres
+     vermeidet zugleich den Browser-Mikrofon-Berechtigungs-Prompt beim ersten Laden.</p>
+
   <h2>Properties (vollständige Liste)</h2>
   <table>
     <tr><th>HTML-Attribut</th><th>Typ</th><th>Default</th><th>Beschreibung</th></tr>
@@ -196,7 +207,7 @@ _DEMO_HTML = """<!doctype html>
     <tr><td><code>page-context</code></td><td>JSON string</td><td><code>{}</code></td>
         <td>Manuelle Kontext-Keys (siehe Liste oben). Wird mit Auto-Context gemerged — manuelle Keys gewinnen.</td></tr>
     <tr><td><code>auto-context</code></td><td>boolean</td><td><code>true</code></td>
-        <td>URL-Regex extrahiert <code>node_id</code>, Slug, Query-Param usw. automatisch. <code>document.title</code> geht als Fallback mit.</td></tr>
+        <td>URL-Regex extrahiert <code>node_id</code>, Slug, Query-Param usw. automatisch. <code>document.title</code> geht als Fallback mit. Liest zusätzlich Opt-in-Meta-Tags (<code>&lt;meta name="boerdi:node-id"&gt;</code>) und extrahiert sichtbaren Seiteninhalt als <code>page_text</code> für Off-Platform-Embeddings.</td></tr>
     <tr><td><code>position</code></td><td>enum</td><td><code>bottom-right</code></td>
         <td><code>bottom-right</code> | <code>bottom-left</code> | <code>top-right</code> | <code>top-left</code></td></tr>
     <tr><td><code>initial-state</code></td><td>enum</td><td><code>collapsed</code></td>
@@ -209,6 +220,10 @@ _DEMO_HTML = """<!doctype html>
         <td>localStorage-Key, falls mehrere Widgets auf derselben Domain laufen.</td></tr>
     <tr><td><code>greeting</code></td><td>string</td><td><code>""</code></td>
         <td>Eigener Begrüßungstext (überschreibt den Persona-Default).</td></tr>
+    <tr><td><code>show-debug-button</code></td><td>boolean</td><td><code>true</code></td>
+        <td>🔍 Debug-Toggle im Header anzeigen. <code>false</code> = Button ausgeblendet (für Produktiv-Embeddings sinnvoll, da Endnutzer das Debug-Panel meist nicht brauchen).</td></tr>
+    <tr><td><code>show-language-buttons</code></td><td>boolean</td><td><code>true</code></td>
+        <td>🔊 Text-to-Speech und 🎤 Mic-Aufnahme anzeigen. <code>false</code> = beide Buttons aus, kein Sprach-Feature. <span class="tag tag-note">Tipp</span> verhindert auch den Browser-Mikrofon-Permission-Prompt beim ersten Laden.</td></tr>
   </table>
 
   <h2>Was der Chatbot kann</h2>
@@ -243,12 +258,15 @@ _DEMO_HTML = """<!doctype html>
   <h2>Personas, Intents, Patterns</h2>
   <p>Das Backend klassifiziert jeden Turn auf 9 Personas (Lehrkraft, Schüler:in, Eltern,
      Anonym, Verwaltung, Politik, Berater, Presse, Redaktion) und 14 Intents
-     (Suche/Canvas-Create/Canvas-Edit/Feedback/…). 26 Patterns entscheiden, wie geantwortet
-     wird — konfigurierbar im <a href="http://localhost:3001">BadBoerdi Studio</a>.</p>
+     (Suche/Canvas-Create/Canvas-Edit/Feedback/…). 27 Patterns entscheiden, wie geantwortet
+     wird; eine YAML-Routing-Rules-Engine kann Patterns vor und nach der Selektion
+     überschreiben — alles konfigurierbar im BadBoerdi Studio (im Default-Setup auf
+     <code>:3001</code> bzw. <code>studio.&lt;ip&gt;.nip.io</code>).</p>
 
+  <!-- Live-Demo: Same-Origin (kein hardcoded Host) — funktioniert auf localhost,
+       nip.io, Custom-Domains und überall sonst, wo dieses HTML serviert wird. -->
   <script src="/widget/boerdi-widget.js" defer></script>
   <boerdi-chat
-    api-url="http://localhost:8000"
     position="bottom-right"
     primary-color="#1c4587">
   </boerdi-chat>

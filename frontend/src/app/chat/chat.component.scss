@@ -53,7 +53,59 @@ $radius:     14px;
 }
 
 .header-bot   { display: flex; align-items: center; gap: 10px; }
-.header-avatar { font-size: 46px; line-height: 1; }
+.header-avatar {
+  width: 44px;
+  height: 44px;
+  display: block;
+  object-fit: contain;
+  // Weißer Kreis-Hof, damit das blaue Logo auf Brand-Blue Header sichtbar wird
+  background: #fff;
+  border-radius: 50%;
+  padding: 4px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  // Sanftes Atmen, immer-an
+  animation: boerdi-breathe 4.5s ease-in-out infinite;
+  transition: transform .25s ease;
+}
+
+// "Denkt nach" — Boerdi wackelt sanft
+.header-avatar.is-thinking {
+  animation: boerdi-thinking 1.4s ease-in-out infinite;
+}
+
+// "Spricht" — flotteres Bobbing
+.header-avatar.is-speaking {
+  animation: boerdi-bob 0.5s ease-in-out infinite;
+}
+
+@keyframes boerdi-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.06); }
+}
+
+@keyframes boerdi-thinking {
+  0%, 100%  { transform: rotate(0deg) translateY(0); }
+  25%       { transform: rotate(-5deg) translateY(-2px); }
+  75%       { transform: rotate(5deg) translateY(-2px); }
+}
+
+@keyframes boerdi-bob {
+  0%, 100% { transform: translateY(0) scale(1.0); }
+  50%      { transform: translateY(-3px) scale(1.05); }
+}
+
+.header-status {
+  font-size: .68rem;
+  color: rgba(255,255,255,.85);
+  font-weight: 500;
+  margin-top: 1px;
+  letter-spacing: .02em;
+  animation: boerdi-status-fade .25s ease-in;
+}
+@keyframes boerdi-status-fade {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 .header-text   { display: flex; flex-direction: column; }
 .header-name   { font-weight: 700; font-size: 1.45rem; color: #fff; letter-spacing: -.01em; }
 .header-tagline { font-size: .78rem; color: rgba(255,255,255,.75); }
@@ -115,9 +167,12 @@ $radius:     14px;
 }
 
 .msg-avatar {
-  font-size: 28px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
   margin-top: 2px;
+  object-fit: contain;
+  display: block;
 }
 
 .msg-bubble {
@@ -207,115 +262,235 @@ $radius:     14px;
   40% { opacity: 1; }
 }
 
-// ── Cards List (Boerdi-Style) ────────────────────────────────────────────────
+// ── Cards List (Boerdi-Style — modernes Tile-Design) ──────────────────────
+$card-radius: 12px;
+$card-radius-inner: 10px;
+$brand-blue: #1c4587;
+$brand-blue-dark: #0E4A92;
+$brand-blue-light: #9FB7D3;
+$accent-yellow: #FFC600;
+$accent-orange: #E79800;
+
 .cards-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
   margin-top: 10px;
 }
 
+.wlo-card-wrapper {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  // When ANY dropdown menu inside the card is open, lift the wrapper's
+  // stacking context above sibling cards so the menu doesn't disappear
+  // behind the next card. Default z-index 1, dropdown-open: 100.
+  &:has(.tp-dropdown) { z-index: 100; }
+}
+
+// "Sammlung" hatte früher eine Stack-Optik via Pseudo-Elemente, die wie
+// gestapelte Karten aussahen — das verursachte aber den Eindruck einer
+// doppelten Umrandung (User-Feedback). Jetzt nur noch der lila Linker-
+// Streifen (.is-sammlung .wlo-card) als Diskriminator, kein Stack mehr.
+
 .wlo-card {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px;
+  flex-direction: column;
   border: 1px solid $border;
-  border-radius: 10px;
-  background: #FAFCFF;
+  border-radius: $card-radius;
+  background: #fff;
   text-decoration: none;
   color: $text;
-  transition: box-shadow .15s, background .15s;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .04);
 
   &:hover {
-    box-shadow: 0 2px 10px rgba(0,0,0,.08);
-    background: #F0F6FF;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(28, 69, 135, .12);
+    border-color: rgba($brand-blue, .25);
   }
 
   &:visited { color: $text; }
 }
 
-.card-thumb {
-  width: 56px;
-  height: 56px;
-  min-width: 56px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #E8F1FB 0%, #D5E8F0 100%);
+// Themenseite: leicht prominenterer Schatten als visueller Akzent —
+// Differenzierung ansonsten über das graue Kind-Badge oben rechts.
+// (Linker Streifen wurde entfernt, sah optisch nicht überzeugend aus.)
+.is-themenseite .wlo-card {
+  border-color: rgba($brand-blue, .3);
+  box-shadow: 0 2px 6px rgba(28, 69, 135, .08);
+  &:hover {
+    box-shadow: 0 8px 28px rgba(28, 69, 135, .18);
+  }
+}
+
+// ── Card Header: Inhaltstyp links, Themenseite/Sammlung/Inhalt-Badge rechts
+//   Kompakt — referenziert Card_klein_Inhalt-Layout
+.card-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  overflow: hidden;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid #F1F5F9;
 }
 
-.card-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 8px;
-}
-
-.card-icon { font-size: 24px; }
-
-.card-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.card-title {
+.card-content-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .68rem;
   font-weight: 600;
-  font-size: .8rem;
-  line-height: 1.3;
-  margin-bottom: 3px;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.card-content-icon {
+  font-size: .95rem;
+  line-height: 1;
+}
+.card-content-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+// Kind-Badge: einheitlich grau für alle 3 Typen (Themenseite/Sammlung/Inhalt)
+// — visueller Stil-Marker bleibt am Wrapper (Top-Stripe / Linker-Streifen),
+// das Badge ist nur ein neutrales Label.
+.card-kind-badge {
+  flex-shrink: 0;
+  .kind {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: .62rem;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #F3F4F6;
+    color: #475569;
+    border: 1px solid #E2E8F0;
+  }
+}
+
+// ── Card Body ──────────────────────────────────────────────────────────
+//   Layout: Titel volle Breite oben, dann Desc + kleines Thumb nebeneinander
+.card-body {
+  padding: 8px 10px 6px;
+  flex: 1;
+}
+.card-title {
+  font-weight: 700;
+  font-size: .88rem;
+  line-height: 1.25;
+  margin-bottom: 4px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  color: $primary;
+  color: $brand-blue;
 }
-
+.card-body-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.card-desc-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .card-desc {
-  font-size: .7rem;
+  font-size: .72rem;
   color: $text-muted;
-  margin-top: 3px;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.4;
 }
 
-.card-meta {
+// Kleines Thumb rechts neben Beschreibung (referenziert Card_klein_Inhalt)
+.card-thumb-side {
+  position: relative;
+  flex: 0 0 92px;
+  width: 92px;
+  height: 72px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: linear-gradient(135deg, $brand-blue 0%, #3E6EA8 100%);
+}
+.card-img-side {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .35s ease;
+}
+.wlo-card:hover .card-img-side { transform: scale(1.06); }
+
+// OER-Badge unten rechts auf kleinem Thumb (kompakt)
+.card-license-badge-side {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  background: rgba(255, 255, 255, .95);
+  color: $brand-blue;
+  font-size: .56rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  letter-spacing: .02em;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  &::before { content: '✓'; font-size: .8em; }
+}
+
+// ── Card Footer: Bildungsstufe + Fach (NICHT Zielgruppe) ──────────────
+.card-footer {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px 7px;
+  border-top: 1px solid #F1F5F9;
+  background: #FAFBFD;
+  min-height: 26px;
+}
+.footer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .68rem;
+  color: #475569;
+  font-weight: 500;
+}
+.footer-icon {
+  font-size: .8rem;
+  opacity: .85;
 }
 
-.card-arrow {
-  font-size: 1.2rem;
-  color: $primary;
-  opacity: .5;
-  flex-shrink: 0;
-  transition: opacity .15s;
-  .wlo-card:hover & { opacity: 1; }
-}
-
-// ── Card Action Buttons (Sammlung) ──────────────────────────────────────
-.wlo-card-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
+// ── Card Actions (für Sammlungs-/Themenseiten-Karten) ──────────────────
 .card-actions {
   display: flex;
-  gap: 5px;
+  gap: 6px;
   flex-wrap: wrap;
-  padding: 4px 8px 6px;
-  background: #FAFCFF;
+  padding: 8px 12px;
+  background: #fff;
   border: 1px solid $border;
   border-top: none;
-  border-radius: 0 0 10px 10px;
+  border-bottom-left-radius: $card-radius;
+  border-bottom-right-radius: $card-radius;
+  margin-top: -1px; // align with card border
+  position: relative;
+  z-index: 1;
 }
 
 .card-btn {
@@ -329,32 +504,26 @@ $radius:     14px;
   line-height: 1.3;
   white-space: nowrap;
 
-  &--primary {
+  // Alle Button-Varianten in einheitlichem Hellblau-Ton.
+  // Ursprünglich hatten primary/secondary/tertiary unterschiedliche Farben
+  // (blau/grün/gelb) — sah zu bunt aus. Jetzt nur ein Stil.
+  &--primary,
+  &--secondary,
+  &--tertiary,
+  &--remix {
     background: #e0f2fe;
     color: #0369a1;
-    &:hover { background: #bae6fd; }
-  }
-
-  &--secondary {
-    background: #dcfce7;
-    color: #15803d;
-    &:hover { background: #bbf7d0; }
-    &:disabled { opacity: .45; cursor: default; }
-  }
-
-  &--tertiary {
-    background: #fef3c7;
-    color: #92400e;
     text-decoration: none;
     display: inline-flex;
     align-items: center;
-    &:hover { background: #fde68a; }
+    &:hover { background: #bae6fd; }
+    &:disabled { opacity: .45; cursor: default; }
   }
 
   &:disabled { opacity: .45; cursor: default; }
 }
 
-// Topic page smart button + dropdown
+// Topic page smart button + dropdown — einheitlich hellblau
 .tp-wrapper {
   display: inline-flex;
   align-items: stretch;
@@ -375,12 +544,12 @@ $radius:     14px;
   padding: 2px 5px;
   border: none;
   cursor: pointer;
-  background: #fef3c7;
-  color: #92400e;
-  border-left: 1px solid rgba(0,0,0,.1);
+  background: #e0f2fe;
+  color: #0369a1;
+  border-left: 1px solid rgba(0,0,0,.08);
   border-radius: 0 8px 8px 0;
   line-height: 1;
-  &:hover { background: #fde68a; }
+  &:hover { background: #bae6fd; }
 }
 
 .tp-dropdown-wrap {
@@ -405,10 +574,10 @@ $radius:     14px;
   display: block;
   padding: 5px 10px;
   font-size: .65rem;
-  color: #92400e;
+  color: #0369a1;
   text-decoration: none;
   white-space: nowrap;
-  &:hover { background: #fef3c7; }
+  &:hover { background: #e0f2fe; }
   &.tp-active { font-weight: 700; }
 }
 

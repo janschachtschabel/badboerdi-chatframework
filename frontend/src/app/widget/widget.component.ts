@@ -7,6 +7,7 @@ import { ChatComponent } from '../chat/chat.component';
 import { detectPageContext } from './page-context-detector';
 import { CanvasComponent, CanvasViewMode, CanvasCardAction } from '../canvas/canvas.component';
 import { WloCard, PaginationInfo } from '../services/api.service';
+import { BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
 
 /** Snapshot of the canvas state — pushed onto history when the user
  *  drills down (e.g. Sammlung -> Inhalte, Kachel -> Preview) so the
@@ -54,11 +55,20 @@ interface CanvasSnapshot {
       <!-- Chat panel -->
       <div class="boerdi-panel" *ngIf="expanded">
         <div class="boerdi-panel-header">
-          <span class="boerdi-title">
-            <span class="boerdi-owl-mini">🦉</span> BOERDi
-          </span>
+          <!-- Linker Bereich: Avatar + Name + Status -->
+          <div class="boerdi-title-block">
+            <img class="boerdi-owl-mini"
+                 [class.is-thinking]="chatRef?.isLoading"
+                 [class.is-speaking]="chatRef?.autoSpeak && chatRef?.isSpeaking"
+                 [src]="boerdiLogo" alt="" />
+            <div class="boerdi-title-text">
+              <span class="boerdi-title">BOERDi</span>
+              <span class="boerdi-status" *ngIf="chatRef?.isLoading">denkt nach …</span>
+              <span class="boerdi-status" *ngIf="!chatRef?.isLoading && chatRef?.autoSpeak && chatRef?.isSpeaking">spricht …</span>
+            </div>
+          </div>
 
-          <!-- Mobile-only tab switcher (hidden on desktop) -->
+          <!-- Mitte: Mobile-only tab switcher -->
           <div class="boerdi-tabs" *ngIf="canvasOpen()">
             <button type="button"
                     class="boerdi-tab"
@@ -70,7 +80,33 @@ interface CanvasSnapshot {
                     (click)="mobileTab.set('canvas')">Canvas</button>
           </div>
 
-          <button class="boerdi-close" (click)="toggle()" aria-label="Schließen">×</button>
+          <!-- Rechts: Action-Buttons (sound/debug/restart) + Close.
+               Icon-Wechsel + solid-vs-outlined-Pill kommunizieren den
+               aktiven/inaktiven Zustand klar. -->
+          <div class="boerdi-header-actions">
+            <button *ngIf="chatRef?.languageButtonsVisible"
+                    class="boerdi-action-btn"
+                    [class.is-on]="chatRef?.autoSpeak"
+                    [class.is-off]="!chatRef?.autoSpeak"
+                    (click)="chatRef?.toggleAutoSpeak()"
+                    [title]="chatRef?.autoSpeak ? 'Sprachausgabe aus' : 'Sprachausgabe an'">
+              🔊
+            </button>
+            <button *ngIf="chatRef?.debugButtonVisible"
+                    class="boerdi-action-btn"
+                    [class.is-on]="chatRef?.showDebug"
+                    [class.is-off]="!chatRef?.showDebug"
+                    (click)="chatRef?.toggleDebug()"
+                    [title]="chatRef?.showDebug ? 'Debug aus' : 'Debug an'">
+              <span class="action-icon">🔍</span>
+            </button>
+            <button class="boerdi-action-btn boerdi-action-btn--neutral"
+                    (click)="chatRef?.restart()"
+                    title="Neuer Chat">🔄</button>
+            <button class="boerdi-close"
+                    (click)="toggle()"
+                    aria-label="Schließen">×</button>
+          </div>
         </div>
 
         <div class="boerdi-panel-body">
@@ -126,7 +162,7 @@ interface CanvasSnapshot {
               *ngIf="!expanded"
               (click)="toggle()"
               aria-label="Chat öffnen">
-        <span class="boerdi-owl">🦉</span>
+        <img class="boerdi-owl" [src]="boerdiLogo" alt="" />
         <span class="boerdi-fab-pulse"></span>
       </button>
     </div>
@@ -164,10 +200,30 @@ interface CanvasSnapshot {
       transform: scale(1.1) rotate(-5deg);
       box-shadow: 0 6px 20px rgba(0,0,0,0.35);
     }
+    /* Logo als <img>-Tag (Data-URL). Animationen laufen auf dem
+       Container, nicht auf SVG-internen Pfaden — das funktioniert in
+       Web Components (Custom Elements) zuverlässig. */
     .boerdi-owl {
-      font-size: 32px;
-      display: inline-block;
-      animation: boerdi-blink 8s ease-in-out infinite;
+      width: 38px;
+      height: 38px;
+      display: block;
+      object-fit: contain;
+      /* Mehrlagige Animation: dezentes Atmen + gelegentliches Wackeln */
+      animation: boerdi-breathe 4s ease-in-out infinite,
+                 boerdi-blink 8s ease-in-out infinite;
+      /* Keine Color-Inversion auf FAB, weil das Logo seine eigenen
+         Farben mitbringt — der weiße Hintergrund-Kreis stellt den
+         Kontrast zum brand-blue Body sicher. */
+    }
+    .boerdi-fab {
+      /* FAB hat einen weißen "Hof" damit das blaue Logo gut sichtbar ist */
+      background: #fff;
+      border: 3px solid var(--boerdi-primary);
+    }
+    .boerdi-fab:hover { border-color: #2c5aa0; }
+    @keyframes boerdi-breathe {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.06); }
     }
     .boerdi-fab-pulse {
       position: absolute; inset: 0;
@@ -213,28 +269,140 @@ interface CanvasSnapshot {
       to   { opacity: 1; transform: translateY(0)    scale(1); }
     }
 
+    /* Konsolidierter Header: vereint die früheren outer-panel-header und
+       chat-internal-header zu einer Leiste. Avatar+Name+Status links,
+       Mobile-Tabs in der Mitte, Action-Buttons + Close rechts. */
     .boerdi-panel-header {
       background: var(--boerdi-primary);
       color: #fff;
-      padding: 10px 14px;
+      padding: 8px 12px;
       display: flex; align-items: center; justify-content: space-between;
-      gap: 12px;
+      gap: 10px;
       flex-shrink: 0;
+      min-height: 44px;
+    }
+    .boerdi-title-block {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      flex: 0 1 auto;
+    }
+    .boerdi-title-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+      min-width: 0;
     }
     .boerdi-title {
       font-weight: 600;
       font-size: 15px;
       white-space: nowrap;
     }
-    .boerdi-owl-mini { margin-right: 6px; }
+    .boerdi-status {
+      font-size: 11px;
+      opacity: 0.85;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .boerdi-owl-mini {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+      display: block;
+      background: #ffffff;
+      border-radius: 50%;
+      padding: 2px;
+      flex-shrink: 0;
+    }
+    .boerdi-owl-mini.is-thinking {
+      animation: boerdi-thinking-spin 1.4s ease-in-out infinite;
+    }
+    .boerdi-owl-mini.is-speaking {
+      animation: boerdi-speaking-bob .6s ease-in-out infinite;
+    }
+    @keyframes boerdi-thinking-spin {
+      0%, 100% { transform: rotate(-5deg); }
+      50% { transform: rotate(5deg); }
+    }
+    @keyframes boerdi-speaking-bob {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-2px); }
+    }
+
+    .boerdi-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* Action-Buttons mit klar kommuniziertem On/Off-State.
+       ON  = solider weißer Pill mit vollfarbigem Icon (aktiviert/gedrückt)
+       OFF = transparent mit weißem Outline + diagonalem Strich
+       NEUTRAL = halbtransparent ohne Toggle-State (z.B. Restart) */
+    .boerdi-action-btn {
+      position: relative;
+      border: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s, transform .1s, box-shadow .15s;
+      padding: 0;
+    }
+
+    /* ON-State: solider weißer Pill, klar "gedrückt" */
+    .boerdi-action-btn.is-on {
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15),
+                  inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+    }
+    .boerdi-action-btn.is-on:hover {
+      background: #f1f5f9;
+      transform: translateY(-1px);
+    }
+
+    /* OFF-State: transparent + weißer Outline. Der Farbkontrast zum
+       solid-weißen ON-Pill reicht aus — kein Slash-Overlay nötig. */
+    .boerdi-action-btn.is-off {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1.5px solid rgba(255, 255, 255, 0.45);
+      opacity: 0.85;
+    }
+    .boerdi-action-btn.is-off:hover {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.7);
+      opacity: 1;
+    }
+
+    /* NEUTRAL (Restart) — kein Toggle-State, aber sichtbar */
+    .boerdi-action-btn--neutral {
+      background: rgba(255, 255, 255, 0.18);
+      border: 1.5px solid rgba(255, 255, 255, 0.35);
+      color: #fff;
+    }
+    .boerdi-action-btn--neutral:hover {
+      background: rgba(255, 255, 255, 0.32);
+      border-color: rgba(255, 255, 255, 0.6);
+    }
+
+    .boerdi-action-btn:active { transform: translateY(1px); }
     .boerdi-close {
       background: transparent;
       border: none;
       color: #fff;
-      font-size: 28px;
+      font-size: 26px;
       line-height: 1;
       cursor: pointer;
       padding: 0 4px;
+      margin-left: 2px;
       opacity: 0.85;
     }
     .boerdi-close:hover { opacity: 1; }
@@ -337,6 +505,12 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   // ChatComponent instance — we need public methods like browseCollection
   // and generateLearningPath, so this is the actual component, not an ElementRef.
   @ViewChild('chat') chatRef!: ChatComponent;
+
+  /** Logo als Data-URL — funktioniert in Web Components zuverlässig
+   *  (im Gegensatz zu `[innerHTML]`-Inline-SVG, das in Custom-Elements
+   *  vom Browser-Sanitizer-Pfad gestrippt werden kann). Quelle:
+   *  shared/boerdi-logo.ts */
+  readonly boerdiLogo = BOERDI_LOGO_DATA_URL;
 
   @Input() apiUrl = '';
   @Input() pageContext: string | Record<string, any> = '';

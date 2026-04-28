@@ -1284,16 +1284,19 @@ async def _moderate_canvas_edit(edit_instruction: str, current_markdown: str) ->
 
     Returns True if the input is flagged as harmful. Returns False on:
       - legitimate / non-flagged input
-      - non-OpenAI providers (b-api-*) that don't expose the endpoint
+      - no usable moderation client (no OPENAI_API_KEY at all)
       - any error (we never fail-closed on a moderation technicality —
         the LLM-edit has its own system-prompt guard rails below)
 
-    Free of charge on api.openai.com.
+    Free of charge on api.openai.com. Also works on B-API setups when
+    an OPENAI_API_KEY is configured alongside — moderation is then
+    routed directly to api.openai.com while chat keeps using B-API.
     """
     try:
-        from app.services.llm_provider import is_openai_native
-        if not is_openai_native():
-            # B-API does not forward /v1/moderations — silently skip.
+        from app.services.llm_provider import get_moderation_client
+        mod_client = get_moderation_client()
+        if mod_client is None:
+            # No OpenAI key — silently skip; LLM-edit guard rails remain.
             return False
         # Combine edit instruction + a snippet of the document so both
         # are vetted. Cap each to keep the moderation call tiny.
@@ -1302,7 +1305,7 @@ async def _moderate_canvas_edit(edit_instruction: str, current_markdown: str) ->
             + "\n---\n"
             + (current_markdown or "")[:2000]
         )
-        result = await client.moderations.create(
+        result = await mod_client.moderations.create(
             model="omni-moderation-latest",
             input=combined,
         )

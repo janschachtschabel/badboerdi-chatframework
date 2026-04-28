@@ -51,8 +51,9 @@ export default function LoginPage() {
           width: 360,
         }}
       >
-        <h1 style={{ margin: '0 0 4px', color: '#1c4587', fontSize: 22 }}>
-          🦉 BOERDi Studio
+        <h1 style={{ margin: '0 0 4px', color: '#1c4587', fontSize: 22, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <img src="/boerdi.svg" alt="" style={{ width: 28, height: 28 }} />
+          BOERDi Studio
         </h1>
         <p style={{ margin: '0 0 24px', color: '#6b7280', fontSize: 14 }}>
           Bitte Passwort eingeben.

@@ -1,6 +1,10 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
-openai==1.55.0
+# openai SDK: >=1.78 needed for the GPT-5 ``verbosity`` kwarg on
+# AsyncCompletions.create. Older SDKs raise
+# ``unexpected keyword argument 'verbosity'`` at chat-time.
+# Upper bound keeps us off potential 2.x breaking changes.
+openai>=1.78.0,<2.0.0
 pydantic==2.9.0
 python-dotenv==1.0.1
 aiosqlite==0.20.0

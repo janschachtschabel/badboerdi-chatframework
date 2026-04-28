@@ -308,11 +308,56 @@ async def get_elements():
 
 # ── MCP Server Registry ──────────────────────────────────────────
 
+# Cache MCP-Tool-Descriptions for ~5 min so the studio's GET /mcp-servers
+# doesn't pay the discover round-trip on every render. The descriptions
+# change rarely (only on MCP-server deploys); a short TTL is fine.
+_TOOL_DESC_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
+_TOOL_DESC_TTL_S = 300.0
+
+
+async def _fetch_tool_descriptions(url: str) -> dict[str, str]:
+    """Get {tool_name: description} for an MCP server, cached.
+
+    Returns an empty dict on any failure so the caller can render the
+    server tile without descriptions instead of erroring out.
+    """
+    import time
+    now = time.time()
+    cached = _TOOL_DESC_CACHE.get(url)
+    if cached and (now - cached[0]) < _TOOL_DESC_TTL_S:
+        return cached[1]
+    from app.services.mcp_client import discover_server_tools
+    try:
+        tools = await discover_server_tools(url)
+        descs = {
+            t["name"]: (t.get("description") or "").strip()
+            for t in tools
+            if isinstance(t, dict) and t.get("name")
+        }
+    except Exception:
+        descs = {}
+    _TOOL_DESC_CACHE[url] = (now, descs)
+    return descs
+
+
 @router.get("/mcp-servers")
 async def get_mcp_servers():
-    """List all registered MCP servers."""
+    """List all registered MCP servers, with tool descriptions inline.
+
+    The studio shows the tool list as small tags. Without descriptions,
+    near-identical tool names like ``get_node_details`` (single) and
+    ``get_nodes_details`` (bulk) are visually indistinguishable. We
+    therefore enrich the response with a ``tool_descriptions`` map so
+    the frontend can render hover-tooltips.
+    """
     from app.services.config_loader import load_mcp_servers
-    return load_mcp_servers()
+    servers = load_mcp_servers()
+    # Best-effort: enrich enabled servers with tool descriptions.
+    # Failures are silent — the frontend will just show tags without tooltips.
+    for srv in servers:
+        if srv.get("enabled") and srv.get("url") and srv.get("tools"):
+            srv["tool_descriptions"] = await _fetch_tool_descriptions(srv["url"])
+    return servers
 
 
 class McpServerUpdate(BaseModel):

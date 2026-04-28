@@ -972,18 +972,19 @@ Internes Wissen aus hochgeladenen Dokumenten. Nutze diese Tools wenn die Frage
 durch internes Wissen beantwortet werden kann (z.B. Prozesse, Konzepte, Richtlinien).
 {knowledge_tool_desc if knowledge_tool_desc else '  (Keine Wissensbereiche verfuegbar)'}
 
-### B) MCP-Tools (externe Suche & Datenquellen)
+### B) MCP-Tools (externe Suche & Datenquellen — WLO-MCP v2)
 - search_wlo_collections: Kuratierte WLO-Sammlungen nach Thema suchen
 - search_wlo_content: Einzelne Lernmaterialien suchen (Arbeitsblaetter, Videos, etc.)
 - search_wlo_topic_pages: Themenseiten suchen oder pruefen ob eine Sammlung eine hat
-  (per query ODER per collectionId; filtert nach targetGroup: teacher/learner/general)
+  (per query ODER per collectionId; filtert nach targetGroup: teacher/learner/general;
+   Varianten werden serverseitig gemerged)
 - get_collection_contents: Inhalte einer Sammlung per nodeId abrufen
 - get_node_details: Metadaten eines WLO-Knotens abrufen
-- lookup_wlo_vocabulary: Filter-Werte nachschlagen (Faecher, Bildungsstufen)
-- get_wirlernenonline_info: Infos ueber WLO/OER-Portal
-- get_edu_sharing_network_info: Infos zum edu-sharing Netzwerk
-- get_edu_sharing_product_info: Infos zur edu-sharing Software
-- get_metaventis_info: Infos zu metaVentis
+- lookup_wlo_vocabulary: Filter-Werte nachschlagen (Faecher, Bildungsstufen, Lizenzen, Zielgruppen)
+- get_subject_portals: Liste aller WLO-Fachportale (alphabetisch, mit nodeId)
+- browse_collection_tree: Strukturierter Drilldown unter eine Sammlung (depth 1 oder 2)
+- get_nodes_details: Bulk-Metadaten fuer mehrere nodeIds parallel
+- wlo_health_check: Verfuegbarkeit/Latenz der WLO-API pruefen
 {collection_context}
 
 ## Tool-Routing-Regeln
@@ -1005,7 +1006,20 @@ SCHRITT 1 — RICHTIGES WERKZEUG WAEHLEN (IN DIESER REIHENFOLGE PRUEFEN!):
    → search_wlo_collections oder search_wlo_content
 
 3. DANN: Frage ueber WLO, edu-sharing, metaVentis als Plattform/Projekt?
-   → get_wirlernenonline_info / get_edu_sharing_* / get_metaventis_info
+   → query_knowledge mit dem passenden RAG-Bereich (wirlernenonline.de-webseite,
+     edu-sharing-com-webseite, edu-sharing-net-webseite, wissenlebtonline-webseite).
+     Es gibt KEINE MCP-Web-Crawler-Tools mehr.
+
+4. NAVIGATION/UEBERBLICK statt Suche?
+   → "Welche Faecher gibt es?" / "alle Fachportale" / "Uebersicht WLO":
+     get_subject_portals (KEINE Suche, KEIN search_wlo_collections — die
+     Top-Level-Portale stehen separat unter dem WLO-Wurzelknoten).
+   → "Welche Themen unter X?" / "Bereiche unter Y" / "Wie ist Z gegliedert?":
+     browse_collection_tree(nodeId=<X.id>, depth=1, includeContentCounts=true)
+     — liefert die Sub-Sammlungen, NICHT die Files.
+   → Bei "ist die WLO-API erreichbar?" / Diagnose: wlo_health_check.
+   → Wenn du fuer >3 nodeIds Metadaten brauchst: get_nodes_details (Bulk
+     statt N x get_node_details).
 
 Du DARFST query_knowledge und MCP-Tools in derselben Antwort kombinieren!
 
@@ -1065,17 +1079,19 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     # Determine which tools to offer
     import logging as _log
     _logger = _log.getLogger(__name__)
-    # Info tools should ALWAYS be available regardless of pattern
-    INFO_TOOLS = {
-        "get_wirlernenonline_info", "get_edu_sharing_network_info",
-        "get_edu_sharing_product_info", "get_metaventis_info",
-    }
+
+    # In MCP-v2 there are no more Web-Crawler "info tools" — Plattform-/
+    # Projekt-Themen werden ausschliesslich vom RAG-Kontext (query_knowledge)
+    # abgedeckt. Daher leeres Set, das wir aber als Variable behalten,
+    # damit die Set-Vereinigungen unten weiterhin funktionieren ohne
+    # Sonderfaelle.
+    INFO_TOOLS: set[str] = set()
     active_tools = []
     has_explicit_tools = "tools" in pattern_output
     has_mcp_source = pattern_output.get("sources") and "mcp" in pattern_output["sources"]
 
     if pattern_output.get("tools"):
-        # Pattern defines specific tools → use those + info tools
+        # Pattern defines specific tools → use those
         tool_names = set(pattern_output["tools"]) | INFO_TOOLS
         active_tools = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in tool_names]
     elif has_explicit_tools and not pattern_output["tools"]:
@@ -1084,7 +1100,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     elif has_mcp_source:
         active_tools = TOOL_DEFINITIONS
     else:
-        # Fallback: always offer search + topic pages + all info tools
+        # Fallback: search + topic pages
         fallback_tools = {"search_wlo_collections", "search_wlo_topic_pages"} | INFO_TOOLS
         active_tools = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in fallback_tools]
 
@@ -1308,7 +1324,27 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
             # Force tool call on first iteration — but NOT if context is already available
             # (pre-fetched knowledge or prior content cards already provide context)
             has_prior_content = bool(session_state.get("entities", {}).get("_last_contents"))
-            if (
+            # Pattern-Override: Discovery/Listing-Patterns brauchen IMMER den
+            # echten Tool-Output (Karten), auch wenn RAG-Kontext da ist —
+            # sonst antwortet der LLM mit einer Aufzählung in Text statt mit
+            # klickbaren Karten. WLO-MCP-Calls sind günstig, also kann der
+            # Extra-Round-Trip sein.
+            pattern_forces_tool = bool(pattern_output.get("force_tool_use"))
+            # `tools_called` enthält ggf. bereits "query_knowledge (prefetch)"
+            # vom RAG-Vorabfetch — das soll force_tool_use NICHT blockieren.
+            # Nur ECHTE MCP-Tool-Calls (kein "(prefetch)"-Suffix) zählen als
+            # "Tool wurde schon aufgerufen, Force erfüllt".
+            real_tools_called = [
+                t for t in tools_called
+                if not (isinstance(t, str) and "(prefetch)" in t)
+            ]
+            if pattern_forces_tool and first_iteration and not real_tools_called:
+                tool_choice = "required"
+                _logger.info(
+                    "force_tool_use=true → tool_choice=required (active_tools=%d)",
+                    len(active_tools),
+                )
+            elif (
                 first_iteration
                 and not tools_called
                 and not knowledge_prefetched
@@ -1471,6 +1507,10 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     "search_wlo_collections", "search_wlo_content",
                     "search_wlo_topic_pages", "get_collection_contents",
                     "get_node_details",
+                    # MCP v2 — Discovery/Listing-Tools liefern auch Karten
+                    # (Fachportale + Sub-Sammlungen sind klickbare Cards).
+                    "get_subject_portals",
+                    "browse_collection_tree",
                 }
                 if tool_name in CARD_YIELDING_TOOLS:
                     cards = parse_wlo_cards(result_text)

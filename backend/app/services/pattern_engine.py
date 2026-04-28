@@ -40,6 +40,12 @@ class PatternDef(BaseModel):
     format_follow_up: str = "quick_replies"
     card_text_mode: str = "minimal"  # minimal | reference | highlight
     tools: list[str] = Field(default_factory=list)
+    # When True, the LLM MUST call a tool on the first iteration even if RAG
+    # context was prefetched. Use for discovery/listing patterns where the
+    # tool output (cards) is the actual user-facing payload, and a textual
+    # RAG-only answer would be a regression. WLO-MCP calls are cheap so the
+    # extra round-trip is acceptable.
+    force_tool_use: bool = False
     core_rule: str = ""
 
 
@@ -178,6 +184,36 @@ def phase2_score(
         # Priority bonus (normalized)
         total += p.priority / 10000.0
 
+        # ── Specificity-Bonus ──────────────────────────────────────
+        # Patterns mit konkreten Gate-Listen (z.B. gate_intents=[INT-W-13])
+        # sollten gegenüber Wildcard-Patterns (gate_intents=["*"]) gewinnen,
+        # wenn beide passen. Sonst bleibt PAT-01 (alle "*") immer am Tisch
+        # und beerbt jeden konkreten Pattern, der sich nicht extra hochsetzt.
+        #
+        # Bonus pro nicht-Wildcard-Gate: 0.01 (3 Gates → max +0.03).
+        # Damit kann ein 3-fach spezifischer Pattern selbst gegen einen
+        # Wildcard-Pattern mit ~30 Punkten höherer priority bestehen,
+        # ein 1-fach spezifischer (z.B. PAT-26 mit gate_intents=[INT-W-13])
+        # gegen einen mit ~10 Punkten höherer priority.
+        #
+        # Hinweis (Kalibrierung 2026-04-28): Vorherige 0.02 hat PAT-08
+        # (priority 380, gate_intents=Such-Intents) systematisch über
+        # PAT-01 (priority 500, alle Wildcards) gehoben — bei 5+ Tight-
+        # Races im Eval-Sample mit gap=0.008 und PAT-08-Misfire bei
+        # erfolgreichen Suchen. Mit 0.01 kompensiert der Spec-Bonus
+        # nicht mehr den 120-Priority-Diff, PAT-08 verliert sauber, aber
+        # PAT-19/21/26/27 (alle nahe priority=470-480) gewinnen weiter
+        # gegen PAT-01, weil deren Priority-Diff zu PAT-01 nur ~20-30
+        # Punkte (= 0.002-0.003) beträgt — der Bonus überdeckt das.
+        spec_bonus = 0.0
+        if "*" not in p.gate_intents:
+            spec_bonus += 0.01
+        if "*" not in p.gate_states:
+            spec_bonus += 0.01
+        if "*" not in p.gate_personas:
+            spec_bonus += 0.01
+        total += spec_bonus
+
         scores[p.id] = round(total, 4)
 
     return scores
@@ -205,6 +241,7 @@ def phase3_modulate(
         "card_text_mode": pattern.card_text_mode,
         "max_items": device_max.get(device, 6),
         "tools": list(pattern.tools),
+        "force_tool_use": pattern.force_tool_use,
         "core_rule": pattern.core_rule,
         "rag_areas": list(pattern.rag_areas),
         "skip_intro": False,

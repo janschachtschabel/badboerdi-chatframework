@@ -121,7 +121,11 @@ REIHENFOLGE:
    - Der User explizit nach einem bestimmten Materialtyp fragt (Video, Arbeitsblatt)
    - Die Sammlungen nicht passen oder der User mehr will
    - Der User sagt "zeig mir einzelne Materialien"
-3. Bei Fragen zu WLO/Plattform: get_wirlernenonline_info nutzen
+3. Bei Fragen zu WLO/Plattform: vorab durchsuchten RAG-Kontext nutzen
+   (wirlernenonline.de-webseite, edu-sharing-com-webseite usw.). Es gibt
+   KEINE MCP-Web-Crawler-Tools mehr.
+4. Wer einen Ueberblick aller Faecher will: get_subject_portals
+5. Wer in eine Sammlung tiefer eintauchen will: browse_collection_tree
 
 WICHTIG: Du MUSST die MCP-Tools aufrufen. Erfinde KEINE Sammlungen oder Materialien!
 Alles was du zeigst muss von den MCP-Tools kommen.

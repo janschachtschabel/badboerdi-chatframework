@@ -224,10 +224,26 @@ export class CanvasComponent {
     if (v?.url) window.open(v.url, '_blank', 'noopener,noreferrer');
   }
 
+  /** DEBUG: Print variant data when dropdown opens. Hilft beim Diagnostizieren
+   *  warum Labels gleich aussehen. Kann später entfernt werden. */
+  private _debugVariants(card: WloCard): void {
+    if (!card?.topic_pages?.length) return;
+    // eslint-disable-next-line no-console
+    console.log('[canvas] Variants for', card.title, '→', card.topic_pages.map(v => ({
+      label: v.label,
+      target_group: v.target_group,
+      variant_id: v.variant_id,
+      url: v.url,
+      computed_label: this.variantLabel(card, v),
+    })));
+  }
+
   toggleVariantMenu(card: WloCard, ev: Event): void {
     ev.preventDefault();
     ev.stopPropagation();
-    this.openVariantMenuId = this.openVariantMenuId === card.node_id ? null : card.node_id;
+    const willOpen = this.openVariantMenuId !== card.node_id;
+    this.openVariantMenuId = willOpen ? card.node_id : null;
+    if (willOpen) this._debugVariants(card);
   }
 
   closeVariantMenu(): void {
@@ -266,6 +282,101 @@ export class CanvasComponent {
     student: 'Lernende',
   };
 
+  /** Wenn die Redaktion keine Zielgruppe (`targetGroup`) gepflegt hat,
+   *  liefert die MCP "nicht gesetzt" und wir müssen die Varianten anhand
+   *  ihrer URL unterscheidbar machen. Mapping deutscher URL-Slug-Tokens
+   *  auf Anzeige-Labels — wenn ein Slug-Segment einem dieser Schlüssel
+   *  entspricht, nehmen wir die längere Bezeichnung. */
+  private static readonly _SLUG_LABELS: Record<string, string> = {
+    'lehrer': 'Lehrkräfte',
+    'lehrkraft': 'Lehrkräfte',
+    'lehrkraefte': 'Lehrkräfte',
+    'lehrer-in': 'Lehrkräfte',
+    'lehrerinnen': 'Lehrkräfte',
+    'lk': 'Lehrkräfte',
+    'schueler': 'Schüler:innen',
+    'schueler-in': 'Schüler:innen',
+    'schuelerinnen': 'Schüler:innen',
+    'lernende': 'Lernende',
+    'lerner': 'Lernende',
+    'sus': 'Schüler:innen',
+    'eltern': 'Eltern',
+    'family': 'Eltern',
+    'familie': 'Eltern',
+    'allgemein': 'Allgemein',
+    'general': 'Allgemein',
+    // Bildungsstufen — auch valider Diskriminator
+    'grundschule': 'Grundschule',
+    'primarstufe': 'Grundschule',
+    'sek1': 'Sek I',
+    'sek-1': 'Sek I',
+    'sek-i': 'Sek I',
+    'sek2': 'Sek II',
+    'sek-2': 'Sek II',
+    'sek-ii': 'Sek II',
+    'sekundarstufe-i': 'Sek I',
+    'sekundarstufe-ii': 'Sek II',
+    'berufsbildung': 'Berufliche Bildung',
+    'beruflich': 'Berufliche Bildung',
+    'hochschule': 'Hochschule',
+    'erwachsenenbildung': 'Erwachsene',
+    'erwachsene': 'Erwachsene',
+    'kita': 'Elementar',
+    'elementar': 'Elementar',
+  };
+
+  /** Versuche aus URL-Pfaden ein sprechendes Label zu extrahieren — der
+   *  letzte Pfad-Bestandteil enthält oft Stufe/Zielgruppe als Slug-Token.
+   *  Beispiele:
+   *    /themenseite/mathematik-grundschule  → "Grundschule"
+   *    /themenseite/mathe-sek1             → "Sek I"
+   *    /themenseite/mathe                  → null (kein Diskriminator)
+   *    /themenseite/mathematik-lehrer      → "Lehrkräfte"
+   */
+  private static _labelFromUrl(url: string, collectionTitle: string): string | null {
+    if (!url) return null;
+    let path: string;
+    try {
+      path = new URL(url).pathname.toLowerCase();
+    } catch { return null; }
+    // Last non-empty path segment
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length === 0) return null;
+    const slug = segments[segments.length - 1].replace(/\.[a-z]+$/, '');
+
+    // Strip the collection-name prefix from the slug if present, so
+    // "mathematik-grundschule" reduces to "grundschule".
+    const titleSlug = (collectionTitle || '')
+      .toLowerCase()
+      .replace(/[äöüß]/g, c => ({ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss'}[c] || c))
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    let remainder = slug;
+    if (titleSlug && remainder.startsWith(titleSlug)) {
+      remainder = remainder.substring(titleSlug.length).replace(/^-+/, '');
+    }
+    if (!remainder) return null;
+
+    // Direct lookup
+    if (CanvasComponent._SLUG_LABELS[remainder]) {
+      return CanvasComponent._SLUG_LABELS[remainder];
+    }
+    // Try splitting on "-" and look up each token
+    for (const tok of remainder.split('-')) {
+      if (CanvasComponent._SLUG_LABELS[tok]) {
+        return CanvasComponent._SLUG_LABELS[tok];
+      }
+    }
+    // Fallback: humanize remainder ("klassen-3-4" → "Klassen 3 4")
+    if (remainder.length <= 30) {
+      return remainder
+        .split('-')
+        .map(t => t.charAt(0).toUpperCase() + t.slice(1))
+        .join(' ');
+    }
+    return null;
+  }
+
   /** Pick the most informative label we can build for a variant.
    *  Priority:
    *    1. backend-label if it's something other than the generic "Themenseite"
@@ -275,29 +386,64 @@ export class CanvasComponent {
    *       at least distinguishable in the dropdown)
    */
   variantLabel(card: WloCard, v: { url: string; target_group: string; label: string; variant_id: string }): string {
-    const lbl = (v?.label || '').trim();
-    if (lbl && lbl.toLowerCase() !== 'themenseite') return lbl;
+    // Auto-collide-detection: wenn das Backend-Label generisch ist und
+    // mehrere Varianten dasselbe liefern (z.B. alle drei "Topic Pages"),
+    // ist es als Diskriminator wertlos — durchfallen lassen.
+    const allVariants = card?.topic_pages || [];
+    const myLbl = (v?.label || '').trim();
+    const myLblLower = myLbl.toLowerCase();
+    const sameLabelCount = allVariants.filter(
+      x => (x?.label || '').trim().toLowerCase() === myLblLower
+    ).length;
+    const labelIsDuplicated = sameLabelCount > 1;
+
+    // Hardcoded uninformative labels — WLO-Standardplatzhalter. Plus
+    // "Topic Pages" / "Topic Page" (englischer Default in v2). Wenn das
+    // Label hier matcht ODER dupliziert ist, fallen wir durch zu Schritt 1+.
+    const UNINFORMATIVE_LABELS = new Set([
+      'themenseite', 'themenseiten', 'topic page', 'topic pages',
+      'nicht gesetzt', 'unbekannt', 'allgemein', '-', '—', '',
+    ]);
+    const isUninformative = UNINFORMATIVE_LABELS.has(myLblLower)
+      || labelIsDuplicated;
+    if (myLbl && !isUninformative) return myLbl;
+
+    // 1. Strukturierte target_group ("teacher" / "learner" / "general")
     const tg = (v?.target_group || '').toLowerCase().trim();
-    if (tg) return CanvasComponent._TG_LABELS[tg] || (v.target_group as string);
-    // Multiple variants with no target group → disambiguate via URL query
-    // param or variant_id, so the user at least sees different entries.
+    if (tg && tg !== 'nicht gesetzt') {
+      return CanvasComponent._TG_LABELS[tg] || (v.target_group as string);
+    }
+
+    // 2. URL-Query-Param — alle bekannten WLO/Edu-Sharing-Param-Varianten
     if (v?.url) {
       try {
         const u = new URL(v.url);
-        const q = u.searchParams.get('target')
+        const q = u.searchParams.get('targetGroup')
+          || u.searchParams.get('target_group')
+          || u.searchParams.get('target')
           || u.searchParams.get('zielgruppe')
-          || u.searchParams.get('variant');
+          || u.searchParams.get('variant')
+          || u.searchParams.get('audience');
         if (q) return CanvasComponent._TG_LABELS[q.toLowerCase()] || q;
       } catch { /* ignore */ }
     }
+
+    // 3. URL-Pfad-Slug — wenn die URLs sich im Pfad unterscheiden, nutze
+    //    das letzte Pfadsegment als Diskriminator.
+    if (v?.url) {
+      const fromUrl = CanvasComponent._labelFromUrl(v.url, card?.title || '');
+      if (fromUrl) return fromUrl;
+    }
+
+    // 4. variant_id als Fallback — wenn er kurz und sprechend ist
     if (v?.variant_id) {
       const vid = v.variant_id;
-      // If variant_ids are short (e.g. "v1", "teacher") keep them verbatim.
       if (vid.length <= 20) return vid;
       return vid.slice(0, 8) + '…';
     }
-    // Fallback: number them so 4 entries aren't all "Themenseite".
-    const idx = (card?.topic_pages || []).indexOf(v);
+
+    // 5. Letzter Notnagel: nummerieren
+    const idx = allVariants.indexOf(v);
     return idx >= 0 ? `Variante ${idx + 1}` : 'Themenseite';
   }
 
@@ -406,5 +552,60 @@ ${clean}
     return (s || '').replace(/[&<>"']/g, c => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
     }[c] as string));
+  }
+
+  // ── Tile-Design Helper (gespiegelt aus chat.component.ts, damit
+  //    Canvas-Kacheln dasselbe Look-and-feel haben) ─────────────────────
+  getCardIcon(card: WloCard): string {
+    if (card.node_type === 'collection') return '📚';
+    const types = card.learning_resource_types || [];
+    if (types.some(t => t.toLowerCase().includes('video'))) return '🎬';
+    if (types.some(t => t.toLowerCase().includes('arbeitsblatt'))) return '📄';
+    if (types.some(t => t.toLowerCase().includes('interaktiv'))) return '🎮';
+    if (types.some(t => t.toLowerCase().includes('audio'))) return '🎧';
+    if (types.some(t => t.toLowerCase().includes('quiz') || t.toLowerCase().includes('test'))) return '❓';
+    if (types.some(t => t.toLowerCase().includes('präsent') || t.toLowerCase().includes('praesent'))) return '🖼️';
+    if (types.some(t => t.toLowerCase().includes('übung') || t.toLowerCase().includes('uebung'))) return '✏️';
+    if (types.some(t => t.toLowerCase().includes('kurs'))) return '🎓';
+    if (types.some(t => t.toLowerCase().includes('webseite') || t.toLowerCase().includes('website'))) return '🌍';
+    return '📖';
+  }
+
+  /** Lesbares Label für den Inhaltstyp (über dem Bild). */
+  getContentTypeLabel(card: WloCard): string {
+    if (card.node_type === 'collection') {
+      if (card.topic_pages && card.topic_pages.length) return 'Themenseite';
+      return 'Sammlung';
+    }
+    const types = (card.learning_resource_types || []).filter(
+      t => t && t.toLowerCase() !== 'sammlung' && t.toLowerCase() !== 'collection',
+    );
+    if (types.length) return types[0];
+    return 'Inhalt';
+  }
+
+  isThemenseiteCard(card: WloCard): boolean {
+    return card.node_type === 'collection'
+      && Array.isArray(card.topic_pages) && card.topic_pages.length > 0;
+  }
+  isSammlungCard(card: WloCard): boolean {
+    return card.node_type === 'collection'
+      && !(Array.isArray(card.topic_pages) && card.topic_pages.length > 0);
+  }
+  isInhaltCard(card: WloCard): boolean {
+    return card.node_type !== 'collection';
+  }
+
+  /** Kompakte Lizenz-Anzeige für das Footer-Badge auf dem Vorschaubild. */
+  getLicenseShort(license: string): string {
+    if (!license) return '';
+    const l = license.trim();
+    if (/^cc\b/i.test(l)) {
+      return l.replace(/\s*\d(\.\d+)?\s*$/, '').toUpperCase();
+    }
+    if (/individuelle|custom|copyright/i.test(l)) return '©';
+    if (/public\s*domain|gemeinfrei|cc\s*0|pdm/i.test(l)) return 'PD';
+    if (l.length > 12) return 'Lizenz';
+    return l;
   }
 }

@@ -10,15 +10,23 @@ from typing import Any
 import httpx
 
 from app.services.database import store_rag_chunk, get_rag_chunks, search_rag_chunks
-from app.services.llm_provider import get_client, get_embed_model
+from app.services.llm_provider import (
+    get_client,
+    get_embedding_client,
+    get_embedding_model_for_client,
+)
 
+# Chat client (kept for legacy reference). Embeddings now go through
+# get_embedding_client(): native OpenAI side-channel when on
+# b-api-academiccloud + OPENAI_API_KEY, main client otherwise.
 client = get_client()
-EMBED_MODEL = get_embed_model()
+embed_client = get_embedding_client()
+EMBED_MODEL = get_embedding_model_for_client()
 
 
 async def get_embedding(text: str) -> list[float]:
-    """Get embedding vector from the configured LLM provider."""
-    resp = await client.embeddings.create(model=EMBED_MODEL, input=text[:8000])
+    """Get embedding vector from the configured embedding endpoint."""
+    resp = await embed_client.embeddings.create(model=EMBED_MODEL, input=text[:8000])
     return resp.data[0].embedding
 
 

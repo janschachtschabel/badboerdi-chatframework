@@ -7,6 +7,7 @@ import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ApiService, ChatMessage, WloCard, DebugInfo, PaginationInfo } from '../services/api.service';
 import { getCardPrimaryUrl } from '../services/card-utils';
+import { BOERDI_LOGO_SVG, BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
 
 @Component({
   selector: 'badboerdi-chat',
@@ -77,6 +78,10 @@ export class ChatComponent implements OnInit, AfterViewChecked {
 
   // Scroll target: ID of the message to scroll into view
   private scrollTargetId: string | null = null;
+
+  /** Logo als Data-URL — funktioniert in Web-Components zuverlässig.
+   *  Quelle: shared/boerdi-logo.ts */
+  readonly boerdiLogo = BOERDI_LOGO_DATA_URL;
 
   constructor(private api: ApiService, private zone: NgZone, private sanitizer: DomSanitizer) {}
 
@@ -554,7 +559,7 @@ export class ChatComponent implements OnInit, AfterViewChecked {
 <body>
 <div class="print-bar"><button onclick="window.print()">🖨 Drucken / Als PDF speichern</button></div>
 <header>
-  <h1>🦉 Lernpfad</h1>
+  <h1><img src="${BOERDI_LOGO_DATA_URL}" alt="" style="width:28px;height:28px;vertical-align:-6px;margin-right:6px;"/> Lernpfad</h1>
   <span class="meta">BadBoerdi · ${esc(today)}</span>
 </header>
 <main>
@@ -709,7 +714,61 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     if (types.some(t => t.toLowerCase().includes('arbeitsblatt'))) return '📄';
     if (types.some(t => t.toLowerCase().includes('interaktiv'))) return '🎮';
     if (types.some(t => t.toLowerCase().includes('audio'))) return '🎧';
+    if (types.some(t => t.toLowerCase().includes('quiz') || t.toLowerCase().includes('test'))) return '❓';
+    if (types.some(t => t.toLowerCase().includes('präsent') || t.toLowerCase().includes('praesent'))) return '🖼️';
+    if (types.some(t => t.toLowerCase().includes('übung') || t.toLowerCase().includes('uebung'))) return '✏️';
+    if (types.some(t => t.toLowerCase().includes('kurs'))) return '🎓';
+    if (types.some(t => t.toLowerCase().includes('webseite') || t.toLowerCase().includes('website'))) return '🌍';
     return '📖';
+  }
+
+  /**
+   * Lesbares Label für den Inhaltstyp (über dem Bild). Nutzt den ersten
+   * `learning_resource_types`-Eintrag wenn vorhanden, sonst Fallback.
+   */
+  getContentTypeLabel(card: WloCard): string {
+    if (card.node_type === 'collection') {
+      // Sammlungen unterscheiden wir über das Kind-Badge rechts;
+      // hier zeigen wir konkretere Info, falls vorhanden.
+      if (card.topic_pages && card.topic_pages.length) return 'Themenseite';
+      return 'Sammlung';
+    }
+    const types = (card.learning_resource_types || []).filter(
+      t => t && t.toLowerCase() !== 'sammlung' && t.toLowerCase() !== 'collection',
+    );
+    if (types.length) return types[0];
+    return 'Inhalt';
+  }
+
+  /** Drei-Wege-Klassifikation für visuelle Unterscheidung. */
+  isThemenseite(card: WloCard): boolean {
+    return card.node_type === 'collection'
+      && Array.isArray(card.topic_pages) && card.topic_pages.length > 0;
+  }
+  isSammlung(card: WloCard): boolean {
+    return card.node_type === 'collection'
+      && !(Array.isArray(card.topic_pages) && card.topic_pages.length > 0);
+  }
+  isInhalt(card: WloCard): boolean {
+    return card.node_type !== 'collection';
+  }
+
+  /**
+   * Kompakte Lizenz-Anzeige für das Footer-Badge auf dem Vorschaubild.
+   * "CC BY-SA 4.0" → "CC BY-SA", "Custom"/"Individuelle Lizenz" → "©",
+   * sonstige werden gekürzt.
+   */
+  getLicenseShort(license: string): string {
+    if (!license) return '';
+    const l = license.trim();
+    if (/^cc\b/i.test(l)) {
+      // "CC BY-SA 4.0" → "CC BY-SA"
+      return l.replace(/\s*\d(\.\d+)?\s*$/, '').toUpperCase();
+    }
+    if (/individuelle|custom|copyright/i.test(l)) return '©';
+    if (/public\s*domain|gemeinfrei|cc\s*0|pdm/i.test(l)) return 'PD';
+    if (l.length > 12) return 'Lizenz';
+    return l;
   }
 
   // ── Collection Actions ─────────────────────────────────────

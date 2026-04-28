@@ -386,18 +386,24 @@ async def _handle_browse_collection(
         response_text = f'Fehler beim Laden der Inhalte von "{title}": {e}'
         tools_called.append("error")
 
-    # Generate quick replies for collection browse context
-    quick_replies = await generate_quick_replies(
-        message=req.message,
-        response_text=response_text,
-        classification={
-            "persona_id": session_state.get("persona_id", "P-AND"),
-            "intent_id": "INT-W-03a",
-            "next_state": "state-6",
-            "entities": session_state.get("entities", {}),
-        },
-        session_state=session_state,
-    )
+    # Generate quick replies for collection browse context.
+    # Quick-replies are pure UX sugar — a B-API blip on the QR-LLM call must
+    # never crash a successful response, so we degrade to an empty list.
+    try:
+        quick_replies = await generate_quick_replies(
+            message=req.message,
+            response_text=response_text,
+            classification={
+                "persona_id": session_state.get("persona_id", "P-AND"),
+                "intent_id": "INT-W-03a",
+                "next_state": "state-6",
+                "entities": session_state.get("entities", {}),
+            },
+            session_state=session_state,
+        )
+    except Exception as _qr_err:
+        logger.warning("browse_collection quick_replies failed: %s", _qr_err)
+        quick_replies = []
 
     debug = DebugInfo(
         persona=session_state.get("persona_id", ""),
@@ -679,18 +685,22 @@ async def _handle_generate_learning_path(
         response_text = f'Fehler beim Erstellen des Lernpfads für "{title}": {e}'
         tools_called.append("error")
 
-    # Generate quick replies
-    quick_replies = await generate_quick_replies(
-        message=req.message,
-        response_text=response_text,
-        classification={
-            "persona_id": session_state.get("persona_id", "P-AND"),
-            "intent_id": "INT-W-10",
-            "next_state": "state-6",
-            "entities": session_state.get("entities", {}),
-        },
-        session_state=session_state,
-    )
+    # Generate quick replies (best-effort — never block a finished LP on QR).
+    try:
+        quick_replies = await generate_quick_replies(
+            message=req.message,
+            response_text=response_text,
+            classification={
+                "persona_id": session_state.get("persona_id", "P-AND"),
+                "intent_id": "INT-W-10",
+                "next_state": "state-6",
+                "entities": session_state.get("entities", {}),
+            },
+            session_state=session_state,
+        )
+    except Exception as _qr_err:
+        logger.warning("learning_path quick_replies failed: %s", _qr_err)
+        quick_replies = []
 
     debug = DebugInfo(
         persona=session_state.get("persona_id", ""),
@@ -727,7 +737,21 @@ async def _handle_generate_learning_path(
         entities=json.dumps(session_state.get("entities", {})),
     )
 
-    short_ack = _lp_completion_message(title, markdown)
+    # If the LP step failed inside the try/except above, response_text
+    # is the user-facing error string (no markdown headings) — fall back
+    # to a plain chat bubble in that case instead of pretending we built
+    # a canvas document.
+    _lp_failed = (response_text or "").startswith("Fehler beim Erstellen des Lernpfads")
+    if _lp_failed:
+        return ChatResponse(
+            session_id=req.session_id,
+            content=response_text,
+            cards=cards,
+            quick_replies=quick_replies,
+            debug=debug,
+        )
+
+    short_ack = _lp_completion_message(title, response_text or "")
 
     return ChatResponse(
         session_id=req.session_id,
@@ -770,15 +794,44 @@ async def _handle_canvas_create(
     memories = await get_memory(req.session_id)
     memory_context = "\n".join(f"- {m['key']}: {m['value']}" for m in (memories or [])[:10])
 
-    title, markdown = await generate_canvas_content(
-        topic=topic,
-        material_type_key=type_key,
-        session_state=session_state,
-        memory_context=memory_context,
-    )
     _mts = get_material_types()
     label = _mts[type_key]["label"]
     emoji = _mts[type_key]["emoji"]
+
+    try:
+        title, markdown = await generate_canvas_content(
+            topic=topic,
+            material_type_key=type_key,
+            session_state=session_state,
+            memory_context=memory_context,
+        )
+    except Exception as e:
+        # Don't propagate to a 500 — degrade to a friendly chat message so the
+        # user sees what went wrong (e.g. transient B-API/LLM rate-limit) and
+        # can retry. Without this, the frontend's generic catch-all swallows
+        # the error and just says "konnte ich leider nicht erstellen".
+        logger.error("canvas_create generation failed: %s", e)
+        err_debug = DebugInfo(
+            persona=session_state.get("persona_id", ""),
+            intent="INT-W-11",
+            state="state-12",
+            pattern="ACTION: canvas_create_error",
+            tools_called=["canvas_service.generate_canvas_content", "error"],
+            entities=session_state.get("entities", {}),
+        )
+        msg = (
+            f"Ich konnte das **{label}** zum Thema *{topic}* gerade nicht "
+            f"erstellen ({type(e).__name__}). Versuch es nochmal — meistens "
+            "klappt es beim zweiten Anlauf."
+        )
+        await save_message(req.session_id, "assistant", msg,
+                           debug=err_debug.model_dump())
+        return ChatResponse(
+            session_id=req.session_id,
+            content=msg,
+            quick_replies=["Nochmal versuchen", "Anderes Material"],
+            debug=err_debug,
+        )
 
     response_text = _canvas_completion_message(label, topic, markdown)
 
@@ -900,14 +953,40 @@ async def _handle_canvas_remix(
     memories = await get_memory(req.session_id)
     memory_context = "\n".join(f"- {m['key']}: {m['value']}" for m in (memories or [])[:10])
 
-    title_out, md = await generate_canvas_remix(
-        topic=topic,
-        material_type_key=mt_key,
-        source_meta=source_meta,
-        source_text=extracted_text,
-        session_state=session_state,
-        memory_context=memory_context,
-    )
+    try:
+        title_out, md = await generate_canvas_remix(
+            topic=topic,
+            material_type_key=mt_key,
+            source_meta=source_meta,
+            source_text=extracted_text,
+            session_state=session_state,
+            memory_context=memory_context,
+        )
+    except Exception as e:
+        # Same hardening as in _handle_canvas_create — graceful chat-bubble
+        # instead of a 500 when the LLM/B-API blips.
+        logger.error("canvas_remix generation failed: %s", e)
+        err_debug = DebugInfo(
+            persona=session_state.get("persona_id", ""),
+            intent="INT-W-11",
+            state="state-12",
+            pattern="ACTION: canvas_remix_error",
+            tools_called=["canvas_service.generate_canvas_remix", "error"],
+            entities=session_state.get("entities", {}),
+        )
+        msg = (
+            f"Den Remix als **{label}** zu *{topic}* konnte ich gerade nicht "
+            f"erstellen ({type(e).__name__}). Versuch es nochmal — meistens "
+            "klappt es beim zweiten Anlauf."
+        )
+        await save_message(req.session_id, "assistant", msg,
+                           debug=err_debug.model_dump())
+        return ChatResponse(
+            session_id=req.session_id,
+            content=msg,
+            quick_replies=["Nochmal versuchen", "Anderes Material"],
+            debug=err_debug,
+        )
 
     short_note = "" if extraction_ok else " *(Volltext war nicht abrufbar — Remix basiert auf Metadaten.)*"
     response_text = (
@@ -1014,6 +1093,32 @@ async def _handle_canvas_edit(
             content=str(e),
             debug=refusal_debug,
         )
+    except Exception as e:
+        # Any other LLM/B-API failure (rate-limit, network, bad JSON, …) —
+        # return a friendly chat bubble instead of a 500. The canvas content
+        # in the widget stays as-is, so the user can simply retry.
+        logger.error("canvas_edit generation failed: %s", e)
+        err_debug = DebugInfo(
+            persona=session_state.get("persona_id", ""),
+            intent="INT-W-12",
+            state="state-12",
+            pattern="ACTION: canvas_edit_error",
+            tools_called=["canvas_service.edit_canvas_content", "error"],
+            entities=session_state.get("entities", {}),
+        )
+        msg = (
+            f"Die Änderung konnte ich gerade nicht anwenden ({type(e).__name__}). "
+            "Der bisherige Canvas-Inhalt bleibt unverändert. Versuch es nochmal — "
+            "meistens klappt es beim zweiten Anlauf."
+        )
+        await save_message(req.session_id, "assistant", msg,
+                           debug=err_debug.model_dump())
+        return ChatResponse(
+            session_id=req.session_id,
+            content=msg,
+            quick_replies=["Nochmal versuchen", "Einfacher schreiben"],
+            debug=err_debug,
+        )
 
     response_text = (
         "Erledigt. Der Canvas-Inhalt ist jetzt angepasst. "
@@ -1072,6 +1177,37 @@ async def chat(req: ChatRequest):
     async with lock:
         try:
             return await _chat_impl(req)
+        except Exception as _impl_err:
+            # Top-level safety net: any unhandled exception in _chat_impl
+            # (config bug, attribute error in pattern engine, DB hiccup, …)
+            # gets converted into a graceful chat bubble instead of HTTP 500.
+            # The frontend's catch-all would otherwise swallow it as a
+            # generic "konnte ich leider nicht …" message with no debug
+            # info — better to surface the exception type to the user so
+            # they can report it.
+            logger.exception("chat endpoint unhandled exception: %s", _impl_err)
+            err_debug = DebugInfo(
+                pattern="ERROR: unhandled_chat_exception",
+                tools_called=["error"],
+            )
+            try:
+                await save_message(
+                    req.session_id, "assistant",
+                    f"[unhandled error: {type(_impl_err).__name__}]",
+                    debug=err_debug.model_dump(),
+                )
+            except Exception:
+                pass  # never let DB-write failures mask the original error
+            return ChatResponse(
+                session_id=req.session_id,
+                content=(
+                    "Da ist intern etwas schiefgelaufen "
+                    f"({type(_impl_err).__name__}). Versuch es nochmal — "
+                    "wenn es bestehen bleibt, gib mir kurz Bescheid."
+                ),
+                quick_replies=["Nochmal versuchen"],
+                debug=err_debug,
+            )
         finally:
             _release_session_lock(req.session_id)
 
@@ -1239,19 +1375,25 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         return req.message[:120]
 
     def _spec_has_enough_signal() -> bool:
-        """Gate speculative prefetch on having a real topic, not just a fach.
+        """Gate speculative prefetch on having any usable search anchor.
 
-        Without this, requests like "Ich brauche Hilfe bei Mathe" trigger a
-        broad search for "Mathe" and the LLM then presents random top hits as
-        if they were a match for the user's intent. When only ``fach`` is set
-        (or nothing), let PAT-02 (Geführte Klärung) ask for the topic first.
+        Anchors (in priority order): explicit ``thema`` / ``topic`` /
+        ``schlagwort`` / ``query`` slot, or — as a softer fallback —
+        ``fach`` (Subject). With ``fach`` alone we still get a useful
+        broad search (Themenseiten/Sammlungen zum Fach), which is what
+        the user expects when they ask "Material zum Fach Mathematik".
+
+        Without ANY anchor we skip the prefetch — PAT-02 (Geführte
+        Klärung) takes over and asks for at least a Fach.
         """
         ents = classification.entities or {}
         thema = (ents.get("thema") or ents.get("topic")
                  or ents.get("query") or ents.get("schlagwort") or "")
         if str(thema).strip():
             return True
-        # No topic at all — only fach or bare fallback query → skip prefetch
+        fach = ents.get("fach")
+        if fach and str(fach).strip():
+            return True
         return False
 
     # Extra speculative tasks that run in parallel next to the primary one.
@@ -1278,7 +1420,14 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             _wants_samml = any(k in _msg_low for k in (
                 "sammlung", "sammlungen", "kollektion",
             ))
-            _wants_content_only = bool(_medientyp) or classification.intent_id == "INT-W-03b"
+            # _wants_content_only: True nur wenn explizit ein Medientyp
+            # (Video / Arbeitsblatt / interaktive Übung / …) genannt ist.
+            # Frühere Variante "or INT-W-03b" hat bei jeder Material-Suche
+            # die Sammlungen + Themenseiten weggeworfen — der User wollte
+            # aber gestaffelt: Themenseiten → Sammlungen → Inhalte. Daher
+            # bei INT-W-03b OHNE medientyp lieber als generische Suche
+            # behandeln (alle drei Tool-Calls parallel).
+            _wants_content_only = bool(_medientyp)
 
             if spec_query:
                 # 1. Primary tool — always a tool whose output parse_wlo_cards
@@ -1314,19 +1463,32 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 #        the complementary search so user sees both types
                 #      - explicit content-search with generic intent → also collections
                 _extras: list[str] = []
+                # Search-Intents profitieren immer von der gestaffelten
+                # Suche Themenseiten → Sammlungen → Inhalte. Wir feuern
+                # alle fehlenden Tools parallel zur primary, damit der
+                # User die volle Bandbreite der Treffer sieht.
+                _all_search_intents = (
+                    "INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-10",
+                )
                 if _wants_topic:
-                    # User explicitly asked for topic pages → also fetch
-                    # topic_pages-specific listing and merge its URLs onto
-                    # whichever collection cards match (enriches them with
-                    # the /topic-pages? link).
+                    # Explizit nach Themenseiten gefragt → topic_pages
+                    # Listing wird ohnehin gezogen und auf die passenden
+                    # Sammlungs-Cards gemerged.
                     _extras.append("search_wlo_topic_pages")
-                if not _wants_content_only and not _wants_samml \
-                        and classification.intent_id in ("INT-W-03a", "INT-W-03c", "INT-W-10"):
-                    # Truly generic search — also show content alongside collections
-                    _extras.append("search_wlo_content")
-                elif _wants_content_only and classification.intent_id in ("INT-W-03a", "INT-W-03c", "INT-W-10"):
-                    # Content-primary but generic intent → still offer collections as context
-                    _extras.append("search_wlo_collections")
+                elif classification.intent_id in _all_search_intents:
+                    # Generische Suche → Themenseiten als zusätzliche
+                    # Card-Quelle (top of staircase) anbieten.
+                    _extras.append("search_wlo_topic_pages")
+
+                if classification.intent_id in _all_search_intents:
+                    # Sicherstellen dass alle drei Tool-Klassen gelaufen
+                    # sind: primary deckt eine Klasse ab, _extras die
+                    # fehlenden zwei. Doppelungen filtert das spätere
+                    # Dedup unten anhand des Tool-Namens.
+                    if not _wants_content_only:
+                        _extras.append("search_wlo_content")
+                    if _wants_content_only or _wants_samml:
+                        _extras.append("search_wlo_collections")
 
                 for extra_name in _extras:
                     if extra_name == spec_tool_name:
@@ -1352,6 +1514,43 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 )
     except Exception as _e:
         logger.warning("safety log failed: %s", _e)
+
+    # ── Placeholder-Topic-Filter ─────────────────────────────────────
+    # Wenn der Classifier "Thema" / "etwas" / "irgendwas" / "was" / "Material"
+    # etc. als thema extrahiert hat, ist das KEIN echtes Thema, sondern ein
+    # Meta-Wort aus der User-Frage ("Ich suche etwas zu einem Thema"). Solche
+    # Platzhalter dürfen nicht zu einer MCP-Suche führen — die Engine soll
+    # dann sauber degradieren ("nenn mir dein konkretes Thema") statt mit
+    # Müll-Treffern ("Wortschatz" / "Startseite Mathematik" für Query="Thema")
+    # die Karten-Liste zu fluten.
+    _PLACEHOLDER_TOPICS = {
+        "thema", "themen", "ein thema", "einem thema", "irgendwas",
+        "etwas", "was", "irgendetwas", "irgendein thema", "sonstiges",
+        "material", "materialien", "ein material", "ein paar materialien",
+        "sachen", "dinge", "stuff", "topic", "etwas thema",
+        "inhalt", "inhalte", "content",
+    }
+    def _is_placeholder_topic(value: str | None) -> bool:
+        s = (value or "").strip().lower()
+        return bool(s) and s in _PLACEHOLDER_TOPICS
+
+    if classification.entities and _is_placeholder_topic(
+        classification.entities.get("thema")
+    ):
+        logger.info(
+            "thema='%s' ist Platzhalter — auf leer gesetzt, damit Engine sauber nachfragt",
+            classification.entities.get("thema"),
+        )
+        classification.entities["thema"] = ""
+
+    # Auch stale Platzhalter aus vorherigem Turn aus session_state entfernen
+    _ss_ents = session_state.get("entities") or {}
+    if _is_placeholder_topic(_ss_ents.get("thema")):
+        logger.info(
+            "stale session_state.thema='%s' (Platzhalter) entfernt",
+            _ss_ents.get("thema"),
+        )
+        _ss_ents["thema"] = ""
 
     # Update entities based on turn type
     turn_type = classification.turn_type
@@ -2234,7 +2433,46 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             )
             # strip "zu", "über", "zum", "zur" + collapse whitespace
             _fallback = _re_topic.sub(r"^\s*(zu|über|zum|zur|ueber)\s+", "", _fallback, flags=_re_topic.IGNORECASE)
-            _fallback = _re_topic.sub(r"\s+", " ", _fallback).strip(" .,:;")
+
+            # NEW: cut off subordinate clauses like "…, das mein Sohn nutzt"
+            # / "…, mit dem die Schüler üben" / "…, dass meine Klasse versteht".
+            # The relative clause is just background context, not part of the
+            # topic. Without this, the topic became "Mathe in der 3. Klasse,
+            # das mein Sohn für seine Hausaufgaben nutze…". Must run BEFORE
+            # the trailing-verb stripper so the verb (which is now exposed at
+            # end-of-string) can be removed in the next step.
+            _fallback = _re_topic.sub(
+                r"\s*,\s*(das|dass|der|die|den|dem|mit\s+dem|mit\s+der|"
+                r"mit\s+denen|für\s+das|für\s+den|für\s+die|wo|womit|"
+                r"woraus|in\s+dem|in\s+der|in\s+denen|um\s+zu|sodass|"
+                r"so\s+dass|damit|weil|denn)\b.*$",
+                "", _fallback, flags=_re_topic.IGNORECASE,
+            )
+
+            # NEW: cut off "für meine|seine|deine|ihre …" purpose clauses
+            # ("für meine nächste Sitzung", "für seine Hausaufgaben"). These
+            # describe USE not topic; they confuse the LLM downstream.
+            _fallback = _re_topic.sub(
+                r"\s+für\s+(meine|seine|deine|ihre|unsere|eure|"
+                r"meinen|seinen|deinen|ihren|unseren|euren)\s+\w+.*$",
+                "", _fallback, flags=_re_topic.IGNORECASE,
+            )
+
+            # NEW: strip TRAILING create-verbs ("…erstellen", "…generieren",
+            # "…bauen") — they're often at the end of the user sentence,
+            # e.g. "Kannst du mir ein Arbeitsblatt für Mathe erstellen?"
+            # → after subordinate-cut: "Arbeitsblatt für Mathe erstellen"
+            # → after trailing-verb-cut: "Arbeitsblatt für Mathe".
+            _fallback = _re_topic.sub(
+                r"\s+(erstellen|machen|bauen|generieren|schreiben|entwerfen|"
+                r"produzieren|verfassen|zusammenstellen|herunterladen|"
+                r"runterladen|zur\s+Verfügung\s+stellen|bereitstellen)"
+                r"(\s+kannst|\s+könntest|\s+würdest|\s+wirst|\s+könnten\s+Sie|"
+                r"\s+würden\s+Sie|\s+möchtest|\s+möchten\s+Sie)?\??\s*$",
+                "", _fallback, flags=_re_topic.IGNORECASE,
+            )
+
+            _fallback = _re_topic.sub(r"\s+", " ", _fallback).strip(" .,:;-?")
             # Cap at 80 chars to avoid weirdly long topics
             _c_topic = _fallback[:80]
 
@@ -2330,36 +2568,52 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             _mts_flow = get_material_types()
             _label = _mts_flow[_mt_key]["label"]
             _emoji = _mts_flow[_mt_key]["emoji"]
-            _title, _md = await generate_canvas_content(
-                topic=_c_topic,
-                material_type_key=_mt_key,
-                session_state=session_state,
-                memory_context=memory_context,
-            )
-            response_text = _canvas_completion_message(_label, _c_topic, _md)
-            tools_called = ["canvas_service.generate_canvas_content"]
-            wlo_cards_raw = []
-            _canvas_routed = True
-            _canvas_payload_out = {
-                "action": "canvas_open",
-                "payload": {
-                    "title": _title,
-                    "material_type": _mt_key,
-                    "material_type_label": f"{_emoji} {_label}",
-                    "material_type_category": get_material_type_category(_mt_key),
-                    "markdown": _md,
-                },
-            }
-            new_state = "state-12"
-            session_state["entities"]["_canvas_material_type"] = _mt_key
-            session_state["entities"]["_canvas_topic"] = _c_topic
-            # Store fresh markdown so subsequent edit-verb turns
-            # ("mach es einfacher") operate on THIS canvas, not on an
-            # older one that may still be in session memory.
-            session_state["entities"]["_canvas_last_markdown"] = _md
-            # Also refresh thema so next turn's classifier sees the
-            # current topic, not a stale prior one.
-            session_state["entities"]["thema"] = _c_topic
+            try:
+                _title, _md = await generate_canvas_content(
+                    topic=_c_topic,
+                    material_type_key=_mt_key,
+                    session_state=session_state,
+                    memory_context=memory_context,
+                )
+                response_text = _canvas_completion_message(_label, _c_topic, _md)
+                tools_called = ["canvas_service.generate_canvas_content"]
+                wlo_cards_raw = []
+                _canvas_routed = True
+                _canvas_payload_out = {
+                    "action": "canvas_open",
+                    "payload": {
+                        "title": _title,
+                        "material_type": _mt_key,
+                        "material_type_label": f"{_emoji} {_label}",
+                        "material_type_category": get_material_type_category(_mt_key),
+                        "markdown": _md,
+                    },
+                }
+                new_state = "state-12"
+                session_state["entities"]["_canvas_material_type"] = _mt_key
+                session_state["entities"]["_canvas_topic"] = _c_topic
+                # Store fresh markdown so subsequent edit-verb turns
+                # ("mach es einfacher") operate on THIS canvas, not on an
+                # older one that may still be in session memory.
+                session_state["entities"]["_canvas_last_markdown"] = _md
+                # Also refresh thema so next turn's classifier sees the
+                # current topic, not a stale prior one.
+                session_state["entities"]["thema"] = _c_topic
+            except Exception as _e:
+                # Same hardening as in _handle_canvas_create — graceful chat
+                # bubble instead of bubbling a 500. The frontend would otherwise
+                # show its generic "konnte ich leider nicht erstellen" message.
+                logger.error("PAT-21 canvas generation failed: %s", _e)
+                response_text = (
+                    f"Ich konnte das **{_label}** zum Thema *{_c_topic}* gerade "
+                    f"nicht erstellen ({type(_e).__name__}). Versuch es nochmal — "
+                    "meistens klappt es beim zweiten Anlauf."
+                )
+                tools_called = ["canvas_service.generate_canvas_content", "error"]
+                wlo_cards_raw = []
+                _canvas_routed = True
+                _canvas_payload_out = None
+                new_state = session_state.get("state_id") or "state-5"
         elif _c_topic and not _mt_key:
             response_text = (
                 f"Welches Material soll ich dir zum Thema **{_c_topic}** erstellen? "
@@ -2402,14 +2656,37 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             pattern_output.get("degradation")
             and "thema" in pattern_output.get("missing_slots", [])
         )
+
+        # Override: bei eindeutiger Search-Intent + Anker (thema/fach)
+        # reichen wir den Speculative-Prefetch durch, auch wenn das
+        # gewählte Pattern eigentlich tool-frei ist (typischer Fall:
+        # alle Search-Patterns wegen `precondition_slots: thema`
+        # eliminiert → PAT-20 gewinnt → ohne diesen Override sähe der
+        # User trotz klarer Suchanfrage keine Cards). Sicher, weil der
+        # spec_query immer aus den klassifizierten Entities stammt.
+        _is_search_intent = classification.intent_id in (
+            "INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-10",
+        )
+        _spec_override_pattern_block = (
+            _is_search_intent
+            and (_pat_wants_no_tools or _pat_forbids_mcp)
+            and not (_lp_routed or _canvas_routed or _degradation_blocks)
+        )
+
         spec_blocked = (
             spec_tool_name in (safety.blocked_tools or [])
-            or _pat_forbids_mcp
-            or _pat_wants_no_tools
+            or (_pat_forbids_mcp and not _spec_override_pattern_block)
+            or (_pat_wants_no_tools and not _spec_override_pattern_block)
             or _lp_routed  # LP path ran its own MCP logic, discard spec
             or _canvas_routed  # Canvas-create doesn't need search results
             or _degradation_blocks  # Missing thema → ask first, don't search
         )
+        if _spec_override_pattern_block:
+            logger.info(
+                "speculative %s kept despite pattern tools=[] "
+                "(search-intent %s + anchor entities)",
+                spec_tool_name, classification.intent_id,
+            )
         if spec_blocked:
             spec_task.cancel()
             try:
@@ -2431,26 +2708,55 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
 
     if not _lp_routed and not _canvas_routed:
         tracer.start("response", "LLM response generation")
-        response_text, wlo_cards_raw, tools_called, response_outcomes = await generate_response(
-            message=req.message,
-            history=history,
-            classification=classification_dict,
-            pattern_output=pattern_output,
-            pattern_label=winner.label,
-            session_state=session_state,
-            environment=env,
-            rag_context=memory_context,  # Only memory, no blind RAG injection
-            available_rag_areas=available_rag_areas,
-            rag_config=rag_config,
-            blocked_tools=safety.blocked_tools,
-            prefetched_tool=prefetched_tool_payload,
-            canvas_state=req.canvas_state,
-        )
-        tracer.end({
-            "tools": tools_called,
-            "outcomes": len(response_outcomes),
-            "prefetch": bool(prefetched_tool_payload),
-        })
+        try:
+            response_text, wlo_cards_raw, tools_called, response_outcomes = await generate_response(
+                message=req.message,
+                history=history,
+                classification=classification_dict,
+                pattern_output=pattern_output,
+                pattern_label=winner.label,
+                session_state=session_state,
+                environment=env,
+                rag_context=memory_context,  # Only memory, no blind RAG injection
+                available_rag_areas=available_rag_areas,
+                rag_config=rag_config,
+                blocked_tools=safety.blocked_tools,
+                prefetched_tool=prefetched_tool_payload,
+                canvas_state=req.canvas_state,
+            )
+            tracer.end({
+                "tools": tools_called,
+                "outcomes": len(response_outcomes),
+                "prefetch": bool(prefetched_tool_payload),
+            })
+        except Exception as _gen_err:
+            # The main LLM call is the single biggest source of intermittent
+            # failures (B-API rate-limit, network blip, malformed JSON in tool
+            # calls, …). Without this guard, every blip becomes a 500 →
+            # frontend's catch-all swallows it as a generic "etwas ist
+            # schiefgelaufen". Degrade to a friendly retry-prompt instead and
+            # use the speculatively-prefetched cards if we have any.
+            logger.error("generate_response failed: %s", _gen_err)
+            tracer.end({"error": f"{type(_gen_err).__name__}: {_gen_err}"})
+            response_text = (
+                "Ich konnte gerade keine Antwort erzeugen "
+                f"({type(_gen_err).__name__}). Versuch es nochmal — meistens "
+                "klappt es beim zweiten Anlauf."
+            )
+            wlo_cards_raw = []
+            tools_called = ["error"]
+            response_outcomes = []
+            # If a speculative MCP prefetch already returned cards, keep them
+            # in the response so the user still sees something useful.
+            if prefetched_tool_payload and prefetched_tool_payload.get("result_text"):
+                try:
+                    wlo_cards_raw = parse_wlo_cards(prefetched_tool_payload["result_text"])
+                    await resolve_discipline_labels(wlo_cards_raw)
+                except Exception as _spec_parse_err:
+                    logger.warning(
+                        "could not salvage spec cards in error path: %s",
+                        _spec_parse_err,
+                    )
 
     # Append policy disclaimers to the response (if any)
     if policy.required_disclaimers and response_text:
@@ -2646,12 +2952,18 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     if _canvas_forced_quick_replies:
         quick_replies = _canvas_forced_quick_replies
     elif follow_up_mode != "none":
-        quick_replies = await generate_quick_replies(
-            message=req.message,
-            response_text=response_text,
-            classification=classification_dict,
-            session_state=session_state,
-        )
+        try:
+            quick_replies = await generate_quick_replies(
+                message=req.message,
+                response_text=response_text,
+                classification=classification_dict,
+                session_state=session_state,
+            )
+        except Exception as _qr_err:
+            # Quick replies are optional UX — never crash a successful main
+            # response on a B-API/LLM blip in the QR call. Degrade to none.
+            logger.warning("main flow quick_replies failed: %s", _qr_err)
+            quick_replies = []
     else:
         quick_replies = []
 
@@ -2682,11 +2994,21 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     elif _lp_canvas:
         page_action = _lp_canvas
     elif cards:
-        # Widget-Kontext dominiert: wenn das Frontend den WidgetComponent
-        # verwendet (egal auf welcher Seite es embeddet ist), markiert es
-        # sich via page_context.widget=true. Dann gehen Kacheln immer ins
-        # Canvas — unabhaengig von env.page. Die alte Host-Page-Erkennung
-        # bleibt nur fuer echte Direct-Integrationen (WLO-Suche ohne Widget).
+        # Sicherheitsfilter: wenn die Suche ohne konkretes Thema/Fach lief,
+        # sind die "Treffer" in aller Regel Müll (z.B. "Wortschatz" oder
+        # "Startseite Mathematik" für eine Anfrage "Ich suche etwas zu
+        # einem Thema"). Cards leeren — Engine fragt erst nach dem Thema.
+        _has_real_topic = bool(
+            (session_state.get("entities", {}).get("thema") or "").strip()
+            or (session_state.get("entities", {}).get("fach") or "").strip()
+        )
+        if not _has_real_topic:
+            logger.info(
+                "Cards unterdrückt — kein konkretes Thema/Fach im Slot"
+            )
+            cards = []
+        # Re-prüfen ob nach Filterung noch Cards übrig sind
+    if page_action is None and cards:
         _widget_active = bool((env.get("page_context") or {}).get("widget"))
         _host_page = (not _widget_active) and env.get("page") in ("/suche", "/startseite", "/")
         if _host_page:

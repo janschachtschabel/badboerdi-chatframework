@@ -19,26 +19,34 @@ from pydantic import ValidationError
 
 from app.models.schemas import (
     SearchWloArgs, SearchTopicPagesArgs, CollectionContentsArgs, NodeDetailsArgs,
-    InfoQueryArgs, LookupVocabularyArgs,
+    LookupVocabularyArgs, SubjectPortalsArgs, CollectionTreeArgs,
+    HealthCheckArgs, NodesDetailsArgs,
 )
 
 logger = logging.getLogger(__name__)
 
-# Map tool names to their Pydantic argument models
+# Map tool names to their Pydantic argument models. Reflects the MCP
+# server v2 toolkit (10 tools) — the four web-content scrapers from v1
+# have been removed because RAG handles those topics in Boerdi.
 _TOOL_ARG_MODELS: dict[str, type] = {
     "search_wlo_collections": SearchWloArgs,
-    "search_wlo_content": SearchWloArgs,
+    "search_wlo_content":     SearchWloArgs,
     "search_wlo_topic_pages": SearchTopicPagesArgs,
-    "get_collection_contents": CollectionContentsArgs,
-    "get_node_details": NodeDetailsArgs,
-    "get_wirlernenonline_info": InfoQueryArgs,
-    "get_edu_sharing_network_info": InfoQueryArgs,
-    "get_edu_sharing_product_info": InfoQueryArgs,
-    "get_metaventis_info": InfoQueryArgs,
-    "lookup_wlo_vocabulary": LookupVocabularyArgs,
+    "get_collection_contents":CollectionContentsArgs,
+    "get_node_details":       NodeDetailsArgs,
+    "lookup_wlo_vocabulary":  LookupVocabularyArgs,
+    "get_subject_portals":    SubjectPortalsArgs,
+    "browse_collection_tree": CollectionTreeArgs,
+    "wlo_health_check":       HealthCheckArgs,
+    "get_nodes_details":      NodesDetailsArgs,
 }
 
-MCP_URL = os.getenv("MCP_SERVER_URL", "https://wlo-mcp-server.vercel.app/mcp")
+# MCP-Server-URL. Robust gegen die Docker-Compose-Falle, in der
+# ``${MCP_SERVER_URL:-}`` einen leeren String an den Container reicht
+# (statt ``unset`` zu lassen) — wir behandeln Leer-String wie Unset und
+# tolerieren Trailing-Slash.
+_DEFAULT_MCP_URL = "https://wlo-mcp-server.vercel.app/mcp"
+MCP_URL = ((os.getenv("MCP_SERVER_URL") or "").strip().rstrip("/") or _DEFAULT_MCP_URL)
 
 # Session state per server URL (initialized on first tool call)
 _sessions: dict[str, dict[str, Any]] = {}  # url -> {session_id, initialized}
@@ -220,7 +228,7 @@ async def _ensure_initialized_with_session():
     logger.info("MCP handshake complete")
 
 
-# All 9 WLO MCP tools (for OpenAI function calling)
+# All 10 WLO MCP tools v2 (for OpenAI function calling)
 TOOL_DEFINITIONS = [
     {
         "type": "function",
@@ -313,62 +321,6 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
-            "name": "get_wirlernenonline_info",
-            "description": "Infos von WirLernenOnline (WLO) – OER-Portal. Nutze bei Fragen zu: WLO, WirLernenOnline, OER, Fachportale, Qualitaetssicherung, Mitmachen, Fachredaktion, was ist WLO, wie funktioniert WLO, wer steckt dahinter.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Topic or question about WLO"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_edu_sharing_network_info",
-            "description": "Infos von edu-sharing-network.org – Community & Vernetzung. Nutze bei Fragen zu: edu-sharing Vernetzung, JOINTLY, ITsJOINTLY, BIRD, Bildungsraum Digital, Hackathon, OER-Sommercamp, Netzwerk.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Query about edu-sharing network"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_edu_sharing_product_info",
-            "description": "Infos zum edu-sharing Software-Produkt. Nutze bei Fragen zu: edu-sharing Software, Repository, Content-Management, LMS-Integration, Schnittstellen, API, Technik.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Query about edu-sharing product"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_metaventis_info",
-            "description": "Infos von metaventis.com – Unternehmen hinter edu-sharing. Nutze bei Fragen zu: metaVentis, Schulcloud, IDM, Autoren-Loesung, F&E, Firmenwissen, E-Learning, wer entwickelt edu-sharing.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Query about metaVentis"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "lookup_wlo_vocabulary",
             "description": "Look up valid filter values for WLO search. Use 'discipline' for subjects, 'educationalContext' for education levels, 'lrt' for resource types, 'userRole' for target groups. Returns entries with URIs — use the URI as the filter value on search_wlo_content / search_wlo_collections (resourceType / educationalLevel / discipline).",
             "parameters": {
@@ -376,11 +328,105 @@ TOOL_DEFINITIONS = [
                 "properties": {
                     "vocabulary": {
                         "type": "string",
-                        "enum": ["educationalContext", "discipline", "userRole", "lrt"],
-                        "description": "Which vocabulary to look up: educationalContext (Bildungsstufen), discipline (Fächer), lrt (Lernressourcentypen), userRole (Zielgruppen)",
+                        "enum": ["educationalContext", "discipline", "userRole", "lrt", "license", "targetGroup"],
+                        "description": "Which vocabulary to look up. educationalContext=Bildungsstufen, discipline=Fächer, lrt=Lernressourcentypen, userRole=Zielgruppen, license=CC-Lizenzen, targetGroup=Themenseiten-Zielgruppen.",
                     },
                 },
                 "required": ["vocabulary"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_subject_portals",
+            "description": (
+                "Listet die WLO-Fachportale — die Top-Level-Sammlungen direkt unter dem WLO-Wurzelknoten "
+                "(Mathematik, Informatik, Deutsch, Biologie, …). Nutze dies, um dem Nutzer einen Überblick "
+                "über alle abgedeckten Fächer zu geben oder als Einstiegspunkt für einen geführten Drilldown. "
+                "Liefert pro Portal nodeId, Name, Beschreibung, optional Themenseiten-URL und Anzahl der "
+                "Sub-Sammlungen."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "educationalContext": {
+                        "type": "string",
+                        "description": "Optionaler Filter, z.B. 'Sekundarstufe I'.",
+                    },
+                    "includeContentCounts": {
+                        "type": "boolean",
+                        "description": "Wenn true, fügt pro Portal die Anzahl der direkten Sub-Sammlungen hinzu.",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browse_collection_tree",
+            "description": (
+                "Strukturierter Drilldown unter eine Sammlung. Liefert die direkten Sub-Sammlungen "
+                "(depth=1) oder zwei Ebenen (depth=2), optional mit der Anzahl Files je Sub-Sammlung. "
+                "Nutze für 'Zeig mir Themenbereiche unter Mathematik', NICHT für die Files selbst — "
+                "dafür ist get_collection_contents zuständig."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nodeId": {
+                        "type": "string",
+                        "description": "UUID der Eltern-Sammlung im Format 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' (z.B. '742d8c87-e5a3-4658-86f9-419c2cea6574' für Informatik). NIEMALS einen Fach-Namen wie 'Informatik' oder 'Mathe' übergeben — das funktioniert nicht. Wenn nur ein Fach-Name vorliegt, ZUERST get_subject_portals oder search_wlo_collections aufrufen, um die UUID zu beschaffen.",
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "1=direkte Kinder (schnell, Default), 2=auch Enkel (mehr API-Calls)",
+                    },
+                    "includeContentCounts": {
+                        "type": "boolean",
+                        "description": "Wenn true, holt die Anzahl Files pro Sub-Sammlung (Extra-Round-Trip).",
+                    },
+                    "maxResults": {
+                        "type": "integer",
+                        "description": "Max. Sub-Sammlungen auf Top-Level (1-100, Default 50)",
+                    },
+                },
+                "required": ["nodeId"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "wlo_health_check",
+            "description": (
+                "Probt die WLO-Repository-API auf Erreichbarkeit. Liefert ok-Status, Latenz und den "
+                "Wurzel-Knoten zurück. Nützlich um 'WLO ist down' von 'keine Treffer für deine Anfrage' "
+                "zu unterscheiden."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_nodes_details",
+            "description": (
+                "Bulk-Abfrage von Metadaten für mehrere nodeIds parallel (max. 50). Spart Round-Trips, "
+                "wenn man Details für viele bereits gefundene Karten braucht. Liefert dieselbe Feldmenge "
+                "wie get_node_details mit outputFormat='json' — disciplines/educationalContexts als Labels."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nodeIds": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Liste von Node-IDs (max. 50)",
+                    },
+                },
+                "required": ["nodeIds"],
             },
         },
     },
@@ -408,6 +454,22 @@ def validate_tool_args(tool_name: str, arguments: dict[str, Any]) -> dict[str, A
         return arguments
 
 
+# Tools that support `outputFormat="json"` on MCP server v2+. We auto-set
+# JSON for them so callers can rely on a structured response without each
+# call site repeating the parameter. Tools NOT in this set keep their
+# native format (e.g. `lookup_wlo_vocabulary` only emits Markdown that
+# `_ensure_label_cache` parses).
+_JSON_CAPABLE_TOOLS: frozenset[str] = frozenset({
+    "search_wlo_collections",
+    "search_wlo_content",
+    "get_collection_contents",
+    "get_node_details",
+    "search_wlo_topic_pages",
+    "get_subject_portals",
+    "browse_collection_tree",
+})
+
+
 async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
     """Call a WLO MCP tool via JSON-RPC 2.0 with MCP protocol handshake."""
     global _initialized, _session_id
@@ -429,6 +491,16 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
     # the URI transparently. Unknown labels are passed through unchanged.
     if tool_name in ("search_wlo_content", "search_wlo_collections"):
         arguments = await _resolve_filter_uris(arguments)
+
+    # Default to JSON output for tools that support it. Cleaner parsing in
+    # parse_wlo_cards / parse_wlo_topic_page_cards, label-resolved values,
+    # no regex mosaic. v1 servers ignore the unknown param and return
+    # Markdown — our parsers accept both, so this is safe to roll out.
+    if (
+        tool_name in _JSON_CAPABLE_TOOLS
+        and "outputFormat" not in arguments
+    ):
+        arguments = {**arguments, "outputFormat": "json"}
 
     # Ensure we have a valid session
     await _ensure_initialized_with_session()
@@ -498,369 +570,223 @@ def parse_total_count(mcp_text: str) -> int:
     return 0
 
 
-_UUID_RE = re.compile(
-    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}",
-    re.IGNORECASE,
-)
-
-
-def _extract_collection_id_from_url(url: str) -> str:
-    """Pull the collection UUID out of a WLO topic-page URL.
-
-    Topic-page URLs look like:
-      .../components/topic-pages?collectionId=324f24e3-6687-...
-      .../components/topic-pages?collectionId=<uuid>&var=teacher
-      .../components/render/<uuid>
-      .../components/collections?id=<uuid>&scope=...
-    Any of those are acceptable — we just return the first UUID we find.
-    """
-    if not url:
-        return ""
-    m = _UUID_RE.search(url)
-    return m.group(0) if m else ""
-
-
 def parse_wlo_topic_page_cards(mcp_text: str) -> list[dict]:
-    """Parse the special `search_wlo_topic_pages` output.
+    """Parse `search_wlo_topic_pages` v2 JSON output into Boerdi cards.
 
-    The response uses `Sammlung-nodeId:` / `Variante-ID:` / `Themenseite:`
-    instead of the plain `nodeId:` / `URL:` that `parse_wlo_cards` expects.
-    Multiple variants of the same topic page (different target groups) are
-    merged into one card, with all variants collected in `topic_pages[]`.
+    The MCP server (v2) merges variants by collection server-side and
+    delivers each card pre-labelled. We just need to map field names to
+    Boerdi's internal card schema.
+
+    Server output shape::
+
+        {
+          "total": N,
+          "results": [
+            {
+              "title": "Mathematik",
+              "collectionId": "<uuid>",
+              "topicPageUrl": "https://...",
+              "educationalContexts": ["Sek I", ...],
+              "variants": [
+                {"variantId": "...", "targetGroup": "teacher",
+                 "targetGroupLabel": "Lehrkräfte", "topicPageUrl": "..."},
+                ...
+              ]
+            }
+          ]
+        }
+
+    The legacy Markdown parser (with `_pending_variant`-state and
+    target-group label inference) was removed in v2. v1 servers — which
+    only emit Markdown — are no longer supported.
     """
     if not mcp_text:
         return []
+    try:
+        obj = json.loads(mcp_text)
+    except (ValueError, json.JSONDecodeError):
+        logger.warning(
+            "parse_wlo_topic_page_cards: not a JSON envelope (first 80 chars: %r)",
+            mcp_text[:80],
+        )
+        return []
+    if not isinstance(obj, dict) or not isinstance(obj.get("results"), list):
+        return []
 
-    cards_by_nid: dict[str, dict] = {}
-    order: list[str] = []
-    current_title: str | None = None
-    current: dict | None = None
+    cards: list[dict] = []
+    for r in obj["results"]:
+        if not isinstance(r, dict):
+            continue
+        cid = r.get("collectionId") or ""
+        if not cid:
+            continue
+        topic_pages: list[dict] = []
+        # Magic strings the WLO-MCP returns when no real value is set —
+        # treat as empty so the frontend's variantLabel disambiguator
+        # (target_group → URL params → variant_id → "Variante N") kicks
+        # in and the dropdown shows distinguishable entries instead of
+        # all variants showing the same generic placeholder.
+        UNINFORMATIVE = {
+            "", "nicht gesetzt", "nicht gesezt", "unbekannt",
+            "topic page", "topic pages", "themenseite", "themenseiten",
+            "-", "—",
+        }
 
-    for raw in mcp_text.split("\n"):
-        line = raw.strip()
-        if not line:
-            continue
-        if line.startswith("## "):
-            # New variant block — the title is the collection title
-            current_title = line.lstrip("#").strip()
-            current = None
-            continue
-        if not current_title:
-            continue
+        def _clean(val: str | None) -> str:
+            s = (val or "").strip()
+            return "" if s.lower() in UNINFORMATIVE else s
 
-        ll = line.lower()
-        if ll.startswith("sammlung-nodeid:") or ll.startswith("nodeid:"):
-            nid = line.split(":", 1)[-1].strip()
-            if not nid:
+        for v in r.get("variants") or []:
+            if not isinstance(v, dict):
                 continue
-            if nid not in cards_by_nid:
-                cards_by_nid[nid] = {
-                    "node_id": nid,
-                    "title": current_title,
-                    "node_type": "collection",
-                    "topic_pages": [],
-                    "wlo_url": f"https://redaktion.openeduhub.net/edu-sharing/components/render/{nid}",
-                }
-                order.append(nid)
-            current = cards_by_nid[nid]
-            # Keep the longest/earliest title we saw
-            if not current.get("title"):
-                current["title"] = current_title
-        elif ll.startswith("variante-id:") and current is not None:
-            current.setdefault("_pending_variant", {})["variant_id"] = line.split(":", 1)[-1].strip()
-        elif ll.startswith("zielgruppe:") and current is not None:
-            tg = line.split(":", 1)[-1].strip()
-            if tg.lower() in ("nicht gesetzt", "unknown", "-", ""):
-                tg = ""
-            current.setdefault("_pending_variant", {})["target_group"] = tg
-        elif ll.startswith("label:") and current is not None:
-            current.setdefault("_pending_variant", {})["label"] = line.split(":", 1)[-1].strip()
-        elif ll.startswith("themenseite:") and current is not None:
-            url = line.split(":", 1)[-1].strip()
-            variant = current.pop("_pending_variant", {}) or {}
-            variant["url"] = url
-            variant.setdefault("target_group", "")
-            variant.setdefault("variant_id", "")
-            # Prefer a human-readable label derived from the Zielgruppe
-            # ('Lehrkräfte' / 'Lernende' / 'Allgemein') — only keep a
-            # generic MCP-supplied label if it's actually informative
-            # (i.e. not the useless default "Themenseite"). Variants
-            # without a target group fall back to "Themenseite".
-            mcp_label = (variant.get("label") or "").strip()
-            tg_label = _tp_label(variant.get("target_group", ""))
-            if mcp_label and mcp_label.lower() != "themenseite":
-                variant["label"] = mcp_label
-            else:
-                variant["label"] = tg_label
-            current["topic_pages"].append(variant)
+            topic_pages.append({
+                "variant_id":   _clean(v.get("variantId")),
+                "target_group": _clean(v.get("targetGroup")),
+                "label":        _clean(v.get("targetGroupLabel")) or "Themenseite",
+                "url":          v.get("topicPageUrl") or r.get("topicPageUrl") or "",
+            })
 
-    return [cards_by_nid[nid] for nid in order]
+        # ── Dedup: collapse functionally-identical variants ─────────
+        # Real-world WLO data often has multiple variants with the SAME
+        # url + target_group + label — only the variantId UUID differs.
+        # Klicking any of them opens the same page → showing them all in
+        # the dropdown is misleading. Keep only one entry per unique
+        # (url, target_group, label) tuple. The variant_id of the FIRST
+        # entry wins (preserves the canonical-ID semantics).
+        if len(topic_pages) > 1:
+            _seen: dict[tuple, dict] = {}
+            for tp in topic_pages:
+                _key = (
+                    tp.get("url", ""),
+                    tp.get("target_group", "").lower(),
+                    tp.get("label", "").lower(),
+                )
+                if _key not in _seen:
+                    _seen[_key] = tp
+            _before = len(topic_pages)
+            topic_pages = list(_seen.values())
+            if len(topic_pages) < _before:
+                logger.info(
+                    "topic_page variants collapsed: %d → %d für '%s' "
+                    "(funktional identisch — gleiche URL/Target/Label)",
+                    _before, len(topic_pages), r.get("title", "?"),
+                )
+        cards.append({
+            "node_id":              cid,
+            "title":                r.get("title") or cid,
+            "node_type":            "collection",
+            "topic_pages":          topic_pages,
+            "educational_contexts": r.get("educationalContexts") or [],
+            "wlo_url": (
+                f"https://redaktion.openeduhub.net/edu-sharing/"
+                f"components/render/{cid}"
+            ),
+            "topic_page_url": r.get("topicPageUrl") or "",
+        })
+    return cards
+
+
+def _cards_from_json_envelope(data: dict) -> list[dict] | None:
+    """Map an MCP v2 JSON envelope ({total, count, results: FormattedNode[]})
+    to the internal Boerdi card schema.
+
+    Returns the parsed cards on a v2 envelope, ``None`` if the input doesn't
+    look like one (so the caller can fall back to the regex parser).
+
+    The MCP v2 ``FormattedNode`` shape (from ``formatNodes`` in the MCP
+    server) is the canonical input — every field is already label-resolved
+    server-side (disciplines, educationalContexts, license, …).
+    """
+    if not isinstance(data, dict):
+        return None
+    results = data.get("results")
+    if not isinstance(results, list):
+        return None
+    # Heuristic: v2 envelope always has a `total` int and at least one
+    # entry shaped like a FormattedNode (with `nodeId`).
+    if not (
+        ("total" in data or "count" in data)
+        and (
+            len(results) == 0
+            or (isinstance(results[0], dict) and "nodeId" in results[0])
+        )
+    ):
+        return None
+
+    cards: list[dict] = []
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        nid = r.get("nodeId") or ""
+        if not nid:
+            continue
+        node_type = r.get("nodeType") or "content"
+        cards.append({
+            "node_id": nid,
+            "title": r.get("title") or "",
+            "description": r.get("description") or "",
+            "keywords": r.get("keywords") or [],
+            "disciplines": r.get("disciplines") or [],
+            "educational_contexts": r.get("educationalContexts") or [],
+            "user_roles": r.get("userRoles") or [],
+            "learning_resource_types": r.get("learningResourceTypes") or [],
+            # Primary "open"-link (external preferred, in-repo viewer as fallback).
+            "url": r.get("url") or "",
+            # Direct binary download (no auth) — only set on file nodes.
+            # Frontend can offer a download button without an extra round-trip.
+            "download_url": r.get("downloadUrl") or "",
+            # In-repo viewer URL (PDF/video preview component).
+            "content_url": r.get("contentUrl") or "",
+            "preview_url": r.get("previewUrl") or "",
+            # Distinguish generic mediatype-icon from real generated thumbnail —
+            # frontend can decide whether to feature the preview prominently.
+            "preview_is_icon": bool(r.get("previewIsIcon")),
+            "mime_type": r.get("mimeType") or "",
+            "file_size": r.get("fileSize") or 0,
+            "license": r.get("license") or "",
+            "publisher": r.get("publisher") or "",
+            "node_type": node_type,
+            "wlo_url": (
+                f"https://redaktion.openeduhub.net/edu-sharing/components/"
+                f"render/{nid}"
+            ),
+            "topic_page_url": r.get("topicPageUrl") or "",
+        })
+    return cards
 
 
 def parse_wlo_cards(mcp_text: str) -> list[dict]:
-    """Parse MCP response text into structured WLO card objects.
+    """Parse an MCP v2 JSON envelope into Boerdi card objects.
 
-    Supports both formats:
-    - Markdown bullet format: "- **Titel:** value"
-    - Plain key-value format: "Titel: value"  (current MCP server format)
+    The MCP server is called with ``outputFormat="json"`` (set centrally in
+    :func:`call_mcp_tool` for all v2-aware tools) and returns:
+
+    .. code-block:: json
+
+        {"total": N, "count": M, "results": [FormattedNode, ...]}
+
+    All vocab fields (`disciplines`, `educationalContexts`, `userRoles`,
+    `learningResourceTypes`, `license`) arrive **label-resolved** —
+    Hochschulfächersystematik via server-side `_DISPLAYNAME`, school
+    vocab via the local map, license via the license vocab. No client-
+    side URI-→-label resolution remains.
+
+    The legacy Markdown / key-value parser was removed in v2 (see git
+    history if you need it back). v1 servers — which only emit Markdown —
+    are no longer supported.
     """
-    cards = []
-    current: dict = {}
-
-    def _val(line: str) -> str:
-        """Extract value from 'Key: value' or '- **Key:** value' line."""
-        if ":**" in line:
-            return line.split(":**", 1)[-1].strip().strip("*")
-        if ": " in line:
-            return line.split(": ", 1)[-1].strip()
-        return ""
-
-    for line in mcp_text.split("\n"):
-        line = line.strip()
-        if not line:
-            continue  # Skip empty lines — only ## headings start new cards
-
-        ll = line.lower()
-
-        # Skip separator lines
-        if line.startswith("---") or line.startswith("===") or all(c == '-' for c in line):
-            continue
-
-        # Headings → new card
-        if line.startswith("# ") or line.startswith("## "):
-            if current.get("title"):
-                cards.append(current)
-            current = {"title": line.lstrip("#").strip()}
-
-        # URL (content link)
-        elif ll.startswith("url:") or ll.startswith("- **url"):
-            current["url"] = _val(line)
-
-        # WLO URL
-        elif ll.startswith("wlo") or ll.startswith("- **wlo"):
-            current["wlo_url"] = _val(line)
-
-        # Vorschaubild / Preview
-        elif ll.startswith("vorschaubild:") or ll.startswith("preview:") or ll.startswith("- **preview"):
-            current["preview_url"] = _val(line)
-
-        # Beschreibung
-        elif ll.startswith("beschreibung:") or ll.startswith("- **beschreibung"):
-            current["description"] = _val(line)
-
-        # nodeId
-        elif ll.startswith("nodeid:") or ll.startswith("- **node"):
-            node_id = _val(line)
-            current["node_id"] = node_id
-            # Generate WLO URL from nodeId if not already set
-            if node_id and not current.get("wlo_url"):
-                current["wlo_url"] = f"https://redaktion.openeduhub.net/edu-sharing/components/render/{node_id}"
-
-        # Fach / Discipline
-        elif ll.startswith("fach:") or ll.startswith("discipline:") or ll.startswith("- **fach") or ll.startswith("- **discipline"):
-            current["disciplines"] = [d.strip() for d in _val(line).split(",")]
-
-        # Bildungsstufe / Educational level
-        elif ll.startswith("bildungsstufe:") or ll.startswith("educational") or ll.startswith("- **bildungsstufe") or ll.startswith("- **educational"):
-            current["educational_contexts"] = [e.strip() for e in _val(line).split(",")]
-
-        # Ressourcentyp / Type
-        elif ll.startswith("ressourcentyp:") or ll.startswith("typ:") or ll.startswith("- **typ") or ll.startswith("- **lernressourcentyp") or ll.startswith("- **ressourcentyp"):
-            val = _val(line)
-            if val and val.lower() != "inhalt":
-                types = [t.strip() for t in val.split(",")]
-                current["learning_resource_types"] = types
-                # Auto-detect collection from resource type
-                if any(t.lower() in ("sammlung", "collection") for t in types):
-                    current["node_type"] = "collection"
-
-        # Lizenz / License
-        elif ll.startswith("lizenz:") or ll.startswith("license:") or ll.startswith("- **lizenz") or ll.startswith("- **license"):
-            current["license"] = _val(line)
-
-        # Schlagworte / Keywords
-        elif ll.startswith("schlagwort") or ll.startswith("keywords:") or ll.startswith("- **keywords") or ll.startswith("- **schlagw"):
-            current["keywords"] = [k.strip() for k in _val(line).split(",")]
-
-        # Anbieter / Publisher
-        elif ll.startswith("anbieter:") or ll.startswith("herausgeber:") or ll.startswith("publisher:") or ll.startswith("- **herausgeber") or ll.startswith("- **publisher"):
-            current["publisher"] = _val(line)
-
-        # Themenseite URL (from search_wlo_topic_pages)
-        elif ll.startswith("themenseite:") or ll.startswith("themenseiten-url:") or ll.startswith("topic page:") or ll.startswith("topicpageurl:") or ll.startswith("- **themenseite"):
-            current["_tp_url"] = _val(line)
-
-        # Sammlung-nodeId (from search_wlo_topic_pages — links variant to collection)
-        elif ll.startswith("sammlung-nodeid:") or ll.startswith("sammlung nodeid:"):
-            current["_tp_collection_id"] = _val(line)
-
-        # Variante-ID (from search_wlo_topic_pages)
-        elif ll.startswith("variante-id:") or ll.startswith("variante id:"):
-            current["_tp_variant_id"] = _val(line)
-
-        # Zielgruppe (from search_wlo_topic_pages)
-        elif ll.startswith("zielgruppe:"):
-            val = _val(line)
-            if val and val != "nicht gesetzt":
-                current["_tp_target_group"] = val
-
-        # Sammlung / Collection markers
-        elif ll.startswith("- **sammlung") or ll.startswith("- **collection") or ll.startswith("sammlung:"):
-            current["node_type"] = "collection"
-
-    if current.get("title"):
-        cards.append(current)
-
-    # ── Post-process: convert topic-page fields into topic_pages list ──
-    # Topic-page results have _tp_* fields. Group variants by collection.
-    tp_by_collection: dict[str, list[dict[str, str]]] = {}
-    regular_cards = []
-    for c in cards:
-        if c.get("_tp_url"):
-            # This is a topic-page variant, not a regular card.
-            # Priority for the collection ID (used as `node_id` so browse /
-            # learning_path / remix work exactly like for Sammlungen):
-            #   1. explicit `Sammlung-nodeId:` from MCP
-            #   2. the regular `nodeId:` on the card (if any)
-            #   3. extracted from the URL's `collectionId=<uuid>` or `<uuid>`
-            #      path segment — the WLO topic-page URL always carries it.
-            coll_id = (
-                c.get("_tp_collection_id")
-                or c.get("node_id")
-                or _extract_collection_id_from_url(c.get("_tp_url", ""))
-                or ""
-            )
-            tg_raw = c.get("_tp_target_group", "")
-            label = _tp_label(tg_raw)
-            variant = {
-                "url": c["_tp_url"],
-                "target_group": tg_raw,
-                "label": label,
-                "variant_id": c.get("_tp_variant_id", ""),
-            }
-            if coll_id:
-                tp_by_collection.setdefault(coll_id, []).append(variant)
-            # Also emit as a card so the LLM can reference it.
-            # Carry over any additional metadata the parser picked up —
-            # search_wlo_topic_pages sometimes ships preview_url / disciplines /
-            # educational_contexts / license alongside the variant data.
-            card = {
-                "node_id": coll_id,
-                "title": c.get("title", ""),
-                "description": c.get("description", ""),
-                "node_type": "collection",
-                "topic_pages": [variant],
-                "wlo_url": c.get("wlo_url", ""),
-                "url": c.get("url", ""),
-                "preview_url": c.get("preview_url", ""),
-                "disciplines": c.get("disciplines", []),
-                "educational_contexts": c.get("educational_contexts", []),
-                "keywords": c.get("keywords", []),
-                "learning_resource_types": c.get("learning_resource_types", []),
-                "license": c.get("license", ""),
-                "publisher": c.get("publisher", ""),
-            }
-            # Deduplicate: only add if not already in regular_cards with same node_id
-            if not any(rc.get("node_id") == coll_id and rc.get("node_id") for rc in regular_cards):
-                regular_cards.append(card)
-            else:
-                # Merge variant into existing card
-                for rc in regular_cards:
-                    if rc.get("node_id") == coll_id:
-                        existing_vids = {v.get("variant_id") for v in rc.get("topic_pages", [])}
-                        if variant["variant_id"] not in existing_vids:
-                            rc.setdefault("topic_pages", []).append(variant)
-                        break
-        else:
-            # Clean up any stray _tp_ keys from regular cards
-            for k in list(c.keys()):
-                if k.startswith("_tp_"):
-                    del c[k]
-            regular_cards.append(c)
-
-    return regular_cards
-
-
-# Target-group label mapping for topic-page variants
-_TARGET_GROUP_LABELS = {
-    "teacher": "Lehrkräfte",
-    "learner": "Lernende",
-    "general": "Allgemein",
-}
-
-
-# ── Discipline label cache ──────────────────────────────────────────
-#
-# The WLO MCP server resolves school-discipline taxon URIs to labels
-# (e.g. "Mathematik"), but for Hochschulfaecher (vocab:
-# hochschulfaechersystematik) it returns raw URIs. We lazily fetch the
-# full discipline vocabulary once via lookup_wlo_vocabulary and build
-# a URI→label map that post_process_discipline_labels() applies to
-# card.disciplines lists in place.
-_discipline_uri_to_label: dict[str, str] = {}
-_discipline_cache_loaded: bool = False
-
-
-# Fallback slug labels for well-known WLO vocabulary paths, used when
-# the vocabulary lookup hasn't populated the cache yet (first request)
-# or when a specific URI isn't covered.
-_VOCAB_PATH_LABELS = {
-    "hochschulfaechersystematik": "Hochschulfach",
-    "discipline": "Fach",
-    "educationalContext": "Bildungsstufe",
-    "learningResourceType": "Ressourcentyp",
-}
-
-
-def _pretty_uri_label(uri: str) -> str:
-    """Turn a taxon URI into a readable fallback label.
-
-    ``http://w3id.org/openeduhub/vocabs/hochschulfaechersystematik/n4``
-    → ``"Hochschulfach (n4)"``.  Leaves plain labels unchanged.
-    """
-    if not uri or not uri.startswith(("http://", "https://")):
-        return uri
-    # Strip query/fragment and trailing slashes
-    raw = uri.split("#", 1)[0].split("?", 1)[0].rstrip("/")
-    parts = [p for p in raw.split("/") if p]
-    if len(parts) < 2:
-        return uri
-    slug = parts[-1]
-    vocab = parts[-2]
-    pretty_vocab = _VOCAB_PATH_LABELS.get(vocab, vocab.replace("-", " ").title())
-    return f"{pretty_vocab} ({slug})"
-
-
-async def _ensure_discipline_cache() -> None:
-    """Populate the URI→label cache for card display (discipline vocab).
-
-    Piggybacks on ``_ensure_label_cache('discipline')`` and inverts its
-    label→URI mapping to produce a URI→label map that card post-processing
-    uses to replace raw discipline URIs with human-readable labels.
-    """
-    global _discipline_cache_loaded
-    if _discipline_cache_loaded:
-        return
-    await _ensure_label_cache("discipline")
-    # Invert label→URI map. When multiple labels/aliases point to the same
-    # URI, prefer the one that looks like a proper noun (first word capital).
-    seen: dict[str, str] = {}
-    for label_or_alias, uri in _label_to_uri_cache.get("discipline", {}).items():
-        existing = seen.get(uri)
-        candidate = label_or_alias
-        if not existing:
-            seen[uri] = candidate
-        else:
-            # Prefer shorter / capitalized labels (typically the primary prefLabel)
-            if (len(candidate) < len(existing)) or (candidate and candidate[0].isupper() and not existing[0].isupper()):
-                seen[uri] = candidate
-    for uri, label in seen.items():
-        _discipline_uri_to_label.setdefault(uri, label.capitalize() if label else label)
-    logger.info(
-        "discipline URI→label cache loaded: %d entries",
-        len(_discipline_uri_to_label),
-    )
-    _discipline_cache_loaded = True
+    if not mcp_text:
+        return []
+    try:
+        obj = json.loads(mcp_text)
+    except (ValueError, json.JSONDecodeError):
+        logger.warning("parse_wlo_cards: not a JSON envelope (first 80 chars: %r)", mcp_text[:80])
+        return []
+    cards = _cards_from_json_envelope(obj)
+    if cards is None:
+        logger.warning("parse_wlo_cards: JSON did not match v2 envelope shape")
+        return []
+    return cards
 
 
 # ── Label→URI caches for filter auto-resolution ─────────────────
@@ -974,6 +900,126 @@ def _fuzzy_lookup(cache: dict[str, str], needle: str) -> tuple[str, str] | None:
     return None
 
 
+# ── LLM-gestütztes Vocab-Mapping (Fallback wenn fuzzy_lookup leer ausgeht) ──
+#
+# User-Eingaben sind nicht immer in unserer Vokabular-Form ("biology" statt
+# "Biologie", "Mathe Klasse 11 Gym", "Naturwiss"). _fuzzy_lookup deckt
+# Substring-Paraphrasen ab; für komplexere Mappings (Sprache, paraphrasierte
+# Konzepte) holen wir den LLM dazu — pro (vocab, value)-Kombination einmal,
+# dann gecacht.
+_llm_vocab_cache: dict[tuple[str, str], str | None] = {}
+
+# Eingaben, die offensichtlich keine Vokabular-Werte sind, sollten gar nicht
+# erst beim LLM landen (verschwendet Tokens und Latenz). Sehr lange Strings,
+# offensichtliche Sätze oder Whitespace-only werden hier abgewiesen.
+_LLM_VOCAB_MIN_LEN = 2
+_LLM_VOCAB_MAX_LEN = 80
+
+
+async def _llm_vocab_match(vocab: str, value: str) -> str | None:
+    """Use the chat LLM to map a free-form value to a vocabulary URI.
+
+    Returns the URI on a confident match, ``None`` when the LLM declines.
+    Cached per (vocab, normalized_value) — repeats only consume one LLM call
+    across the whole process lifetime.
+    """
+    nv = _norm_label(value)
+    if not nv:
+        return None
+    if len(nv) < _LLM_VOCAB_MIN_LEN or len(nv) > _LLM_VOCAB_MAX_LEN:
+        return None
+    cache_key = (vocab, nv)
+    if cache_key in _llm_vocab_cache:
+        return _llm_vocab_cache[cache_key]
+
+    cache = _label_to_uri_cache.get(vocab) or {}
+    if not cache:
+        return None
+
+    # Build a compact list of "<label or alias>: <uri>" — the LLM picks one.
+    # We dedupe URIs since multiple aliases share the same URI.
+    by_uri: dict[str, list[str]] = {}
+    for key, uri in cache.items():
+        by_uri.setdefault(uri, []).append(key)
+    options_lines: list[str] = []
+    for uri, aliases in by_uri.items():
+        prim = aliases[0]
+        rest = aliases[1:6]  # cap aliases to keep prompt small
+        suffix = f" (also: {', '.join(rest)})" if rest else ""
+        options_lines.append(f"- {prim}{suffix} → {uri}")
+    options_text = "\n".join(options_lines)
+
+    vocab_label = {
+        "lrt": "learning resource type",
+        "discipline": "school subject / discipline",
+        "educationalContext": "educational level / Bildungsstufe",
+        "userRole": "target user role",
+    }.get(vocab, vocab)
+
+    system = (
+        "You are a strict vocabulary mapper for the WirLernenOnline (WLO) "
+        f"taxonomy. Map a free-form user term to ONE entry from the list of "
+        f"valid {vocab_label}s, or reply 'NONE' if no entry matches with "
+        "reasonable confidence. Reply ONLY with the URI of the chosen entry "
+        "(verbatim from the list) or the literal string 'NONE'. No prose, no "
+        "punctuation."
+    )
+    user = (
+        f"User term: {value!r}\n\n"
+        f"Valid {vocab_label}s:\n{options_text}\n\n"
+        "Pick the URI of the best matching entry, or reply 'NONE'."
+    )
+
+    try:
+        # Lazy import to avoid a circular import at module load time.
+        from app.services.llm_provider import get_client, get_chat_model
+        client = get_client()
+        model = get_chat_model()
+        # Minimal token budget — the answer is one URI line.
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            max_completion_tokens=80,
+            temperature=0,
+        )
+        content = (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        logger.warning("LLM vocab-match for %s=%r failed: %s", vocab, value, e)
+        _llm_vocab_cache[cache_key] = None
+        return None
+
+    if not content or content.upper() == "NONE":
+        _llm_vocab_cache[cache_key] = None
+        logger.info("LLM declined vocab match: %s=%r", vocab, value)
+        return None
+
+    # Validate: must be one of the URIs we offered.
+    valid_uris = set(by_uri.keys())
+    # The model sometimes wraps the URI in quotes/backticks — strip light
+    # decoration before comparing.
+    candidate = content.strip().strip("`'\"<>")
+    if candidate not in valid_uris:
+        # Last resort: see if the response *contains* one of the URIs.
+        for uri in valid_uris:
+            if uri in candidate:
+                candidate = uri
+                break
+        else:
+            logger.warning(
+                "LLM vocab-match returned non-URI for %s=%r: %r",
+                vocab, value, content[:200],
+            )
+            _llm_vocab_cache[cache_key] = None
+            return None
+
+    _llm_vocab_cache[cache_key] = candidate
+    logger.info("LLM resolved vocab %s=%r → %s", vocab, value, candidate)
+    return candidate
+
+
 async def _resolve_filter_uris(arguments: dict[str, Any]) -> dict[str, Any]:
     """Rewrite label-style filter values into URIs using vocabulary caches.
 
@@ -1014,51 +1060,31 @@ async def _resolve_filter_uris(arguments: dict[str, Any]) -> dict[str, Any]:
             else:
                 logger.info("resolved %s=%r via fuzzy %r → %s", key, val, matched_key, uri)
             out[key] = uri
-        else:
-            logger.info("no URI for %s=%r (vocab=%s); passing label through", key, val, vocab)
+            continue
+        # Heuristik leer → LLM-Fallback. Greift bei paraphrasierten /
+        # fremdsprachigen / nicht-canonical Eingaben ("sciences",
+        # "Mathe Klasse 11 Gym", "Naturwiss"). Pro (vocab, value) genau
+        # ein LLM-Call dank _llm_vocab_cache.
+        llm_uri = await _llm_vocab_match(vocab, val)
+        if llm_uri:
+            out[key] = llm_uri
+            continue
+        logger.info("no URI for %s=%r (vocab=%s); passing label through", key, val, vocab)
     return out
 
 
 async def resolve_discipline_labels(cards: list[dict]) -> list[dict]:
-    """Replace URI entries in each card's ``disciplines`` list with human labels.
+    """No-op kept for source-compat with older call sites.
 
-    Uses the lazy vocabulary cache when populated; falls back to the
-    slug-pretty-printer so raw URIs never reach the UI.
+    With MCP server v2, the server-side ``ccm:taxonid_DISPLAYNAME``
+    already produces clean labels for both the school discipline vocab
+    AND the Hochschulfächersystematik. The previous URI-→-label fallback
+    chain (``_pretty_uri_label`` / ``_ensure_discipline_cache`` /
+    ``_discipline_uri_to_label``) is therefore dead code and was
+    removed. This stub stays so callers don't have to be patched all
+    at once — feel free to delete the call sites in a follow-up.
     """
-    if not cards:
-        return cards
-
-    # Check if any card actually contains URI disciplines; only then load cache.
-    any_uri = any(
-        isinstance(c.get("disciplines"), list)
-        and any(d.startswith(("http://", "https://")) for d in c["disciplines"])
-        for c in cards
-    )
-    if any_uri:
-        await _ensure_discipline_cache()
-
-    for card in cards:
-        raw = card.get("disciplines") or []
-        if not raw:
-            continue
-        resolved: list[str] = []
-        for d in raw:
-            if not isinstance(d, str):
-                continue
-            if d.startswith(("http://", "https://")):
-                label = _discipline_uri_to_label.get(d) or _pretty_uri_label(d)
-                resolved.append(label)
-            else:
-                resolved.append(d)
-        card["disciplines"] = resolved
     return cards
-
-
-def _tp_label(target_group: str) -> str:
-    """Human-readable label for a topic-page target group."""
-    if not target_group:
-        return "Themenseite"
-    return _TARGET_GROUP_LABELS.get(target_group.lower(), target_group.title())
 
 
 # ── Multi-server support ─────────────────────────────────────────

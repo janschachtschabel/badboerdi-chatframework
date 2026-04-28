@@ -207,13 +207,19 @@ async def _openai_moderate(message: str) -> dict[str, Any]:
 
     Free of charge. Returns {} on any error so we never fail-closed
     (the regex stage is the safety floor).
+
+    Works on:
+      - native OpenAI provider (always, when OPENAI_API_KEY is set)
+      - B-API providers that ALSO have an OPENAI_API_KEY configured —
+        moderation then runs against api.openai.com directly while chat
+        keeps flowing through B-API. See ``get_moderation_client()``.
     """
     try:
-        from app.services.llm_provider import get_client, is_openai_native
-        if not is_openai_native():
-            # Moderation endpoint only exists on api.openai.com
+        from app.services.llm_provider import get_moderation_client
+        client = get_moderation_client()
+        if client is None:
+            # No OpenAI key available — fall back to regex-only safety.
             return {}
-        client = get_client()
         result = await client.moderations.create(
             model="omni-moderation-latest",
             input=message[:4000],

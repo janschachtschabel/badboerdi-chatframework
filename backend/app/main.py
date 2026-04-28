@@ -89,13 +89,16 @@ async def lifespan(app: FastAPI):
     async def _warmup_llm():
         try:
             t0 = time.perf_counter()
-            from app.services.llm_provider import get_client, is_openai_native
+            from app.services.llm_provider import get_client, get_moderation_client
             client = get_client()
-            # Fire-and-forget moderation ping — tiny, free, warms the connection
-            if is_openai_native():
+            # Fire-and-forget moderation ping — tiny, free, warms the connection.
+            # Uses the dedicated moderation client so it works on b-api setups
+            # too (when OPENAI_API_KEY is provided alongside).
+            mod = get_moderation_client()
+            if mod is not None:
                 try:
                     await asyncio.wait_for(
-                        client.moderations.create(
+                        mod.moderations.create(
                             model="omni-moderation-latest",
                             input="warmup",
                         ),
@@ -159,6 +162,22 @@ app.include_router(quality.router, prefix="/api/quality", tags=["quality"], depe
 app.include_router(routing_rules.router, prefix="/api/routing-rules", tags=["routing-rules"], dependencies=_studio_deps)
 # Eval router brings its own /api/eval prefix and per-endpoint Studio guards
 app.include_router(eval_router.router)
+
+
+# ── Static assets ────────────────────────────────────────────────
+# Public assets (logos, icons) served from app/static/. Cached via standard
+# Cache-Control. Used by the embeddable widget — when bundled in third-party
+# pages, the widget needs a stable absolute URL for its avatar/logo.
+#   /api/static/boerdi.svg   → blue Boerdi owl logo (master asset)
+from pathlib import Path as _Path
+from fastapi.staticfiles import StaticFiles as _StaticFiles
+_STATIC_DIR = _Path(__file__).parent / "static"
+if _STATIC_DIR.exists():
+    app.mount(
+        "/api/static",
+        _StaticFiles(directory=str(_STATIC_DIR), check_dir=False),
+        name="static",
+    )
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
