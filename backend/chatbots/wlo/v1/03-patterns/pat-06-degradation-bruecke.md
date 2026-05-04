@@ -1,6 +1,7 @@
 ---
 id: PAT-06
 label: Degradation-Brücke
+short_purpose: "WANN: Anfrage liegt am Rand/außerhalb der Bot-Domäne (Bildung/OER/WLO) ODER Slot fehlt strukturell. WOFÜR: Sanfte Domain-Brücke — sagen was nicht geht und Rückführung auf Bildungs-Adjacent."
 priority: 595
 gate_personas: ["*"]
 gate_states: ["*"]

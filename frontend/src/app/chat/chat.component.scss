@@ -219,6 +219,24 @@ $radius:     14px;
   ul, ol { margin: 6px 0; padding: 0 0 0 1.4em; }
   li { margin-bottom: 4px; }
 
+  // Headings (rendered by marked) — compact for chat bubbles
+  h1, h2, h3, h4, h5, h6 {
+    margin: 10px 0 4px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  h1 { font-size: 1.05rem; }
+  h2 { font-size: 1.02rem; }
+  h3, h4, h5, h6 { font-size: 1rem; }
+
+  // Blockquote (rendered by marked)
+  blockquote {
+    border-left: 3px solid #c5cbd6;
+    padding: 2px 0 2px 10px;
+    margin: 2px 0;
+    color: #3a4252;
+  }
+
   // Custom list items (rendered by renderMarkdown)
   .md-li {
     display: flex;
@@ -237,10 +255,22 @@ $radius:     14px;
   }
   strong { font-weight: 600; }
   code { background: rgba(0,0,0,.05); padding: 1px 4px; border-radius: 3px; font-size: .82rem; }
-  p { margin: 0 0 6px; }
+
+  // marked wraps every chunk in <p>; with default 6px bottom-margin this
+  // makes one-liner user bubbles visibly taller than they used to be (the
+  // old regex renderer emitted plain text+<br>). Zero the outer margins
+  // and put the gap on adjacent paragraphs only.
+  p { margin: 0; }
+  p + p { margin-top: 6px; }
 }
 
 // ── Typing dots ──────────────────────────────────────────────────────────────
+.typing-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .typing-dots {
   display: flex;
   gap: 4px;
@@ -255,6 +285,22 @@ $radius:     14px;
     &:nth-child(2) { animation-delay: .2s; }
     &:nth-child(3) { animation-delay: .4s; }
   }
+}
+
+// Live phase label from POST /api/chat/stream — appears next to the
+// dots while the backend works through classify → tools → generate.
+// Kept tiny + dimmed so it doesn't compete with the eventual answer.
+.typing-phase {
+  font-size: .82rem;
+  color: rgba(0, 0, 0, .55);
+  font-style: italic;
+  // Subtle fade-in when the label changes between phases
+  animation: phase-fade .25s ease-in;
+}
+
+@keyframes phase-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes blink {
@@ -520,6 +566,20 @@ $accent-orange: #E79800;
     &:disabled { opacity: .45; cursor: default; }
   }
 
+  // Lotsen-Modus: dunkelblau (Header-Akzentfarbe), klar als primäre
+  // Aktion erkennbar ohne mit Orange zu schreien. Klick führt direkt
+  // im aktuellen Tab zur Themenseite/Sammlung.
+  &--guide {
+    background: var(--boerdi-primary, #1c4587);
+    color: #ffffff;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    font-weight: 600;
+    &:hover { filter: brightness(1.1); }
+    &:disabled { opacity: .45; cursor: default; }
+  }
+
   &:disabled { opacity: .45; cursor: default; }
 }
 
@@ -715,6 +775,22 @@ $accent-orange: #E79800;
 
   &:hover {
     background: $primary;
+    color: #fff;
+  }
+}
+
+// "Bring mich hin"-Quick-Reply: vom Bot vorgeschlagene Same-Tab-Navigation.
+// Voll-eingefärbt im Header-Dunkelblau, damit sich die Aktion klar von den
+// hellblauen Standard-QRs abhebt — ohne Orange.
+.qr-btn--guide {
+  background: $primary;
+  color: #fff;
+  border-color: $primary;
+  font-weight: 600;
+
+  &:hover {
+    filter: brightness(1.1);
+    background: $primary;     // Override: don't dim the bg on hover
     color: #fff;
   }
 }

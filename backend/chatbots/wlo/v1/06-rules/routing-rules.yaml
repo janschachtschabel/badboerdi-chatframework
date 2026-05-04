@@ -271,12 +271,12 @@ rules:
       persona_override: "P-W-SL"
 
   - id: rule_persona_self_id_elt
-    description: "Eltern-Self-ID."
+    description: "Eltern-Self-ID. Erweiterte Regex (Phase-1-Eval-Insight: Eltern-Klassifikation lag bei 12% — viele Varianten wurden nicht erkannt)."
     priority: 100
     live: true
     when:
       message:
-        regex: "\\b(ich\\s+bin\\s+(mutter|vater|elternteil)|als\\s+(mutter|vater|elternteil)|mein\\s+(kind|sohn|tochter)|meine\\s+tochter|f[üu]r\\s+meinen?\\s+(kind|sohn|tochter|\\d+\\s*-?\\s*j[äa]hrigen?))\\b"
+        regex: "\\b(ich\\s+bin\\s+(mutter|vater|elternteil|mama|papa)|als\\s+(mutter|vater|elternteil|mama|papa|eltern(teil)?)|mein\\s+(kind|sohn|tochter)|meine\\s+(tochter|kinder)|unser\\s+(kind|sohn|tochter)|unsere\\s+(tochter|kinder)|f[üu]r\\s+(meinen?|unseren?)\\s+(kind|sohn|tochter|\\d+\\s*-?\\s*j[äa]hrigen?)|hausaufgaben?\\s+(meines?|unseres?)\\s+(kind(es)?|sohn(es)?|tochter)|hausaufgabe\\s+von\\s+(meinem?|unserem?)\\s+(kind|sohn|tochter)|mutter\\s+von|vater\\s+von|elternteil\\s+von|elternabend|elternsprechtag|f[üu]r\\s+zu\\s+hause(\\s+lernen)?|zu\\s+hause\\s+(lernen|\\üben))\\b"
     then:
       persona_override: "P-ELT"
 
@@ -660,3 +660,70 @@ rules:
     then:
       intent_override: "INT-W-14"
       enforced_pattern_id: "PAT-27"
+
+  # ── R-17: Themenseiten-Suche → PAT-28 ──────────────────────────
+  # User fragt explizit nach EINER Themenseite/Sammlung zu einem
+  # konkreten Fach oder Thema (Singular). Soll deterministisch zu
+  # PAT-28 (search_wlo_topic_pages) gehen, NICHT zu PAT-06 (Degradation),
+  # PAT-20 (textuelle Orientierung) oder PAT-26 (alle Fachportale).
+  #
+  # Regex-Logik (DE-tolerant):
+  #   themenseite|hauptseite|sammlung|übersicht|bereich|fachseite
+  #   + ZU/FÜR/ÜBER/VON [Wort]
+  # Plus "wo finde ich [die|eine] (themenseite|sammlung)" als Variante.
+  # Trigger NUR wenn ein Substantiv-Komplement folgt — leere Frage
+  # "themenseite?" geht weiter den Default-Weg (typischerweise INT-W-06).
+  - id: rule_themenseite_search
+    description: "User sucht eine konkrete Themenseite zu X → INT-W-03a + PAT-28."
+    priority: 64
+    live: true
+    when:
+      message:
+        regex: "\\b((themen|haupt|fach)seite|sammlung|(ü|ue|u)bersicht|bereich)\\s+(zu(m|r)?|f(ü|ue|u)r|(ü|ue|u)ber|von)\\s+\\w+|\\b(ich\\s+such(e|t)|wo\\s+(finde|gibt[s]?)\\s+(ich\\s+)?(es|der|die|das|den|eine?))\\s+(die|eine)?\\s*(themen|haupt|fach)seite\\s+(zu|f(ü|ue|u)r|(ü|ue|u)ber|von)\\s+\\w+"
+    then:
+      intent_override: "INT-W-03a"
+      enforced_pattern_id: "PAT-28"
+
+  # ── R-18: Fallback für INT-W-03a → PAT-28 ──────────────────────
+  # Wenn der Classifier den Intent INT-W-03a (Themenseite entdecken)
+  # bereits korrekt gesetzt hat — egal ob die Regex aus R-17 gegriffen
+  # hat oder nicht — soll PAT-28 das Pattern sein, nicht PAT-06
+  # (Degradation) oder PAT-20 (Orientierung). Deckt Fälle ab wie
+  # "themenseite photosynthese" (ohne Präposition), wo R-17 nicht greift,
+  # der Classifier aber sauber INT-W-03a klassifiziert.
+  #
+  # Niedrigere Priorität als R-17, damit R-17 zuerst läuft (gleiches Ziel,
+  # aber R-17 setzt zusätzlich intent_override — das ist hier nicht nötig).
+  - id: rule_int_w03a_to_pat28
+    description: "INT-W-03a (vom Classifier gesetzt) → PAT-28 enforced."
+    priority: 50
+    live: true
+    when:
+      intent: { eq: "INT-W-03a" }
+    then:
+      enforced_pattern_id: "PAT-28"
+
+  # ── R-19: Verstehen-Defizit + Schritt-für-Schritt → INT-W-03c ──
+  # Eval 2026-05-03 zeigte: "Ich verstehe Mathe nicht, kannst du mir das
+  # Schritt für Schritt erklären?" wurde als INT-W-06 (Faktenfragen)
+  # klassifiziert, sollte aber INT-W-03c (Lerninhalt suchen) sein.
+  # Der Classifier-Prompt mit Doppel-Trigger-Regel reicht alleine nicht
+  # zuverlässig — daher hartes Override per Regex.
+  #
+  # Trigger: ein Verstehen-Defizit-Verb (verstehe/check/kapiere/raffe …
+  # nicht / kommt nicht an / ist mir unklar) PLUS irgendein Lern-/Erklär-
+  # Format-Hinweis (Schritt für Schritt, einfach erklärt, mit Beispielen,
+  # mit Beispiel, so dass ich es verstehe, nochmal erklären, langsam
+  # erklären). Beide Cluster zusammen sind eindeutig INT-W-03c.
+  - id: rule_lerninhalt_doppel_trigger
+    description: "Defizit-Verb + Lernformat-Phrase → INT-W-03c, NIE INT-W-06."
+    priority: 64
+    live: true
+    when:
+      all:
+        - message:
+            regex: "\\b(verstehe|check|kapier(e)?|raff(e)?|begreif(e)?|peil(e)?)[\\s\\w,.]{0,40}\\bnicht\\b|\\b(ist|sind)[\\s\\w]{0,15}\\bunklar\\b|\\bkomm(e|t)\\b[\\s\\w]{0,15}\\bnicht\\s+(an|drauf|mit)\\b"
+        - message:
+            regex: "\\bschritt\\s+f(ü|ue|u)r\\s+schritt\\b|\\beinfach\\s+(erkl(ä|ae)rt|erkl(ä|ae)ren)\\b|\\bso\\s+dass\\s+ich\\s+(es|das)\\s+verstehe\\b|\\bmit\\s+beispiel(en)?\\b|\\bnochmal\\s+erkl(ä|ae)ren\\b|\\blangsam(er)?\\s+erkl(ä|ae)ren\\b|\\bkannst\\s+du\\s+(mir\\s+)?(das|es)\\s+erkl(ä|ae)ren\\b"
+    then:
+      intent_override: "INT-W-03c"

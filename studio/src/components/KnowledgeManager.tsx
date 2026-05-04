@@ -408,7 +408,28 @@ export default function KnowledgeManager() {
       const timeoutId = setTimeout(() => controller.abort(), 180_000); // 3 min
       const resp = await fetch(endpoint, { method: 'POST', body: form, signal: controller.signal });
       clearTimeout(timeoutId);
-      if (!resp.ok) throw new Error('Failed');
+      if (!resp.ok) {
+        // Server-Detail durchreichen, statt schluck-und-Generic. Bei
+        // FastAPI-HTTPException kommt {detail: "..."} im JSON-Body —
+        // bei einem Reverse-Proxy-413/504 ist es HTML; fallback auf
+        // den HTTP-Status. So sieht der Operator beim nächsten
+        // markitdown-Stolperer den ECHTEN Grund (fehlende OS-Lib,
+        // kaputte PDF, OOM-Hinweis, …).
+        let detail = `${resp.status} ${resp.statusText}`;
+        try {
+          const ct = resp.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            const errJson = await resp.json();
+            const d = (errJson && (errJson.detail || errJson.message)) || '';
+            if (typeof d === 'string' && d.trim()) detail = d;
+            else if (d) detail = JSON.stringify(d);
+          } else {
+            const txt = await resp.text();
+            if (txt && txt.trim()) detail = `${detail} — ${txt.slice(0, 400)}`;
+          }
+        } catch { /* keep status-fallback */ }
+        throw new Error(detail);
+      }
       const data = await resp.json();
       setUploadResult(`${data.chunks} Chunks erstellt`);
 
@@ -428,8 +449,11 @@ export default function KnowledgeManager() {
       setUploadTitle('');
       setUploadUrl('');
       setUploadText('');
-    } catch {
-      setUploadResult('Fehler beim Import');
+    } catch (err) {
+      const msg = err instanceof Error && err.message
+        ? err.message
+        : 'Unbekannter Fehler';
+      setUploadResult(`Fehler beim Import: ${msg}`);
     }
     setUploading(false);
   };

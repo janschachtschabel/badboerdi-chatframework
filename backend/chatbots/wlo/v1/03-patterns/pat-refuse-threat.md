@@ -1,6 +1,7 @@
 ---
 id: PAT-REFUSE-THREAT
 label: Bedrohungs-Zurückweisung
+short_purpose: "WANN: Drohung/Verbalattacke/Bedrohung in der Anfrage — durch Safety-Layer enforced. WOFÜR: Klare Zurückweisung ohne Eskalation, Hinweis auf Hausordnung/Meldewege."
 priority: 998
 gate_personas: ["*"]
 gate_states: ["__never__"]

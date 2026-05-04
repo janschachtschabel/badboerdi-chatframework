@@ -288,18 +288,25 @@ def load_persona_definitions() -> list[dict[str, str]]:
             ]
             desc = "; ".join(goals)
 
-        # Extract detection hints from "Erkennungshinweise" section
+        # Extract detection hints from "Erkennungshinweise" section.
+        # Accepts blank lines + bold sub-headings between bullets (e.g. presse.md
+        # / elt.md group hints under "**Self-ID-Phrasen:**" / "**Vokabeln:**").
+        # Section ends at the NEXT heading (## or ### — both must terminate so
+        # that "### Abgrenzung zu …" doesn't pollute hints with cross-persona
+        # markers from the discriminator text).
         hints: list[str] = []
-        hints_match = re.search(
-            r"##\s*Erkennungshinweise\s*\n((?:[-*]\s+.*\n?)+)", body
+        hints_section = re.search(
+            r"##\s*Erkennungshinweise\s*\n([\s\S]*?)(?=\n#{2,}\s|\Z)", body
         )
-        if hints_match:
-            for line in hints_match.group(1).strip().split("\n"):
-                line = line.lstrip("-* ").strip()
-                if line:
-                    # Each line may contain multiple quoted phrases separated by commas
-                    for phrase in re.findall(r'"([^"]+)"', line):
-                        hints.append(phrase)
+        if hints_section:
+            for line in hints_section.group(1).split("\n"):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("##"):
+                    continue
+                # Pull every quoted phrase from EVERY line — bullets, bold
+                # sub-headings ("**Vokabeln:**"), and prose all welcome.
+                for phrase in re.findall(r'"([^"]+)"', line):
+                    hints.append(phrase)
         results.append({"id": pid, "label": label, "description": desc, "hints": hints})
     return results
 
@@ -380,6 +387,73 @@ def load_safety_config() -> dict[str, Any]:
 def load_quality_log_config() -> dict[str, Any]:
     """Load quality logging configuration from 01-base/quality-log-config.yaml."""
     return _load_yaml("01-base/quality-log-config.yaml")
+
+
+def load_guide_mode_config() -> dict[str, Any]:
+    """Load Webseiten-Guide-Modus configuration.
+
+    Returns the parsed ``guide_mode`` block from 01-base/guide-mode.yaml
+    with safe defaults if the file is missing. The frontend reads this
+    once at widget-init via /api/config/guide-mode and uses it for the
+    allow-list check; the backend uses the same data to decide whether
+    to attach ``guide_url`` to outgoing cards.
+    """
+    data = _load_yaml("01-base/guide-mode.yaml") or {}
+    cfg = data.get("guide_mode") or {}
+    # NB: ``max_guide_targets_per_turn`` honours 0 as "unlimited". The
+    # earlier `or 5` coerced 0 → 5, silently capping every response at
+    # 5 cards even when the YAML asked for unlimited. Now: only fall
+    # back to 5 when the key is missing or non-int, never on 0.
+    raw_max = cfg.get("max_guide_targets_per_turn")
+    if raw_max is None:
+        max_targets = 5
+    else:
+        try:
+            max_targets = int(raw_max)
+        except (TypeError, ValueError):
+            max_targets = 5
+
+    # max_guide_quick_replies: Anzahl Bring-mich-hin-Buttons in der
+    # Quick-Reply-Reihe. Auf [1, 3] geclamped — 0 würde das Feature
+    # abschalten, 4 würde keinen Platz für Folge-Fragen lassen
+    # (UX-Anti-Pattern). Default 2 wenn fehlend / non-int.
+    raw_qr = cfg.get("max_guide_quick_replies")
+    if raw_qr is None:
+        max_guide_qrs = 2
+    else:
+        try:
+            max_guide_qrs = int(raw_qr)
+        except (TypeError, ValueError):
+            max_guide_qrs = 2
+    max_guide_qrs = max(1, min(3, max_guide_qrs))
+
+    return {
+        "default_enabled": bool(cfg.get("default_enabled", True)),
+        "allowed_hosts": [str(h).strip().lower()
+                          for h in (cfg.get("allowed_hosts") or [])
+                          if str(h).strip()],
+        "url_fields_priority": list(cfg.get("url_fields_priority") or [
+            "topic_page_url", "wlo_url", "url", "content_url", "preview_url",
+        ]),
+        "max_guide_targets_per_turn": max_targets,
+        "max_guide_quick_replies": max_guide_qrs,
+    }
+
+
+def load_tie_breaker_config() -> dict[str, Any]:
+    """Load Pattern-Engine tie-breaker configuration (Bonus 2).
+
+    Returns the parsed ``tie_breaker`` block from 01-base/tie-breaker.yaml.
+    Missing file or empty block → safe defaults (disabled, empty allow list).
+    """
+    data = _load_yaml("01-base/tie-breaker.yaml") or {}
+    cfg = data.get("tie_breaker") or {}
+    return {
+        "enabled": bool(cfg.get("enabled", False)),
+        "max_score_gap": float(cfg.get("max_score_gap", 0.05) or 0.05),
+        "top_n_window": int(cfg.get("top_n_window", 2) or 2),
+        "allow_patterns_winner": list(cfg.get("allow_patterns_winner") or []),
+    }
 
 
 def load_privacy_config() -> dict[str, bool]:

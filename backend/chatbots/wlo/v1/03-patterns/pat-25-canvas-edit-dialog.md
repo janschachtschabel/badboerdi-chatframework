@@ -1,6 +1,7 @@
 ---
 id: PAT-25
 label: Canvas-Edit-Dialog
+short_purpose: "WANN: Canvas-Inhalt existiert und User möchte ihn ändern/verfeinern (INT-W-12, state-12). WOFÜR: Edit-Anweisung auf das vorhandene Markdown anwenden, Ergebnis im Canvas updaten."
 priority: 700
 gate_personas: ["*"]
 gate_states: ["state-5", "state-12"]

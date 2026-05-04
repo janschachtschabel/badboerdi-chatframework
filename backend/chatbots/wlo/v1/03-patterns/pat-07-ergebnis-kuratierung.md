@@ -1,6 +1,7 @@
 ---
 id: PAT-07
 label: Ergebnis-Kuratierung
+short_purpose: "WANN: Suche hat viele Treffer (>5), User braucht Kurations-Hilfe. WOFÜR: Top-3 nach Relevanz + Diversitäts-Kriterium auswählen, jedes mit kurzer Begründung warum."
 priority: 410
 gate_personas: ["P-W-LK", "P-W-SL", "P-BER"]
 gate_states: ["state-6"]

@@ -1,6 +1,7 @@
 ---
 id: PAT-21
 label: Canvas-Create
+short_purpose: "WANN: User will explizit ein NEUES Material erstellt bekommen (INT-W-11, Verben: erstelle/generiere/bau/schreib mir). WOFÜR: KI-Generation eines strukturierten Material-Markdowns im Canvas-Bereich."
 priority: 470
 gate_personas: ["*"]
 gate_states: ["state-5", "state-6", "state-8", "state-12"]
@@ -18,7 +19,7 @@ sources: ["llm"]
 format_primary: text
 format_follow_up: quick_replies
 card_text_mode: none
-tools: ["query_knowledge"]
+tools: ["query_knowledge", "canvas_service.generate_canvas_content"]
 ---
 
 # PAT-21: Canvas-Create

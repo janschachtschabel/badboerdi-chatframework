@@ -111,24 +111,305 @@ router = APIRouter()
 # Prevents two concurrent requests from the same session_id from clobbering
 # each other's session_state. Locks are created lazily and cleaned up
 # opportunistically when no waiters remain.
-_session_locks: dict[str, asyncio.Lock] = {}
+_session_locks: dict[str, tuple[asyncio.Lock, int]] = {}
 _session_locks_guard = asyncio.Lock()
 
 
 async def _get_session_lock(session_id: str) -> asyncio.Lock:
+    """Return (or lazily create) the per-session lock and bump its refcount.
+
+    The refcount tracks how many concurrent requests are holding *or
+    waiting on* this lock. ``_release_session_lock`` decrements it under
+    the same guard and pops the entry once the count reaches zero, so
+    the registry stays bounded under load and we never race with a
+    parallel ``_get_session_lock`` that's already pulled the same lock
+    object out of the dict.
+    """
     async with _session_locks_guard:
-        lock = _session_locks.get(session_id)
-        if lock is None:
+        entry = _session_locks.get(session_id)
+        if entry is None:
             lock = asyncio.Lock()
-            _session_locks[session_id] = lock
+            _session_locks[session_id] = (lock, 1)
+            return lock
+        lock, count = entry
+        _session_locks[session_id] = (lock, count + 1)
         return lock
 
 
-def _release_session_lock(session_id: str) -> None:
-    """Drop the lock from the registry if no one is waiting on it."""
-    lock = _session_locks.get(session_id)
-    if lock is not None and not lock.locked():
-        _session_locks.pop(session_id, None)
+async def _release_session_lock(session_id: str) -> None:
+    """Decrement the lock's refcount; drop it from the registry at zero.
+
+    Must be called *after* ``async with lock:`` has exited — calling it
+    inside the ``async with`` block while ``lock.locked()`` is still
+    True would simply skip the cleanup. Using a refcount instead of
+    ``not lock.locked()`` avoids the TOCTOU race between a concurrent
+    ``_get_session_lock`` (which has the lock object in hand but hasn't
+    yet awaited ``async with``) and our pop.
+    """
+    async with _session_locks_guard:
+        entry = _session_locks.get(session_id)
+        if entry is None:
+            return
+        lock, count = entry
+        new_count = count - 1
+        if new_count <= 0:
+            _session_locks.pop(session_id, None)
+        else:
+            _session_locks[session_id] = (lock, new_count)
+
+
+def _is_empty_topic_pages_response(raw: str) -> bool:
+    """True when the WLO MCP server reported no topic pages found for a
+    ``search_wlo_topic_pages`` call. The server uses BOTH a German plain-
+    text marker and (occasionally) an empty JSON results array — match
+    either."""
+    if not raw:
+        return True
+    if "Keine Themenseiten" in raw:
+        return True
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            results = parsed.get("results") or parsed.get("items") or []
+            return not results
+    except Exception:
+        pass
+    return False
+
+
+def _filter_topic_pages_by_title(raw: str, needle: str) -> str | None:
+    """Filter a ``search_wlo_topic_pages`` JSON envelope to results whose
+    ``title`` contains ``needle`` (case-insensitive). Returns the
+    re-serialised filtered envelope, or ``None`` if no match.
+
+    Used for the global-fallback path: when the server's tight query
+    matcher returns "Keine Themenseiten gefunden" but the topic page
+    actually exists in the unfiltered global list.
+    """
+    if not raw or not needle:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    results = parsed.get("results") or parsed.get("items") or []
+    needle_lower = needle.lower().strip()
+    filtered = [
+        r for r in results
+        if isinstance(r, dict)
+        and needle_lower in (r.get("title") or "").lower()
+    ]
+    if not filtered:
+        return None
+    out = dict(parsed)
+    out["results"] = filtered
+    out["total"] = len(filtered)
+    out["_query_fallback"] = True
+    return json.dumps(out, ensure_ascii=False)
+
+
+async def _topic_pages_with_warmup(
+    query: str,
+    extra_args: dict[str, Any],
+) -> str:
+    """Run search_wlo_topic_pages with a dedicated collections warmup
+    AND a global-list fallback when the server's tight query matcher
+    fails to find a topic page that actually exists.
+
+    Two empirical quirks of the WLO MCP server:
+
+    1. Session-state: the topic-page index only populates after a
+       ``search_wlo_collections`` call with small ``maxResults`` and no
+       discipline filter. We run a dedicated warmup before the actual
+       call so this state is always in place.
+
+    2. Tight query matcher: ``search_wlo_topic_pages(query="Mathematik")``
+       returns "Keine Themenseiten gefunden" even though a topic page
+       titled exactly "Mathematik" exists in the unfiltered global list.
+       The server seems to search inside topic-page CONTENT but ignores
+       the topic-page title for the query match. Fallback: if the
+       initial call returned no results, fetch the global list (no
+       query) and filter client-side by title-contains-query.
+
+    Tradeoff: 1 extra MCP roundtrip per turn that requests topic pages,
+    plus 1 more if the query-fallback triggers. Mitigated by Phase-A3
+    tool cache (TTL 300s) — repeat queries hit the cache for free.
+    """
+    from app.services.mcp_client import call_mcp_tool as _ct
+    try:
+        # Fire-and-forget warmup — its cards are discarded; only the
+        # session-state side effect on the MCP server matters.
+        await _ct("search_wlo_collections", {"query": query, "maxResults": 5})
+    except Exception:
+        pass
+    primary = await _ct("search_wlo_topic_pages", extra_args)
+    if not _is_empty_topic_pages_response(primary):
+        return primary
+    # Server returned 0 hits for the query — try the global list and
+    # filter by title containment. ``maxResults`` is capped at 20 by the
+    # server schema; we ask for the full window.
+    try:
+        global_args: dict[str, Any] = {"maxResults": 20}
+        # Preserve the discipline hint if the caller provided one — even
+        # with no query, the server narrows by discipline reliably.
+        if extra_args.get("discipline"):
+            global_args["discipline"] = extra_args["discipline"]
+        global_raw = await _ct("search_wlo_topic_pages", global_args)
+    except Exception as _e:
+        logger.warning("topic_pages global fallback failed: %s", _e)
+        return primary
+    filtered = _filter_topic_pages_by_title(global_raw, query)
+    if filtered:
+        logger.info(
+            "topic_pages query-fallback: server reported 0 hits for %r, "
+            "but global-list contains a title match (returned filtered set)",
+            query,
+        )
+        return filtered
+    return primary
+
+
+def _attach_guide_qr(
+    req: "ChatRequest",
+    quick_replies: list[str],
+    session_state: dict[str, Any] | None = None,
+    response_text: str | None = None,
+) -> list[str]:
+    """Webseiten-Lotse: deterministisch einen Bring-mich-hin-QR an der
+    Spitze der Quick-Replies einfügen.
+
+    Trigger-Reihenfolge (siehe ``guide_qr_injector.inject_guide_qr``):
+    1. LLM hat schon ``__guide__|...`` produziert → no-op.
+    2. User-Frage matcht eine Regel aus ``guide_qr_injector._RULES``
+       (z.B. "wie kann ich mitmachen" → /mitmachen).
+    3. Bot hat ``query_knowledge(area=…)`` mit einer bekannten Area
+       aufgerufen (verfolgt in ``session_state['_rag_areas_used']``)
+       → URL der RAG-Quelle anbieten (z.B. WissenLebtOnline →
+       wissenlebtonline.de).
+
+    No-op wenn Guide-Mode aus oder Host nicht allow-listed. Fehler
+    werden geschluckt — Quick-Replies sind Pure-UX-Sugar und dürfen
+    einen erfolgreichen Antwort-Turn niemals blockieren.
+    """
+    try:
+        env = req.environment
+        # Hard gate: Lotsen-Modus AUS → ALLE Guide-QRs entfernen, nicht
+        # nur Injektor überspringen. Das LLM kann eigenmächtig
+        # ``__guide__|...``-Einträge erzeugen (Tool-Schema lädt es ein),
+        # die dürfen aber nicht zum User durchschlagen, wenn der Toggle
+        # bewusst aus ist. Gleiches gilt, wenn der Host nicht auf der
+        # Allow-Liste steht.
+        guide_on = bool(getattr(env, "guide_mode", False))
+        host = (getattr(env, "host", "") or "").strip()
+        if not guide_on or not host:
+            return _strip_guide_qrs(quick_replies)
+        from app.services.guide_mode_service import host_is_allowed
+        from app.services.guide_qr_injector import inject_guide_qr
+        from app.services.config_loader import load_guide_mode_config
+        if not host_is_allowed(host):
+            return _strip_guide_qrs(quick_replies)
+        rag_areas: list[str] = []
+        rag_top_sources: list[str] = []
+        if isinstance(session_state, dict):
+            v = session_state.get("_rag_areas_used")
+            if isinstance(v, list):
+                rag_areas = [a for a in v if isinstance(a, str)]
+            s = session_state.get("_rag_top_sources")
+            if isinstance(s, list):
+                rag_top_sources = [x for x in s if isinstance(x, str)]
+        # Anzahl Bring-mich-hin-Buttons pro Antwort aus guide-mode.yaml
+        # lesen (1-3, default 2). Mehr als 3 würde keinen Platz für
+        # Folge-Fragen-QRs lassen — config_loader clamped das.
+        max_guide_qrs = int(load_guide_mode_config().get("max_guide_quick_replies", 2))
+        return inject_guide_qr(
+            req.message or "",
+            quick_replies,
+            rag_areas_used=rag_areas,
+            response_text=response_text,
+            rag_top_sources=rag_top_sources,
+            max_guide_qrs=max_guide_qrs,
+        )
+    except Exception as e:
+        logger.warning("guide-qr injection failed: %s", e)
+        return quick_replies
+
+
+def _strip_guide_qrs(quick_replies: list[str]) -> list[str]:
+    """Remove every ``__guide__|...`` entry from the QR list. Used as
+    the fail-safe when guide mode is off — the LLM can still emit the
+    magic prefix but the user must not see it."""
+    if not quick_replies:
+        return list(quick_replies or [])
+    return [q for q in quick_replies if not (
+        isinstance(q, str) and q.startswith("__guide__|")
+    )]
+
+
+def _attach_guide_urls(
+    req: "ChatRequest",
+    cards: list[Any] | None,
+    page_action: dict[str, Any] | None,
+) -> None:
+    """Webseiten-Guide-Modus: annotate ``card.guide_url`` on every card
+    in the response that the widget will render, when (a) the user has
+    the guide-mode toggle on AND (b) the widget runs on an allow-listed
+    host.
+
+    Annotates BOTH the inline ``cards`` list AND any cards inside a
+    ``canvas_show_cards`` page_action payload — both reach the widget.
+
+    No-op when guide-mode is off or the host isn't whitelisted, so
+    callers can invoke this unconditionally.
+    """
+    try:
+        env = req.environment
+        if not getattr(env, "guide_mode", False):
+            return
+        host = (getattr(env, "host", "") or "").strip()
+        if not host:
+            return
+        from app.services.guide_mode_service import (
+            annotate_cards_with_guide_url, host_is_allowed,
+        )
+        if not host_is_allowed(host):
+            return
+        if cards:
+            annotate_cards_with_guide_url(cards, enabled=True, host=host)
+        if (
+            page_action
+            and isinstance(page_action, dict)
+            and page_action.get("action") == "canvas_show_cards"
+        ):
+            payload_cards = (page_action.get("payload") or {}).get("cards") or []
+            if isinstance(payload_cards, list):
+                annotate_cards_with_guide_url(
+                    payload_cards, enabled=True, host=host,
+                )
+    except Exception as e:
+        # Guide-mode is optional UX — never let it break a chat turn
+        logger.warning("guide_url annotation failed: %s", e)
+
+
+def _direct_action_safety_text(req: "ChatRequest") -> str:
+    """Concatenate user-controlled fields from req for safety screening.
+
+    Direct-action requests (canvas_create / canvas_edit / canvas_remix /
+    generate_learning_path / browse_collection) skip the regular pattern
+    engine, so they would otherwise bypass the safety gate. We feed the
+    raw user message plus all string-valued action_params into the same
+    regex/LLM safety pipeline. Caps each field at 500 chars, total 2000.
+    """
+    chunks: list[str] = []
+    if req.message:
+        chunks.append(req.message[:500])
+    for k, v in (req.action_params or {}).items():
+        if isinstance(v, str) and v.strip():
+            chunks.append(f"{k}: {v[:500]}")
+        if sum(len(c) for c in chunks) >= 2000:
+            break
+    return " \n".join(chunks)[:2000]
 
 
 # ── Helper: build WloCard list from raw dicts ─────────────────────
@@ -404,6 +685,7 @@ async def _handle_browse_collection(
     except Exception as _qr_err:
         logger.warning("browse_collection quick_replies failed: %s", _qr_err)
         quick_replies = []
+    quick_replies = _attach_guide_qr(req, quick_replies, session_state, response_text=response_text)
 
     debug = DebugInfo(
         persona=session_state.get("persona_id", ""),
@@ -437,6 +719,8 @@ async def _handle_browse_collection(
             "append": skip_count > 0,
         },
     }
+
+    _attach_guide_urls(req, cards, page_action)
 
     return ChatResponse(
         session_id=req.session_id,
@@ -701,6 +985,7 @@ async def _handle_generate_learning_path(
     except Exception as _qr_err:
         logger.warning("learning_path quick_replies failed: %s", _qr_err)
         quick_replies = []
+    quick_replies = _attach_guide_qr(req, quick_replies, session_state, response_text=response_text)
 
     debug = DebugInfo(
         persona=session_state.get("persona_id", ""),
@@ -743,6 +1028,7 @@ async def _handle_generate_learning_path(
     # a canvas document.
     _lp_failed = (response_text or "").startswith("Fehler beim Erstellen des Lernpfads")
     if _lp_failed:
+        _attach_guide_urls(req, cards, None)
         return ChatResponse(
             session_id=req.session_id,
             content=response_text,
@@ -752,6 +1038,8 @@ async def _handle_generate_learning_path(
         )
 
     short_ack = _lp_completion_message(title, response_text or "")
+
+    _attach_guide_urls(req, cards, None)
 
     return ChatResponse(
         session_id=req.session_id,
@@ -1174,45 +1462,63 @@ async def chat(req: ChatRequest):
     Different sessions still run fully in parallel.
     """
     lock = await _get_session_lock(req.session_id)
-    async with lock:
-        try:
-            return await _chat_impl(req)
-        except Exception as _impl_err:
-            # Top-level safety net: any unhandled exception in _chat_impl
-            # (config bug, attribute error in pattern engine, DB hiccup, …)
-            # gets converted into a graceful chat bubble instead of HTTP 500.
-            # The frontend's catch-all would otherwise swallow it as a
-            # generic "konnte ich leider nicht …" message with no debug
-            # info — better to surface the exception type to the user so
-            # they can report it.
-            logger.exception("chat endpoint unhandled exception: %s", _impl_err)
-            err_debug = DebugInfo(
-                pattern="ERROR: unhandled_chat_exception",
-                tools_called=["error"],
-            )
+    try:
+        async with lock:
             try:
-                await save_message(
-                    req.session_id, "assistant",
-                    f"[unhandled error: {type(_impl_err).__name__}]",
-                    debug=err_debug.model_dump(),
+                return await _chat_impl(req)
+            except Exception as _impl_err:
+                # Top-level safety net: any unhandled exception in _chat_impl
+                # (config bug, attribute error in pattern engine, DB hiccup, …)
+                # gets converted into a graceful chat bubble instead of HTTP 500.
+                # The frontend's catch-all would otherwise swallow it as a
+                # generic "konnte ich leider nicht …" message with no debug
+                # info — better to surface the exception type to the user so
+                # they can report it.
+                logger.exception("chat endpoint unhandled exception: %s", _impl_err)
+                err_debug = DebugInfo(
+                    pattern="ERROR: unhandled_chat_exception",
+                    tools_called=["error"],
                 )
-            except Exception:
-                pass  # never let DB-write failures mask the original error
-            return ChatResponse(
-                session_id=req.session_id,
-                content=(
-                    "Da ist intern etwas schiefgelaufen "
-                    f"({type(_impl_err).__name__}). Versuch es nochmal — "
-                    "wenn es bestehen bleibt, gib mir kurz Bescheid."
-                ),
-                quick_replies=["Nochmal versuchen"],
-                debug=err_debug,
-            )
-        finally:
-            _release_session_lock(req.session_id)
+                try:
+                    await save_message(
+                        req.session_id, "assistant",
+                        f"[unhandled error: {type(_impl_err).__name__}]",
+                        debug=err_debug.model_dump(),
+                    )
+                except Exception:
+                    pass  # never let DB-write failures mask the original error
+                return ChatResponse(
+                    session_id=req.session_id,
+                    content=(
+                        "Da ist intern etwas schiefgelaufen "
+                        f"({type(_impl_err).__name__}). Versuch es nochmal — "
+                        "wenn es bestehen bleibt, gib mir kurz Bescheid."
+                    ),
+                    quick_replies=["Nochmal versuchen"],
+                    debug=err_debug,
+                )
+    finally:
+        # Cleanup MUST run AFTER ``async with lock`` exits; otherwise the
+        # lock is still held and the refcount-pop check would leak entries.
+        await _release_session_lock(req.session_id)
 
 
-async def _chat_impl(req: ChatRequest) -> ChatResponse:
+async def _chat_impl(
+    req: ChatRequest,
+    tracer_listener: Any = None,
+    on_token: Any = None,
+) -> ChatResponse:
+    """Core chat pipeline.
+
+    ``tracer_listener`` is an optional callback used by the streaming
+    endpoint (POST /api/chat/stream) to receive ``phase`` events live as
+    the Tracer fires them.
+
+    ``on_token`` (Phase-2) is forwarded to ``generate_response`` so the
+    final-answer LLM call can stream tokens back. The streaming endpoint
+    wraps both into the SSE event queue. Default ``None`` for both keeps
+    the regular non-streaming POST /api/chat unchanged.
+    """
     # 1. Load/create session
     session = await get_or_create_session(req.session_id)
     history = await get_messages(req.session_id, limit=20)
@@ -1266,16 +1572,77 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         )
 
     # ── Handle direct actions (bypass classification) ─────────
-    if req.action == "browse_collection":
-        return await _handle_browse_collection(req, session_state)
-    elif req.action == "generate_learning_path":
-        return await _handle_generate_learning_path(req, session_state)
-    elif req.action == "canvas_create":
-        return await _handle_canvas_create(req, session_state)
-    elif req.action == "canvas_edit":
-        return await _handle_canvas_edit(req, session_state)
-    elif req.action == "canvas_remix":
-        return await _handle_canvas_remix(req, session_state)
+    # IMPORTANT: direct actions skip the pattern engine but MUST still go
+    # through the same safety gate the standard flow runs. Otherwise an
+    # attacker could call /api/chat with action=canvas_edit + a harmful
+    # edit_instruction and never face safety classification at all.
+    _direct_actions = {
+        "browse_collection",
+        "generate_learning_path",
+        "canvas_create",
+        "canvas_edit",
+        "canvas_remix",
+    }
+    if req.action in _direct_actions:
+        from app.services.safety_service import (
+            assess_safety as _da_assess_safety,
+            _regex_gate as _da_regex_gate,
+        )
+        _safety_text = _direct_action_safety_text(req)
+        _signals = session_state.get("signal_history", [])
+        # ``assess_safety`` runs ``_regex_gate`` first internally and short-
+        # circuits on a hard regex hit, so a single call here gives us the
+        # full multi-stage gate with the LLM stages too.
+        try:
+            _da_safety = await _da_assess_safety(_safety_text, _signals)
+        except Exception as _da_err:
+            logger.warning("direct-action safety assess failed: %s", _da_err)
+            _da_safety = _da_regex_gate(_safety_text, _signals)
+        if _da_safety.risk_level == "high":
+            await log_safety_event(
+                req.session_id, _safety_text, decision=_da_safety.model_dump(),
+                ip=_client_ip,
+            )
+            _block_msg = (
+                "Diese Anfrage konnte ich nicht bearbeiten — sie verletzt "
+                "Sicherheits- oder Inhaltsregeln. Probier es bitte mit einer "
+                "anderen Formulierung erneut."
+            )
+            err_debug = DebugInfo(
+                pattern="SAFETY: blocked_direct_action",
+                tools_called=[],
+                safety=_da_safety,
+                entities={"action": str(req.action or "")},
+            )
+            try:
+                await save_message(
+                    req.session_id, "assistant", _block_msg,
+                    debug=err_debug.model_dump(),
+                )
+            except Exception:
+                pass
+            return ChatResponse(
+                session_id=req.session_id,
+                content=_block_msg,
+                quick_replies=[],
+                debug=err_debug,
+            )
+        if req.action == "browse_collection":
+            return await _handle_browse_collection(req, session_state)
+        elif req.action == "generate_learning_path":
+            return await _handle_generate_learning_path(req, session_state)
+        elif req.action == "canvas_create":
+            return await _handle_canvas_create(req, session_state)
+        elif req.action == "canvas_edit":
+            return await _handle_canvas_edit(req, session_state)
+        elif req.action == "canvas_remix":
+            return await _handle_canvas_remix(req, session_state)
+
+    # Phase A2 — Token-Cost-Tracking: ein Accumulator pro Turn, durchgeschleift
+    # an alle LLM-Helper. Sammelt prompt/completion/cached-Tokens je Modell,
+    # landet am Ende in DebugInfo.token_usage.
+    from app.services.llm_service import usage_accumulator_new
+    usage_acc = usage_accumulator_new()
 
     # 1b. Safety assessment (Triple-Schema T-12/19) — multi-stage gating
     #     Stage 1: regex (always)
@@ -1288,7 +1655,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     # match still aborts before we waste an LLM classify call.
     from app.services.safety_service import assess_safety, _regex_gate
     from app.services.trace_service import Tracer
-    tracer = Tracer()
+    tracer = Tracer(listener=tracer_listener)
 
     # Safety + classify run as a single parallel block. We measure the
     # combined wall-clock as one trace entry — splitting them produced a
@@ -1326,7 +1693,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             assess_safety(req.message, session_state.get("signal_history", []))
         )
         classify_task = asyncio.create_task(
-            classify_input(req.message, history, session_state, env, req.canvas_state)
+            classify_input(req.message, history, session_state, env, req.canvas_state, usage_acc=usage_acc)
         )
         _results = await asyncio.gather(safety_task, classify_task, return_exceptions=True)
         safety, classification = _results
@@ -1441,8 +1808,24 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                     # start with collections (rich cards with preview/desc/chips)
                     spec_tool_name = "search_wlo_collections"
 
+                # Primary collections requests get capped at maxResults=5
+                # whenever a topic_pages-search is also expected: the WLO MCP
+                # server's session-state index for ``search_wlo_topic_pages``
+                # is determined by the LAST collections call, and only sticks
+                # for small result sets. With maxResults=10 the topic-pages
+                # call returns "Keine Themenseiten gefunden" even for queries
+                # that DO have matching topic pages. Loss is marginal — the
+                # canvas paginates at 5 cards per page anyway.
+                _primary_max = 10
+                if spec_tool_name == "search_wlo_collections" and (
+                    _wants_topic
+                    or classification.intent_id in (
+                        "INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-10",
+                    )
+                ):
+                    _primary_max = 5
                 spec_tool_args: dict[str, Any] = {
-                    "query": spec_query, "maxResults": 10,
+                    "query": spec_query, "maxResults": _primary_max,
                 }
                 if _medientyp and spec_tool_name == "search_wlo_content":
                     spec_tool_args["learningResourceType"] = _medientyp
@@ -1496,7 +1879,21 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                     extra_args: dict[str, Any] = {"query": spec_query, "maxResults": 5}
                     if _fach: extra_args["discipline"] = _fach
                     if _stufe: extra_args["educationalContext"] = _stufe
-                    t = asyncio.create_task(call_mcp_tool(extra_name, extra_args))
+
+                    # Fix A — search_wlo_topic_pages is session-stateful on
+                    # the WLO MCP server. Empirically only a collections call
+                    # with maxResults=5 (no discipline filter) primes the
+                    # topic-page index reliably; the primary collections
+                    # task uses maxResults=10 and might also include a
+                    # discipline filter, which leaves topic_pages cold.
+                    # Run a dedicated warmup before the topic_pages call.
+                    if extra_name == "search_wlo_topic_pages":
+                        t = asyncio.create_task(
+                            _topic_pages_with_warmup(spec_query, extra_args),
+                        )
+                    else:
+                        t = asyncio.create_task(call_mcp_tool(extra_name, extra_args))
+
                     extra_spec_tasks.append((extra_name, t))
                     logger.info("speculative extra=%s args=%s", extra_name, extra_args)
         except Exception as _e:
@@ -1832,8 +2229,13 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         entities=session_state["entities"],
         intent_confidence=classification.intent_confidence,
         enforced_pattern_id=_enforced_for_select,
+        pattern_id_hint=getattr(classification, "pattern_id_hint", None),
     )
-    tracer.end({"winner": winner.id, "eliminated": len(eliminated)})
+    tracer.end({
+        "winner": winner.id,
+        "eliminated": len(eliminated),
+        "tie_breaker": pattern_output.get("tie_breaker"),
+    })
 
     # ── Post-route rule engine (shadow + selective live) ──────────
     # Runs after pattern selection so rules can see ``pattern_winner``,
@@ -2707,6 +3109,24 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 logger.warning("speculative %s failed: %s", spec_tool_name, _e)
 
     if not _lp_routed and not _canvas_routed:
+        # Hint the MCP client about the classifier's entities for this
+        # turn (fach, thema, stufe, …). MCP tool preprocessors read these
+        # to self-correct LLM-supplied arguments — e.g.
+        # ``browse_collection_tree``'s UUID resolver overrides a wrong
+        # Fachportal pick when ``hints["fach"]`` is set, and
+        # ``get_collection_contents`` falls back to a name search when
+        # the LLM passes a title. Per-async-task ContextVar so
+        # concurrent sessions don't cross-contaminate.
+        try:
+            from app.services.mcp_client import set_request_hints as _set_request_hints
+            _entities = classification_dict.get("entities", {}) or {}
+            _set_request_hints({
+                k: v for k, v in _entities.items()
+                # Drop internal underscore-prefixed keys (page metadata cache)
+                if not str(k).startswith("_")
+            })
+        except Exception:
+            pass
         tracer.start("response", "LLM response generation")
         try:
             response_text, wlo_cards_raw, tools_called, response_outcomes = await generate_response(
@@ -2723,6 +3143,8 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 blocked_tools=safety.blocked_tools,
                 prefetched_tool=prefetched_tool_payload,
                 canvas_state=req.canvas_state,
+                usage_acc=usage_acc,
+                on_token=on_token,
             )
             tracer.end({
                 "tools": tools_called,
@@ -2949,8 +3371,24 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     #    - "none": skip quick replies (rare — only for terminal patterns)
     #    - Canvas degradation (material-type missing): use forced 12-chip list
     follow_up_mode = pattern_output.get("format_follow_up", "quick_replies")
+    # Inline quick-replies (CHAT_INLINE_QUICK_REPLIES) — when generate_response()
+    # produced both the answer AND quick_replies in a single LLM call via the
+    # respond_to_user tool, the result lands here. Saves the separate ~1-2s
+    # quick_replies LLM round-trip. Only honour it when at least one reply
+    # came back; an empty list still falls through to the regular generator.
+    _inline_qr = (
+        session_state.get("_inline_quick_replies")
+        if isinstance(session_state, dict) else None
+    )
+    if isinstance(_inline_qr, list) and _inline_qr:
+        # Strip from session_state so the next turn doesn't reuse stale QR.
+        session_state.pop("_inline_quick_replies", None)
+    else:
+        _inline_qr = None
     if _canvas_forced_quick_replies:
         quick_replies = _canvas_forced_quick_replies
+    elif _inline_qr is not None:
+        quick_replies = _inline_qr
     elif follow_up_mode != "none":
         try:
             quick_replies = await generate_quick_replies(
@@ -2958,6 +3396,7 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
                 response_text=response_text,
                 classification=classification_dict,
                 session_state=session_state,
+                usage_acc=usage_acc,
             )
         except Exception as _qr_err:
             # Quick replies are optional UX — never crash a successful main
@@ -2966,6 +3405,12 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             quick_replies = []
     else:
         quick_replies = []
+
+    # Webseiten-Lotse: deterministisch einen Bring-mich-hin-QR an Position
+    # 0 setzen, wenn die User-Frage zu einer bekannten WLO-Seite passt
+    # UND noch kein Guide-QR vom LLM dabei ist. Greift nur, wenn der User
+    # Guide-Mode aktiv hat — sonst No-op.
+    quick_replies = _attach_guide_qr(req, quick_replies, session_state, response_text=response_text)
 
     # Collection-Relevanz: wenn nur Sammlungen geliefert wurden und keine
     # davon das Topic im Titel traegt, biete prominent den Wechsel zu
@@ -3002,9 +3447,21 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             (session_state.get("entities", {}).get("thema") or "").strip()
             or (session_state.get("entities", {}).get("fach") or "").strip()
         )
-        if not _has_real_topic:
+        # Ausnahme: Discovery-Pattern (Fachportale-Übersicht / Themen-
+        # Drilldown / Themenseiten-Übersicht) zeigen per Definition eine
+        # globale Liste — Filterung wäre falsch, weil der User EXPLIZIT
+        # genau diese Übersicht angefragt hat. Auch reine Themenseiten-
+        # Cards (mit topic_pages-Eigenschaft) gelten als "echte Treffer"
+        # und werden nicht unterdrückt.
+        _is_discovery_pattern = winner.id in ("PAT-26", "PAT-27")
+        _has_topic_page_cards = any(
+            (c.topic_pages if hasattr(c, "topic_pages") else None)
+            for c in cards
+        )
+        if not _has_real_topic and not _is_discovery_pattern and not _has_topic_page_cards:
             logger.info(
-                "Cards unterdrückt — kein konkretes Thema/Fach im Slot"
+                "Cards unterdrückt — kein konkretes Thema/Fach im Slot "
+                "(pattern=%s)", winner.id,
             )
             cards = []
         # Re-prüfen ob nach Filterung noch Cards übrig sind
@@ -3076,6 +3533,10 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
             "missing_slots": pattern_output.get("missing_slots", []),
             "blocked_patterns": pattern_output.get("blocked_patterns", []),
             "core_rule": pattern_output.get("core_rule", ""),
+            # Tie-Breaker (Bonus 2): zeigt ob/wie der LLM-Hint den Engine-
+            # Winner überstimmt hat. None = nicht ausgelöst (Hint == Engine
+            # oder Tie-Breaker disabled).
+            "tie_breaker": pattern_output.get("tie_breaker"),
         },
         # Triple-Schema v2
         outcomes=response_outcomes,
@@ -3084,6 +3545,15 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
         policy=policy,
         context=context_snapshot,
         trace=tracer.entries,
+        # Phase-1-Pattern-Hint (Shadow-Mode): LLM-Vorschlag + Engine-Match
+        pattern_id_hint=getattr(classification, "pattern_id_hint", None),
+        pattern_reasoning=getattr(classification, "pattern_reasoning", None),
+        llm_engine_match=(
+            getattr(classification, "pattern_id_hint", None) == winner.id
+            if getattr(classification, "pattern_id_hint", None) else None
+        ),
+        # Phase-A2 Token-Cost-Tracking — aggregiert über alle LLM-Calls dieses Turns
+        token_usage=usage_acc,
     )
 
     # 11. Update session state in DB
@@ -3129,6 +3599,10 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     except Exception as _e:
         logger.warning("quality log failed: %s", _e)
 
+    # Webseiten-Guide-Modus: enrich cards with same-tab navigation URLs
+    # IF the user has the toggle on AND runs on an allow-listed host.
+    _attach_guide_urls(req, cards, page_action)
+
     return ChatResponse(
         session_id=req.session_id,
         content=response_text,
@@ -3141,9 +3615,165 @@ async def _chat_impl(req: ChatRequest) -> ChatResponse:
     )
 
 
-@router.get("/stream")
-async def chat_stream():
-    """SSE endpoint for streaming responses (future use)."""
+@router.post("/stream")
+async def chat_stream(req: ChatRequest):
+    """Streaming chat endpoint (Phase-1 SSE).
+
+    Same body as POST /api/chat, but the response is a Server-Sent-Event
+    stream that emits ``phase`` events live as the Tracer fires them, plus
+    a final ``result`` event with the complete ChatResponse.
+
+    Frontends receive interactive activity feedback during the 2-5s
+    classification + tool-loop, instead of staring at a static spinner
+    until the whole pipeline finishes.
+
+    Event types:
+      - ``phase``: ``{kind: 'start'|'end'|'record', step, label, data}``
+        from the Tracer.
+      - ``result``: full ChatResponse JSON (final).
+      - ``error``: ``{message}`` if the pipeline failed.
+      - keepalive comment lines (``: keepalive\\n\\n``) to keep the
+        connection open through proxies during long tool-loops.
+
+    The non-streaming POST /api/chat is unchanged for backwards-compat.
+    """
+    import asyncio as _asyncio
+
+    # Mark this turn as streaming in the logs so it's distinguishable from
+    # the regular POST /api/chat traffic when grepping production logs.
+    logger.info(
+        "chat_stream START session=%s msg=%r action=%s",
+        req.session_id, (req.message or "")[:80], req.action or "-",
+    )
+
+    queue: _asyncio.Queue = _asyncio.Queue()
+    DONE = object()
+    PHASE = "phase"
+
+    def _listener(kind: str, step: str, label: str, data: dict[str, Any]) -> None:
+        # Sync call from Tracer → push event to async queue (non-blocking).
+        try:
+            queue.put_nowait((PHASE, {
+                "kind": kind,
+                "step": step,
+                "label": label,
+                "data": data,
+            }))
+        except Exception:
+            pass  # never let a slow consumer break the pipeline
+
+    # Phase-2 token streaming was rolled back — it only kicked in for the
+    # last ~1-2 seconds (after the tool-loop) and the per-token re-render
+    # caused visible flicker. The Streaming-Helper (``_stream_completion``
+    # + ``_RespondToUserExtractor``) stays in llm_service for future
+    # reuse, but ``on_token`` is no longer wired up here. Phase-1 phase
+    # labels remain fully active.
+
+    async def _run_impl():
+        """Run the chat impl under the per-session lock and signal DONE."""
+        lock = await _get_session_lock(req.session_id)
+        try:
+            async with lock:
+                try:
+                    return await _chat_impl(
+                        req,
+                        tracer_listener=_listener,
+                    )
+                except Exception as e:
+                    logger.exception("chat_stream impl failed: %s", e)
+                    return e
+        finally:
+            await _release_session_lock(req.session_id)
+            queue.put_nowait(DONE)
+
     async def event_stream():
-        yield "data: {\"type\": \"connected\"}\n\n"
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+        impl_task = _asyncio.create_task(_run_impl())
+
+        # Tell the client we're connected — flushes proxy buffers immediately.
+        yield "event: connected\ndata: {}\n\n"
+
+        # Drain queued events until the impl signals DONE. Use a small
+        # timeout on get() so we can emit periodic keepalives during quiet
+        # stretches (e.g. a slow MCP search) — many proxies close idle
+        # SSE connections after 30s without bytes.
+        while True:
+            try:
+                evt = await _asyncio.wait_for(queue.get(), timeout=10.0)
+            except _asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+                if impl_task.done():
+                    break
+                continue
+            if evt is DONE:
+                break
+            try:
+                kind, payload = evt
+                yield (
+                    f"event: {kind}\n"
+                    f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                )
+            except Exception as _ye:
+                logger.warning("event-stream serialise failed: %s", _ye)
+
+        # Drain any post-DONE events queued before listener detach (rare).
+        while not queue.empty():
+            evt = queue.get_nowait()
+            if evt is DONE:
+                continue
+            try:
+                kind, payload = evt
+                yield (
+                    f"event: {kind}\n"
+                    f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                )
+            except Exception:
+                pass
+
+        # Final result (or error). Using ``await impl_task`` is safe here —
+        # _run_impl already returned by the time DONE was queued.
+        result = await impl_task
+        if isinstance(result, Exception):
+            err_payload = {
+                "message": f"{type(result).__name__}: {result}"[:400],
+            }
+            logger.warning(
+                "chat_stream END session=%s status=error %s",
+                req.session_id, err_payload["message"],
+            )
+            yield f"event: error\ndata: {json.dumps(err_payload)}\n\n"
+        else:
+            try:
+                payload = result.model_dump()
+            except Exception as _pe:
+                logger.warning("result.model_dump failed: %s", _pe)
+                payload = {"content": "(serialise error)"}
+            # Concise success line — pattern + total token count makes log
+            # diagnosis fast without dumping the whole response body.
+            try:
+                _dbg = (payload.get("debug") or {}) if isinstance(payload, dict) else {}
+                _tu = _dbg.get("token_usage") or {}
+                logger.info(
+                    "chat_stream END session=%s pattern=%s tokens=%s/%s cached=%s",
+                    req.session_id,
+                    str(_dbg.get("pattern", ""))[:40],
+                    _tu.get("prompt_tokens", 0),
+                    _tu.get("completion_tokens", 0),
+                    _tu.get("cached_tokens", 0),
+                )
+            except Exception:
+                pass
+            yield (
+                "event: result\n"
+                f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+            )
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            # Proxies should not buffer SSE.
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )

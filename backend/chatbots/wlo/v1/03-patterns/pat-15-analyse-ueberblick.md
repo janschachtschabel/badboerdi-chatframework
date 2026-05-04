@@ -1,7 +1,8 @@
 ---
 id: PAT-15
 label: Analyse-Überblick
-priority: 400
+short_purpose: "WANN: Profi-Persona (Verwaltung/Politik/Presse/Redaktion/Beratung/Lehrkraft) braucht analytischen Überblick zu Plattform/Statistik/Faktenfrage (INT-W-01/06/09). WOFÜR: Strukturierte Analyse aus RAG-Wissen, ohne Material-Suche."
+priority: 470
 gate_personas: ["P-VER", "P-BER", "P-W-POL", "P-W-PRESSE", "P-W-RED", "P-W-LK"]
 gate_states: ["*"]
 gate_intents: ["INT-W-01", "INT-W-06", "INT-W-09"]

@@ -69,6 +69,25 @@ interface RunConversation {
   turns: RunTurn[];
 }
 
+interface ClassificationMetrics {
+  persona_correct_rate?: number;
+  persona_total_judged?: number;
+  persona_confusion?: Record<string, Record<string, number>>;
+  intent_correct_rate?: number;
+  intent_total_judged?: number;
+  intent_confusion?: Record<string, Record<string, number>>;
+  llm_hint_present_count?: number;
+  llm_engine_match_rate?: number;
+  pattern_confusion_llm_vs_engine?: Record<string, Record<string, number>>;
+  engine_pattern_judge_ok_rate?: number;
+  llm_pattern_judge_ok_lower_bound?: number;
+  judged_turns?: number;
+  pattern_match_score_distribution?: Record<string, number>;
+  tool_compliance_rate?: number;
+  tool_compliance_total?: number;
+  tool_compliance_per_pattern?: Record<string, { ok: number; total: number }>;
+}
+
 interface RunDetail extends RunSummary {
   summary: {
     matrix?: Record<string, Record<string, number>>;
@@ -77,6 +96,7 @@ interface RunDetail extends RunSummary {
     total_judged_turns?: number;
     target_turns?: number;
     current_activity?: string;
+    classification_metrics?: ClassificationMetrics;
   };
   conversations: RunConversation[];
 }
@@ -500,6 +520,9 @@ function RunDetailView({ run, onBack }: { run: RunDetail; onBack: () => void }) 
         </div>
       )}
 
+      {/* Klassifikations-Metriken (Phase 1: Persona / Intent / Pattern / Tool-Compliance) */}
+      <ClassificationMetricsView metrics={run.summary?.classification_metrics} />
+
       {/* Pattern Usage in this run */}
       {Object.keys(patternUsage).length > 0 && (
         <div style={{ marginBottom: 24 }}>
@@ -919,5 +942,297 @@ function TurnTrace({ trace }: { trace: TraceEntry[] }) {
         })}
       </div>
     </details>
+  );
+}
+
+
+// ── Klassifikations-Metriken (Phase 1) ──────────────────────────────
+// Zeigt globale Auswertung über alle Turns des Runs:
+//   • Persona/Intent/Pattern-Trefferquote (Soll vs Ist)
+//   • Tool-Compliance (Pattern.tools ∩ tools_called)
+//   • LLM-Pattern-Hint vs Engine-Wahl (Match-Rate + Confusion-Matrix)
+//   • Pattern-Match-Score-Distribution (Judge-Bewertung 0/1/2)
+function ClassificationMetricsView({ metrics }: { metrics?: ClassificationMetrics }) {
+  if (!metrics || Object.keys(metrics).length === 0) {
+    return null;
+  }
+
+  const fmt = (n?: number) => n === undefined ? '—' : `${(n * 100).toFixed(0)}%`;
+  const colorByRate = (r?: number) => r === undefined ? '#9CA3AF'
+    : r >= 0.85 ? '#10B981' : r >= 0.65 ? '#F59E0B' : '#EF4444';
+
+  const llmMatch = metrics.llm_engine_match_rate;
+  const engineApprove = metrics.engine_pattern_judge_ok_rate;
+  const llmApprove = metrics.llm_pattern_judge_ok_lower_bound;
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <h3>📊 Klassifikations-Metriken (global)</h3>
+      <p style={{ fontSize: 12, color: '#6B7280', marginTop: -6, marginBottom: 16 }}>
+        Aggregate über alle bewerteten Turns. Persona/Intent vergleichen die System-
+        Klassifikation gegen das Test-Szenario-Label. Pattern-Metriken nutzen den
+        Judge-Score (<code>pattern_match ≥ 2</code>) als Ground-Truth.
+      </p>
+
+      {/* KPI-Karten */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <StatCard
+          label="Persona-Trefferquote"
+          value={fmt(metrics.persona_correct_rate)}
+          color={colorByRate(metrics.persona_correct_rate)}
+        />
+        <StatCard
+          label="Intent-Trefferquote"
+          value={fmt(metrics.intent_correct_rate)}
+          color={colorByRate(metrics.intent_correct_rate)}
+        />
+        <StatCard
+          label="Pattern Judge-Approval (Engine)"
+          value={fmt(engineApprove)}
+          color={colorByRate(engineApprove)}
+        />
+        <StatCard
+          label="Tool-Compliance"
+          value={fmt(metrics.tool_compliance_rate)}
+          color={colorByRate(metrics.tool_compliance_rate)}
+        />
+      </div>
+
+      {/* LLM-Pattern-Hint vs Engine-Vergleich */}
+      <div style={{
+        padding: 14, background: '#EFF6FF', borderRadius: 8,
+        border: '1px solid #BFDBFE', marginBottom: 16,
+      }}>
+        <h4 style={{ marginTop: 0, marginBottom: 8 }}>🧠 LLM-Hint vs. Pattern-Engine</h4>
+        <p style={{ fontSize: 12, color: '#374151', margin: '0 0 12px' }}>
+          Phase-1-Shadow-Mode: das LLM schlägt im Klassifikations-Schritt zusätzlich
+          ein Pattern vor. Die deterministische Engine entscheidet aber weiterhin
+          authoritativ. Hier sehen wir, wie oft beide übereinstimmen — und wie hoch
+          die jeweilige Judge-Approval ist.
+        </p>
+        <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%', maxWidth: 600 }}>
+          <tbody>
+            <tr>
+              <td style={{ padding: '4px 8px', color: '#374151' }}>LLM-Hint vorhanden bei</td>
+              <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
+                {metrics.llm_hint_present_count ?? 0} / {metrics.judged_turns ?? 0} Turns
+              </td>
+            </tr>
+            <tr style={{ background: '#fff' }}>
+              <td style={{ padding: '4px 8px', color: '#374151' }}>
+                <strong>LLM ↔ Engine Match-Rate</strong>
+              </td>
+              <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
+                           color: colorByRate(llmMatch), fontWeight: 600 }}>
+                {fmt(llmMatch)}
+              </td>
+            </tr>
+            <tr>
+              <td style={{ padding: '4px 8px', color: '#374151' }}>
+                Judge approves Engine-Wahl
+              </td>
+              <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
+                {fmt(engineApprove)}
+              </td>
+            </tr>
+            <tr style={{ background: '#fff' }}>
+              <td style={{ padding: '4px 8px', color: '#374151' }}>
+                Judge approves LLM-Wahl <span style={{ fontSize: 11, color: '#6B7280' }}>(Lower-Bound)</span>
+              </td>
+              <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
+                {fmt(llmApprove)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p style={{ fontSize: 11, color: '#6B7280', margin: '8px 0 0' }}>
+          ⚠ Lower-Bound: bei Disagreement (LLM ≠ Engine) wissen wir ohne Re-Judge
+          nicht, ob der LLM-Hint richtig gewesen wäre. Wenn diese Lower-Bound
+          deutlich über der Engine-Approval liegt, lohnt sich Phase-2 (LLM-Hint
+          als Tie-Breaker).
+        </p>
+      </div>
+
+      {/* Pattern-Match-Score-Distribution */}
+      {metrics.pattern_match_score_distribution && (
+        <div style={{ marginBottom: 16 }}>
+          <h4 style={{ marginBottom: 6 }}>Pattern-Match-Score-Verteilung (Judge)</h4>
+          <ScoreBars dist={metrics.pattern_match_score_distribution}
+                     total={metrics.judged_turns ?? 0} />
+        </div>
+      )}
+
+      {/* Confusion-Matrices */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        {metrics.persona_confusion && Object.keys(metrics.persona_confusion).length > 0 && (
+          <ConfusionMatrix
+            title="Persona — erwartet × klassifiziert"
+            data={metrics.persona_confusion}
+          />
+        )}
+        {metrics.intent_confusion && Object.keys(metrics.intent_confusion).length > 0 && (
+          <ConfusionMatrix
+            title="Intent — erwartet × klassifiziert"
+            data={metrics.intent_confusion}
+          />
+        )}
+      </div>
+
+      {metrics.pattern_confusion_llm_vs_engine && Object.keys(metrics.pattern_confusion_llm_vs_engine).length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <ConfusionMatrix
+            title="Pattern — LLM-Hint × Engine-Wahl"
+            data={metrics.pattern_confusion_llm_vs_engine}
+            xAxisLabel="Engine"
+            yAxisLabel="LLM"
+          />
+        </div>
+      )}
+
+      {/* Tool-Compliance pro Pattern */}
+      {metrics.tool_compliance_per_pattern && Object.keys(metrics.tool_compliance_per_pattern).length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <h4 style={{ marginBottom: 6 }}>Tool-Compliance pro Pattern</h4>
+          <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+                <th style={{ padding: '6px 12px', textAlign: 'left' }}>Pattern</th>
+                <th style={{ padding: '6px 12px', textAlign: 'right' }}>OK / Total</th>
+                <th style={{ padding: '6px 12px', textAlign: 'right' }}>Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(metrics.tool_compliance_per_pattern)
+                .sort(([, a], [, b]) => b.total - a.total)
+                .map(([pid, v]) => {
+                  const rate = v.total ? v.ok / v.total : 0;
+                  return (
+                    <tr key={pid} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      <td style={{ padding: '4px 12px', fontFamily: 'monospace' }}>{pid}</td>
+                      <td style={{ padding: '4px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
+                        {v.ok} / {v.total}
+                      </td>
+                      <td style={{ padding: '4px 12px', textAlign: 'right',
+                                   color: colorByRate(rate), fontWeight: 600 }}>
+                        {(rate * 100).toFixed(0)}%
+                      </td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Helper: Confusion-Matrix-Tabelle ──────────────────────────────
+function ConfusionMatrix({
+  title, data, xAxisLabel, yAxisLabel,
+}: {
+  title: string;
+  data: Record<string, Record<string, number>>;
+  xAxisLabel?: string;
+  yAxisLabel?: string;
+}) {
+  const rowLabels = Object.keys(data).sort();
+  const colSet = new Set<string>();
+  rowLabels.forEach(r => Object.keys(data[r] || {}).forEach(c => colSet.add(c)));
+  const colLabels = Array.from(colSet).sort();
+
+  return (
+    <div>
+      <h4 style={{ marginBottom: 6 }}>{title}</h4>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
+          <thead>
+            <tr>
+              <th style={{ padding: 4, textAlign: 'left', color: '#6B7280', fontWeight: 500 }}>
+                {yAxisLabel || 'Soll'} ↓ / {xAxisLabel || 'Ist'} →
+              </th>
+              {colLabels.map(c => (
+                <th key={c} style={{
+                  padding: 4, fontWeight: 500, fontFamily: 'monospace',
+                  writingMode: 'vertical-rl', transform: 'rotate(180deg)',
+                  minWidth: 22,
+                }}>
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rowLabels.map(r => {
+              const rowSum = Object.values(data[r] || {}).reduce((a, b) => a + b, 0);
+              return (
+                <tr key={r}>
+                  <td style={{ padding: 4, fontWeight: 500, fontFamily: 'monospace' }}>{r}</td>
+                  {colLabels.map(c => {
+                    const v = data[r]?.[c] || 0;
+                    const rate = rowSum ? v / rowSum : 0;
+                    const isDiagonal = r === c;
+                    return (
+                      <td key={c}
+                          title={`${r} → ${c}: ${v} von ${rowSum} (${(rate * 100).toFixed(0)}%)`}
+                          style={{
+                            padding: 0, minWidth: 32, height: 26, textAlign: 'center',
+                            background: v === 0 ? '#F9FAFB'
+                                      : isDiagonal
+                                        ? `rgba(16, 185, 129, ${0.2 + rate * 0.7})`  // grün
+                                        : `rgba(239, 68, 68, ${0.15 + rate * 0.7})`, // rot
+                            color: v > 0 && rate > 0.5 ? '#fff' : '#374151',
+                            fontWeight: isDiagonal && v > 0 ? 600 : 400,
+                          }}>
+                        {v || ''}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+
+function ScoreBars({ dist, total }: { dist: Record<string, number>; total: number }) {
+  const colors: Record<string, string> = {
+    '0': '#EF4444',  // schlecht
+    '1': '#F59E0B',  // mittel
+    '2': '#10B981',  // gut
+  };
+  const labels: Record<string, string> = {
+    '0': '0 (kein Match)',
+    '1': '1 (teilweise)',
+    '2': '2 (passt)',
+  };
+  const maxV = Math.max(...Object.values(dist), 1);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {['2', '1', '0'].map(k => {
+        const v = dist[k] || 0;
+        const pct = total ? (v / total) * 100 : 0;
+        const widthPct = (v / maxV) * 100;
+        return (
+          <div key={k} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 80px', gap: 8, alignItems: 'center', fontSize: 12 }}>
+            <span>{labels[k]}</span>
+            <div style={{ background: '#F3F4F6', height: 16, borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{
+                width: `${widthPct}%`, height: '100%', background: colors[k],
+                transition: 'width .2s',
+              }} />
+            </div>
+            <span style={{ fontFamily: 'monospace', textAlign: 'right' }}>
+              {v} ({pct.toFixed(0)}%)
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }

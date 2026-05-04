@@ -1,6 +1,7 @@
 ---
 id: PAT-CRISIS
 label: Krisen-Empathie
+short_purpose: "WANN: Krisensignale in der Anfrage (Suizid, Selbstverletzung, akute psychische Not) — durch Safety-Layer enforced. WOFÜR: Empathische Antwort + Hilfsnummern (Telefonseelsorge etc.), keine Bildungs-Antwort."
 priority: 999
 gate_personas: ["*"]
 gate_states: ["__never__"]

@@ -1,11 +1,12 @@
 ---
 id: PAT-17
 label: Sanfter Einstieg
-priority: 390
-gate_personas: ["*"]
+short_purpose: "WANN: Erst-Begegnung mit dem Bot, User wirkt zögerlich oder leicht überfordert. WOFÜR: Warm anfangen, EINE konkrete Mini-Frage als Einstiegsangebot, kein langer Begrüßungs-Monolog."
+priority: 460
+gate_personas: ["P-W-SL", "P-ELT", "P-AND"]
 gate_states: ["state-1"]
-gate_intents: ["*"]
-signal_high_fit: ["neugierig", "orientierungssuchend", "unsicher"]
+gate_intents: ["INT-W-01", "INT-W-02"]
+signal_high_fit: ["unsicher", "neugierig", "orientierungssuchend"]
 signal_medium_fit: []
 signal_low_fit: []
 page_bonus: []

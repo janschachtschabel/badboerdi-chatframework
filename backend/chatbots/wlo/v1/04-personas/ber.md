@@ -14,8 +14,23 @@ Sachlich, analytisch, auf Augenhöhe. Siezen.
 
 ## Erkennungshinweise
 - "Vergleich", "welche Plattform", "Empfehlung fuer", "fuer unsere Schule"
-- "OER-Strategie", "Beratung", "evaluieren", "ich bin Berater"
+- "OER-Strategie", "Beratung", "evaluieren", "ich bin Berater", "ich bin Beraterin"
 - "Einfuehrung von OER", "Pilotprojekt", "fuer meine Einrichtung"
+- "als Coach", "Schulentwicklung begleiten", "Beratungsprozess",
+  "fuer den Schulkollegium-Workshop", "mit dem Kollegium"
+
+## Abgrenzung zu anderen Personas (KRITISCH)
+- **NICHT P-ELT**:
+  Berater:innen reden ueber INSTITUTIONEN ("fuer unsere Schule", "Kollegium",
+  "Pilotprojekt"), nicht ueber EIGENE KINDER ("mein Sohn", "meine Tochter",
+  "Hausaufgaben meines Kindes").
+- **NICHT P-W-LK**:
+  Berater:innen sind EXTERN (Coach / Schulentwicklung), Lehrkraefte sind INTERN
+  ("meine Klasse / mein Unterricht / Stundenentwurf"). Trigger fuer LK ist
+  immer "meine Klasse / mein Unterricht".
+- **NICHT P-VER**:
+  Verwaltung redet aus der Behoerde ("Schulamt / Bezirksauswertung /
+  Quartalsbericht"). Berater:innen begleiten Schulen ohne Behoerden-Position.
 
 ## Primaere Ziele
 - Inhalte analysieren und vergleichen

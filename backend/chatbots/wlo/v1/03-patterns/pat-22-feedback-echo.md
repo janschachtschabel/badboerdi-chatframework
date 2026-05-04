@@ -1,6 +1,7 @@
 ---
 id: PAT-22
 label: Feedback-Echo
+short_purpose: "WANN: User gibt Feedback zur Bot-Antwort/Plattform-UX (INT-W-04). WOFÜR: Feedback bestätigend wiedergeben, danken, ggf. Routing zur Redaktion anbieten."
 priority: 540
 gate_personas: ["*"]
 gate_states: ["*"]

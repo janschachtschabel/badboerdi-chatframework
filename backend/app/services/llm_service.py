@@ -15,9 +15,12 @@ from app.services.pattern_engine import select_pattern
 from app.services.config_loader import (
     load_persona_prompt, load_domain_rules, load_base_persona, load_guardrails,
     load_intents, load_states, load_entities, load_signal_modulations,
-    load_device_config, load_persona_definitions,
+    load_device_config, load_persona_definitions, load_pattern_definitions,
 )
 from app.services.llm_provider import get_client, get_chat_model, build_chat_kwargs
+
+import logging as _log
+_logger = _log.getLogger(__name__)
 
 client = get_client()
 MODEL = get_chat_model()
@@ -64,6 +67,13 @@ def _build_classify_tool() -> dict[str, Any]:
             "thema": {"type": "string"}, "medientyp": {"type": "string"},
             "lizenz": {"type": "string"},
         }
+
+    # Load patterns — for the optional pattern_id_hint field. Phase-1 Shadow-
+    # Mode: LLM proposes a pattern but the deterministic Pattern-Engine still
+    # decides. We log how often the two agree so we can later promote the
+    # hint to a Tie-Breaker.
+    patterns = load_pattern_definitions()
+    pattern_ids = [p.get("id") for p in patterns if p.get("id")] or ["PAT-01"]
 
     return {
         "type": "function",
@@ -113,6 +123,28 @@ def _build_classify_tool() -> dict[str, Any]:
                     "next_state": {
                         "type": "string",
                         "enum": state_ids,
+                    },
+                    # NEW (Phase 1, Shadow-Mode): optional Pattern-Hint.
+                    # Pattern-Engine entscheidet weiterhin authoritativ — wir
+                    # loggen nur, wie oft LLM und Engine übereinstimmen.
+                    "pattern_id_hint": {
+                        "type": "string",
+                        "enum": pattern_ids,
+                        "description": (
+                            "Optional: Welches Pattern passt holistisch zur User-"
+                            "Anfrage? Wähle aus der Pattern-Liste das, das du "
+                            "intuitiv als beste Reaktion siehst — UNABHÄNGIG von "
+                            "deiner persona/intent-Wahl. Reine Mess-Telemetrie; "
+                            "die Pattern-Engine entscheidet final via Gates+Score. "
+                            "Lass leer wenn unsicher."
+                        ),
+                    },
+                    "pattern_reasoning": {
+                        "type": "string",
+                        "description": (
+                            "1-2 Sätze: Warum dieses Pattern? Welche 1 Alternative "
+                            "kam noch in Frage und warum verworfen?"
+                        ),
                     },
                 },
                 "required": ["persona_id", "persona_confidence", "intent_id",
@@ -182,6 +214,43 @@ def _build_classify_system_prompt(
     state_lines = ", ".join(
         f"{s['id']} ({s['label']})" for s in states
     ) if states else ""
+
+    # Format pattern list — kompakt: ID + Label + Gates + 1-Liner-Hint.
+    # Vollbeschreibungen würden den Prompt aufblähen; das LLM wählt den
+    # Hint überwiegend nach Persona/Intent-Gates plus Patterntyp-Stimmung.
+    # Bevorzuge `short_purpose` (1-2 Sätze WANN+WOFÜR) wenn im Pattern-File
+    # gesetzt, sonst Fallback auf `core_rule`-Auszug.
+    patterns_for_prompt = load_pattern_definitions()
+    pattern_parts = []
+    for p in patterns_for_prompt:
+        pid = p.get("id")
+        if not pid:
+            continue
+        label = p.get("label", "")
+        gp = p.get("gate_personas", ["*"])
+        gi = p.get("gate_intents", ["*"])
+        gs = p.get("gate_states", ["*"])
+        # Compact gate-summary: persona|intent|state separated by /
+        def _g(lst):
+            if not lst or "*" in lst:
+                return "*"
+            if len(lst) <= 4:
+                return ",".join(lst)
+            return f"{','.join(lst[:3])},+{len(lst)-3}"
+        gates = f"{_g(gp)} / {_g(gi)} / {_g(gs)}"
+        # Bevorzugt short_purpose, sonst core_rule-Auszug
+        purpose = (p.get("short_purpose") or "").strip().replace("\n", " ")
+        if not purpose:
+            purpose = (p.get("core_rule") or "").strip().replace("\n", " ")
+            if len(purpose) > 100:
+                purpose = purpose[:97] + "…"
+        line = f"- {pid} ({label}) [Gates {gates}]"
+        if purpose:
+            line += f": {purpose}"
+        pattern_parts.append(line)
+    pattern_lines = "\n".join(pattern_parts) if pattern_parts else (
+        "(keine Patterns geladen — Hint-Feld leer lassen)"
+    )
 
     # Format entity list with descriptions so the LLM distinguishes fach vs thema
     if entities:
@@ -260,18 +329,32 @@ def _build_classify_system_prompt(
                  "page_type", "widget", "detection_source")
     }
 
-    return f"""Du bist der Klassifikations-Modul des WLO-Chatbots.
-Analysiere die Nutzernachricht und klassifiziere sie in die 7 Input-Dimensionen.
+    # A2.2 — Cache-Maximierung: dynamische Felder (state, entities, persona,
+    # turn count, page, canvas, page_block) werden ans ENDE des System-Prompts
+    # verschoben. So bleibt der lange statische Prefix (Personas-Liste,
+    # Intent-Regeln, State-Beschreibungen, Tool-Schema) zwischen Turns
+    # identisch → OpenAI Prompt-Cache greift auf 5000+ Tokens.
+    #
+    # Achtung: Inhalt unverändert. Nur Reihenfolge im Prompt geändert:
+    # STATIC → DYNAMIC statt DYNAMIC → STATIC. Falls je ein Klassifikator-
+    # Regression beobachtet wird, mit env CLASSIFY_PROMPT_LEGACY_ORDER=1
+    # auf die alte Reihenfolge zurückrollen.
+    _legacy_order = (os.getenv("CLASSIFY_PROMPT_LEGACY_ORDER") or "").strip() == "1"
 
-Aktueller State: {session_state.get('state_id', 'state-1')}
-Bekannte Entities: {json.dumps(session_state.get('entities', {}))}{persona_prompt}
-Turn: {session_state.get('turn_count', 0) + 1}
-Seite: {environment.get('page', '/')}
-Seitenkontext (Rohdaten): {json.dumps(_raw_pc)}
-Device: {environment.get('device', 'desktop')}{canvas_prompt}
-{_page_block}
+    _dynamic_block = (
+        f"\n## Aktueller Turn-Kontext\n"
+        f"State: {session_state.get('state_id', 'state-1')}\n"
+        f"Bekannte Entities: {json.dumps(session_state.get('entities', {}))}"
+        f"{persona_prompt}\n"
+        f"Turn: {session_state.get('turn_count', 0) + 1}\n"
+        f"Seite: {environment.get('page', '/')}\n"
+        f"Seitenkontext (Rohdaten): {json.dumps(_raw_pc)}\n"
+        f"Device: {environment.get('device', 'desktop')}"
+        f"{canvas_prompt}\n"
+        f"{_page_block}"
+    ).rstrip()
 
-## Personas (WICHTIG: Genau zuordnen!)
+    _static_block = f"""
 {persona_lines}
 
 PERSONA-REGELN:
@@ -569,7 +652,57 @@ wird durch Substantive wie "Photosynthese", "Mittelalter", "Bruchrechnung"
 markiert — nicht durch Füllwörter, Verben oder Pronomen wie "das", "diese(s)",
 "Ideen für ...", "eine Frage zu ...".
 
+## Patterns (Hinweis-Feld, optional)
+
+Schau dir nach Persona/Intent-Bestimmung NOCHMAL die Anfrage an und wähle
+zusätzlich das Pattern, das für dich holistisch am besten passt. Das ist
+ein optionales Hinweis-Feld (Telemetrie/Mess-Modus) — die deterministische
+Pattern-Engine entscheidet weiterhin authoritativ. Wir loggen nur, wie oft
+deine Wahl mit der Engine-Wahl übereinstimmt.
+
+Wann hilft dein Hint? Bei Tight-Races, wenn Engine-Score zwei Patterns
+fast gleich rankt (z.B. PAT-08 vs PAT-01, PAT-13 vs PAT-14). Du siehst
+die volle Anfrage holistisch — die Engine sieht nur abgeleitete Signale.
+
+{pattern_lines}
+
+Wähl ein Pattern dessen Gates passen (`gate_personas`/`gate_intents`/
+`gate_states`-Liste oder `*` für Wildcard). Wenn du unsicher bist, lass
+das Feld leer.
+
+Begründe dein Pattern-Hint kurz im `pattern_reasoning`-Feld (1-2 Sätze):
+warum dieses Pattern, welche 1 Alternative kam noch in Frage und warum
+verworfen.
+
 Rufe classify_input auf mit den erkannten Werten."""
+
+    if _legacy_order:
+        # Original layout (DYNAMIC at the very top, before personas) — kept
+        # behind an env flag so we can rollback instantly if the new order
+        # ever degrades classifier accuracy.
+        return f"""Du bist der Klassifikations-Modul des WLO-Chatbots.
+Analysiere die Nutzernachricht und klassifiziere sie in die 7 Input-Dimensionen.
+
+Aktueller State: {session_state.get('state_id', 'state-1')}
+Bekannte Entities: {json.dumps(session_state.get('entities', {}))}{persona_prompt}
+Turn: {session_state.get('turn_count', 0) + 1}
+Seite: {environment.get('page', '/')}
+Seitenkontext (Rohdaten): {json.dumps(_raw_pc)}
+Device: {environment.get('device', 'desktop')}{canvas_prompt}
+{_page_block}
+
+## Personas (WICHTIG: Genau zuordnen!){_static_block}"""
+
+    # New cache-friendly order: long static prefix first, dynamic context last.
+    # Same content; only the placement of the dynamic block moves to the end
+    # so the OpenAI prompt cache can match the unchanging prefix between turns.
+    return (
+        "Du bist der Klassifikations-Modul des WLO-Chatbots.\n"
+        "Analysiere die Nutzernachricht und klassifiziere sie in die 7 Input-Dimensionen.\n\n"
+        "## Personas (WICHTIG: Genau zuordnen!)"
+        + _static_block
+        + _dynamic_block
+    )
 
 
 def _formality_guidance(formality: str, persona_id: str) -> str:
@@ -638,12 +771,361 @@ def _formality_guidance(formality: str, persona_id: str) -> str:
     )
 
 
+_SYSTEM_PROMPT_TOKEN_HISTOGRAM: dict[str, int] = {}  # phase → max prompt tokens seen
+
+
+def _approx_token_count(text: str) -> int:
+    """Cheap token estimate via tiktoken (cl100k_base for the gpt-5/gpt-4
+    family). Falls back to a 4-char heuristic if tiktoken is unavailable.
+
+    A2.4 — Used to log system-prompt size at INFO level so we can verify
+    the OpenAI prompt cache (which kicks in at ≥1024 prompt tokens) is
+    actually addressable. If our system prompt is <1024 tokens we'd never
+    benefit from prompt caching no matter how stable it is.
+    """
+    if not text:
+        return 0
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+    except Exception:
+        # 4 chars/token is the OpenAI rule of thumb for English/German.
+        return max(1, len(text) // 4)
+
+
+def _log_system_prompt_size(phase: str, system_prompt: str) -> None:
+    """Log the system prompt token count once per significant change.
+
+    Tracks per-phase max so we don't spam logs for every turn. If a phase's
+    system prompt suddenly grew/shrunk by >5%, log a new entry — that's
+    usually the moment a config change altered prompt-cache behavior.
+    """
+    tokens = _approx_token_count(system_prompt)
+    prev = _SYSTEM_PROMPT_TOKEN_HISTOGRAM.get(phase, 0)
+    if prev == 0 or abs(tokens - prev) > max(20, prev * 0.05):
+        _logger.info(
+            "system_prompt[%s] tokens=%d (was=%d, cache-eligible=%s)",
+            phase, tokens, prev, tokens >= 1024,
+        )
+        _SYSTEM_PROMPT_TOKEN_HISTOGRAM[phase] = tokens
+
+
+def _extract_usage(resp: Any) -> dict[str, Any]:
+    """Extract token-usage details from an OpenAI ChatCompletion response.
+
+    Returns a flat dict {prompt, completion, cached, model} where ``cached``
+    is taken from ``prompt_tokens_details.cached_tokens`` (OpenAI prompt
+    cache, requires identical prefix >1024 tokens). Defaults to 0 on miss.
+    """
+    try:
+        u = getattr(resp, "usage", None)
+        if not u:
+            return {"prompt": 0, "completion": 0, "cached": 0, "model": getattr(resp, "model", "")}
+        cached = 0
+        details = getattr(u, "prompt_tokens_details", None)
+        if details is not None:
+            cached = getattr(details, "cached_tokens", 0) or 0
+        return {
+            "prompt": getattr(u, "prompt_tokens", 0) or 0,
+            "completion": getattr(u, "completion_tokens", 0) or 0,
+            "cached": cached,
+            "model": getattr(resp, "model", "") or "",
+        }
+    except Exception:
+        return {"prompt": 0, "completion": 0, "cached": 0, "model": ""}
+
+
+def usage_accumulator_new() -> dict[str, Any]:
+    """Empty accumulator: one per chat turn, threaded through LLM-calling
+    helpers so callers can pass it in and we sum up Token-Costs centrally.
+
+    ``per_phase`` (A2.1) splits the same totals by call-site label so we can
+    diagnose where the OpenAI prompt cache breaks. Phases used today:
+      classify, tool_loop, response, reflection, quick_replies, learning_path,
+      canvas_create, canvas_edit, canvas_remix
+    """
+    return {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "cached_tokens": 0,
+        "calls": 0,
+        "models": {},
+        "per_phase": {},
+    }
+
+
+def usage_accumulator_add(
+    acc: dict[str, Any],
+    usage: dict[str, Any],
+    phase: str | None = None,
+) -> None:
+    """Add one extracted usage-record into the per-turn accumulator.
+
+    ``phase`` is the call-site label (e.g. ``"classify"`` / ``"response"`` /
+    ``"quick_replies"``). When provided, the same numbers are also folded
+    into ``acc["per_phase"][phase]`` so we can break down where the cache
+    is actually hitting and where prompts are too small / too variable.
+    """
+    if not acc or not usage:
+        return
+    p = int(usage.get("prompt", 0) or 0)
+    c = int(usage.get("completion", 0) or 0)
+    cached = int(usage.get("cached", 0) or 0)
+    acc["prompt_tokens"] += p
+    acc["completion_tokens"] += c
+    acc["cached_tokens"] += cached
+    acc["calls"] += 1
+    model = usage.get("model") or "unknown"
+    m = acc["models"].setdefault(model, {"prompt": 0, "completion": 0, "cached": 0, "calls": 0})
+    m["prompt"] += p
+    m["completion"] += c
+    m["cached"] += cached
+    m["calls"] += 1
+    if phase:
+        ph = acc.setdefault("per_phase", {}).setdefault(
+            phase, {"prompt": 0, "completion": 0, "cached": 0, "calls": 0},
+        )
+        ph["prompt"] += p
+        ph["completion"] += c
+        ph["cached"] += cached
+        ph["calls"] += 1
+
+
+class _StreamedMessage:
+    """Lightweight stand-in for ``ChatCompletionMessage`` produced by
+    streaming. Has the attributes ``content``, ``tool_calls`` (each with
+    ``id``, ``function.name``, ``function.arguments``), and ``role``.
+
+    The non-streaming code path consumes ``resp.choices[0].message`` via
+    these attributes; this class provides them so the existing tool-loop
+    body can run unchanged regardless of streaming on/off.
+    """
+    def __init__(self) -> None:
+        self.role: str = "assistant"
+        self.content: str | None = None
+        self.tool_calls: list[Any] | None = None
+
+
+class _StreamedToolCall:
+    """Stand-in for an OpenAI ``ChoiceDeltaToolCall``-rolled-up object."""
+    def __init__(self, tc_id: str = "", name: str = "", arguments: str = "") -> None:
+        self.id = tc_id
+        self.type = "function"
+        self.function = type("Fn", (), {"name": name, "arguments": arguments})()
+
+
+class _StreamedChoice:
+    def __init__(self) -> None:
+        self.message = _StreamedMessage()
+        self.finish_reason: str | None = None
+
+
+class _StreamedResponse:
+    """Stand-in for ``ChatCompletion`` reconstructed from a streamed call."""
+    def __init__(self) -> None:
+        self.choices: list[_StreamedChoice] = [_StreamedChoice()]
+        self.usage: Any = None
+        self.model: str = ""
+
+
+class _RespondToUserExtractor:
+    """Progressive parser for the ``respond_to_user`` tool's JSON args.
+
+    The tool schema is ``{text: str, quick_replies: list[str]}``, and the
+    LLM emits the ``text`` field FIRST (we declared it first). As argument
+    chunks stream in, we incrementally extract characters of the ``text``
+    string and forward them to ``on_token`` — so the user sees the answer
+    fill in token-by-token, exactly as if the model had emitted plain
+    content.
+
+    We do NOT try to parse the closing ``quick_replies`` array
+    incrementally — those land in one shot at the end (and the caller can
+    json.loads the full args string post-stream).
+
+    State machine: scan for ``"text":`` then ``"`` (skipping whitespace);
+    forward characters until an unescaped ``"``; ignore everything after.
+    """
+    def __init__(self, on_token: Any) -> None:
+        self._buf = ""
+        self._on_token = on_token
+        self._scan_pos = 0       # next char index to inspect
+        self._mode = "search"    # search | text | done
+        self._escape_next = False
+
+    def feed(self, chunk: str) -> None:
+        if not chunk or self._mode == "done":
+            self._buf += chunk or ""
+            return
+        self._buf += chunk
+        # ── Phase 1: search for "text" key opening quote ──
+        if self._mode == "search":
+            # Find ``"text"`` followed by optional whitespace + ``:`` + ws + ``"``
+            idx = self._buf.find('"text"', self._scan_pos)
+            if idx < 0:
+                # not yet present — wait for more chunks
+                self._scan_pos = max(0, len(self._buf) - 8)  # keep last few chars in case "text" straddles boundary
+                return
+            cur = idx + len('"text"')
+            # Skip whitespace + ``:`` + whitespace
+            while cur < len(self._buf) and self._buf[cur] in " \t\n":
+                cur += 1
+            if cur >= len(self._buf):
+                return  # need more
+            if self._buf[cur] != ":":
+                # Malformed — ``"text"`` not as a key. Skip past and keep searching.
+                self._scan_pos = cur
+                return
+            cur += 1
+            while cur < len(self._buf) and self._buf[cur] in " \t\n":
+                cur += 1
+            if cur >= len(self._buf):
+                return  # need more
+            if self._buf[cur] != '"':
+                # The text value isn't a string (could be null) — give up streaming.
+                self._mode = "done"
+                return
+            # Found opening quote of the text value
+            self._scan_pos = cur + 1
+            self._mode = "text"
+
+        # ── Phase 2: stream characters until unescaped ``"`` ──
+        if self._mode == "text":
+            buf_len = len(self._buf)
+            out: list[str] = []
+            i = self._scan_pos
+            while i < buf_len:
+                ch = self._buf[i]
+                if self._escape_next:
+                    # Translate JSON escape to actual char
+                    out.append({
+                        '"': '"', '\\': '\\', '/': '/',
+                        'n': '\n', 't': '\t', 'r': '\r',
+                        'b': '\b', 'f': '\f',
+                    }.get(ch, ch))
+                    self._escape_next = False
+                    i += 1
+                    continue
+                if ch == '\\':
+                    self._escape_next = True
+                    i += 1
+                    continue
+                if ch == '"':
+                    # Closing quote — text field complete
+                    self._scan_pos = i + 1
+                    self._mode = "done"
+                    break
+                out.append(ch)
+                i += 1
+            else:
+                # Loop exhausted without break — partial text, more coming
+                self._scan_pos = i
+            if out:
+                try:
+                    self._on_token("".join(out))
+                except Exception:
+                    pass
+
+    @property
+    def buffer(self) -> str:
+        return self._buf
+
+
+async def _stream_completion(
+    on_token: Any,
+    **kwargs: Any,
+) -> _StreamedResponse:
+    """OpenAI streaming wrapper that mirrors ``client.chat.completions.create``.
+
+    Returns a ``_StreamedResponse`` that the existing non-streaming code
+    path consumes via the same attributes (``choices[0].message.content``,
+    ``choices[0].message.tool_calls``, ``choices[0].finish_reason``).
+
+    Tokens are forwarded via ``on_token(text_chunk)``:
+      * For plain content responses → each ``delta.content`` chunk goes
+        straight through.
+      * For ``respond_to_user`` tool calls → the JSON args buffer is fed
+        through ``_RespondToUserExtractor``, which extracts the ``text``
+        field characters and emits them. Other tool calls (search_*,
+        get_*) accumulate silently — they are not user-visible text.
+    """
+    # Force stream + ask for usage in the final chunk (OpenAI 2024+).
+    kwargs["stream"] = True
+    kwargs["stream_options"] = {"include_usage": True}
+
+    aggregate = _StreamedResponse()
+    msg = aggregate.choices[0].message
+    content_parts: list[str] = []
+    # tc_index → {"id": str, "name": str, "args_buf": str, "extractor": _RespondToUserExtractor | None}
+    tool_calls_accum: dict[int, dict[str, Any]] = {}
+
+    stream = await client.chat.completions.create(**kwargs)
+    async for chunk in stream:
+        # Final chunk in OpenAI's stream often carries the cumulative usage
+        # (only when stream_options.include_usage is set). Capture it so
+        # _extract_usage works below just like for non-streaming responses.
+        if getattr(chunk, "usage", None) is not None:
+            aggregate.usage = chunk.usage
+        if getattr(chunk, "model", None):
+            aggregate.model = chunk.model
+        if not chunk.choices:
+            continue
+        ch0 = chunk.choices[0]
+        delta = getattr(ch0, "delta", None)
+        if ch0.finish_reason:
+            aggregate.choices[0].finish_reason = ch0.finish_reason
+        if delta is None:
+            continue
+        if getattr(delta, "role", None):
+            msg.role = delta.role
+        if getattr(delta, "content", None):
+            content_parts.append(delta.content)
+            try:
+                on_token(delta.content)
+            except Exception:
+                pass
+        if getattr(delta, "tool_calls", None):
+            for tc_delta in delta.tool_calls:
+                idx = getattr(tc_delta, "index", 0) or 0
+                slot = tool_calls_accum.setdefault(idx, {
+                    "id": "", "name": "", "args_buf": "", "extractor": None,
+                })
+                if getattr(tc_delta, "id", None):
+                    slot["id"] = tc_delta.id
+                fn = getattr(tc_delta, "function", None)
+                if fn is not None:
+                    if getattr(fn, "name", None):
+                        slot["name"] = fn.name
+                        # Lazily attach the JSON-stream extractor for respond_to_user
+                        if slot["name"] == "respond_to_user" and slot["extractor"] is None:
+                            slot["extractor"] = _RespondToUserExtractor(on_token)
+                            # Replay any args we received before the name arrived
+                            if slot["args_buf"]:
+                                slot["extractor"].feed(slot["args_buf"])
+                    if getattr(fn, "arguments", None):
+                        slot["args_buf"] += fn.arguments
+                        if slot["extractor"] is not None:
+                            slot["extractor"].feed(fn.arguments)
+
+    # Reconstitute the message
+    if content_parts:
+        msg.content = "".join(content_parts)
+    if tool_calls_accum:
+        ordered = [tool_calls_accum[k] for k in sorted(tool_calls_accum.keys())]
+        msg.tool_calls = [
+            _StreamedToolCall(slot["id"], slot["name"], slot["args_buf"])
+            for slot in ordered
+        ]
+    return aggregate
+
+
 async def classify_input(
     message: str,
     history: list[dict],
     session_state: dict,
     environment: dict,
     canvas_state: dict | None = None,
+    usage_acc: dict[str, Any] | None = None,
 ) -> ClassificationResult:
     """Phase 1: Classify user input into the 7 input dimensions.
 
@@ -651,6 +1133,7 @@ async def classify_input(
     validation errors so the pipeline never breaks.
     """
     system = _build_classify_system_prompt(session_state, environment, canvas_state)
+    _log_system_prompt_size("classify", system)
     classify_tool = _build_classify_tool()
 
     messages = [{"role": "system", "content": system}]
@@ -667,6 +1150,8 @@ async def classify_input(
             temperature=0.1,
         )
     )
+    if usage_acc is not None:
+        usage_accumulator_add(usage_acc, _extract_usage(resp), phase="classify")
 
     tool_call = resp.choices[0].message.tool_calls[0]
     raw = json.loads(tool_call.function.arguments)
@@ -724,11 +1209,20 @@ async def generate_response(
     blocked_tools: list[str] | None = None,
     prefetched_tool: dict[str, Any] | None = None,
     canvas_state: dict | None = None,
+    usage_acc: dict[str, Any] | None = None,
+    on_token: Any = None,
 ) -> tuple[str, list[dict], list[str], list]:
     """Generate the final response using the selected pattern and MCP tools.
 
     Returns (response_text, wlo_cards, tools_called, outcomes).
     Outcomes is a list of ToolOutcome objects (Triple-Schema T-23).
+
+    ``on_token`` is the Phase-2 streaming hook (POST /api/chat/stream). When
+    provided, the LLM call inside the tool-loop runs with ``stream=True``
+    and forwards each text-delta to the callback — both for plain content
+    responses AND for ``respond_to_user`` tool args (where the ``text``
+    field is extracted progressively from the JSON arg-stream). Default
+    ``None`` keeps the regular non-streaming POST /api/chat unchanged.
     """
     blocked_tools = blocked_tools or []
     persona_id = classification.get("persona_id", "P-AND")
@@ -756,6 +1250,18 @@ Formality: {pattern_output.get('formality', 'neutral')}
 {_formality_guidance(pattern_output.get('formality', 'neutral'), persona_id)}
 Länge: {pattern_output.get('length', 'mittel')} (kurz=kompakte 2-4 Saetze, ein Absatz; mittel=strukturierte Erklaerung mit 2-4 Absaetzen, gerne mit H3-Unterpunkten wenn das Thema mehrere Aspekte hat; lang=ausfuehrliche Darstellung mit mehreren Absaetzen, Beispielen und Aufzaehlungen)
 Wenn internes Wissen (RAG-Kontext, query_knowledge-Ergebnisse) verfuegbar ist, nutze es inhaltlich REICH aus — der Nutzer hat explizit gefragt und erwartet eine substantielle Antwort, keine Ein-Satz-Zusammenfassung.
+
+**ZWINGEND zu Quell-URLs (NICHT optional)**: jeder RAG-Kontext-Block beginnt mit einer Frontmatter-Zeile der Form ``**URL**: <https://…>`` oder ``source: "https://…"``. Sobald du eine **inhaltliche Aussage** aus dem RAG-Kontext entnimmst (Plattform-Erklärung, Projekt-Hintergrund, OER-Lizenz-Detail, Verein-Info, Statistik, Akteur-Beschreibung, Förder-/Projekt-Info), MUSST du im Antwort-Text mindestens **einen Markdown-Link** auf die jeweils zugehoerige Original-URL einbauen. KEINE blossen Plain-Text-Erwähnungen wie „auf der WLO-Seite findest du …" — das wird vom Frontend nicht als Link erkannt. Korrekt:
+
+  - „Mehr dazu auf [WLO-Über-uns](https://wirlernenonline.de/ueber-wirlernenonline/)"
+  - „Siehe den [OER-Bereich](https://wirlernenonline.de/oer/) und die [Themenseiten](https://wirlernenonline.de/fachportale)"
+  - „Die Angebote sind auf [WissenLebtOnline](https://wp-test.wirlernenonline.de/) gebündelt, siehe insbesondere [Angebote](https://wp-test.wirlernenonline.de/angebote/)."
+
+REGELN:
+1. Mindestens **EIN** Markdown-Link pro RAG-gestützter Antwort. Bei mehreren erwähnten Konzepten gerne 2-3 Links — das erlaubt dem Frontend, mehrere Bring-mich-hin-Buttons zu rendern.
+2. Nimm die KONKRETE Unter-Seite mit Pfad (``/oer/`` statt ``/``). Domain-Roots ohne Pfad sind erlaubt, aber spezifische Pfade gewinnen.
+3. Schreibe die URL EXAKT wie im Frontmatter (mit ``https://``-Schema, mit allen Pfad-Segmenten). Erfinde keine Pfade, die nicht im Kontext stehen — wenn der RAG-Block ``https://x/y/`` zeigt, schreibe ``[Label](https://x/y/)``, nicht ``[Label](https://x/y/z)``.
+4. Wenn du KEINEN passenden Link aus dem RAG-Kontext kennst, lass den Markdown-Link weg — erfinde nichts.
 Detail: {pattern_output.get('detail_level', 'standard')}
 Max. Ergebnisse: {pattern_output.get('max_items', 5)}""",
         # Layer 5: Conversation context
@@ -1075,8 +1581,12 @@ SCHRITT 2 — REGELN:
 Antworte auf Deutsch. Formatiere mit Markdown.""")
 
     system = "\n".join(system_parts)
+    _log_system_prompt_size("response", system)
 
     # Determine which tools to offer
+    # (module-level _logger is already imported at top of file — keep this
+    # local re-import for backwards compat with existing _logger.* calls
+    # below in this function.)
     import logging as _log
     _logger = _log.getLogger(__name__)
 
@@ -1170,6 +1680,66 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         }
         active_tools = [knowledge_tool] + active_tools  # Knowledge first!
 
+    # Combined-output tool (opt-in) — see env CHAT_INLINE_QUICK_REPLIES.
+    # When enabled, the model is instructed to call ``respond_to_user`` for
+    # the FINAL answer instead of plain content, with both ``text`` and
+    # ``quick_replies`` in one shot. This saves the separate quick_replies
+    # LLM round-trip (~1-2s) for ~70% of turns. Default OFF until measured.
+    _inline_qr_enabled = (
+        (os.getenv("CHAT_INLINE_QUICK_REPLIES") or "").strip() in ("1", "true", "yes")
+    )
+    if _inline_qr_enabled:
+        respond_tool = {
+            "type": "function",
+            "function": {
+                "name": "respond_to_user",
+                "description": (
+                    "FINALE Antwort an den Nutzer. Nutze dieses Tool NUR wenn du "
+                    "alle nötigen Such-/Vokabular-/Knowledge-Tools bereits gerufen "
+                    "hast und die finale Antwort fertig ist. Liefere die Markdown-"
+                    "formatierte Antwort als ``text`` und 2-4 kurze nutzerseitige "
+                    "Folgevorschläge als ``quick_replies`` (max 6-8 Wörter pro "
+                    "Vorschlag, in Persona-passender Anrede, vom Nutzer formuliert "
+                    "z.B. 'Mehr davon zeigen', 'Anderes Thema wählen'). "
+                    "Wenn keine Folgevorschläge passen (z.B. CRISIS), gib leere Liste. "
+                    "BRING-MICH-HIN-VORSCHLAG: Wenn deine Antwort eine konkrete "
+                    "WLO-Webseiten-URL adressiert (z.B. /themenseite/<slug>, "
+                    "/fachportale, /mitmachen, /ueber-uns), darfst du EINEN Eintrag "
+                    "in folgendem Spezialformat einfügen: "
+                    "``__guide__|<kurzer Anzeigetext>|<vollständige URL>`` — "
+                    "Frontend rendert das als hervorgehobenen Same-Tab-Navigations-"
+                    "Button. Beispiel: "
+                    "``__guide__|Themenseite Klimawandel|https://wirlernenonline.de/themenseite/klimawandel``. "
+                    "Nutze NUR vollständige URLs (Schema + Host), keine relativen "
+                    "Pfade. Maximal EIN solcher Eintrag pro Antwort."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "description": "Die Markdown-formatierte Antwort an den Nutzer.",
+                        },
+                        "quick_replies": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "2-4 kurze Folgevorschläge. Jeder Vorschlag ist ein "
+                                "Satz, den der Nutzer als nächste Eingabe sagen würde "
+                                "(NICHT was der Bot vorschlägt zu tun). EIN Eintrag "
+                                "darf optional ein Bring-mich-hin-Spezialformat sein: "
+                                "``__guide__|<Label>|<URL>`` — siehe Tool-Description."
+                            ),
+                            "minItems": 0,
+                            "maxItems": 4,
+                        },
+                    },
+                    "required": ["text"],
+                },
+            },
+        }
+        active_tools = active_tools + [respond_tool]
+
     messages = [{"role": "system", "content": system}]
 
     # Inject the current canvas state as an additional system context.
@@ -1220,14 +1790,36 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
 
         if always_areas:
             from app.services.rag_service import get_rag_context as _get_rag_ctx
+            # Side-channel out_sources: collect the filenames of the top
+            # chunks the prefetch picked. Used downstream by
+            # ``_attach_guide_qr`` (chat.py) to surface the EXACT source
+            # URL via ``rag_url_index``, instead of the generic
+            # Domain-Hauptseite.
+            _prefetch_sources: list[str] = []
             prefetch_ctx = await _get_rag_ctx(
                 message, areas=always_areas, top_k=_RAG_TOP_K,
                 min_score=_RAG_MIN_SCORE,
                 max_chars_per_area=_RAG_MAX_CHARS_PER_AREA,
+                out_sources=_prefetch_sources,
             )
+            if _prefetch_sources:
+                used_src = session_state.setdefault("_rag_top_sources", [])
+                for s in _prefetch_sources:
+                    if s not in used_src:
+                        used_src.append(s)
             _logger.info("RAG pre-fetch for areas %s: %d chars", always_areas, len(prefetch_ctx) if prefetch_ctx else 0)
             if prefetch_ctx:
                 knowledge_prefetched = True
+                # Track prefetched areas in session_state so the Guide-QR
+                # injector (chat.py:_attach_guide_qr) sieht sie als
+                # *Kandidaten*. Es ist nicht garantiert, dass der Bot die
+                # Quelle wirklich nutzt — der Injektor prüft anschließend
+                # via Brand-Regex am Bot-Response-Text, ob die Area
+                # tatsächlich verwendet wurde.
+                used = session_state.setdefault("_rag_areas_used", [])
+                for _a in always_areas:
+                    if _a and _a not in used:
+                        used.append(_a)
                 # Inject as a completed tool call — tell the LLM ALL always-areas were searched
                 areas_label = ", ".join(always_areas)
                 messages.append({"role": "user", "content": message})
@@ -1317,6 +1909,8 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         ))
     max_iterations = 5
     first_iteration = True
+    # Phase A1 — Reflection-Loop-Flag: nur EINMAL retryen, sonst Endlosschleife
+    _reflection_done = False
 
     for iteration in range(max_iterations):
         tool_choice: Any = None
@@ -1377,25 +1971,97 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         )
 
         try:
-            resp = await client.chat.completions.create(**kwargs)
+            if on_token is not None:
+                # Phase-2 Streaming — same kwargs but tokens arrive progressively
+                # via on_token. The reconstructed _StreamedResponse exposes the
+                # same attributes so the tool-loop body below is unchanged.
+                resp = await _stream_completion(on_token, **kwargs)
+            else:
+                resp = await client.chat.completions.create(**kwargs)
         except Exception as e:
             _logger.error("LLM API error: %s", e)
             return f"Fehler bei der Verarbeitung: {e}", all_cards, tools_called, outcomes
 
         choice = resp.choices[0]
+        if usage_acc is not None:
+            # A2.1 — Phase-Label je Iteration: tool-Iteration vs final response.
+            # Hilft bei der Cache-Hit-Rate-Diagnose: "response"-Calls haben oft
+            # keinen Cache-Hit, weil Tool-Output-Messages den Prompt variieren.
+            _phase = (
+                "tool_loop"
+                if (choice.finish_reason == "tool_calls" and choice.message.tool_calls)
+                else "response"
+            )
+            usage_accumulator_add(usage_acc, _extract_usage(resp), phase=_phase)
+
+        # Track whether the model used the optional respond_to_user tool —
+        # if so, the for-loop's tool-handling falls through and we treat it
+        # as the final response instead of a continued tool round-trip.
+        _inline_response_text: str | None = None
+        _inline_quick_replies: list[str] = []
 
         if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
-            messages.append(choice.message)
+            # Convert message to a dict shape OpenAI accepts on the next call.
+            # Non-streaming responses ship a Pydantic ChatCompletionMessage that
+            # the SDK can re-serialize; the streaming path produces our own
+            # ``_StreamedMessage`` shim, which has the same attributes but
+            # isn't auto-serialized — hand it through as a plain dict so both
+            # paths work uniformly.
+            messages.append({
+                "role": getattr(choice.message, "role", "assistant"),
+                "content": getattr(choice.message, "content", None),
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    } for tc in choice.message.tool_calls
+                ],
+            })
             for tc in choice.message.tool_calls:
                 tool_name = tc.function.name
                 tool_args = json.loads(tc.function.arguments)
                 tools_called.append(tool_name)
+
+                # ── Combined-output: model emitted FINAL answer + quick_replies ─
+                # See env CHAT_INLINE_QUICK_REPLIES + the respond_to_user tool
+                # definition above. Treat this as the equivalent of a
+                # finish_reason == "stop" with the extracted text.
+                if tool_name == "respond_to_user":
+                    _inline_response_text = (tool_args.get("text") or "").strip()
+                    qr = tool_args.get("quick_replies") or []
+                    _inline_quick_replies = [
+                        str(r).strip() for r in qr if isinstance(r, str) and str(r).strip()
+                    ][:4]
+                    # OpenAI requires every tool call to be followed by a
+                    # role=tool message in the chain. Acknowledge briefly.
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": "OK",
+                    })
+                    # Don't process more tool calls — respond_to_user means
+                    # we're done.
+                    break
 
                 # ── Handle virtual knowledge tool ──────────────
                 if tool_name == "query_knowledge":
                     from app.services.rag_service import get_rag_context
                     area = tool_args.get("area", "general")
                     query = tool_args.get("query", message)
+
+                    # Track explicitly-queried RAG areas in session_state so the
+                    # downstream Guide-QR-injector (chat.py:_attach_guide_qr) can
+                    # offer a "Bring mich hin"-link to the area's source URL
+                    # (z.B. WissenLebtOnline → https://wissenlebtonline.de/).
+                    # Bewusst NUR explizite Calls — die mode:always-Prefetch
+                    # läuft immer, das wäre als Guide-Trigger zu breit.
+                    used = session_state.setdefault("_rag_areas_used", [])
+                    if area and area not in used:
+                        used.append(area)
 
                     # Guard: if this area was already covered by the pre-fetch
                     # and the query is the same, return a short hint instead of
@@ -1412,11 +2078,18 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                         })
                         continue
 
+                    _explicit_sources: list[str] = []
                     result_text = await get_rag_context(
                         query, areas=[area], top_k=_RAG_TOP_K,
                         min_score=_RAG_MIN_SCORE,
                         max_chars_per_area=_RAG_MAX_CHARS_PER_AREA,
+                        out_sources=_explicit_sources,
                     )
+                    if _explicit_sources:
+                        used_src = session_state.setdefault("_rag_top_sources", [])
+                        for s in _explicit_sources:
+                            if s not in used_src:
+                                used_src.append(s)
                     if not result_text:
                         result_text = f"Keine relevanten Informationen im Bereich '{area}' gefunden."
                     _logger.info("query_knowledge(%s): %d chars", area, len(result_text))
@@ -1513,7 +2186,17 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     "browse_collection_tree",
                 }
                 if tool_name in CARD_YIELDING_TOOLS:
-                    cards = parse_wlo_cards(result_text)
+                    # search_wlo_topic_pages has its OWN parser — the standard
+                    # parse_wlo_cards reads ``nodeId`` and ignores ``variants``,
+                    # producing cards without the ``topic_pages`` array. Without
+                    # that array isTopicPage() returns false → cards render as
+                    # plain Inhalt-cards instead of topic-page-cards with the
+                    # 🌐 Themenseite button. The dedicated parser fixes this.
+                    if tool_name == "search_wlo_topic_pages":
+                        from app.services.mcp_client import parse_wlo_topic_page_cards
+                        cards = parse_wlo_topic_page_cards(result_text)
+                    else:
+                        cards = parse_wlo_cards(result_text)
                     await resolve_discipline_labels(cards)
                 else:
                     cards = []
@@ -1535,6 +2218,13 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                             for v in tp_list:
                                 if v.get("variant_id") not in existing_vids:
                                     existing.setdefault("topic_pages", []).append(v)
+                            # If the existing card came from a non-topic-page tool
+                            # (e.g. get_subject_portals → node_type='content'),
+                            # promote it to 'collection' now that it has topic
+                            # pages — otherwise the frontend's isTopicPage()
+                            # check fails and the card renders as a flat
+                            # Inhalt-card without the 🌐 Themenseite button.
+                            existing["node_type"] = "collection"
                 # Deduplicate by node_id
                 existing_ids = {c.get("node_id") for c in all_cards if c.get("node_id")}
                 for c in cards:
@@ -1547,8 +2237,79 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     "tool_call_id": tc.id,
                     "content": result_text[:4000],
                 })
+
+            # If respond_to_user was called among the tool calls, treat THIS
+            # iteration as the finish point. Otherwise continue the outer
+            # for-loop into the next LLM round-trip.
+            if _inline_response_text is None:
+                continue
+            # Inline final response — set response_text + stash quick_replies
+            # and fall through to the Reflection/return path below (which
+            # used to be the ``else`` branch only).
+            response_text = _inline_response_text
+            session_state["_inline_quick_replies"] = _inline_quick_replies
         else:
             response_text = choice.message.content or ""
+
+        # ── Final-answer path — runs for BOTH content-only and inline
+        #    respond_to_user tool calls. Phase A1 Reflection check gates the
+        #    return so a missing-tool retry can still trigger.
+        if True:
+            # Phase A1 — Reflection-Loop für Tool-Compliance:
+            # Wenn das Pattern Tools verlangt (force_tool_use=true) UND keines
+            # davon im Tool-Loop tatsächlich gerufen wurde, einmal mit harter
+            # Korrektur-Anweisung neu versuchen. Schützt vor LLMs, die einen
+            # netten Text-Antwort-Shortcut nehmen, obwohl ihre Pattern-Definition
+            # eindeutig MCP-/Service-Calls verlangt.
+            #
+            # Sicherheits-Conditions (vermeidet Endlos-Loops):
+            #   - läuft nur 1× pro Turn (Flag _reflection_done)
+            #   - greift nur wenn pattern_output.force_tool_use == True
+            #   - greift nur wenn pattern_output.tools eine echte Liste ist
+            #   - greift nur wenn keines der erwarteten Tools im tools_called auftaucht
+            requires_tools = bool(pattern_output.get("force_tool_use"))
+            required_tools = list(pattern_output.get("tools") or [])
+            requires_all = bool(pattern_output.get("requires_all_tools"))
+            actual_bare = {(t or "").split(" ", 1)[0].strip() for t in tools_called}
+            # B1: requires_all_tools=true → vollständige Coverage; sonst Schnittmenge
+            if requires_all:
+                missing_tools = [t for t in required_tools if t not in actual_bare]
+                tool_satisfied = not missing_tools
+            else:
+                missing_tools = list(required_tools) if not (set(required_tools) & actual_bare) else []
+                tool_satisfied = bool(set(required_tools) & actual_bare)
+
+            if (not _reflection_done) and requires_tools and required_tools and not tool_satisfied:
+                _logger.info(
+                    "Reflection-Loop: Pattern %s verlangt Tools %s (mode=%s), aufgerufen %s, fehlend %s — Retry",
+                    pattern_label, required_tools,
+                    "ALL" if requires_all else "ANY",
+                    sorted(actual_bare), missing_tools,
+                )
+                _reflection_done = True
+                # Korrektur-Nachricht in den Loop-Messages-Stack einfügen
+                if requires_all:
+                    msg = (
+                        f"⚠ KORREKTUR: Du hast PAT-{pattern_label} gewählt; dieses Pattern "
+                        f"verlangt ALLE diese Tools nacheinander: {', '.join(required_tools)}. "
+                        f"Du hast {sorted(actual_bare) or 'keinen davon'} bisher gerufen. "
+                        f"Rufe JETZT die fehlenden Tools ({', '.join(missing_tools)}) auf, "
+                        f"BEVOR du final antwortest."
+                    )
+                else:
+                    msg = (
+                        f"⚠ KORREKTUR: Du hast PAT-{pattern_label} gewählt, aber KEINEN der "
+                        f"verlangten Tools genutzt: {', '.join(required_tools)}. "
+                        f"Rufe JETZT mindestens EINEN dieser Tools auf, BEVOR du final "
+                        f"antwortest. Ohne Tool-Aufruf hast du keine echten Daten zur Verfügung — "
+                        f"deine Antwort wäre erfunden."
+                    )
+                messages.append({"role": "user", "content": msg})
+                # Continue zur nächsten Iteration: Loop wird Tools forcieren
+                # weil active_tools immer noch gesetzt ist und der LLM jetzt
+                # den expliziten Hinweis hat.
+                continue
+
             return response_text, all_cards, tools_called, outcomes
 
     # Fallback: if max_iterations reached without final text, generate a
@@ -1659,8 +2420,15 @@ async def generate_quick_replies(
     response_text: str,
     classification: dict[str, Any],
     session_state: dict,
+    usage_acc: dict[str, Any] | None = None,
 ) -> list[str]:
-    """Generate 4 context-aware quick reply suggestions using LLM."""
+    """Generate 4 context-aware quick reply suggestions using LLM.
+
+    ``usage_acc`` is optional — when threaded through, the LLM call's
+    tokens are accounted under phase ``"quick_replies"`` (A2.1) so the
+    eval aggregator can break out QR cost separately from classify /
+    response.
+    """
     persona_id = classification.get("persona_id", "P-AND")
     intent_id = classification.get("intent_id", "")
     state_id = classification.get("next_state", session_state.get("state_id", "state-1"))
@@ -1786,6 +2554,44 @@ Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien)
     aus dem Kontext reisst, muss klar bleiben was angefragt wird.
     SCHLECHT: "Mehr davon zeigen" (ohne Bezug)
     GUT: "Mehr Mathe-Videos zeigen" / "Anderes Thema waehlen"
+11. **Bring-mich-hin-Vorschlag (Webseiten-Lotse — sehr oft nutzbar)**:
+    Wenn die NUTZER-NACHRICHT zu einer dieser konkreten WLO-Seiten passt,
+    MUSST du EINEN der 4 Vorschlaege als Spezialformat schreiben:
+
+       ``__guide__|<kurzer Anzeigetext>|<vollstaendige URL>``
+
+    Frontend rendert das als dunkelblauen Same-Tab-Navigations-Button.
+    Die anderen 3 Vorschlaege bleiben normale Folgesaetze.
+
+    NUTZER-FRAGE → ANZUBIETENDE WLO-URL (verlaesslich; erfinde KEINE
+    weiteren Pfade ausserhalb dieser Liste):
+
+    Frage zu Themenseiten / Konzept-Erklaerung „was ist eine Themenseite":
+      __guide__|Themenseiten-Beispiel|https://wirlernenonline.de/themenseite/klimawandel
+    Frage zu Fachportalen / „welche Faecher / fachportale" / Uebersicht:
+      __guide__|Fachportal-Uebersicht|https://wirlernenonline.de/fachportale
+    Frage zu Mitmachen / „wie kann ich beitragen / einreichen":
+      __guide__|Mitmachen-Seite|https://wirlernenonline.de/mitmachen
+    Frage zu „wer steht hinter / wer macht / ueber WLO":
+      __guide__|Ueber WLO|https://wirlernenonline.de/ueber-uns
+    Frage zu „WLO-Projekt / Hintergrund / Geschichte":
+      __guide__|Hintergrund-Info|https://wirlernenonline.de/projekt
+    Frage zu OER / Lizenzen (allgemein):
+      __guide__|OER-Erklaerung|https://wirlernenonline.de/oer
+    Frage zu konkretem Thema X (Themenseite gewuenscht):
+      __guide__|Themenseite <X>|https://wirlernenonline.de/themenseite/<x-kleinbuchstaben>
+    Frage zu Edu-Sharing / „edu-sharing.net":
+      __guide__|Edu-Sharing|https://openeduhub.net/
+
+    REGELN:
+    - URL muss vollstaendig sein (https://...), kein relativer Pfad.
+    - Maximal 1 Guide-QR pro Antwort. Insgesamt also 4 Zeilen davon 1 Guide.
+    - Wenn KEINE der oben gelisteten Frage-Kategorien passt, KEINEN Guide-QR
+      einbauen — dann 4 normale Vorschlaege.
+    - Themenseiten-Slugs nur fuer Themen die der User EXPLIZIT genannt hat
+      (z.B. „klimawandel", „photosynthese") — keine Slugs erfinden.
+    - Anzeigetext kurz, konkret, deutsch. KEINE generische „Bring mich hin"
+      ohne Kontext.
 
 Gib NUR die 4 Zeilen zurueck, sonst nichts."""
 
@@ -1803,6 +2609,8 @@ Gib NUR die 4 Zeilen zurueck, sonst nichts."""
                 max_tokens=150,
             )
         )
+        if usage_acc is not None:
+            usage_accumulator_add(usage_acc, _extract_usage(resp), phase="quick_replies")
         text = resp.choices[0].message.content or ""
         replies = [line.strip().lstrip("-•*0123456789. ") for line in text.strip().split("\n") if line.strip()]
         # Drop duplicates while preserving order

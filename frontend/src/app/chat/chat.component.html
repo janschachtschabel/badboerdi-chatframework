@@ -12,13 +12,16 @@
       <img *ngIf="msg.sender === 'bot'" class="msg-avatar" [src]="boerdiLogo" alt="" />
 
       <div class="msg-bubble" [class.bot-bubble]="msg.sender === 'bot'" [class.user-bubble]="msg.sender === 'user'">
-        <!-- Loading dots -->
-        <div *ngIf="msg.isLoading" class="typing-dots">
-          <span></span><span></span><span></span>
+        <!-- Loading dots + live phase label (from POST /api/chat/stream) -->
+        <div *ngIf="msg.isLoading" class="typing-row">
+          <div class="typing-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span *ngIf="msg.loadingPhase" class="typing-phase">{{ msg.loadingPhase }}</span>
         </div>
 
         <!-- Content -->
-        <div *ngIf="!msg.isLoading && msg.content" [innerHTML]="renderMarkdown(msg.content)" class="msg-content"></div>
+        <div *ngIf="!msg.isLoading && msg.content" [innerHTML]="renderMarkdown(msg.content, msg.sender)" class="msg-content"></div>
 
         <!-- Lernpfad: prominenter Druck-Button am Ende des Textes -->
         <div *ngIf="!msg.isLoading && isLearningPath(msg)" class="lp-print-bar">
@@ -125,13 +128,22 @@
               </div>
             </a>
             <!-- Collection action buttons -->
-            <div *ngIf="card.node_type === 'collection' && card.node_id" class="card-actions">
-              <button class="card-btn card-btn--primary"
+            <div *ngIf="(card.node_type === 'collection' && card.node_id) || card.guide_url" class="card-actions">
+              <button *ngIf="card.guide_url"
+                      class="card-btn card-btn--guide"
+                      [disabled]="isLoading"
+                      (click)="onGuideNavigate(card.guide_url)"
+                      title="Im aktuellen Tab zu dieser Seite navigieren">
+                🧭 Bring mich hin
+              </button>
+              <button *ngIf="card.node_type === 'collection' && card.node_id"
+                      class="card-btn card-btn--primary"
                       [disabled]="isLoading"
                       (click)="browseCollection(card.node_id, card.title)">
                 📋 Inhalte
               </button>
-              <button class="card-btn card-btn--secondary"
+              <button *ngIf="card.node_type === 'collection' && card.node_id"
+                      class="card-btn card-btn--secondary"
                       [disabled]="isLoading"
                       (click)="generateLearningPath(card.node_id, card.title)">
                 🗺️ Lernpfad
@@ -197,9 +209,28 @@
           </button>
         </div>
 
-        <!-- Quick replies -->
+        <!-- Quick replies — Mix aus normalen Vorschlägen und (optional) einem
+             "Bring mich hin"-Guide-Button. Backend kodiert Guide-QRs als
+             magic-prefix String "__guide__|<label>|<url>"; alles andere
+             ist eine normale User-Antwort, die als Folgenachricht gesendet wird.
+             Wenn Lotsen-Modus aus ist, blendet shouldHideQuickReply() Guide-QRs
+             komplett aus — Backend filtert sie zwar serverseitig, aber das ist
+             defense-in-depth gegen alte Caches / Race-Conditions. -->
         <div *ngIf="msg.quickReplies && msg.quickReplies.length" class="quick-replies">
-          <button *ngFor="let qr of msg.quickReplies" class="qr-btn" (click)="onQuickReply(qr)">{{ qr }}</button>
+          <ng-container *ngFor="let qr of msg.quickReplies">
+            <ng-container *ngIf="!shouldHideQuickReply(qr)">
+              <button *ngIf="isGuideQuickReply(qr); else regularQr"
+                      type="button"
+                      class="qr-btn qr-btn--guide"
+                      (click)="onGuideQuickReply(qr)"
+                      [title]="'Im aktuellen Tab zur Seite navigieren'">
+                🧭 {{ guideQuickReplyLabel(qr) }}
+              </button>
+              <ng-template #regularQr>
+                <button type="button" class="qr-btn" (click)="onQuickReply(qr)">{{ qr }}</button>
+              </ng-template>
+            </ng-container>
+          </ng-container>
         </div>
       </div>
     </div>
@@ -295,6 +326,42 @@
       <span class="debug-label">Trace:</span>
       <div *ngFor="let t of latestDebug.trace" class="debug-sub">
         · [{{ t.step }}] {{ t.label }} – {{ t.duration_ms }}ms
+      </div>
+    </div>
+    <!-- Pattern-Hint (Shadow-Mode telemetry) — LLM-classifier's pattern guess -->
+    <div class="debug-row" *ngIf="latestDebug.pattern_id_hint">
+      <span class="debug-label">LLM-Hint:</span>
+      {{ latestDebug.pattern_id_hint }}
+      <span *ngIf="latestDebug.llm_engine_match === true" style="color:#1f7a39"> ✓ Engine-Match</span>
+      <span *ngIf="latestDebug.llm_engine_match === false" style="color:#ad6f00"> ≠ Engine</span>
+      <span *ngIf="latestDebug.pattern_reasoning" class="debug-sub" style="display:block"> {{ latestDebug.pattern_reasoning }}</span>
+    </div>
+    <!-- Tie-Breaker (Bonus 2 — selektiver LLM-Hint-Override) -->
+    <div class="debug-row" *ngIf="latestDebug.phase3_modulations && latestDebug.phase3_modulations['tie_breaker']">
+      <span class="debug-label">Tie-Breaker:</span>
+      <span *ngIf="latestDebug.phase3_modulations['tie_breaker'].applied">
+        ⚡ {{ latestDebug.phase3_modulations['tie_breaker'].from }} → {{ latestDebug.phase3_modulations['tie_breaker'].to }}
+        (gap={{ latestDebug.phase3_modulations['tie_breaker'].score_gap }})
+      </span>
+      <span *ngIf="!latestDebug.phase3_modulations['tie_breaker'].applied">
+        evaluiert (gap={{ latestDebug.phase3_modulations['tie_breaker'].score_gap }}, applied=false)
+      </span>
+    </div>
+    <!-- Token-Usage + Cache-Hit-Rate (A2.1 + A2.3) -->
+    <div class="debug-row" *ngIf="latestDebug.token_usage && latestDebug.token_usage['calls']">
+      <span class="debug-label">Tokens:</span>
+      prompt={{ latestDebug.token_usage['prompt_tokens'] }},
+      completion={{ latestDebug.token_usage['completion_tokens'] }},
+      cached={{ latestDebug.token_usage['cached_tokens'] }}
+      <span *ngIf="latestDebug.token_usage['prompt_tokens']">
+        ({{ ((latestDebug.token_usage['cached_tokens'] || 0) / latestDebug.token_usage['prompt_tokens'] * 100) | number:'1.0-0' }}% cache)
+      </span>
+      · {{ latestDebug.token_usage['calls'] }} call(s)
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.token_usage && latestDebug.token_usage['per_phase']">
+      <span class="debug-label">Phasen:</span>
+      <div *ngFor="let p of (latestDebug.token_usage['per_phase'] | keyvalue)" class="debug-sub">
+        · {{ p.key }}: prompt={{ p.value.prompt }}, cached={{ p.value.cached }}<span *ngIf="p.value.prompt"> ({{ ((p.value.cached || 0) / p.value.prompt * 100) | number:'1.0-0' }}%)</span>
       </div>
     </div>
   </div>

@@ -1,6 +1,7 @@
 ---
 id: PAT-08
 label: Null-Treffer
+short_purpose: "WANN: MCP-Suche zu konkretem Thema lieferte 0 oder unbrauchbare Treffer. WOFÜR: Re-Search mit gelockerten Filtern, dann 2-3 alternative Wege anbieten."
 priority: 380
 gate_personas: ["*"]
 gate_states: ["*"]

@@ -885,6 +885,17 @@ $canvas-text-muted: #64748B;
   &--tertiary:hover,
   &--remix:hover { background: #bae6fd; }
 
+  // Lotsen-Modus: dunkelblau (Header-Akzentfarbe), damit der Button
+  // sich klar als "primäre" Aktion vom hellblauen Standardton abhebt,
+  // ohne mit Orange zu schreien. Klick führt den User direkt auf die
+  // WLO-Seite (gleiches Tab).
+  &--guide {
+    background: var(--boerdi-primary, #1c4587);
+    color: #ffffff;
+    font-weight: 600;
+  }
+  &--guide:hover { filter: brightness(1.1); }
+
   &:active { transform: translateY(1px); }
 }
 

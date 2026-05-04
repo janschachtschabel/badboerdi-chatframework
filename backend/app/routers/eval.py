@@ -158,6 +158,144 @@ async def list_runs(limit: int = Query(50, ge=1, le=500)) -> dict[str, Any]:
     return {"runs": runs}
 
 
+@router.get("/trends", dependencies=_studio)
+async def get_trends(
+    limit: int = Query(10, ge=2, le=100,
+        description="Number of most-recent completed runs to compare"),
+) -> dict[str, Any]:
+    """Cross-run trend metrics (Bonus 3).
+
+    Reads the last ``limit`` completed eval runs and assembles time-series
+    for the metrics that matter for regression detection:
+      * tool_compliance_per_pattern  → pattern × run rate matrix
+      * cache_hit_rate
+      * llm_engine_match_rate
+      * persona_correct_rate / intent_correct_rate
+      * tie_breaker.applied_rate
+
+    The Studio UI can render these as sparklines per pattern + run-over-run
+    deltas without each turn fetching the full conversation transcripts.
+    Light payload — only summaries are read, conversations_json stays untouched.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """SELECT id, created_at, completed_at, mode, config_slug,
+                      total_turns, avg_score, summary_json
+               FROM eval_runs
+               WHERE status = 'done'
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (limit,),
+        )
+        rows = await cur.fetchall()
+
+    runs_meta: list[dict[str, Any]] = []
+    pattern_trend: dict[str, list[dict[str, Any]]] = {}
+    cache_hit_trend: list[dict[str, Any]] = []
+    match_rate_trend: list[dict[str, Any]] = []
+    persona_rate_trend: list[dict[str, Any]] = []
+    intent_rate_trend: list[dict[str, Any]] = []
+    tie_breaker_trend: list[dict[str, Any]] = []
+
+    # Reverse so the timeline is oldest → newest (UI-friendly)
+    for r in reversed(rows):
+        try:
+            summary = json.loads(r["summary_json"] or "{}")
+        except Exception:
+            summary = {}
+        cm = summary.get("classification_metrics") or {}
+
+        run_id = r["id"]
+        created_at = r["created_at"]
+        runs_meta.append({
+            "id": run_id,
+            "created_at": created_at,
+            "completed_at": r["completed_at"],
+            "mode": r["mode"],
+            "config_slug": r["config_slug"],
+            "total_turns": r["total_turns"],
+            "avg_score": r["avg_score"],
+        })
+
+        # Tool-compliance per pattern
+        per_pattern = cm.get("tool_compliance_per_pattern") or {}
+        for pid, stats in per_pattern.items():
+            if not isinstance(stats, dict):
+                continue
+            ok = int(stats.get("ok") or 0)
+            total = int(stats.get("total") or 0)
+            rate = round(ok / total, 3) if total else 0.0
+            pattern_trend.setdefault(pid, []).append({
+                "run_id": run_id,
+                "created_at": created_at,
+                "ok": ok,
+                "total": total,
+                "rate": rate,
+            })
+
+        # Scalar trends
+        cache_hit_trend.append({
+            "run_id": run_id, "created_at": created_at,
+            "value": (cm.get("token_usage_aggregate") or {}).get("cache_hit_rate", 0.0),
+            "prompt_tokens": (cm.get("token_usage_aggregate") or {}).get("prompt_tokens", 0),
+            "cached_tokens": (cm.get("token_usage_aggregate") or {}).get("cached_tokens", 0),
+        })
+        match_rate_trend.append({
+            "run_id": run_id, "created_at": created_at,
+            "value": cm.get("llm_engine_match_rate", 0.0),
+            "judged": cm.get("llm_hint_present_count", 0),
+        })
+        persona_rate_trend.append({
+            "run_id": run_id, "created_at": created_at,
+            "value": cm.get("persona_correct_rate", 0.0),
+            "total": cm.get("persona_total_judged", 0),
+        })
+        intent_rate_trend.append({
+            "run_id": run_id, "created_at": created_at,
+            "value": cm.get("intent_correct_rate", 0.0),
+            "total": cm.get("intent_total_judged", 0),
+        })
+        tb = cm.get("tie_breaker") or {}
+        tie_breaker_trend.append({
+            "run_id": run_id, "created_at": created_at,
+            "applied_rate": tb.get("applied_rate", 0.0),
+            "applied_count": tb.get("applied_count", 0),
+            "evaluated": tb.get("evaluated_turns", 0),
+        })
+
+    # Pad pattern trend with implicit zeros so each series spans every run
+    # — keeps line charts honest about coverage.
+    run_ids_in_order = [m["id"] for m in runs_meta]
+    for pid, series in pattern_trend.items():
+        present_runs = {entry["run_id"] for entry in series}
+        for rid in run_ids_in_order:
+            if rid not in present_runs:
+                series.append({
+                    "run_id": rid,
+                    "created_at": next(
+                        (m["created_at"] for m in runs_meta if m["id"] == rid),
+                        "",
+                    ),
+                    "ok": 0,
+                    "total": 0,
+                    "rate": 0.0,
+                })
+        # Sort by run order
+        order_index = {rid: i for i, rid in enumerate(run_ids_in_order)}
+        series.sort(key=lambda e: order_index.get(e["run_id"], 0))
+
+    return {
+        "runs": runs_meta,
+        "pattern_trend": pattern_trend,
+        "cache_hit_trend": cache_hit_trend,
+        "llm_engine_match_trend": match_rate_trend,
+        "persona_correct_trend": persona_rate_trend,
+        "intent_correct_trend": intent_rate_trend,
+        "tie_breaker_trend": tie_breaker_trend,
+    }
+
+
 @router.get("/runs/{run_id}", dependencies=_studio)
 async def get_run(run_id: str) -> dict[str, Any]:
     async with aiosqlite.connect(DB_PATH) as db:

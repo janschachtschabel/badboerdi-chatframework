@@ -1,6 +1,7 @@
 ---
 id: PAT-03
 label: Transparenz-Beweis
+short_purpose: "WANN: Nutzer fragt nach Daten/Stats/Bewertungen, die der Bot NICHT haben kann (interne Schul-/Klassen-Daten, Privates, externe Reports). WOFÜR: Ehrlich sagen 'habe ich nicht', sinnvolle Adjacent-Daten als Alternative anbieten."
 priority: 440
 gate_personas: ["*"]
 gate_states: ["*"]
@@ -18,7 +19,7 @@ sources: ["rag", "mcp"]
 format_primary: text
 format_follow_up: inline
 card_text_mode: highlight
-tools: ["search_wlo_collections", "search_wlo_content", "get_node_details"]
+tools: ["query_knowledge"]
 ---
 
 # PAT-03: Transparenz-Beweis

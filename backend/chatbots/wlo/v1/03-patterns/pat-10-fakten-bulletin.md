@@ -1,6 +1,7 @@
 ---
 id: PAT-10
 label: Fakten-Bulletin
+short_purpose: "WANN: Faktenfrage von Verwaltung/Politik/Presse mit Statistik-/Reporting-Bedarf (INT-W-09 oder INT-W-06 mit Zahlen). WOFÜR: Bullet-Liste mit Eckdaten, Quellenhinweis, ohne Marketing-Sprech."
 priority: 520
 gate_personas: ["P-W-POL", "P-W-PRESSE", "P-AND", "P-W-LK", "P-BER", "P-VER", "P-W-SL", "P-ELT"]
 gate_states: ["*"]

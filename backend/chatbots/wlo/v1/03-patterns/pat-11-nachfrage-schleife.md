@@ -1,6 +1,7 @@
 ---
 id: PAT-11
 label: Nachfrage-Schleife
+short_purpose: "WANN: Vorherige Antwort war nicht verstanden oder unklar formuliert (User fragt nach). WOFÜR: Aufhellen statt wiederholen — anderes Beispiel, anderes Format, kürzer."
 priority: 380
 gate_personas: ["*"]
 gate_states: ["state-9"]

@@ -1,6 +1,7 @@
 ---
 id: PAT-09
 label: Recherche (Redaktion / Presse / Politik / Beratung)
+short_purpose: "WANN: Redaktion/Presse/Politik/Beratung sucht Material/Fakten für eigene Publikationen. WOFÜR: MCP-Suche durchführen, zitierfähige Quellenangaben, sachliche Aufbereitung — kein didaktisches Anpreisen."
 priority: 600
 gate_personas: ["P-W-RED", "P-W-PRESSE", "P-W-POL", "P-BER"]
 gate_states: ["*"]
@@ -14,11 +15,12 @@ default_tone: sachlich
 default_length: mittel
 default_detail: standard
 response_type: answer
-sources: ["mcp"]
+sources: ["mcp", "rag"]
 format_primary: text
 format_follow_up: inline
 card_text_mode: highlight
-tools: ["search_wlo_collections", "search_wlo_topic_pages", "get_collection_contents", "lookup_wlo_vocabulary", "get_node_details"]
+tools: ["search_wlo_collections", "search_wlo_topic_pages", "get_collection_contents", "lookup_wlo_vocabulary", "get_node_details", "query_knowledge"]
+force_tool_use: true
 ---
 
 # PAT-09: Recherche (Redaktion / Presse / Politik / Beratung)

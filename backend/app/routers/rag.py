@@ -27,12 +27,56 @@ async def ingest_file(
     if not title:
         title = file.filename or "Unbenannt"
 
+    # Hard cap on upload size — markitdown loads the entire file plus its
+    # rendered content (images, tables) into RAM. On a 2 GB vserver a
+    # PDF > ~15 MB regularly OOM-kills the Python process; result is a
+    # cryptic "Fehler beim Konvertieren" instead of a clean error. Honour
+    # ``BOERDI_MAX_INGEST_MB`` (env, default 25 MB) to keep the failure
+    # mode explicit. Unlimited uploads are still possible on hosts with
+    # plenty of RAM by setting BOERDI_MAX_INGEST_MB=0.
+    try:
+        _max_mb = int(os.getenv("BOERDI_MAX_INGEST_MB", "25") or "25")
+    except ValueError:
+        _max_mb = 25
+    if _max_mb > 0:
+        # Try to size-check before reading the body fully — avoids buffering
+        # the whole file just to reject it. ``UploadFile.size`` is set by
+        # FastAPI when ``Content-Length`` is present (which it always is
+        # for multipart/form-data uploads).
+        cl = getattr(file, "size", None)
+        if isinstance(cl, int) and cl > _max_mb * 1024 * 1024:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Datei zu groß: {cl / 1024 / 1024:.1f} MB > "
+                    f"{_max_mb} MB Limit. Wenn der Server genug RAM hat, "
+                    f"setze BOERDI_MAX_INGEST_MB höher (oder 0 für "
+                    f"unbegrenzt)."
+                ),
+            )
+
     # Save to temp file
     suffix = os.path.splitext(file.filename or "")[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         content = await file.read()
         tmp.write(content)
         tmp_path = tmp.name
+
+    # Re-check after read in case ``size`` was unset (some edge cases)
+    if _max_mb > 0:
+        on_disk = len(content)
+        if on_disk > _max_mb * 1024 * 1024:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Datei zu groß: {on_disk / 1024 / 1024:.1f} MB > "
+                    f"{_max_mb} MB Limit."
+                ),
+            )
 
     try:
         markdown = await convert_to_markdown(tmp_path)

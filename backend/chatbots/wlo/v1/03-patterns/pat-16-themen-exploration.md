@@ -1,6 +1,7 @@
 ---
 id: PAT-16
 label: Themen-Exploration
+short_purpose: "WANN: User möchte ein Thema entdecken/erkunden, hat aber noch keinen konkreten Lerngegenstand. WOFÜR: 3-5 Sub-Themen anbieten als Drilldown-Optionen, kein Material-Bombardement."
 priority: 400
 gate_personas: ["P-W-RED", "P-BER"]
 gate_states: ["state-4", "state-10"]

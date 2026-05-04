@@ -116,6 +116,41 @@ export default function RoutingRulesView() {
     }
   };
 
+  /** Reset all routing-rule stats by deleting the shadow-router log
+   *  files that the /stats endpoint reads from. After deletion the
+   *  rule-fire counters return to 0 across all tabs.
+   *
+   *  Accessible from the top-header so users don't have to navigate
+   *  to the Stats-tab first to find the reset action.
+   */
+  const resetStats = async () => {
+    if (!confirm(
+      'Statistiken zurücksetzen?\n\n' +
+      'Damit werden alle Shadow-Router-Log-Dateien gelöscht und ' +
+      'die Routing-Rule-Statistiken zeigen wieder 0.\n\n' +
+      'Die Routing-Rules selbst bleiben unverändert.',
+    )) return;
+    setLoading(true);
+    try {
+      const r = await fetch('/api/routing-rules/stats', { method: 'DELETE' });
+      if (!r.ok) {
+        alert('Reset fehlgeschlagen: HTTP ' + r.status);
+        return;
+      }
+      const data = await r.json();
+      // Direkt UI-State zurücksetzen, damit der User sofort sieht, dass's
+      // geklappt hat — ohne Roundtrip-Wartezeit beim nächsten loadStats.
+      setStats({});
+      setStatsTotalTurns(0);
+      await loadStats();  // re-poll für den Fall, dass neue Logs nachgekommen
+      alert(`✓ ${data.deleted} Log-Datei(en) gelöscht. Statistiken sind nun auf 0.`);
+    } catch (e) {
+      alert('Reset fehlgeschlagen: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="routing-rules-view" style={{ padding: '20px 28px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
@@ -125,21 +160,44 @@ export default function RoutingRulesView() {
             Generic rule engine for intent / pattern routing. {rules.length} rules total — {liveCount} live, {rules.length - liveCount} shadow.
           </p>
         </div>
-        <button
-          onClick={reload}
-          disabled={loading}
-          style={{
-            padding: '8px 14px',
-            background: '#3B82F6',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: loading ? 'wait' : 'pointer',
-            fontSize: 13,
-          }}
-        >
-          {loading ? 'Lädt …' : '⟳ YAML neu laden'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={resetStats}
+            disabled={loading || statsTotalTurns === 0}
+            style={{
+              padding: '8px 14px',
+              background: '#fff',
+              color: '#DC2626',
+              border: '1px solid #DC2626',
+              borderRadius: 6,
+              cursor: loading ? 'wait' : (statsTotalTurns === 0 ? 'not-allowed' : 'pointer'),
+              fontSize: 13,
+              opacity: statsTotalTurns === 0 ? 0.5 : 1,
+            }}
+            title={
+              statsTotalTurns === 0
+                ? 'Keine Statistiken vorhanden — nichts zum Zurücksetzen.'
+                : `Stats auf 0 zurücksetzen (löscht alle ${statsTotalTurns} geloggten Turns).`
+            }
+          >
+            🗑 Stats zurücksetzen
+          </button>
+          <button
+            onClick={reload}
+            disabled={loading}
+            style={{
+              padding: '8px 14px',
+              background: '#3B82F6',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              cursor: loading ? 'wait' : 'pointer',
+              fontSize: 13,
+            }}
+          >
+            {loading ? 'Lädt …' : '⟳ YAML neu laden'}
+          </button>
+        </div>
       </div>
 
       {/* Tab nav */}

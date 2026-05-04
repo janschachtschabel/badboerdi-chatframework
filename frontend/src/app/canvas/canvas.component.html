@@ -174,6 +174,11 @@
 
         <!-- Action buttons (uniform hellblau) -->
         <div class="card-actions preview-actions">
+          <button *ngIf="previewCard?.guide_url" type="button" class="card-btn card-btn--guide"
+                  (click)="onCardAction('guide', previewCard!, $event)"
+                  title="Im aktuellen Tab zu diesem Inhalt navigieren">
+            🧭 Bring mich hin
+          </button>
           <a class="card-btn card-btn--primary"
              [href]="cardUrl(previewCard)"
              target="_blank"
@@ -304,6 +309,11 @@
             </div>
           </div>
 
+          <button *ngIf="c.guide_url" type="button" class="card-btn card-btn--guide"
+                  (click)="onCardAction('guide', c, $event)"
+                  title="Im aktuellen Tab zu dieser Themenseite navigieren">
+            🧭 Bring mich hin
+          </button>
           <button type="button" class="card-btn card-btn--secondary"
                   (click)="onCardAction('browse', c, $event)"
                   title="Inhalte dieser Sammlung anzeigen">
@@ -375,18 +385,23 @@
           </div>
         </a>
 
-        <div class="card-actions" *ngIf="c.node_id">
-          <button type="button" class="card-btn card-btn--primary"
+        <div class="card-actions" *ngIf="c.node_id || c.guide_url">
+          <button *ngIf="c.guide_url" type="button" class="card-btn card-btn--guide"
+                  (click)="onCardAction('guide', c, $event)"
+                  title="Im aktuellen Tab zu dieser Sammlung navigieren">
+            🧭 Bring mich hin
+          </button>
+          <button *ngIf="c.node_id" type="button" class="card-btn card-btn--primary"
                   (click)="onCardAction('browse', c, $event)"
                   title="Inhalte dieser Sammlung anzeigen">
             📋 Inhalte
           </button>
-          <button type="button" class="card-btn card-btn--secondary"
+          <button *ngIf="c.node_id" type="button" class="card-btn card-btn--secondary"
                   (click)="onCardAction('learning_path', c, $event)"
                   title="Lernpfad aus dieser Sammlung generieren">
             🗺️ Lernpfad
           </button>
-          <button type="button" class="card-btn card-btn--remix"
+          <button *ngIf="c.node_id" type="button" class="card-btn card-btn--remix"
                   (click)="onCardAction('remix', c, $event)"
                   title="Neues Material basierend auf dieser Sammlung erstellen">
             🔄 Remix
@@ -446,8 +461,13 @@
             </span>
           </div>
         </a>
-        <div class="card-actions" *ngIf="c.url || c.wlo_url">
-          <button type="button" class="card-btn card-btn--primary"
+        <div class="card-actions" *ngIf="c.url || c.wlo_url || c.guide_url">
+          <button *ngIf="c.guide_url" type="button" class="card-btn card-btn--guide"
+                  (click)="onCardAction('guide', c, $event)"
+                  title="Im aktuellen Tab zu diesem Inhalt navigieren">
+            🧭 Bring mich hin
+          </button>
+          <button *ngIf="c.url || c.wlo_url" type="button" class="card-btn card-btn--primary"
                   (click)="onCardAction('preview', c, $event)"
                   title="Im Canvas ansehen">
             🔍 Anschauen

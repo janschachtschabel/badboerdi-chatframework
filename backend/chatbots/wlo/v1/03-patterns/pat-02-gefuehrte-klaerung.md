@@ -1,6 +1,7 @@
 ---
 id: PAT-02
 label: Geführte Klärung
+short_purpose: "WANN: User formuliert vage und liefert nicht genug Info für eine konkrete Antwort/Suche (Slot-Lücken). WOFÜR: 1-2 gezielte Rückfragen mit konkreten Optionen, statt offen wirken zu lassen."
 priority: 450
 gate_personas: ["*"]
 gate_states: ["*"]

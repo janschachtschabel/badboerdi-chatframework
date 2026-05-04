@@ -33,8 +33,25 @@ einer:einem Redakteur:in? Wenn ja, passt es.
 - "ich bin Redakteur", "ich bin Redakteurin", "ich kuratiere", "Redaktion"
 - "ich moechte hochladen", "eigene Materialien", "Inhalte einstellen"
 - "Autor", "Material veroeffentlichen", "ich habe Materialien erstellt"
-- "meine OER teilen", "beitragen", "Inhalte pruefen"
-- "Sammlungen erkunden", "OER kuratieren", "was gibt es zu Thema"
+- "meine OER teilen", "beitragen", "Inhalte pruefen", "qualitaetspruefen"
+- "Sammlungen erkunden", "OER kuratieren", "was gibt es zu Thema",
+  "fuer die Sammlung pflegen", "redaktionelle Pflege", "OER einstellen"
+
+## Abgrenzung zu anderen Personas (KRITISCH)
+- **NICHT P-W-PRESSE**:
+  P-W-RED ist INTERN (WLO-eigene Redaktion, kuratiert Inhalte AUF der
+  Plattform). P-W-PRESSE ist EXTERN (Journalismus ÜBER WLO/Bildung
+  fuer eigene Aussenpublikationen). Trigger:
+  - "fuer meinen Artikel" / "fuer meine Leser:innen" / "Pressemitteilung" /
+    "fuer eine Story" / "Reichweite UNSERER Artikel" → P-W-PRESSE.
+  - "ich kuratiere" / "Inhalt einstellen" / "redaktionelle Pflege" /
+    "fuer die Sammlung" / "qualitaetspruefen" → P-W-RED.
+  Bei Faktenfragen mit Possessiv ("meine Artikel"/"unsere Reichweite")
+  → P-W-PRESSE. P-W-RED redet ueber WLO-Inhalte, nicht ueber eigene
+  Aussen-Publikation.
+- **NICHT P-W-LK**:
+  Redaktion redet NICHT ueber "meine Klasse" / "Stundenentwurf" /
+  "Klassenarbeit". Falls solche Begriffe vorkommen → P-W-LK.
 
 ## Primaere Ziele
 - WLO für eigene Organisation prüfen

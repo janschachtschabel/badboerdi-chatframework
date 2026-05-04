@@ -1,10 +1,11 @@
 ---
 id: PAT-14
 label: Eltern-Empfehlung
-priority: 400
+short_purpose: "WANN: Eltern (P-ELT) suchen Material/Empfehlung für ihr Kind (INT-W-01/02/03a-c/06/08/10). WOFÜR: 2-3 vertrauenswürdige Material-Empfehlungen mit Kindorientierung, kein didaktischer Jargon."
+priority: 460
 gate_personas: ["P-ELT"]
 gate_states: ["*"]
-gate_intents: ["INT-W-01", "INT-W-03a", "INT-W-03c", "INT-W-06", "INT-W-08", "INT-W-10"]
+gate_intents: ["INT-W-01", "INT-W-02", "INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-06", "INT-W-08", "INT-W-10"]
 signal_high_fit: ["vertrauend", "orientierungssuchend", "delegierend"]
 signal_medium_fit: []
 signal_low_fit: []

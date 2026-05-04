@@ -153,6 +153,7 @@ Alle Routen unter `/api/config/*` sind **Studio**-geschuetzt.
 | `POST`   | `/api/config/factory/restore` | Werkseinstellung aktiv wiederherstellen. |
 | `POST`   | `/api/config/factory/upload` | Neue Werkseinstellung als ZIP hochladen (Ops-Workflow). |
 | `GET`    | `/api/config/factory/download` | Werkseinstellung herunterladen. |
+| `GET`    | `/api/config/guide-mode` | **Öffentlicher** Subset von `01-base/guide-mode.yaml` (`default_enabled`, `allowed_hosts`, `url_fields_priority`, `max_guide_targets_per_turn`). Wird vom Widget beim Init gefetcht — daher KEIN Studio-Auth nötig. |
 
 ### RAG (`/api/rag`) — Wissensbereiche
 
@@ -195,6 +196,79 @@ Jeder Chat-Turn wird automatisch protokolliert (konfigurierbar via `01-base/qual
 | `GET` | `/widget/` | offen | Demo-HTML mit eingebettetem Chat. |
 | `GET` | `/widget/boerdi-widget.js` | offen | Web-Component-Bundle (`<boerdi-chat>`). |
 | `GET` | `/widget/{asset_name}` | offen | Weitere Assets (Chunks, Fonts, …). |
+
+### Webseiten-Lotsen-Modus
+
+Optionales Feature, das den User aus dem Widget heraus direkt zur passenden WLO-Webseite
+schickt — im **selben Browser-Tab**, statt einen neuen aufzumachen. Aktiv nur, wenn:
+- der embeddende Host auf der Allow-Liste in `chatbots/wlo/v1/01-base/guide-mode.yaml` steht **und**
+- der User den 🧭-Toggle im Widget-Header eingeschaltet hat (Default: aus, opt-in).
+
+**Komponenten-Übersicht:**
+
+| Komponente | Zweck | Datei |
+|------------|-------|-------|
+| `guide-mode.yaml` | Allow-Liste, Default-Toggle, max-Targets-pro-Turn, URL-Feld-Priorität | `chatbots/wlo/v1/01-base/guide-mode.yaml` |
+| `guide_mode_service.py` | Allow-Listen-Match (Wildcard `*.example.com`), `pick_guide_url(card)` und `annotate_cards_with_guide_url()` | `app/services/` |
+| `guide_qr_injector.py` | Deterministisches Mapping User-Frage-Regex + RAG-Area → URL für Quick-Reply | `app/services/` |
+| `_attach_guide_qr` / `_attach_guide_urls` (in `chat.py`) | Stellt sicher, dass jede ausgehende `ChatResponse` Cards mit `guide_url` und (bei Bedarf) einen `__guide__|...` Quick-Reply trägt — oder beides aktiv strippt, wenn der Toggle aus ist | `app/routers/chat.py` |
+| Routing-Rule R-17 (`rule_themenseite_search`) | `intent_override: INT-W-03a` + `enforced_pattern_id: PAT-28` bei „themenseite zu …" | `chatbots/wlo/v1/06-rules/routing-rules.yaml` |
+| Routing-Rule R-18 (`rule_int_w03a_to_pat28`) | Fallback: INT-W-03a → PAT-28 enforced, auch ohne Regex-Treffer | dito |
+| `GET /api/config/guide-mode` | **Public** Endpoint (kein Studio-Auth), den jedes Widget beim Init fetcht | `app/routers/config.py:public_router` |
+
+**Konfigurations-Datei:**
+
+```yaml
+# chatbots/wlo/v1/01-base/guide-mode.yaml
+guide_mode:
+  default_enabled: false              # Toggle-Default beim ersten Besuch.
+                                      # User-Wahl gewinnt (gespeichert in
+                                      # localStorage["boerdi.guide_mode"]).
+  allowed_hosts:                      # Wildcards `*.example.com` matchen
+    - wirlernenonline.de              # ALLE Subdomains. Bare Host muss
+    - "*.wirlernenonline.de"          # separat gelistet sein.
+    - openeduhub.net
+    - "*.openeduhub.net"
+    - wissenlebtonline.de
+    - "*.wissenlebtonline.de"
+    # Dev-Hosts (vor Production entfernen!):
+    - localhost
+    - 127.0.0.1
+    - "*.nip.io"
+  url_fields_priority:                # In welchem Card-Feld nach der
+    - topic_page_url                  # Ziel-URL gesucht wird. Erstes
+    - wlo_url                         # allow-listed Treffer gewinnt.
+    - url                             # Fallback: ``card.topic_pages[].url``
+    - content_url
+    - preview_url
+  max_guide_targets_per_turn: 0       # 0 = unbegrenzt. Setzt das Maximum
+                                      # an Cards pro Antwort, die einen
+                                      # Bring-mich-hin-Button erhalten.
+```
+
+**Quick-Reply-Trigger pflegen:** das deterministische Frage→URL-Mapping (für Fälle, in denen
+das LLM keinen `__guide__|...`-QR generiert) lebt direkt im Code, weil es selten und
+zentralisiert geändert wird:
+
+```python
+# app/services/guide_qr_injector.py
+_RULES = [
+    (r"\b(?:mitmachen|beitragen|inhalte\s+einreichen)\b",
+     "Mitmachen-Seite", "https://wirlernenonline.de/mitmachen", 75),
+    (r"\bwer\s+steht\s+hinter\b",
+     "Über WLO", "https://wirlernenonline.de/ueber-uns", 70),
+    # … weitere ~10 Regeln
+]
+_RAG_AREA_URLS = {
+    "WissenLebtOnline": ("WissenLebtOnline-Webseite", "https://wissenlebtonline.de/"),
+    "WirLernenOnline":  ("WirLernenOnline-Webseite", "https://wirlernenonline.de/"),
+    # …
+}
+```
+
+Reihenfolge der Trigger pro Antwort: (1) Message-Regex überschreibt LLM-Wahl, (2) LLM-eigene
+`__guide__|...`-QRs bleiben erhalten, (3) RAG-Area-Fallback wenn der Bot
+`query_knowledge(area=…)` mit einer gemappten Area aufgerufen hat.
 
 ---
 

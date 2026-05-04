@@ -85,7 +85,10 @@ Voraussetzung: Backend läuft und das Widget-Bundle ist gebaut (`npm run build:w
 | `initial-state` | `collapsed` | Startet als FAB oder offenes Panel |
 | `primary-color` | `#1c4587` | Akzentfarbe |
 | `persist-session` | `true` | Session-ID in `localStorage` halten (Cross-Page) |
-| `session-key` | `boerdi_session_id` | Storage-Key |
+| `session-key` | `boerdi_session_id` | Storage-Key + Cookie-Name |
+| `session-cookie-domain` | `""` | Setzt parallel zu localStorage ein Cookie mit dieser Domain. Beispiel: `.wirlernenonline.de` macht die Session über alle `*.wirlernenonline.de`-Subdomains hinweg verfügbar. Leer = kein Cookie (origin-isoliert wie bisher). |
+| `session-cookie-max-age` | `2592000` | Cookie-Lifetime in Sekunden (Default: 30 Tage). Greift nur wenn `session-cookie-domain` gesetzt ist. |
+| `trusted-domains` | `""` | Komma-separierte Whitelist von Hostnames. Beim Klick auf einen Link zu einer dieser Domains hängt das Widget automatisch `?bsid=<session-id>` an die Ziel-URL — die Empfangsseite (mit Boerdi-Widget) übernimmt die Session, entfernt den Parameter wieder aus der URL. Subdomain-Match ist automatisch (Eintrag `openeduhub.net` matcht `*.openeduhub.net`). |
 | `greeting` | _Default-Grußtext_ | Erste Bot-Nachricht überschreiben |
 | `auto-context` | `true` | URL-Pattern, Meta-Tags, DOM-Inhalt und Titel automatisch in den Page-Context packen (siehe Auto-Context-Sektion unten) |
 | `show-debug-button` | `true` | 🔍 Debug-Toggle im Header anzeigen. `false` = Button ausgeblendet (für Produktiv-Embeddings sinnvoll) |
@@ -94,6 +97,41 @@ Voraussetzung: Backend läuft und das Widget-Bundle ist gebaut (`npm run build:w
 > **Boolean-Attribute akzeptieren `"true"` / `"false"` als String**, weil HTML-Attribute immer
 > Strings sind. Property-Setting via JS nimmt auch echte Booleans entgegen
 > (`document.querySelector('boerdi-chat').showDebugButton = false`).
+
+### Cross-Domain-Sessions (mehrere Subdomains / externe Repos)
+
+Wenn dasselbe Widget auf mehreren Subdomains derselben Top-Level-Domain
+läuft (z.B. `suche.wlo.de`, `wp-test.wlo.de`) und die Konversation
+durchgehend bleiben soll:
+
+```html
+<boerdi-chat
+  api-url="https://chat.wirlernenonline.de"
+  session-cookie-domain=".wirlernenonline.de"
+  trusted-domains="wirlernenonline.de, openeduhub.net">
+</boerdi-chat>
+```
+
+Drei Schichten arbeiten zusammen:
+
+1. **Cookie** mit `Domain=.wirlernenonline.de` → vom Browser automatisch
+   zwischen allen `*.wirlernenonline.de`-Subdomains geteilt. localStorage
+   bleibt parallel als origin-spezifischer Fallback.
+2. **URL-Param-Handoff** für Cross-TLD-Sprünge: beim Klick auf einen Link
+   zu einer Trusted-Domain hängt das Widget `?bsid=<session-id>` automatisch
+   an. Die Zielseite (sofern dort auch Boerdi eingebettet) liest die ID
+   beim Bootstrap aus der URL und entfernt sie wieder per
+   `history.replaceState` (kein Bookmark-Leak).
+3. **Backend** ist domain-agnostisch — gleiche `session_id` aus jeder
+   Origin liefert denselben Verlauf, dieselben Slots, dasselbe Memory.
+
+**Sicherheits-Eigenschaften:**
+
+- bsid wird **nur** an Trusted-Domains angehängt (kein Leak an beliebige Drittseiten)
+- bsid-Format wird strikt validiert beim Pickup (`bb-<uuid>`)
+- bsid wird sofort nach Pickup aus URL entfernt
+- Cookie nutzt `SameSite=Lax` + `Secure` (HTTPS) — kein CSRF, kein 3rd-party-Tracking
+- Default off — ohne `session-cookie-domain` und `trusted-domains` läuft alles wie bisher
 
 ### Auto-Context — Page-Context-Detector (`page-context-detector.ts`)
 

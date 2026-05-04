@@ -1,15 +1,16 @@
 ---
 id: PAT-13
 label: Schritt-fuer-Schritt-Fuehrung
-priority: 400
+short_purpose: "WANN: Schüler:in oder Eltern stehen einer Lern-/Verstehens-Aufgabe ratlos gegenüber (INT-W-03b/c oder 08/12, Signale: unsicher/unerfahren). WOFÜR: Kleine sequenzielle Schritte mit je einer Frage/Aktion statt Komplettlösung."
+priority: 440
 gate_personas: ["P-W-SL", "P-ELT"]
 gate_states: ["*"]
-gate_intents: ["*"]
+gate_intents: ["INT-W-03b", "INT-W-03c", "INT-W-08", "INT-W-12"]
 signal_high_fit: ["unsicher", "unerfahren", "delegierend"]
 signal_medium_fit: []
 signal_low_fit: []
 page_bonus: []
-precondition_slots: ["thema"]
+precondition_slots: []
 default_tone: empathisch
 default_length: mittel
 default_detail: standard

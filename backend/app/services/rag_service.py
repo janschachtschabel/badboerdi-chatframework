@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import struct
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from app.services.database import store_rag_chunk, get_rag_chunks, search_rag_chunks
 from app.services.llm_provider import (
@@ -123,12 +126,30 @@ def _split_by_sentences(text: str, max_chunk: int, overlap: int) -> list[str]:
 async def convert_to_markdown(file_path: str) -> str:
     """Convert any document to markdown using markitdown."""
     try:
+        size = os.path.getsize(file_path) if os.path.exists(file_path) else -1
+    except Exception:
+        size = -1
+    try:
         from markitdown import MarkItDown
         mid = MarkItDown()
         result = mid.convert(file_path)
         return result.text_content
+    except ImportError as e:
+        logger.exception(
+            "markitdown ImportError — auf dem Server fehlt eine Python-/"
+            "OS-Dependency. Häufige Ursachen: pip install markitdown nicht "
+            "ausgeführt; libmagic1 / poppler-utils / tesseract-ocr fehlen "
+            "im Container. Datei: %s (%d bytes)", file_path, size,
+        )
+        return f"Fehler beim Konvertieren (ImportError): {e}"
     except Exception as e:
-        return f"Fehler beim Konvertieren: {e}"
+        # Volltext-Trace ins Backend-Log — die HTTP-Antwort kürzt nur die
+        # Top-Zeile mit, daher hier explizit logger.exception aufrufen.
+        logger.exception(
+            "markitdown convert failed für %s (%d bytes): %s",
+            file_path, size, e,
+        )
+        return f"Fehler beim Konvertieren: {type(e).__name__}: {e}"
 
 
 async def convert_url_to_markdown(url: str) -> str:
@@ -414,7 +435,8 @@ def get_retrieval_settings() -> dict:
 
 async def get_rag_context(query: str, areas: list[str] | None = None, top_k: int = 3,
                           min_score: float = 0.25,
-                          max_chars_per_area: int = 0) -> str:
+                          max_chars_per_area: int = 0,
+                          out_sources: list[str] | None = None) -> str:
     """Get RAG context string for injection into LLM prompt.
 
     Queries all given areas, merges results, filters by relevance threshold,
@@ -499,6 +521,16 @@ async def get_rag_context(query: str, areas: list[str] | None = None, top_k: int
             tag += f" | Rerank: {r['rerank_score']:.2f}"
         tag += "]"
         parts.append(f"{tag}\n{r['chunk']}")
+
+    # Side-channel for callers that want to know which source filenames
+    # contributed to the prompt — used by the Webseiten-Lotsen-Modus to
+    # surface a precise "Bring mich hin"-URL via ``rag_url_index``.
+    # Filled in rank-order; caller decides what to do with it.
+    if out_sources is not None:
+        for r in top:
+            src = r.get("source")
+            if isinstance(src, str) and src and src not in out_sources:
+                out_sources.append(src)
 
     return "\n\n---\n\n".join(parts)
 

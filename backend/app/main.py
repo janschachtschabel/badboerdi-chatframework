@@ -169,6 +169,10 @@ app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
 # Without the env var, the dependency is a no-op (open by default).
 _studio_deps = [Depends(require_studio_key)]
 app.include_router(config.router,  prefix="/api/config",  tags=["config"],  dependencies=_studio_deps)
+# Public config endpoints (no Studio auth) — currently only /guide-mode,
+# fetched by the embedded widget on every page load. Keeping them on a
+# separate router avoids a global auth bypass on the main config router.
+app.include_router(config.public_router, prefix="/api/config", tags=["config"])
 app.include_router(rag.router,     prefix="/api/rag",     tags=["rag"],     dependencies=_studio_deps)
 app.include_router(safety.router,  prefix="/api/safety",  tags=["safety"],  dependencies=_studio_deps)
 app.include_router(quality.router, prefix="/api/quality", tags=["quality"], dependencies=_studio_deps)

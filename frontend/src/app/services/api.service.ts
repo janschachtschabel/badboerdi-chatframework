@@ -7,6 +7,14 @@ export interface Environment {
   locale: string;
   session_duration: number;
   referrer: string;
+  /** True when the user has the Lotsen-Modus toggle active. The backend
+   *  uses this together with ``host`` to decide whether to attach
+   *  ``guide_url`` to outgoing cards. */
+  guide_mode?: boolean;
+  /** Hostname of the page the widget is embedded in (e.g.
+   *  ``wirlernenonline.de``). Sent so the backend can verify the host is
+   *  on its allow-list before annotating cards. */
+  host?: string;
 }
 
 export interface WloCard {
@@ -24,6 +32,10 @@ export interface WloCard {
   publisher: string;
   node_type: string;
   topic_pages: { url: string; target_group: string; label: string; variant_id: string }[];
+  /** Set by the backend when guide-mode is on AND the card points to an
+   *  allow-listed host. Empty string means "no guide target" — the
+   *  frontend hides the "Bring mich hin"-button in that case. */
+  guide_url?: string;
 }
 
 export interface ToolOutcome {
@@ -92,6 +104,20 @@ export interface DebugInfo {
   policy?: PolicyDecision | null;
   context?: ContextSnapshot | null;
   trace?: TraceEntry[];
+  // Phase-1 Pattern-Hint (Shadow-Mode telemetry from the LLM classifier)
+  pattern_id_hint?: string | null;
+  pattern_reasoning?: string | null;
+  llm_engine_match?: boolean | null;
+  // Phase A2 Token-Cost-Tracking (per-turn aggregator across all LLM calls)
+  // ``per_phase`` (A2.1) keys: classify, tool_loop, response, quick_replies, ...
+  token_usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    cached_tokens?: number;
+    calls?: number;
+    models?: Record<string, { prompt: number; completion: number; cached: number; calls: number; hit_rate?: number }>;
+    per_phase?: Record<string, { prompt: number; completion: number; cached: number; calls: number; hit_rate?: number }>;
+  };
 }
 
 export interface PaginationInfo {
@@ -114,6 +140,25 @@ export interface ChatResponse {
   pagination: PaginationInfo | null;
 }
 
+/**
+ * Server-Sent-Event payload from POST /api/chat/stream.
+ *
+ * - ``event: 'connected'``  — initial flush, no useful data
+ * - ``event: 'phase'``      — Tracer step (start/end/record); ``data`` has
+ *                              ``{kind, step, label, data}``
+ * - ``event: 'text_delta'`` — Phase-2 token chunk during the final LLM
+ *                              call; ``data`` has ``{text}`` (the chunk
+ *                              to append to the bot bubble)
+ * - intermediate keepalive comments (``: keepalive``) are dropped by the
+ *   SSE reader and never reach this callback
+ * - ``event: 'result'`` and ``event: 'error'`` are consumed by the
+ *   ``sendMessageStream`` Promise — they don't surface here.
+ */
+export interface ChatStreamEvent {
+  event: string;
+  data: any;
+}
+
 export interface ChatMessage {
   id: string;
   sender: 'bot' | 'user';
@@ -122,6 +167,10 @@ export interface ChatMessage {
   quickReplies?: string[];
   debug?: DebugInfo;
   isLoading?: boolean;
+  /** Live status from POST /api/chat/stream while ``isLoading`` is true.
+   *  Set by ChatComponent on each tracer ``phase`` event so the UI can
+   *  show what the backend is currently doing instead of a static spinner. */
+  loadingPhase?: string;
   pagination?: PaginationInfo | null;
   visibleCardCount?: number;  // how many cards to show (for client-side paging)
   timestamp: Date;
@@ -131,6 +180,12 @@ export interface ChatMessage {
 export class ApiService {
   private baseUrl = '/api';
   private startTime = Date.now();
+  /** Lotsen-Modus state — set by the widget when the user toggles the
+   *  header button. Both fields are forwarded as part of every chat
+   *  request's ``environment`` so the backend can attach ``guide_url`` to
+   *  cards. Defaults are off / empty until ``setGuideEnv`` is called. */
+  private guideMode = false;
+  private guideHost = '';
 
   constructor() {
     // Allow the hosting page to override the backend URL at runtime by
@@ -154,6 +209,16 @@ export class ApiService {
     this.baseUrl = u;
   }
 
+  /** Updated by ``WidgetComponent`` whenever the user toggles the
+   *  Lotsen-Modus or the page reports its hostname. Both values are
+   *  appended to ``environment`` on every outgoing chat request so the
+   *  backend (``_attach_guide_urls``) can decide whether to enrich
+   *  outgoing cards with a ``guide_url``. */
+  setGuideEnv(guideMode: boolean, host: string): void {
+    this.guideMode = !!guideMode;
+    this.guideHost = (host || '').trim().toLowerCase();
+  }
+
   async sendMessage(
     sessionId: string,
     message: string,
@@ -169,6 +234,8 @@ export class ApiService {
       locale: env?.locale || navigator.language || 'de-DE',
       session_duration: Math.floor((Date.now() - this.startTime) / 1000),
       referrer: env?.referrer || document.referrer || 'direkt',
+      guide_mode: env?.guide_mode ?? this.guideMode,
+      host: env?.host ?? this.guideHost,
     };
 
     const body: Record<string, any> = {
@@ -188,6 +255,115 @@ export class ApiService {
 
     if (!resp.ok) throw new Error(`Chat error: ${resp.status}`);
     return resp.json();
+  }
+
+  /**
+   * Streaming variant of sendMessage. Same payload as POST /api/chat,
+   * but listens to the SSE response.
+   *
+   * The single ``onEvent`` callback receives EVERY non-result SSE event
+   * — ``connected``, ``phase`` (tracer step), and ``text_delta`` (Phase-2
+   * token chunk). Callers branch on ``evt.event`` to route deltas to a
+   * streaming bubble while phase events drive the loading status text.
+   *
+   * Resolves with the final ChatResponse when the ``result`` event
+   * arrives. Rejects on ``error`` events or stream cutoff.
+   */
+  async sendMessageStream(
+    sessionId: string,
+    message: string,
+    onEvent: (evt: ChatStreamEvent) => void,
+    env?: Partial<Environment>,
+    action?: string,
+    actionParams?: Record<string, any>,
+    canvasState?: Record<string, any> | null,
+  ): Promise<ChatResponse> {
+    const environment: Environment = {
+      page: env?.page || window.location.pathname,
+      page_context: env?.page_context || this.extractPageContext(),
+      device: env?.device || this.detectDevice(),
+      locale: env?.locale || navigator.language || 'de-DE',
+      session_duration: Math.floor((Date.now() - this.startTime) / 1000),
+      referrer: env?.referrer || document.referrer || 'direkt',
+      guide_mode: env?.guide_mode ?? this.guideMode,
+      host: env?.host ?? this.guideHost,
+    };
+
+    const body: Record<string, any> = {
+      session_id: sessionId,
+      message,
+      environment,
+    };
+    if (action) body['action'] = action;
+    if (actionParams) body['action_params'] = actionParams;
+    if (canvasState) body['canvas_state'] = canvasState;
+
+    const resp = await fetch(`${this.baseUrl}/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok || !resp.body) {
+      throw new Error(`Chat stream error: ${resp.status}`);
+    }
+
+    // SSE parsing — read raw bytes, split on blank-line event boundaries,
+    // dispatch by ``event:`` field. Comment lines (``: keepalive``) are
+    // ignored. We never trust event payloads beyond the loose JSON shape.
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult: ChatResponse | null = null;
+    let streamError: Error | null = null;
+
+    const dispatchBlock = (rawBlock: string) => {
+      let evtName = 'message';
+      const dataLines: string[] = [];
+      for (const ln of rawBlock.split('\n')) {
+        if (!ln || ln.startsWith(':')) continue;  // ignore keepalive comments
+        if (ln.startsWith('event:')) {
+          evtName = ln.slice(6).trim();
+        } else if (ln.startsWith('data:')) {
+          dataLines.push(ln.slice(5).trim());
+        }
+      }
+      const dataStr = dataLines.join('\n');
+      let parsed: any = {};
+      if (dataStr) {
+        try { parsed = JSON.parse(dataStr); } catch { parsed = { raw: dataStr }; }
+      }
+      if (evtName === 'result') {
+        finalResult = parsed as ChatResponse;
+      } else if (evtName === 'error') {
+        streamError = new Error(parsed?.message || 'stream error');
+      } else {
+        // 'connected' or 'phase' — surface to UI
+        try { onEvent({ event: evtName, data: parsed }); } catch { /* never break stream */ }
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE event boundary is a blank line (\n\n). Process every full
+      // block; keep the (potentially partial) tail in the buffer.
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        const block = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        if (block.trim()) dispatchBlock(block);
+      }
+    }
+    // Flush any trailing block (server closed without final \n\n).
+    if (buffer.trim()) dispatchBlock(buffer);
+
+    if (streamError) throw streamError;
+    if (!finalResult) throw new Error('Stream ended without a result event');
+    return finalResult;
   }
 
   /**
@@ -243,7 +419,13 @@ export class ApiService {
   }
 
   private extractPageContext(): Record<string, any> {
-    const ctx: Record<string, any> = {};
+    // The chat component is ALWAYS embedded as a widget — flag this so the
+    // backend's page_action builder routes card-bearing responses to the
+    // canvas (canvas_show_cards) instead of the legacy host-page
+    // ``show_results`` branch. Without this, /-rooted demo pages like
+    // localhost:4200/ trigger ``show_results``, which the widget doesn't
+    // handle → cards never reach the canvas.
+    const ctx: Record<string, any> = { widget: true };
     const url = new URL(window.location.href);
     const params = url.searchParams;
 

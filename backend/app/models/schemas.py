@@ -10,7 +10,15 @@ from pydantic import BaseModel, Field, model_validator
 
 # ── Classification result (validated LLM output) ──────────────────
 class ClassificationResult(BaseModel):
-    """Validated output from LLM classification (the 7 input dimensions)."""
+    """Validated output from LLM classification (the 7 input dimensions).
+
+    `pattern_id_hint` is an *advisory* field set by the LLM in addition to
+    persona/intent/state. It is purely a measurement signal in Phase 1
+    (Shadow-Mode): the deterministic Pattern-Engine still chooses the
+    final pattern; we just log how often the LLM-Hint matches the engine
+    decision, and how often the Judge agrees with each. Phase 2 may
+    promote the hint to a Tie-Breaker for Tight-Race situations.
+    """
     persona_id: str = "P-AND"
     persona_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     intent_id: str = "INT-W-03a"
@@ -19,6 +27,10 @@ class ClassificationResult(BaseModel):
     entities: dict[str, Any] = Field(default_factory=dict)
     turn_type: str = "initial"
     next_state: str = "state-1"
+    # NEW (Phase 1, Shadow-Mode): LLM-suggested pattern + reasoning.
+    # Both optional — old classifier outputs (no pattern hint) still validate.
+    pattern_id_hint: str | None = None
+    pattern_reasoning: str | None = None
 
 
 # ── Environment (sent by frontend every turn) ──────────────────────
@@ -29,6 +41,17 @@ class Environment(BaseModel):
     locale: str = "de-DE"
     session_duration: int = 0
     referrer: str = "direkt"
+    # Webseiten-Guide-Mode: when true, the backend annotates each
+    # outgoing card with a ``guide_url`` (subject to the allow-list in
+    # 01-base/guide-mode.yaml) so the widget can show a "Bring mich
+    # hin"-button that same-tab-navigates the user to the WLO page.
+    # Frontend sets this from the toggle in the widget header. False
+    # keeps the legacy "open in new tab" behaviour.
+    guide_mode: bool = False
+    # The widget's host hostname (window.location.hostname). Used by the
+    # backend allow-list check — guide_url is only attached when this
+    # matches one of the configured allowed_hosts patterns.
+    host: str = ""
 
 
 # ── Chat request / response ────────────────────────────────────────
@@ -80,6 +103,15 @@ class WloCard(BaseModel):
     topic_pages: list[dict[str, str]] = Field(default_factory=list)
     # Each entry: {url, target_group, label}
     # e.g. [{url: "https://...", target_group: "teacher", label: "Lehrkräfte"}]
+    # Webseiten-Guide-Mode: same-tab-navigation target. Set by the
+    # backend ONLY when (a) Environment.guide_mode is True, (b)
+    # Environment.host is on the configured allow-list, and (c) at
+    # least one of the URL fields above points to an allow-listed host.
+    # Empty string means "no guide-target" → frontend renders the
+    # regular "öffnen" / "themenseite" button instead of a "bring mich
+    # hin"-button. Backwards-compatible default keeps the legacy flow
+    # unchanged for clients that ignore this field.
+    guide_url: str = ""
 
 
 class ToolOutcome(BaseModel):
@@ -175,6 +207,21 @@ class DebugInfo(BaseModel):
     policy: PolicyDecision | None = None
     context: ContextSnapshot | None = None
     trace: list[TraceEntry] = Field(default_factory=list)
+    # NEW (Phase 1, Pattern-Hint Shadow-Mode):
+    #   pattern_id_hint   = vom LLM-Klassifikator vorgeschlagenes Pattern
+    #   pattern_reasoning = LLM-Begründung (1-2 Sätze)
+    #   llm_engine_match  = bool — stimmt LLM-Hint mit Engine-Wahl überein?
+    # Pattern-Engine bleibt authoritativ; Felder sind reine Mess-Telemetrie.
+    pattern_id_hint: str | None = None
+    pattern_reasoning: str | None = None
+    llm_engine_match: bool | None = None
+    # Token-Cost-Tracking (Phase A2) — aggregiert über ALLE LLM-Calls eines
+    # Turns (Klassifikator + Tool-Loop + Response-Generierung). Ermöglicht
+    # Cost-Analytics, Cache-Hit-Rate-Monitoring und Modell-Kosten-Vergleich.
+    # Format: {"prompt_tokens": int, "completion_tokens": int,
+    #          "cached_tokens": int, "calls": int,
+    #          "models": {"<model_name>": {"prompt": …, "completion": …, …}}}
+    token_usage: dict[str, Any] = Field(default_factory=dict)
 
 
 class PaginationInfo(BaseModel):

@@ -1,10 +1,11 @@
 ---
 id: PAT-20
 label: Orientierungs-Guide
+short_purpose: "WANN: User fragt offen nach Plattform-Möglichkeiten oder Themenseiten (INT-W-03a oder generic Orientierung). WOFÜR: Strukturierter Guide durch verfügbare Themenseiten/Sammlungen, mit Klick-Pfaden."
 priority: 480
 gate_personas: ["P-AND", "P-W-LK", "P-W-SL", "P-ELT", "P-BER", "P-VER"]
 gate_states: ["state-1", "state-4"]
-gate_intents: ["INT-W-02", "INT-W-01", "INT-W-03a", "INT-W-03b", "INT-W-03c"]
+gate_intents: ["INT-W-02", "INT-W-01", "INT-W-03b", "INT-W-03c"]
 signal_high_fit: ["orientierungssuchend", "neugierig", "delegierend", "unerfahren"]
 signal_medium_fit: ["unsicher"]
 signal_low_fit: []

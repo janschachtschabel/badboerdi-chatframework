@@ -39,6 +39,18 @@ Identifikation (siehe Self-ID-Phrasen oben) ODER eindeutige Politik-
 Kontext-Wörter (Wahlkreis, Fraktion, Anhörung, Plenum, Antrag,
 Positionspapier) machen es zu P-W-POL.
 
+### Abgrenzung zu P-VER (Verwaltung)
+P-W-POL ist GEWÄHLT/parlamentarisch (Wahlkreis, Fraktion, Antrag, Plenum).
+P-VER ist EXEKUTIV/administrativ (Schulamt, Schulaufsicht, Bezirksregierung,
+Quartalsbericht). Wenn jemand "fuer das Schulamt" / "fuer die Bezirksregierung" /
+"amtliche Statistik" sagt → P-VER, nicht P-W-POL.
+
+### Abgrenzung zu P-W-LK (Lehrkraft)
+Politiker:innen reden NICHT aus dem Klassenzimmer. "meine Klasse" /
+"Stundenentwurf" / "Klassenarbeit" → P-W-LK, NIE P-W-POL — auch wenn
+die Person sich vorher als Politiker:in identifiziert hat (Klassifikator
+folgt der aktuellen Nachricht, nicht der vorigen Self-ID).
+
 ## Primaere Ziele
 - Plattform-Ueberblick und Mehrwert fuer Bildungspolitik
 - Zahlen, Fakten, Reichweite

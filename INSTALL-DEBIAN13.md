@@ -387,6 +387,42 @@ Das Backend liefert den Widget-Bundle selbst aus. Auf einer beliebigen
 Vollständige Attribut-Referenz im **Studio → System → Info → Widget-Einbettung**
 oder in [`frontend/README.md`](frontend/README.md).
 
+### 8a. Cross-Domain-Sessions (Widget auf mehreren Subdomains)
+
+Wenn dasselbe Widget auf mehreren Subdomains derselben Top-Level-Domain
+läuft (z.B. `suche.wlo.de`, `wp-test.wlo.de`), sollen Chats über die
+Subdomains hinweg fortgeführt werden. Standard `localStorage` ist
+origin-isoliert — das Widget bietet zwei Zusatz-Mechanismen:
+
+**a) Cookie für `*.tld`-Subdomains:**
+```html
+<boerdi-chat
+  api-url="https://chat.wlo.de"
+  session-cookie-domain=".wirlernenonline.de">
+</boerdi-chat>
+```
+Browser teilt das Session-Cookie automatisch zwischen allen `*.wirlernenonline.de`-
+Subdomains. Default Cookie-Lifetime: 30 Tage. Override per `session-cookie-max-age="<sekunden>"`.
+
+**b) URL-Param-Handoff für Cross-TLD-Sprünge:**
+```html
+<boerdi-chat
+  api-url="https://chat.wlo.de"
+  session-cookie-domain=".wirlernenonline.de"
+  trusted-domains="wirlernenonline.de, openeduhub.net">
+</boerdi-chat>
+```
+Beim Klick auf Links zu `*.wirlernenonline.de` oder `*.openeduhub.net` hängt
+das Widget automatisch `?bsid=<session-id>` an die URL. Wenn das Widget auf
+der Zielseite eingebettet ist, übernimmt es die Session-ID beim Bootstrap
+(und entfernt den Parameter wieder aus der URL).
+
+**Wichtig:**
+- `trusted-domains` ist eine **strikte Whitelist** — verhindert Session-ID-Leaks an Drittseiten via Referer/URL-Sharing
+- Bsid-Format wird streng validiert beim Pickup (`bb-<uuid>`)
+- Backend ist domain-agnostisch — gleiche `session_id` aus jeder Origin liefert denselben Verlauf, unabhängig vom Embedding-Weg
+- Falls die Zielseite das Widget NICHT eingebettet hat, ignoriert sie den `bsid`-Parameter — kein Problem, beim Rückweg auf die WLO-Subdomain greift wieder das Cookie
+
 ### Häufige Frage: Browser fragt nach „andere Apps und Dienste"
 
 Das ist die **Mikrofon-Berechtigung** — wird vom 🎤-Button ausgelöst (Spracheingabe).
@@ -527,7 +563,7 @@ DB und Configs bleiben unberührt — sind in Volumes / Bind-Mounts.
 | Backend startet nicht | `docker compose logs backend` — meist fehlender / falscher OPENAI_API_KEY |
 | `/api/chat` → HTTP 500 mit `httpx.UnsupportedProtocol` im Log | Älteres Backend-Image + `OPENAI_BASE_URL=` (leerer String) → SDK kann URL nicht parsen. **Fix:** in `.env` explizit `OPENAI_BASE_URL=https://api.openai.com/v1` setzen, dann `docker compose up -d --force-recreate backend`. Alternativ: Image rebuilden — aktuelle Versionen handhaben das selbst. |
 | `/api/chat` → 200 aber `content` enthält `unexpected keyword argument 'verbosity'` | Backend-Image nutzt `openai`-SDK < 1.65 (kein GPT-5-Support). **Fix A** (kurzfristig): Modell auf `gpt-4.1-mini` umstellen. **Fix B**: Image rebuilden mit aktuellem `requirements.txt` (`openai>=1.78`). |
-| Sessions im Studio leer trotz Chat-Aktivität | (1) Backend-Log prüfen: `docker compose logs backend \| grep "GET /api/sessions"`. Wenn `307 Temporary Redirect` ohne nachfolgenden `200 OK` erscheint, ist's der Trailing-Slash-Bug — Studio muss auf eine Version >= 28.04.2026 (`docker compose pull && up -d studio`). (2) STUDIO_API_KEY-Mismatch: `docker compose exec backend env \| grep STUDIO_API_KEY` mit `docker compose exec studio env \| grep STUDIO_API_KEY` vergleichen — müssen identisch sein. Ggf. `docker compose up -d --force-recreate studio backend`. (3) DB-Persistenz: `docker compose exec backend python -c "import sqlite3; print(sqlite3.connect('/data/badboerdi.db').execute('SELECT COUNT(*) FROM sessions').fetchone())"` zeigt, ob Sessions überhaupt geschrieben werden. |
+| Sessions im Studio leer trotz Chat-Aktivität | (1) Backend-Log prüfen: `docker compose logs backend \| grep "GET /api/sessions"`. Wenn `307 Temporary Redirect` ohne nachfolgenden `200 OK` erscheint, ist's der **Next.js-Trailing-Slash-Bug**: Next.js 15 mit `trailingSlash: false` redirected `/api/sessions/` per 308 auf `/api/sessions`, bevor der Studio-Proxy es weiterleitet. FastAPI redirected dann das Slashlose wieder auf das mit Slash → Loop. Fix: Backend-Sessions-Route registriert beide Pfade — Backend muss auf einer Version >= 28.04.2026 sein (`docker compose pull backend && up -d backend`). (2) STUDIO_API_KEY-Mismatch: `docker compose exec backend env \| grep STUDIO_API_KEY` mit `docker compose exec studio env \| grep STUDIO_API_KEY` vergleichen — müssen identisch sein. (3) DB-Persistenz: `docker compose exec backend python -c "import sqlite3; print(sqlite3.connect('/data/badboerdi.db').execute('SELECT COUNT(*) FROM sessions').fetchone())"` zeigt, ob Sessions überhaupt geschrieben werden. |
 | `no space left on device` beim Image-Pull | Docker-Cache zu groß für die Disk. Fix: `docker image prune -af && docker builder prune -af`. Vorbeugend Cron einrichten — siehe Kapitel 10a. |
 | Moderation läuft auf B-API-Setup nicht | B-API forwarded `/v1/moderations` nicht. **Fix:** zusätzlich `OPENAI_API_KEY=...` setzen — Backend nutzt OpenAI dann als Side-Channel für Moderation/STT/TTS. |
 | `502 Bad Gateway` von Caddy | Backend / Studio noch nicht hochgefahren — `docker compose ps`, ggf. `restart` |

@@ -260,7 +260,10 @@ class RuleEngine:
 # Loader (file → engine)
 # ──────────────────────────────────────────────────────────────────────
 
-_ENGINE_CACHE: Optional[RuleEngine] = None
+# Cache holds (mtime, RuleEngine) so an edited YAML invalidates itself
+# automatically — mirrors ``config_loader._load_yaml`` for consistency.
+# ``None`` means "no engine loaded yet".
+_ENGINE_CACHE: Optional[tuple[float, RuleEngine]] = None
 _DEFAULT_RULE_PATH = (
     Path(__file__).resolve().parents[2]
     / "chatbots" / "wlo" / "v1" / "06-rules" / "routing-rules.yaml"
@@ -313,10 +316,34 @@ def load_rules_from_file(path: Path | str | None = None) -> list[RuleDef]:
 
 
 def get_rule_engine(force_reload: bool = False) -> RuleEngine:
-    """Cached factory. Pass ``force_reload=True`` in tests."""
+    """Return the cached RuleEngine, reloading when ``routing-rules.yaml``
+    has been touched since the last load.
+
+    Mirrors the mtime-based caching in ``config_loader._load_yaml`` so
+    YAML/MD edits propagate without a full backend restart. The
+    in-memory engine itself is reused when the file hasn't changed,
+    keeping the per-turn cost at a single ``stat`` call.
+
+    ``force_reload=True`` skips the mtime check (useful in tests).
+    """
     global _ENGINE_CACHE
-    if _ENGINE_CACHE is None or force_reload:
-        rules = load_rules_from_file()
-        _ENGINE_CACHE = RuleEngine(rules)
-        logger.info("RuleEngine loaded with %d rules", _ENGINE_CACHE.rule_count)
-    return _ENGINE_CACHE
+    try:
+        mtime = _DEFAULT_RULE_PATH.stat().st_mtime if _DEFAULT_RULE_PATH.exists() else 0.0
+    except OSError:
+        mtime = 0.0
+    cached = _ENGINE_CACHE
+    if (
+        not force_reload
+        and cached is not None
+        and cached[0] == mtime
+    ):
+        return cached[1]
+    rules = load_rules_from_file()
+    engine = RuleEngine(rules)
+    _ENGINE_CACHE = (mtime, engine)
+    logger.info(
+        "RuleEngine %s with %d rules (mtime=%s)",
+        "reloaded" if cached is not None else "loaded",
+        engine.rule_count, mtime,
+    )
+    return engine

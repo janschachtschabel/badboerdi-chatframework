@@ -74,10 +74,127 @@ KRITISCH — die Nachricht muss den Intent KLAR triggern:
   Beispiel: Bei "Suche Unterrichtsmaterial" muss ein Fach, Thema oder Typ vorkommen.
   Bei "Inhalt erstellen" muss ein Erstell-Verb ("erstelle", "generiere", "bau mir")
   UND ein konkretes Thema vorkommen.
-- KEINE generische Orientierungsfrage wie "Was kannst du?" oder "Was ist das hier?"
-  — das waere Intent "Chatbot kennenlernen", nicht der hier vorgegebene.
+- INTENT-SPEZIFISCHE REGELN (befolge GENAU die fuer den vorgegebenen Intent):
+  * INT-W-01 (WLO kennenlernen): EINE Frage der Form "Was ist WLO?" /
+    "Was kann ich hier machen?" / "Worum geht's auf dieser Seite?".
+    Generische Erst-Begegnung. KEIN Fach/Thema, KEIN Erstell-Verb.
+  * INT-W-02 (Soft Probing): VAGE Erkundung OHNE konkretes Anliegen.
+    Erlaubt: "Ich gucke mal", "Erstmal umsehen", "Was gibt's hier?",
+    "Ich orientiere mich", "Ich schau, was es so gibt", "Bin neu hier".
+    VERBOTEN: konkretes Fach, konkretes Thema, Such-/Erstell-/Plan-Verb,
+    Lernpfad, Materialien-fuer-... — denn sobald ein konkretes Anliegen
+    drin ist, ist es NICHT mehr Soft Probing, sondern INT-W-03b/c/10/11.
+  * Andere Intents: KEINE generische "Was kannst du?"-Frage — das ist
+    INT-W-01, nicht der hier vorgegebene. Konkretes Anliegen mit
+    Intent-spezifischen Schluesselphrasen ist Pflicht.
 - Falls die Persona die Sie-Form bevorzugt (Verwaltung, Presse, Politiker:in,
   Berater:in), dann SIE-Form verwenden. Bei Schueler:in und Eltern eher Du.
+
+GLEICH KRITISCH — die Nachricht muss die PERSONA erkennbar machen:
+- MINDESTENS EINE der "Typische Redeweise"-Phrasen oben MUSS in der Nachricht
+  vorkommen, sonst kann der Chatbot die Persona nicht von P-AND unterscheiden.
+- Beispiele fuer Persona-Verankerung (POSITIV-Marker) PLUS Verboten-Listen
+  (NEGATIV-Marker), die du beim Generieren NICHT einbauen darfst, weil sie
+  eine ANDERE Persona triggern wuerden:
+
+  * P-ELT (Eltern):
+    POSITIV: "mein Sohn / meine Tochter / mein Kind / fuer zu Hause /
+    Hausaufgaben meines Kindes / als Mutter / als Vater / Elternsprechtag /
+    fuer meinen Nachwuchs / Klasse meines Kindes"
+    NEGATIV (vermeiden): "meine Klasse / mein Unterricht / Stundenentwurf /
+    Lehrplan / Klassenarbeit korrigieren" (= P-W-LK)
+
+  * P-W-LK (Lehrkraft):
+    POSITIV: "meine Klasse / Stundenentwurf / mein Unterricht /
+    fuer Sek I / Lehrplan / Klassenarbeit korrigieren / als Lehrkraft /
+    fuer den Unterrichtseinstieg / Lernziel / Curriculum"
+    NEGATIV: "mein Sohn / mein Kind / Hausaufgaben meines Kindes" (= P-ELT)
+    NEGATIV: "ich verstehe nicht / fuer meine Klausur / als Schuelerin" (= P-W-SL)
+
+  * P-W-SL (Schueler:in):
+    PFLICHT: JEDE Nachricht beginnt aus 1st-Person-Schueler-Sicht und
+    enthaelt MINDESTENS EINEN dieser Marker (sonst landet's bei P-AND
+    oder P-W-LK):
+      - Verstehen-Defizit: "ich verstehe nicht", "ich check nicht",
+        "ich kapiere das nicht", "ich rafft nicht", "ist mir unklar",
+        "kann ich ueberhaupt nicht"
+      - Schueler-Selbst-ID: "als Schuelerin", "ich bin in der 8. Klasse",
+        "meine Lehrerin sagt", "ich besuche die {Schule/Stufe}"
+      - Schueler-Aufgaben-Bezug aus 1st-Person: "fuer meine Hausaufgabe",
+        "fuer meine Klausur", "fuer meinen Test", "fuer meine Pruefung",
+        "fuer meinen Jahrgang", "fuer meine Mathe-Aufgabe"
+    POSITIV-Beispielsatz-Anfaenge (so klingt P-W-SL):
+      "Ich check Bruchrechnung nicht, kannst du mir das erklaeren?"
+      "Fuer meine Mathe-Klausur brauche ich Uebungen zu Vektoren."
+      "Ich verstehe Photosynthese nicht — gibt's ein Video?"
+      "Hilfe, mein Test ist morgen und ich rafft die Kurvendiskussion nicht."
+    NEGATIV (KRITISCH, sonst landet's bei P-W-LK!): "Stundenentwurf /
+    eine Stunde planen / fuer meine Klasse (im Sinne von 'unterrichten') /
+    Arbeitsblatt erstellen fuer die Klasse 6 / Klassenarbeit korrigieren /
+    Unterrichtsentwurf / Statistik zur Materialnutzung / kannst du mir ein
+    Arbeitsblatt zu X fuer die N. Klasse erstellen"
+    NEGATIV: "fuer meinen Wahlkreis / amtliche Daten / KPI" (= P-VER/P-W-POL)
+    BEACHTE: "Arbeitsblatt erstellen" ist NICHT P-W-SL, sondern P-W-LK,
+    AUSSER der/die Schueler:in sagt EXPLIZIT, dass es zum SELBST-LERNEN
+    fuer sich/ihn ist — also "ein Uebungsblatt fuer MICH zum Bruchrechnen"
+    oder "fuer mich selbst zum Pruefungstraining". Sobald "fuer die
+    {N}. Klasse" oder "fuer meine Schueler:innen" faellt, ist es P-W-LK.
+
+  * P-W-RED (Redaktion):
+    POSITIV: "ich kuratiere / Inhalte einstellen / als Redakteur:in /
+    redaktioneller Ueberblick / fuer die Sammlung / qualitaetspruefen"
+    NEGATIV: "fuer meinen Artikel / Pressemitteilung / fuer meine
+    Leser:innen / Recherche fuer eine Story" (= P-W-PRESSE)
+    NEGATIV: "meine Klasse / Stundenentwurf" (= P-W-LK)
+
+  * P-W-PRESSE (Presse / Journalismus):
+    POSITIV: "als Journalist:in / fuer meinen Artikel / Pressemitteilung /
+    fuer meine Leser:innen / fuer meinen Beitrag / Recherche fuer eine Story /
+    Reichweite / Auflage / fuer das Magazin / fuer eine Reportage /
+    Pressekit / Background-Story / Hintergrundrecherche"
+    NEGATIV (KRITISCH, sonst P-W-RED!): "redaktionell / ich kuratiere /
+    Inhalte einstellen / fuer die Sammlung"
+    NEGATIV (KRITISCH, sonst P-W-LK!): "Unterrichtsstunde / Stundenentwurf /
+    Klassenarbeit / fuer meine Klasse / Lehrplan"
+    P-W-PRESSE schreibt ÜBER die Plattform fuer AUSSEN-Publikationen.
+
+  * P-W-POL (Politik / Multiplikator):
+    POSITIV: "fuer meinen Wahlkreis / als Politiker:in / Bildungspolitik
+    in / Multiplikator:in / parlamentarische Anfrage / fuer die Fraktion /
+    fuer einen Antrag / Plenarsitzung"
+    NEGATIV: "fuer meine Verwaltung / Bezirksauswertung / KPI / amtliche
+    Statistik" (= P-VER)
+    NEGATIV: "meine Klasse / Stundenentwurf" (= P-W-LK)
+
+  * P-VER (Verwaltung / Behoerde):
+    POSITIV: "fuer unsere Verwaltung / Bezirksauswertung / amtliche
+    Daten / KPI / als Schulamt / fuer die Schulaufsicht / Behoerdenanfrage /
+    fuer den Quartalsbericht / Verfuegbarkeitsmatrix / Fachreferat"
+    NEGATIV (KRITISCH, sonst P-W-LK!): "meine Klasse / Stundenentwurf /
+    Klassenarbeit / mein Unterricht / Lehrplan"
+    NEGATIV: "fuer meinen Wahlkreis / als Politiker:in" (= P-W-POL)
+    NEGATIV: "fuer meinen Artikel" (= P-W-PRESSE)
+
+  * P-BER (Beratung / Schulbegleitung):
+    POSITIV: "fuer unsere Schule evaluieren / als Beraterin /
+    Beratungsprozess / Schulentwicklung begleiten / als Coach /
+    fuer den Schulkollegium-Workshop"
+    NEGATIV: "mein Kind / mein Sohn / meine Tochter" (= P-ELT)
+    NEGATIV: "meine Klasse / mein Unterricht" (= P-W-LK direkt)
+
+  * P-AND (Andere):
+    POSITIV: KEIN Selbst-Identifikator — gerade die ANONYMITAET ist das
+    Persona-Signal. Generische Formulierungen wie "Was kann ich hier
+    machen?" / "ich gucke mal" / "interessehalber" / "ich ueberlege ob
+    ich das fuer Bekannte nutzen kann".
+    NEGATIV: ALLE oben genannten Persona-Marker (Sohn/Klasse/Wahlkreis/
+    Artikel/Verwaltung/...) — sobald ein klarer Marker faellt, ist es
+    NICHT mehr P-AND.
+
+WARUM: Eval-Reports zeigen sonst niedrige Persona-Trefferquoten, nicht weil
+der Klassifikator schlecht ist, sondern weil generische Anfragen ("Hey,
+Mathe-Arbeitsblaetter?") tatsaechlich von ALLEN Personas kommen koennten —
+unaufloesbar ohne Marker.
 
 Stil:
 - Schreibe natuerlich, nicht perfekt formuliert. Tippfehler, Abkuerzungen,
@@ -297,6 +414,14 @@ async def simulate_conversation(
                 "state": debug.get("state"),
                 "safety": debug.get("safety"),
                 "tools_called": debug.get("tools_called", []),
+                # Phase-1-Pattern-Hint (für globale Aggregat-Metriken)
+                "pattern_id_hint": debug.get("pattern_id_hint"),
+                "pattern_reasoning": debug.get("pattern_reasoning"),
+                "llm_engine_match": debug.get("llm_engine_match"),
+                # Bonus 1: Cache-Hit-Rate aggregation reads from this
+                "token_usage": debug.get("token_usage"),
+                # Bonus 2: tie-breaker telemetry lives inside phase3_modulations
+                "phase3_modulations": debug.get("phase3_modulations"),
             },
             "cards_count": len(bot_resp.get("cards", []) or []),
             "response_length": len(bot_text),
@@ -591,6 +716,335 @@ def _aggregate(conversations: list[dict]) -> dict[str, Any]:
     }
 
 
+def _strip_id(decorated: str) -> str:
+    """Extracts the bare ID from "PAT-13 (Schritt-für-Schritt)" -> "PAT-13".
+
+    Debug-Strings im DebugInfo sind als "ID (Label)" formatiert. Für
+    Confusion-Matrizen brauchen wir nur die ID-Komponente.
+    """
+    if not decorated:
+        return ""
+    s = str(decorated).strip()
+    # First whitespace separates ID from "(label)"
+    return s.split(" ", 1)[0] if " " in s else s
+
+
+def _aggregate_per_phase(conversations: list[dict]) -> dict[str, dict[str, Any]]:
+    """A2.1 — sum per-phase token usage across all turns and add per-phase
+    cache hit rate. Reads from ``debug.token_usage.per_phase`` (filled by
+    ``usage_accumulator_add(..., phase=...)`` in llm_service).
+    """
+    out: dict[str, dict[str, int]] = {}
+    for conv in conversations:
+        for turn in conv.get("turns", []):
+            tu = (turn.get("debug") or {}).get("token_usage") or {}
+            per_phase = tu.get("per_phase") or {}
+            if not isinstance(per_phase, dict):
+                continue
+            for phase, stats in per_phase.items():
+                if not isinstance(stats, dict):
+                    continue
+                slot = out.setdefault(
+                    str(phase),
+                    {"prompt": 0, "completion": 0, "cached": 0, "calls": 0},
+                )
+                slot["prompt"] += int(stats.get("prompt") or 0)
+                slot["completion"] += int(stats.get("completion") or 0)
+                slot["cached"] += int(stats.get("cached") or 0)
+                slot["calls"] += int(stats.get("calls") or 0)
+    # Round-trip with hit_rate added per phase
+    return {
+        phase: {
+            **stats,
+            "hit_rate": (
+                round(stats["cached"] / stats["prompt"], 3)
+                if stats["prompt"] else 0.0
+            ),
+        }
+        for phase, stats in out.items()
+    }
+
+
+def _aggregate_classification_metrics(
+    conversations: list[dict],
+) -> dict[str, Any]:
+    """Run-globale Klassifikations-Metriken (Phase 1 Pattern-Hint).
+
+    Berechnet pro Run:
+      - persona/intent: Soll-Ist-Genauigkeit (expected vs. classified)
+      - pattern: Engine-Wahl-Häufigkeit + Judge-Approval-Rate
+      - llm_engine_match: wie oft stimmt LLM-Pattern-Hint mit Engine überein?
+      - judge_pattern_score je Engine vs LLM-Hint (wenn beide vorhanden)
+      - Confusion-Matrizen für persona/intent/pattern
+
+    Persona/Intent-Soll: kommt aus conv["persona_id"]/conv["intent_id"]
+    (= das Test-Szenario-Label, das den Bot stimulieren sollte).
+
+    Pattern hat KEIN explizites Soll-Label im Test-Set; wir nutzen den
+    Judge-Score `pattern_match >= 2` als Approximation für "Pattern-Wahl
+    war korrekt".
+    """
+    persona_total = persona_correct = 0
+    intent_total = intent_correct = 0
+    persona_confusion: dict[str, dict[str, int]] = {}
+    intent_confusion: dict[str, dict[str, int]] = {}
+    pattern_confusion: dict[str, dict[str, int]] = {}  # llm_hint × engine
+
+    llm_hint_present = 0
+    llm_engine_agree = 0
+    llm_pattern_judge_ok = 0      # LLM-Hint passt UND Judge sagt pattern_match=2
+    engine_pattern_judge_ok = 0   # Engine-Wahl + Judge sagt pattern_match=2
+    judged_turns = 0
+    pattern_match_scores: list[int] = []
+
+    # Tool-Compliance: Pattern verlangt eine `tools`-Liste. Wir prüfen
+    # pro Turn, ob mindestens EINES der vom Pattern verlangten Tools auch
+    # aufgerufen wurde — das ist ein hartes Indiz für korrekte Pattern-
+    # Ausführung. Patterns ohne tools-Liste werden nicht gezählt.
+    from app.services.config_loader import load_pattern_definitions as _lp
+    _pattern_tools_map: dict[str, list[str]] = {}
+    for p in _lp() or []:
+        pid = p.get("id")
+        tools = p.get("tools") or []
+        if pid and isinstance(tools, list):
+            _pattern_tools_map[pid] = [t for t in tools if isinstance(t, str)]
+
+    tool_compliance_total = 0
+    tool_compliance_ok = 0
+    tool_compliance_per_pattern: dict[str, dict[str, int]] = {}  # pid -> {ok, total}
+
+    # Cache-Hit-Rate (Bonus 1) — gemessen aus DebugInfo.token_usage, das der
+    # Token-Cost-Accumulator über alle LLM-Calls eines Turns sammelt. Wir
+    # aggregieren Run-weit: prompt_tokens, completion_tokens, cached_tokens.
+    # cache_hit_rate = cached / prompt zeigt, wie effektiv der OpenAI-Prompt-
+    # Cache greift. Niedrige Rate (<0.3) deutet auf instabile Prompt-Prefixes
+    # hin (z.B. canvas_state in System-Message statt User-Message).
+    sum_prompt_tokens = 0
+    sum_completion_tokens = 0
+    sum_cached_tokens = 0
+    sum_total_calls = 0
+    turns_with_usage = 0
+    per_model_usage: dict[str, dict[str, int]] = {}
+
+    # Tie-Breaker (Bonus 2) — wie oft hat der LLM-Hint den Engine-Winner
+    # überstimmt, und in welchen Pattern-Clustern? Liest
+    # ``debug.phase3_modulations.tie_breaker`` (geschrieben in chat.py).
+    tie_breaker_applied = 0
+    tie_breaker_evaluated = 0  # Cases where the tie-breaker considered an override
+    tie_breaker_overrides: dict[str, int] = {}  # "FROM->TO" → count
+
+    for conv in conversations:
+        expected_persona = conv.get("persona_id", "")
+        expected_intent = conv.get("intent_id", "")
+        for turn in conv.get("turns", []):
+            dbg = turn.get("debug", {}) or {}
+            judge = turn.get("judge", {}) or {}
+
+            actual_persona = _strip_id(dbg.get("persona", ""))
+            actual_intent = _strip_id(dbg.get("intent", ""))
+            engine_pattern = _strip_id(dbg.get("pattern", ""))
+            llm_hint = (dbg.get("pattern_id_hint") or "").strip()
+
+            # Persona-Confusion + Genauigkeit
+            if expected_persona and actual_persona:
+                persona_total += 1
+                if expected_persona == actual_persona:
+                    persona_correct += 1
+                row = persona_confusion.setdefault(expected_persona, {})
+                row[actual_persona] = row.get(actual_persona, 0) + 1
+
+            # Intent-Confusion + Genauigkeit
+            if expected_intent and actual_intent:
+                intent_total += 1
+                if expected_intent == actual_intent:
+                    intent_correct += 1
+                row = intent_confusion.setdefault(expected_intent, {})
+                row[actual_intent] = row.get(actual_intent, 0) + 1
+
+            # LLM-Hint vs Engine-Pattern
+            if llm_hint and engine_pattern:
+                llm_hint_present += 1
+                if llm_hint == engine_pattern:
+                    llm_engine_agree += 1
+                # Confusion: LLM-Hint × Engine-Wahl (sieht Disagreement-Cluster)
+                row = pattern_confusion.setdefault(llm_hint, {})
+                row[engine_pattern] = row.get(engine_pattern, 0) + 1
+
+            # Judge-bewertete Pattern-Korrektheit
+            pm = judge.get("pattern_match")
+            if pm is not None:
+                judged_turns += 1
+                try:
+                    pm_int = int(pm)
+                except Exception:
+                    pm_int = 0
+                pattern_match_scores.append(pm_int)
+                if engine_pattern and pm_int >= 2:
+                    engine_pattern_judge_ok += 1
+                if llm_hint and pm_int >= 2:
+                    # Pseudo: hätten wir den LLM-Hint gewählt UND der Judge
+                    # findet Engine-Pattern korrekt — nur belastbar wenn
+                    # LLM-Hint == Engine. Wenn nicht, wissen wir nicht ob
+                    # der LLM-Hint korrekt gewesen wäre. Hier zählen wir
+                    # nur die Cases wo LLM == Engine UND Judge sagt OK.
+                    if llm_hint == engine_pattern:
+                        llm_pattern_judge_ok += 1
+
+            # Tool-Compliance: Pattern.tools ∩ tools_called
+            required_tools = _pattern_tools_map.get(engine_pattern, [])
+            if engine_pattern and required_tools:
+                actual_tools_raw = dbg.get("tools_called") or []
+                # tools_called kann Strings oder Tools-mit-Annotation sein
+                # ("search_wlo_collections (prefetch)") — wir matchen auf
+                # den Bare-Tool-Namen am Anfang.
+                actual_tool_names = set()
+                for t in actual_tools_raw:
+                    if isinstance(t, str):
+                        bare = t.split(" ", 1)[0].strip()
+                        if bare:
+                            actual_tool_names.add(bare)
+                tool_compliance_total += 1
+                hit = any(rt in actual_tool_names for rt in required_tools)
+                if hit:
+                    tool_compliance_ok += 1
+                row = tool_compliance_per_pattern.setdefault(
+                    engine_pattern, {"ok": 0, "total": 0},
+                )
+                row["total"] += 1
+                if hit:
+                    row["ok"] += 1
+
+            # Tie-Breaker (Bonus 2) — count overrides + clusters
+            modulations = dbg.get("phase3_modulations") or {}
+            tb = modulations.get("tie_breaker") if isinstance(modulations, dict) else None
+            if isinstance(tb, dict):
+                tie_breaker_evaluated += 1
+                if tb.get("applied"):
+                    tie_breaker_applied += 1
+                    edge = f"{tb.get('from', '?')}->{tb.get('to', '?')}"
+                    tie_breaker_overrides[edge] = tie_breaker_overrides.get(edge, 0) + 1
+
+            # Token-Usage / Cache-Hit-Rate (Bonus 1)
+            tu = dbg.get("token_usage") or {}
+            if isinstance(tu, dict) and tu:
+                pt = int(tu.get("prompt_tokens") or 0)
+                ct = int(tu.get("completion_tokens") or 0)
+                cached = int(tu.get("cached_tokens") or 0)
+                calls = int(tu.get("calls") or 0)
+                if pt or ct or calls:
+                    sum_prompt_tokens += pt
+                    sum_completion_tokens += ct
+                    sum_cached_tokens += cached
+                    sum_total_calls += calls
+                    turns_with_usage += 1
+                    # Per-model breakdown
+                    for model_name, mu in (tu.get("models") or {}).items():
+                        if not isinstance(mu, dict):
+                            continue
+                        slot = per_model_usage.setdefault(
+                            str(model_name),
+                            {"prompt": 0, "completion": 0, "cached": 0, "calls": 0},
+                        )
+                        slot["prompt"] += int(mu.get("prompt") or 0)
+                        slot["completion"] += int(mu.get("completion") or 0)
+                        slot["cached"] += int(mu.get("cached") or 0)
+                        slot["calls"] += int(mu.get("calls") or 0)
+
+    return {
+        "persona_correct_rate": (
+            round(persona_correct / persona_total, 3) if persona_total else 0.0
+        ),
+        "persona_total_judged": persona_total,
+        "persona_confusion": persona_confusion,
+        "intent_correct_rate": (
+            round(intent_correct / intent_total, 3) if intent_total else 0.0
+        ),
+        "intent_total_judged": intent_total,
+        "intent_confusion": intent_confusion,
+        # Pattern-Hint vs Engine — wie oft stimmen sie überein?
+        "llm_hint_present_count": llm_hint_present,
+        "llm_engine_match_rate": (
+            round(llm_engine_agree / llm_hint_present, 3) if llm_hint_present else 0.0
+        ),
+        "pattern_confusion_llm_vs_engine": pattern_confusion,
+        # Judge-Approval pro Strategie
+        "engine_pattern_judge_ok_rate": (
+            round(engine_pattern_judge_ok / judged_turns, 3) if judged_turns else 0.0
+        ),
+        # ACHTUNG: aussagekräftig nur als Lower-Bound für die LLM-Strategie,
+        # weil wir nur Cases zählen können wo LLM-Hint == Engine. Disagreement-
+        # Cases können wir nicht bewerten ohne separate Judge-Calls. Phase 2
+        # könnte das durch Re-Judge mit dem LLM-Pattern als Behauptung lösen.
+        "llm_pattern_judge_ok_lower_bound": (
+            round(llm_pattern_judge_ok / judged_turns, 3) if judged_turns else 0.0
+        ),
+        "judged_turns": judged_turns,
+        "pattern_match_score_distribution": {
+            "0": pattern_match_scores.count(0),
+            "1": pattern_match_scores.count(1),
+            "2": pattern_match_scores.count(2),
+        },
+        # Tool-Compliance: wieviele Turns mit Pattern.tools auch tatsächlich
+        # mind. eines der verlangten Tools aufgerufen haben.
+        "tool_compliance_rate": (
+            round(tool_compliance_ok / tool_compliance_total, 3)
+            if tool_compliance_total else 0.0
+        ),
+        "tool_compliance_total": tool_compliance_total,
+        "tool_compliance_per_pattern": tool_compliance_per_pattern,
+        # Token-Cost / Cache-Hit (Bonus 1)
+        "token_usage_aggregate": {
+            "prompt_tokens": sum_prompt_tokens,
+            "completion_tokens": sum_completion_tokens,
+            "cached_tokens": sum_cached_tokens,
+            "total_llm_calls": sum_total_calls,
+            "turns_with_usage": turns_with_usage,
+            "cache_hit_rate": (
+                round(sum_cached_tokens / sum_prompt_tokens, 3)
+                if sum_prompt_tokens else 0.0
+            ),
+            "avg_prompt_tokens_per_turn": (
+                round(sum_prompt_tokens / turns_with_usage, 1)
+                if turns_with_usage else 0.0
+            ),
+            "avg_completion_tokens_per_turn": (
+                round(sum_completion_tokens / turns_with_usage, 1)
+                if turns_with_usage else 0.0
+            ),
+            # A2.3 — pro Modell die Cache-Hit-Rate ergänzen, damit man sieht,
+            # welcher Modell-Typ den OpenAI-Prompt-Cache wirklich nutzt
+            # (gpt-4o-mini cached anders als gpt-5/5.4-mini).
+            "per_model": {
+                model_name: {
+                    **stats,
+                    "hit_rate": (
+                        round(int(stats.get("cached") or 0)
+                              / int(stats.get("prompt") or 1), 3)
+                        if int(stats.get("prompt") or 0) else 0.0
+                    ),
+                }
+                for model_name, stats in per_model_usage.items()
+            },
+            # A2.1 — pro Phase (classify / tool_loop / response /
+            # quick_replies / reflection / canvas_*) die Aggregat-Numbers
+            # plus Phase-spezifische Cache-Hit-Rate. Zeigt, wo der Cache
+            # bricht (oft: response-Phase, weil Tool-Outputs den Prompt
+            # variieren).
+            "per_phase": _aggregate_per_phase(conversations),
+        },
+        # Tie-Breaker telemetry (Bonus 2)
+        "tie_breaker": {
+            "evaluated_turns": tie_breaker_evaluated,
+            "applied_count": tie_breaker_applied,
+            "applied_rate": (
+                round(tie_breaker_applied / tie_breaker_evaluated, 3)
+                if tie_breaker_evaluated else 0.0
+            ),
+            "overrides": tie_breaker_overrides,
+        },
+    }
+
+
 def _compute_target_turns(
     mode: str, n_personas: int, n_intents: int,
     scenarios_per_combo: int, turns_per_conv: int,
@@ -654,6 +1108,17 @@ async def execute_run(
     conversations: list[dict] = []
     t0 = time.perf_counter()
 
+    # A3.3 — Reset Tool-Cache + Stats vor jedem Run, damit die später
+    # gespeicherten Cache-Stats nur DIESEN Run reflektieren (sonst
+    # mischen sich Production- und Eval-Hits/Misses).
+    try:
+        from app.services.mcp_client import clear_tool_cache as _clear_tc
+        _cleared = _clear_tc()
+        if _cleared:
+            logger.info("[eval %s] cleared tool cache (%d entries)", run_id, _cleared)
+    except Exception as _ce:
+        logger.warning("[eval %s] tool cache clear failed: %s", run_id, _ce)
+
     try:
         # ── Stage 1: scenarios (single-turn) ──
         if mode in ("scenarios", "both"):
@@ -696,6 +1161,14 @@ async def execute_run(
                         "intent": debug.get("intent"),
                         "safety": debug.get("safety"),
                         "tools_called": debug.get("tools_called", []),
+                        # Phase-1-Pattern-Hint (für globale Aggregat-Metriken)
+                        "pattern_id_hint": debug.get("pattern_id_hint"),
+                        "pattern_reasoning": debug.get("pattern_reasoning"),
+                        "llm_engine_match": debug.get("llm_engine_match"),
+                        # Bonus 1: Cache-Hit-Rate aggregation reads from this
+                        "token_usage": debug.get("token_usage"),
+                        # Bonus 2: tie-breaker telemetry lives inside phase3_modulations
+                        "phase3_modulations": debug.get("phase3_modulations"),
                     }
                     # If the bot opened a canvas (PAT-21 Canvas-Create), the
                     # actual content is in page_action.payload.markdown — the
@@ -776,6 +1249,15 @@ async def execute_run(
         summary = _aggregate(conversations)
         summary["target_turns"] = target_turns
         summary["current_activity"] = "Fertig"
+        # NEW (Phase 1): globale Klassifikations-Metriken — persona/intent
+        # Soll-Ist-Genauigkeit, Pattern-Hint vs Engine, Confusion-Matrizen.
+        summary["classification_metrics"] = _aggregate_classification_metrics(conversations)
+        # A3.3 — Tool-Cache-Effektivität für diesen Run (hits/misses/size + per-tool TTL)
+        try:
+            from app.services.mcp_client import get_tool_cache_stats as _get_tc_stats
+            summary["tool_cache"] = _get_tc_stats()
+        except Exception as _se:
+            logger.warning("[eval %s] tool_cache stats fetch failed: %s", run_id, _se)
         await _update_run(
             run_id,
             status="done",
@@ -795,6 +1277,7 @@ async def execute_run(
             summary = _aggregate(conversations)
             summary["target_turns"] = target_turns
             summary["current_activity"] = f"Fehler: {str(e)[:200]}"
+            summary["classification_metrics"] = _aggregate_classification_metrics(conversations)
         except Exception:
             summary = {"target_turns": target_turns}
         await _update_run(

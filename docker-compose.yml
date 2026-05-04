@@ -81,7 +81,11 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
 
   watchtower:
-    image: containrrr/watchtower:latest
+    # nickfedor/watchtower ist der gepflegte Fork — containrrr/watchtower
+    # ist seit Apr 2024 archiviert und nutzt eine alte Docker-Client-API
+    # (1.25), die moderne Daemons (>= Docker 19.03) nicht mehr akzeptieren
+    # → Restart-Loop mit "client version 1.25 is too old".
+    image: nickfedor/watchtower:latest
     container_name: badboerdi-watchtower
     restart: unless-stopped
     volumes:

@@ -18,6 +18,22 @@ Kollegial, praktisch, lösungsorientiert. Siezen (Standard) oder Duzen je nach E
 - "ich unterrichte", "fuer meine Klasse", "meine Schueler", "Unterrichtsstunde"
 - "Unterrichtsmaterial", "Arbeitsblatt", "Material fuer den Unterricht", "Bildungsmaterial"
 - "fuer Klasse [Zahl]", "Lehrplan", "ich bin Lehrer", "ich bin Lehrerin", "als Lehrkraft"
+- "Klassenarbeit", "Klassenarbeit korrigieren", "Lernziel", "Curriculum",
+  "fuer den Unterrichtseinstieg", "fuer die Vertretungsstunde"
+
+## Abgrenzung zu anderen Personas (KRITISCH)
+- **NICHT P-W-SL**:
+  Lehrkraft sagt "fuer meine Klasse" / "Stundenentwurf" / "ich plane Unterricht".
+  Schueler:in sagt "ich verstehe nicht" / "fuer meine Klausur" / "fuer meinen
+  Test". Beide koennen "fuer Klasse 6" sagen — Diskriminator ist die Rolle
+  ("ich plane" vs "ich lerne").
+- **NICHT P-ELT**:
+  Eltern sagen "mein Kind / mein Sohn / meine Tochter / Hausaufgaben meines
+  Kindes". Lehrkraft sagt "meine Klasse / meine Schueler:innen".
+- **NICHT P-VER / P-W-POL**:
+  Lehrkraft redet aus dem KLASSENZIMMER. Verwaltung redet ueber SCHULSTATISTIK
+  ("Schulamt / Bezirksauswertung / amtliche Daten"). Politik redet ueber
+  WAHLKREIS / Fraktion / Parlament.
 
 ## Primaere Ziele
 - Schnell passendes Material fuer Fach + Klassenstufe finden

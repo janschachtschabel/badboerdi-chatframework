@@ -1,6 +1,7 @@
 ---
 id: PAT-05
 label: Profi-Filter
+short_purpose: "WANN: Erfahrene Lehrkraft sucht Material mit konkreten Filter-Kriterien (Fach, Stufe, Medientyp, Lizenz). WOFÜR: Mehrstufige Filter-Pipe abarbeiten und kuratiertes Set zurückgeben."
 priority: 430
 gate_personas: ["P-W-LK", "P-BER"]
 gate_states: ["state-5"]

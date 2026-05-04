@@ -5,7 +5,12 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { ApiService, ChatMessage, WloCard, DebugInfo, PaginationInfo } from '../services/api.service';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+import {
+  ApiService, ChatMessage, ChatResponse, ChatStreamEvent,
+  WloCard, DebugInfo, PaginationInfo,
+} from '../services/api.service';
 import { getCardPrimaryUrl } from '../services/card-utils';
 import { BOERDI_LOGO_SVG, BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
 
@@ -37,6 +42,13 @@ export class ChatComponent implements OnInit, AfterViewChecked {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
   private currentAudio: HTMLAudioElement | null = null;
+  /** Monotonically increasing token for the active speakChunked call.
+   *  Each new call bumps it; older callers compare against this on exit
+   *  and skip resetting ``isSpeaking`` if they've been superseded. Stops
+   *  the "spricht …" indicator from sticking when a sentence's audio
+   *  ``onended`` fires unusually late or when speakChunked is overlapped
+   *  by a new turn's auto-speak. */
+  private speakingToken = 0;
 
   // Page action callback (for host page integration)
   onPageAction: ((action: any) => void) | null = null;
@@ -50,6 +62,17 @@ export class ChatComponent implements OnInit, AfterViewChecked {
   @Input() persistSession: boolean | string = true;
   /** Storage key for the persisted session id. */
   @Input() sessionKey = 'boerdi_session_id';
+  /** Cookie domain for cross-subdomain session sharing.
+   *  Set to e.g. ".wirlernenonline.de" to share the session-id cookie
+   *  between suche.wirlernenonline.de, wp-test.wirlernenonline.de etc.
+   *  Empty string (default) = pure localStorage, no cookie written
+   *  (origin-isolated, sameas before).
+   */
+  @Input() sessionCookieDomain = '';
+  /** Cookie lifetime in seconds. Default 30 days.
+   *  Only meaningful when sessionCookieDomain is set.
+   */
+  @Input() sessionCookieMaxAge: number | string = 30 * 24 * 60 * 60;
   /** Override the initial greeting. */
   @Input() greeting = '';
   /** Show the debug-toggle (🔍) button in the header. Default true.
@@ -71,6 +94,13 @@ export class ChatComponent implements OnInit, AfterViewChecked {
    *  Shape: {mode, title, material_type, markdown, cards_count}
    */
   @Input() canvasState: Record<string, any> | null = null;
+  /** Lotsen-Modus aktiv? Frontend-defense-in-depth: das Backend filtert
+   *  Guide-QRs aus, wenn der Toggle aus ist; aber falls doch mal einer
+   *  durchschlägt (alter Cache, Race-Condition), rendern wir ihn HIER
+   *  zusätzlich nicht als hervorgehobenen blauen Button. Stattdessen:
+   *  wir blenden den ``__guide__|...``-Eintrag komplett aus, weil die
+   *  Lotsen-Funktion bewusst deaktiviert wurde. */
+  @Input() guideModeActive = false;
   /** Emitted for every page_action from the backend (host + widget integration). */
   @Output() pageAction = new EventEmitter<{ action: string; payload: any }>();
 
@@ -99,19 +129,27 @@ export class ChatComponent implements OnInit, AfterViewChecked {
       this.parsedPageContext = this.pageContext as Record<string, any>;
     }
 
-    // Session persistence
+    // Session persistence — 3-Stufen-Kaskade:
+    //   A) URL-?bsid=… (Cross-TLD-Handoff von einer anderen Domain)
+    //   B) Cookie     (Cross-Subdomain via sessionCookieDomain)
+    //   C) localStorage (Origin-spezifischer Fallback / Default)
+    // Ergebnis: erste Stufe, die einen validen "bb-<uuid>"-String findet,
+    // gewinnt. Schreibt dann zurück in alle aktiven Storages, damit der
+    // nächste Page-Load egal welcher Stufe folgt.
     const persist = this.persistSession === true || this.persistSession === 'true';
     let resumed = false;
     if (persist) {
       try {
-        const stored = localStorage.getItem(this.sessionKey);
-        if (stored) {
-          this.sessionId = stored;
+        const found = this._resolvePersistedSessionId();
+        if (found) {
+          this.sessionId = found;
           resumed = true;
         } else {
           this.sessionId = this.generateSessionId();
-          localStorage.setItem(this.sessionKey, this.sessionId);
         }
+        // In ALLE aktiven Storages schreiben — damit der nächste Page-Load
+        // (egal von welcher Stufe getrieben) die ID findet.
+        this._writeSessionEverywhere(this.sessionId);
       } catch {
         this.sessionId = this.generateSessionId();
       }
@@ -172,8 +210,9 @@ export class ChatComponent implements OnInit, AfterViewChecked {
   /** Public API: clear current session and start fresh. Callable from host page. */
   resetSession() {
     try { localStorage.removeItem(this.sessionKey); } catch { /* ignore */ }
+    this._deleteCookie(this.sessionKey);
     this.sessionId = this.generateSessionId();
-    try { localStorage.setItem(this.sessionKey, this.sessionId); } catch { /* ignore */ }
+    this._writeSessionEverywhere(this.sessionId);
     this.messages.set([]);
     this.latestDebug = null;
     this.addBotMessage(this.greeting || 'Hallo! Wie kann ich dir helfen?');
@@ -215,13 +254,47 @@ export class ChatComponent implements OnInit, AfterViewChecked {
       // edit against the current canvas document.
       const isEdit = !!(this.canvasActiveMarkdown && this.canvasActiveMarkdown.length > 0
                         && this.isEditCommand(msg));
-      const resp = isEdit
-        ? await this.api.sendMessage(this.sessionId, msg, envOverride, 'canvas_edit', {
-            current_markdown: this.canvasActiveMarkdown,
-            edit_instruction: msg,
-          }, this.canvasState)
-        : await this.api.sendMessage(this.sessionId, msg, envOverride,
-            undefined, undefined, this.canvasState);
+
+      // Phase-1 streaming — uses POST /api/chat/stream which emits SSE
+      // ``phase`` events live during classify + tool-loop, so the loading
+      // bubble shows what the bot is doing instead of a static spinner.
+      // Falls back to non-streaming sendMessage on any stream error.
+      //
+      // (Phase-2 token streaming was rolled back — it only kicked in for
+      // the final ~1-2 seconds and the per-token re-render flickered. The
+      // backend's Streaming-Helper stays in place but is not wired up;
+      // ``text_delta`` events therefore never arrive and the conditional
+      // below is a defensive no-op kept for future reuse.)
+      const onEvent = (evt: { event: string; data: any }) => {
+        if (evt.event === 'text_delta') return;
+        const label = this.formatPhaseLabel(evt);
+        if (!label) return;
+        this.updateLoadingPhase(loadingId, label);
+      };
+      let resp: ChatResponse;
+      try {
+        resp = isEdit
+          ? await this.api.sendMessageStream(this.sessionId, msg, onEvent, envOverride,
+              'canvas_edit', {
+                current_markdown: this.canvasActiveMarkdown,
+                edit_instruction: msg,
+              }, this.canvasState)
+          : await this.api.sendMessageStream(this.sessionId, msg, onEvent, envOverride,
+              undefined, undefined, this.canvasState);
+      } catch (streamErr) {
+        // Stream-API failed (network, proxy, parser) → silent fallback to
+        // the legacy non-streaming endpoint so the user still gets an
+        // answer. This also covers older backends without the /stream route.
+        // eslint-disable-next-line no-console
+        console.warn('chat stream failed, falling back to POST /chat:', streamErr);
+        resp = isEdit
+          ? await this.api.sendMessage(this.sessionId, msg, envOverride, 'canvas_edit', {
+              current_markdown: this.canvasActiveMarkdown,
+              edit_instruction: msg,
+            }, this.canvasState)
+          : await this.api.sendMessage(this.sessionId, msg, envOverride,
+              undefined, undefined, this.canvasState);
+      }
 
       // Remove loading, add real response
       this.removeMessage(loadingId);
@@ -232,6 +305,14 @@ export class ChatComponent implements OnInit, AfterViewChecked {
 
       // Handle page action (share with host page / widget parent)
       this.dispatchPageAction(resp.page_action);
+
+      // Lotsen-Modus: if the user explicitly asked to be brought somewhere
+      // (z.B. „bring mich hin zur Themenseite Photosynthese") AND the
+      // response has at least one allow-listed card, ALSO dispatch a
+      // ``navigate`` page-action so the widget shows the confirmation
+      // banner. ``guide_url`` is only set when guide-mode is on and the
+      // host is on the allow-list, so the presence of one is the gate.
+      this.maybeDispatchGuideNavigate(msg, resp.cards);
 
       // Auto-speak if enabled — always interrupt any previous playback
       // so a new response after a quick user follow-up is also spoken.
@@ -250,6 +331,54 @@ export class ChatComponent implements OnInit, AfterViewChecked {
 
   onQuickReply(reply: string) {
     this.sendMessage(reply);
+  }
+
+  /** Magic-prefix für Backend → Frontend Konvention. Backend signalisiert
+   *  einen "Bring mich hin"-Quick-Reply mit dieser Marker-Form:
+   *
+   *    __guide__|<Anzeige-Label>|<vollständige URL>
+   *
+   *  Frontend rendert den Eintrag als dunkelblauen Button (siehe HTML),
+   *  Klick navigiert im aktuellen Tab statt eine Folgenachricht zu senden. */
+  private static readonly GUIDE_QR_PREFIX = '__guide__|';
+
+  isGuideQuickReply(qr: string): boolean {
+    if (!this.guideModeActive) return false;   // toggle off → never a guide button
+    return typeof qr === 'string' && qr.startsWith(ChatComponent.GUIDE_QR_PREFIX);
+  }
+
+  /** True if a quick-reply should be hidden entirely. The only reason
+   *  to hide one is: it's a Guide-QR (magic-prefix) but the user has
+   *  Lotsen-Modus disabled — the link wouldn't make sense. */
+  shouldHideQuickReply(qr: string): boolean {
+    if (this.guideModeActive) return false;
+    return typeof qr === 'string' && qr.startsWith(ChatComponent.GUIDE_QR_PREFIX);
+  }
+
+  /** Extrahiert den Anzeige-Text aus einem Guide-QR-String. */
+  guideQuickReplyLabel(qr: string): string {
+    if (!this.isGuideQuickReply(qr)) return qr;
+    const rest = qr.slice(ChatComponent.GUIDE_QR_PREFIX.length);
+    const sepIdx = rest.indexOf('|');
+    if (sepIdx === -1) return rest.trim() || 'Bring mich hin';
+    const label = rest.slice(0, sepIdx).trim();
+    return label || 'Bring mich hin';
+  }
+
+  /** Extrahiert die URL aus einem Guide-QR-String. URLs dürfen das
+   *  Trennzeichen ``|`` nicht enthalten — ist Teil der Konvention. */
+  private guideQuickReplyUrl(qr: string): string {
+    if (!this.isGuideQuickReply(qr)) return '';
+    const rest = qr.slice(ChatComponent.GUIDE_QR_PREFIX.length);
+    const sepIdx = rest.indexOf('|');
+    if (sepIdx === -1) return '';
+    return rest.slice(sepIdx + 1).trim();
+  }
+
+  /** User klickt einen Guide-QR — Same-Tab-Navigation, kein Send. */
+  onGuideQuickReply(qr: string): void {
+    const url = this.guideQuickReplyUrl(qr);
+    if (url) this.onGuideNavigate(url);
   }
 
   /** Heuristic: is the user message an explicit EDIT instruction for
@@ -587,34 +716,51 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
    * Falls back to browser speechSynthesis if the backend TTS fails.
    */
   private async speakChunked(text: string) {
+    // Identify this run so any later overlap (a new auto-speak fired
+    // while we were still playing the previous one) can suppress our
+    // ``isSpeaking = false`` reset and avoid clobbering its own state.
+    const myToken = ++this.speakingToken;
+    const finish = () => {
+      // Always run inside Angular's zone so the widget header re-renders
+      // when the binding ``chatRef?.isSpeaking`` flips. Browser audio
+      // events fire outside NgZone, so a plain assignment can leave the
+      // ``spricht …`` indicator stuck on screen.
+      if (this.speakingToken === myToken) {
+        this.zone.run(() => { this.isSpeaking = false; });
+      }
+    };
+
     const sentences = this.splitSentences(text);
-    if (!sentences.length) { this.isSpeaking = false; return; }
+    if (!sentences.length) { finish(); return; }
 
     this.audioQueue = [];
     this.audioAbort = new AbortController();
     const signal = this.audioAbort.signal;
 
-    // Pre-fetch first sentence
-    let nextFetch: Promise<Blob | null> = this.fetchTTS(sentences[0], signal);
+    try {
+      // Pre-fetch first sentence
+      let nextFetch: Promise<Blob | null> = this.fetchTTS(sentences[0], signal);
 
-    for (let i = 0; i < sentences.length; i++) {
-      if (signal.aborted) break;
+      for (let i = 0; i < sentences.length; i++) {
+        if (signal.aborted) break;
 
-      // Await current sentence audio
-      const blob = await nextFetch;
-      if (signal.aborted || !blob) break;
+        // Await current sentence audio
+        const blob = await nextFetch;
+        if (signal.aborted || !blob) break;
 
-      // Start pre-fetching next sentence while current one plays
-      if (i + 1 < sentences.length) {
-        nextFetch = this.fetchTTS(sentences[i + 1], signal);
+        // Start pre-fetching next sentence while current one plays
+        if (i + 1 < sentences.length) {
+          nextFetch = this.fetchTTS(sentences[i + 1], signal);
+        }
+
+        // Play current sentence
+        await this.playBlob(blob, signal);
       }
-
-      // Play current sentence
-      await this.playBlob(blob, signal);
-    }
-
-    if (!signal.aborted) {
-      this.zone.run(() => { this.isSpeaking = false; });
+    } finally {
+      // Always reset (token-guarded so we don't fight an overlapping run).
+      // Without the finally, an early ``break`` from ``signal.aborted`` —
+      // or any unexpected exception — would leave isSpeaking stuck true.
+      finish();
     }
   }
 
@@ -634,19 +780,41 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       const audio = new Audio(url);
       this.currentAudio = audio;
 
+      // Watchdog: in rare browser bugs ``onended``/``onerror`` may never
+      // fire (e.g. lost focus, autoplay throttle). Without this guard the
+      // outer speakChunked Promise hangs and ``isSpeaking`` stays true
+      // until the next user turn. Cap at ~max(audio.duration, 90s) plus
+      // a 5s safety margin; if the metadata isn't loaded yet, a flat 90s
+      // is the upper bound — much longer than any single TTS sentence.
+      let watchdog: ReturnType<typeof setTimeout> | null = null;
+      const armWatchdog = () => {
+        const dur = isFinite(audio.duration) && audio.duration > 0
+          ? Math.ceil(audio.duration * 1000) + 5000
+          : 90_000;
+        watchdog = setTimeout(() => { cleanup(); resolve(); }, dur);
+      };
+
       const cleanup = () => {
+        if (watchdog != null) { clearTimeout(watchdog); watchdog = null; }
         URL.revokeObjectURL(url);
         this.currentAudio = null;
       };
 
       audio.onended = () => { cleanup(); resolve(); };
       audio.onerror = () => { cleanup(); resolve(); };
+      audio.onloadedmetadata = () => { armWatchdog(); };
 
       // Listen for abort to stop mid-playback
       const onAbort = () => { audio.pause(); cleanup(); resolve(); };
       signal.addEventListener('abort', onAbort, { once: true });
 
       audio.play().catch(() => { cleanup(); resolve(); });
+      // Arm a coarse watchdog up-front in case loadedmetadata never fires
+      // (network issue, malformed blob). Will be replaced by the precise
+      // duration-based one once metadata loads.
+      if (watchdog == null) {
+        watchdog = setTimeout(() => { cleanup(); resolve(); }, 90_000);
+      }
     });
   }
 
@@ -679,6 +847,9 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       this.currentAudio = null;
     }
     this.audioQueue = [];
+    // Bump the token so any old speakChunked still unwinding can't undo
+    // this hard stop in its ``finally`` cleanup.
+    this.speakingToken++;
     this.isSpeaking = false;
   }
 
@@ -790,6 +961,43 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     if (this.onPageAction) this.onPageAction(pa);
     this.pageAction.emit(pa);
     window.dispatchEvent(new CustomEvent('badboerdi:page-action', { detail: pa }));
+  }
+
+  /** Lotsen-Modus: user clicked "Bring mich hin" on an inline card. The
+   *  click itself is the consent — navigate immediately in the current
+   *  tab. ``url`` is set by the backend (only when guide-mode is on AND
+   *  the host is on the allow list), so we don't re-validate here.
+   */
+  onGuideNavigate(url: string | undefined): void {
+    if (!url) return;
+    try {
+      window.location.href = url;
+    } catch {
+      window.open(url, '_self', 'noopener');
+    }
+  }
+
+  /** Phrases that turn a normal chat message into a "lotse mich"-request.
+   *  Trigger only when the wording is unambiguous — bot-initiated
+   *  navigation should not surprise the user. */
+  private static readonly GUIDE_NAV_INTENT_RE =
+    /\b(bring(?:\s+du)?\s+mich\s+(?:da)?hin|navigiere\s+(?:mich\s+)?(?:zu|zur|zum)|lotse\s+mich|öffne\s+(?:die|das|den)?\s*(?:themenseite|sammlung|seite)|geh(?:e)?\s+zur|f(?:üh|ueh)re\s+mich|hin\s+zur|bring\s+mich\s+(?:zu|zur|zum))\b/i;
+
+  /** Inspect the just-sent user message; if it expresses a navigation
+   *  wish AND the response has at least one card with ``guide_url``,
+   *  dispatch a ``navigate`` page-action so the widget banner appears.
+   *  Picks the first allow-listed card (top result by relevance). */
+  private maybeDispatchGuideNavigate(userMessage: string, cards: WloCard[] | undefined): void {
+    if (!userMessage || !cards || cards.length === 0) return;
+    if (!ChatComponent.GUIDE_NAV_INTENT_RE.test(userMessage)) return;
+    const target = cards.find(c => !!(c as WloCard & { guide_url?: string }).guide_url);
+    if (!target) return;
+    const url = (target as WloCard & { guide_url?: string }).guide_url || '';
+    if (!url) return;
+    this.dispatchPageAction({
+      action: 'navigate',
+      payload: { url, label: target.title || url },
+    });
   }
 
   async browseCollection(nodeId: string, title: string) {
@@ -1022,9 +1230,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     // Generate fresh session and persist it (so the next page-load also
     // continues with the new one, not the old).
     this.sessionId = this.generateSessionId();
-    try {
-      localStorage.setItem(this.sessionKey, this.sessionId);
-    } catch { /* ignore */ }
+    this._writeSessionEverywhere(this.sessionId);
     this.messages.set([]);
     this.latestDebug = null;
     this.showGreeting();
@@ -1036,6 +1242,46 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       id: this.uid(), sender: 'user', content, timestamp: new Date(),
     };
     this.messages.update(msgs => [...msgs, msg]);
+  }
+
+  /**
+   * Map a tracer ``phase`` event into a short human label that's safe to
+   * show in the loading bubble. Returns ``null`` for events that should
+   * not refresh the UI.
+   *
+   * Step IDs come from ``tracer.start(...)`` calls in chat.py — they are:
+   *   safety_classify  → Safety + Classification (~600ms-2.5s)
+   *   context          → record event (snapshot, no UI update)
+   *   policy           → Policy evaluation (<50ms, mostly invisible)
+   *   pattern          → Pattern selection (<100ms)
+   *   response         → LLM response generation incl. tool-loop (1-7s, dominant)
+   *
+   * We update on BOTH ``start`` and ``record`` events. ``end`` is skipped
+   * so the label doesn't briefly flash to the next phase's start before
+   * the next start arrives.
+   */
+  private formatPhaseLabel(evt: ChatStreamEvent): string | null {
+    if (!evt) return null;
+    if (evt.event === 'connected') return 'Verbinde …';
+    if (evt.event !== 'phase') return null;
+    const data = evt.data || {};
+    if (data.kind === 'end') return null;  // ignore end to avoid flicker
+    const step = String(data.step || '');
+    const map: Record<string, string> = {
+      'safety_classify': 'Klassifiziere die Anfrage …',
+      'context': 'Lade Sitzungs-Kontext …',
+      'policy': 'Prüfe Datenschutz-Policy …',
+      'pattern': 'Wähle Antwort-Pattern …',
+      'response': 'Formuliere Antwort …',
+    };
+    return map[step] || null;
+  }
+
+  /** Update an in-flight loading message's phase label by id. */
+  private updateLoadingPhase(loadingId: string, label: string): void {
+    this.messages.update(msgs => msgs.map(m =>
+      m.id === loadingId && m.isLoading ? { ...m, loadingPhase: label } : m,
+    ));
   }
 
   private addBotMessage(
@@ -1075,6 +1321,92 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     } catch {}
   }
 
+  /** Strict format check for our session-IDs — schützt URL-bsid-Pickup vor
+   *  Injection durch Drittseiten ("?bsid=evil-tracking-id"). */
+  private _isValidSessionId(s: string | null | undefined): boolean {
+    if (!s || typeof s !== 'string') return false;
+    // Format: "bb-" + 36-char UUID v4 (mit/ohne Bindestriche), max 80 chars
+    return /^bb-[0-9a-f-]{32,40}$/i.test(s) && s.length <= 80;
+  }
+
+  /** 3-Stufen-Resolution. Returnt null wenn nichts gefunden / alle invalid. */
+  private _resolvePersistedSessionId(): string | null {
+    // Stufe A: URL-Parameter ?bsid=… (Cross-TLD-Handoff)
+    try {
+      const url = new URL(window.location.href);
+      const fromUrl = url.searchParams.get('bsid');
+      if (this._isValidSessionId(fromUrl)) {
+        // Aus URL entfernen, damit die ID nicht weiter sichtbar mitwandert
+        // (Bookmark-Sharing, Referer-Leaks an Drittseiten).
+        url.searchParams.delete('bsid');
+        const cleaned = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
+        try { history.replaceState({}, '', cleaned); } catch { /* ignore */ }
+        return fromUrl;
+      }
+    } catch { /* ignore — never fail boot on URL parse */ }
+
+    // Stufe B: Cookie (Cross-Subdomain)
+    const fromCookie = this._readCookie(this.sessionKey);
+    if (this._isValidSessionId(fromCookie)) return fromCookie;
+
+    // Stufe C: localStorage (Origin-spezifischer Default)
+    try {
+      const fromLs = localStorage.getItem(this.sessionKey);
+      if (this._isValidSessionId(fromLs)) return fromLs;
+    } catch { /* ignore */ }
+
+    return null;
+  }
+
+  /** Schreibt die Session-ID in alle aktiven Storages. */
+  private _writeSessionEverywhere(id: string): void {
+    try { localStorage.setItem(this.sessionKey, id); } catch { /* ignore */ }
+    if (this.sessionCookieDomain) {
+      this._writeCookie(this.sessionKey, id);
+    }
+  }
+
+  /** Schreibt ein Session-Cookie mit konfigurierter Domain. */
+  private _writeCookie(name: string, value: string): void {
+    try {
+      const maxAge = typeof this.sessionCookieMaxAge === 'string'
+        ? parseInt(this.sessionCookieMaxAge, 10) || 30 * 24 * 60 * 60
+        : this.sessionCookieMaxAge;
+      // Secure-Flag: nur über HTTPS schicken (Pflicht ab SameSite=None,
+      // Best-Practice bei Lax). Lokal über http://localhost ignoriert
+      // der Browser das Secure-Flag freundlicherweise.
+      const isHttps = location.protocol === 'https:';
+      const parts = [
+        `${name}=${encodeURIComponent(value)}`,
+        `Domain=${this.sessionCookieDomain}`,
+        `Path=/`,
+        `Max-Age=${maxAge}`,
+        `SameSite=Lax`,
+      ];
+      if (isHttps) parts.push('Secure');
+      document.cookie = parts.join('; ');
+    } catch { /* ignore */ }
+  }
+
+  /** Liest den Wert eines Cookies anhand des Namens. */
+  private _readCookie(name: string): string | null {
+    try {
+      const re = new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]+)');
+      const m = document.cookie.match(re);
+      return m ? decodeURIComponent(m[1]) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Löscht das Session-Cookie (nutzt Max-Age=0 unter derselben Domain). */
+  private _deleteCookie(name: string): void {
+    if (!this.sessionCookieDomain) return;
+    try {
+      document.cookie = `${name}=; Domain=${this.sessionCookieDomain}; Path=/; Max-Age=0; SameSite=Lax`;
+    } catch { /* ignore */ }
+  }
+
   private generateSessionId(): string {
     // Prefer cryptographically strong UUID v4 (122 bits entropy, collision-safe).
     try {
@@ -1104,49 +1436,25 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       .replace(/[`~]/g, '');
   }
 
-  renderMarkdown(text: string): SafeHtml {
-    let html = text
-      // Inline formatting first
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-
-    // Process lines: render list items as styled divs (avoids browser ul/li defaults)
-    const lines = html.split('\n');
-    const result: string[] = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      // Headings: ### / ## / #
-      const hMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
-      if (hMatch) {
-        const level = Math.min(hMatch[1].length + 2, 6); // h1→h3 etc.
-        result.push(`<h${level} style="margin:10px 0 4px 0;font-weight:600">${hMatch[2]}</h${level}>`);
-        continue;
-      }
-      // Blockquote: "> text"
-      const bqMatch = trimmed.match(/^>\s?(.*)$/);
-      if (bqMatch) {
-        result.push(`<div style="border-left:3px solid #c5cbd6;padding:2px 0 2px 10px;margin:2px 0;color:#3a4252">${bqMatch[1]}</div>`);
-        continue;
-      }
-      // Numbered list: "1. item"
-      const olMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
-      if (olMatch) {
-        result.push(`<div style="display:flex;align-items:baseline;margin-bottom:4px;padding-left:2px"><span style="flex-shrink:0;margin-right:8px">${olMatch[1]}.</span><span style="flex:1">${olMatch[2]}</span></div>`);
-        continue;
-      }
-      // Match "- item", "• item", "* item" (but not **bold**)
-      const listMatch = trimmed.match(/^(?:[-•]|\*(?!\*))\s+(.*)/);
-      if (listMatch) {
-        result.push(`<div style="display:flex;align-items:baseline;margin-bottom:4px;padding-left:2px"><span style="flex-shrink:0;margin-right:8px">•</span><span style="flex:1">${listMatch[1]}</span></div>`);
-      } else if (trimmed) {
-        result.push(trimmed + '<br>');
-      } else {
-        result.push('<br>');
-      }
+  renderMarkdown(text: string, sender: 'bot' | 'user' = 'bot'): SafeHtml {
+    if (!text) return this.sanitizer.bypassSecurityTrustHtml('');
+    // Use marked to parse Markdown to HTML, then DOMPurify to defang any
+    // injected HTML/JS coming from bot output, persisted history, or tool
+    // results. NEVER bypass sanitization on raw text — replace-based regex
+    // builders are not safe against `<script>` / `onerror=` injection.
+    //
+    // For USER messages we use ``parseInline`` instead of ``parse``: users
+    // type plain text (no headings/lists/codeblocks), and ``parse`` would
+    // wrap the message in a block-level ``<p>`` which adds unwanted
+    // vertical padding to user bubbles. ``parseInline`` returns the text
+    // with inline markup only — no outer block element.
+    let html: string;
+    if (sender === 'user') {
+      html = marked.parseInline(text, { async: false, gfm: true, breaks: true }) as string;
+    } else {
+      html = marked.parse(text, { async: false, gfm: true, breaks: true }) as string;
     }
-
-    return this.sanitizer.bypassSecurityTrustHtml(result.join(''));
+    const clean = DOMPurify.sanitize(html, { ADD_ATTR: ['target', 'rel'] });
+    return this.sanitizer.bypassSecurityTrustHtml(clean);
   }
 }

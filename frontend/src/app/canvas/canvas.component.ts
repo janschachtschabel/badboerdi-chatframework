@@ -14,9 +14,11 @@ export type CanvasViewMode = 'empty' | 'content' | 'cards' | 'preview';
 
 /** Actions the canvas can trigger on a card. The WidgetComponent forwards
  *  these to the underlying ChatComponent methods so behaviour matches the
- *  in-chat card actions exactly.
+ *  in-chat card actions exactly. ``guide`` triggers a same-tab navigation
+ *  to the card's ``guide_url`` (Lotsen-Modus), while ``open`` still opens
+ *  the URL in a new tab.
  */
-export type CanvasCardAction = 'browse' | 'learning_path' | 'remix' | 'open' | 'preview';
+export type CanvasCardAction = 'browse' | 'learning_path' | 'remix' | 'open' | 'preview' | 'guide';
 
 /**
  * BadBoerdi Canvas — ausklappbare Arbeitsfläche neben dem Chat.

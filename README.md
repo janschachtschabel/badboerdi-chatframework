@@ -226,6 +226,88 @@ dieser Seite?", „Welche Klassenstufe?" oder „Erstelle mir ein Quiz dazu" (Th
 ohne Rückfrage beantworten. TTL: 30 Min bei erfolgreicher Auflösung, 2 Min bei MCP-Fehler (damit
 transiente Ausfälle keinen Stunden-Lock verursachen).
 
+### 2.7 Webseiten-Lotsen-Modus
+
+Optionales Feature: wenn das Widget auf einer der konfigurierten WLO-Domains läuft, kann der Bot
+den User direkt zur passenden WLO-Seite navigieren — im **selben Browser-Tab**, statt einen
+neuen aufzumachen. Das ist nützlich, wenn der Widget-User auf einer Übersichtsseite sitzt und
+in eine spezifische Themenseite oder ein Fachportal wechseln möchte.
+
+**Drei Trigger pro Antwort-Turn (in dieser Reihenfolge):**
+
+1. **Card-Buttons** — jede ausgegebene Material-/Sammlungs-/Themenseiten-Card bekommt einen
+   dunkelblauen 🧭 „Bring mich hin"-Button neben den bestehenden Aktionen, sofern die Karte auf
+   eine allow-listed Domain zeigt. Klick navigiert im selben Tab.
+2. **Lotsen-Quick-Reply** — der Bot kann unter seiner Antwort einen einzelnen Quick-Reply-
+   Button setzen, der zu einer thematisch passenden Plattform-Seite führt
+   (z.B. „🧭 Mitmachen-Seite", „🧭 Themenseite Klimawandel"). Trigger ist eine Mischung aus
+   Message-Regex (`mitmachen` → `/mitmachen`), LLM-Eigenproduktion (über das `respond_to_user`-
+   Tool-Schema) und einem RAG-Area-Fallback (wenn `query_knowledge(area="WissenLebtOnline")`
+   aufgerufen wurde, kommt `https://wissenlebtonline.de/` als Vorschlag).
+3. **Banner-Dialog** — wenn der Bot ein eindeutiges Navigationsziel hat, kann er via
+   `page_action: navigate` einen Banner über dem Chat-Body einblenden („Soll ich dich zu X
+   bringen?" mit „Bring mich hin" / „Hier bleiben"). Banner ist orange-frei (Header-Dunkelblau).
+
+**Zustands-Steuerung — User-Toggle:**
+
+Der Modus wird im Widget-Header über einen 🧭-Toggle ein/aus geschaltet. Sichtbar ist der Toggle
+**nur** auf allow-listed Hosts (Default-Liste in `chatbots/wlo/v1/01-base/guide-mode.yaml`):
+`wirlernenonline.de`, `*.openeduhub.net`, `wissenlebtonline.de`. Auf Drittseiten (z.B.
+`bildungsserver.de`) erscheint der Toggle nicht, der Lotsen-Modus ist implicit aus.
+
+User-Wahl wird in `localStorage["boerdi.guide_mode"]` persistiert. Default ist **OFF** —
+Tab-Wechsel ist eine Verhaltensänderung gegenüber „neuer Tab", deshalb opt-in. Beim Klick auf
+den Toggle wechselt der State sofort, das Backend respektiert ihn beim nächsten Chat-Turn.
+
+**Cross-Domain-Bridge:**
+
+Klickt der User auf einen 🧭-Button und das Ziel ist eine **andere Origin** (z.B.
+`wirlernenonline.de` → `redaktion.openeduhub.net`), hängt das Widget automatisch zwei
+URL-Parameter an:
+
+- `?bsid=<session-id>` — Session-Brücke (existiert seit längerem, gilt allgemein für Cross-TLD-
+  Links). Bei Aufruf der Zielseite liest das dortige Widget die ID, übernimmt die Session und
+  entfernt den Parameter wieder aus der URL.
+- `?bgm=<0|1>` — Lotsen-Toggle-State. Auf der Zielseite wird der Wert gelesen, in
+  `localStorage` übernommen und der URL-Parameter entfernt. Damit überlebt der Toggle den
+  Domain-Wechsel.
+
+Beide Mechanismen funktionieren nur, wenn der Embed auf der Zielseite die Sender-Domain
+zur `trusted-domains`-Whitelist hinzugefügt hat — siehe Custom-Element-Attribute unten.
+
+**Konfiguration** in `chatbots/wlo/v1/01-base/guide-mode.yaml`:
+
+```yaml
+guide_mode:
+  default_enabled: false              # Toggle-Default. Wird nur genutzt, wenn keine
+                                      # localStorage-Wahl des Users vorliegt.
+  allowed_hosts:                      # Hosts, auf denen der Toggle erscheint UND zu
+    - wirlernenonline.de              # denen der Bot navigieren darf. ``*.example.com``
+    - "*.wirlernenonline.de"          # matcht ALLE Subdomains.
+    - openeduhub.net
+    - "*.openeduhub.net"
+    - wissenlebtonline.de
+    - "*.wissenlebtonline.de"
+  url_fields_priority:                # Welche Card-URL-Felder als Guide-Ziel zulässig
+    - topic_page_url                  # sind, in Reihenfolge der Bevorzugung.
+    - wlo_url
+    - url
+    - content_url
+    - preview_url
+  max_guide_targets_per_turn: 0       # Max Anzahl Cards pro Antwort mit Bring-mich-hin-
+                                      # Button. 0 = unbegrenzt (alle eligible Cards).
+```
+
+**Pattern-spezifische Quick-Reply-Trigger** (deterministisch, in
+`backend/app/services/guide_qr_injector.py`): das Modul mappt User-Frage-Regex und RAG-Area
+auf konkrete WLO-URLs. Liste pflegen wenn neue Plattform-Seiten dazukommen — derzeit:
+Themenseiten-Beispiel, Fachportal-Übersicht, Mitmachen-Seite, Über-WLO, Hintergrund-WLO,
+OER-Erklärung, Edu-Sharing-Verein, WissenLebtOnline-Webseite, Metaventis, WLO-Startseite.
+
+**Backend-Endpoint** für Frontend-Init: `GET /api/config/guide-mode` liefert das parsete
+yaml-Subset (allowed_hosts + default_enabled + max_guide_targets_per_turn). Das Widget
+fetcht es einmal beim Init und cached intern.
+
 ---
 
 ## 3. Repo-Layout
@@ -318,18 +400,42 @@ Booleans erkennen `"true"` / `"false"`.
 | `greeting` | _leer_ | Eigene Begrüßungsnachricht beim ersten Öffnen |
 | `persist-session` | `true` | Session-ID in `localStorage` halten — Verlauf bleibt über Page-Reload |
 | `session-key` | `boerdi_session_id` | localStorage-Schlüssel |
+| `session-cookie-domain` | _leer_ | Cross-Subdomain-Session-Cookie. Setzt parallel zu localStorage ein Cookie auf dieser Domain. Beispiel: `.wirlernenonline.de` verbindet `suche.wlo.de` ↔ `wp-test.wlo.de`. Leer = origin-isoliert. |
+| `session-cookie-max-age` | `2592000` (30 Tage) | Cookie-Lifetime in Sekunden. Greift nur mit `session-cookie-domain`. |
+| `trusted-domains` | _leer_ | Komma-Liste vertrauenswürdiger Hostnames für Cross-TLD-Session/Toggle-Handoff. Beim Klick auf einen Link/Button zu einer dieser Domains hängt das Widget `?bsid=<sid>&bgm=<0\|1>` an. Empfangsseite übernimmt Session + Lotsen-Toggle und entfernt die Parameter aus der URL. **Pflicht für Lotsen-Modus über Domain-Grenzen** (z.B. `wirlernenonline.de,openeduhub.net,wissenlebtonline.de`). Subdomain-Match automatisch. |
 | `auto-context` | `true` | Seitenkontext (URL, Title) automatisch ans Backend senden |
 | `page-context` | _leer_ | Zusätzlicher Kontext als JSON-String oder Objekt |
 | `show-debug-button` | `true` | 🔍 Debug-Toggle im Header. `false` = Button ausgeblendet (für Produktiv-Embeddings) |
 | `show-language-buttons` | `true` | 🔊 Text-to-Speech und 🎤 Mic-Aufnahme. `false` = beide Buttons aus (kein Sprach-Feature) |
 
+> **Lotsen-Modus** wird **nicht** über ein Custom-Element-Attribut gesteuert, sondern
+> komplett serverseitig via `chatbots/wlo/v1/01-base/guide-mode.yaml` (Allow-Liste,
+> Default-Toggle-State) plus per-User-Toggle im Widget-Header — siehe
+> [§ 2.7 Webseiten-Lotsen-Modus](#27-webseiten-lotsen-modus). Damit der Toggle-State
+> Cross-Domain überlebt, muss der Embed `trusted-domains` und (für Subdomains)
+> `session-cookie-domain` setzen.
+
 ```html
-<!-- Beispiel: Produktiv-Embedding ohne Debug, ohne Sprache -->
+<!-- Minimal-Embed: Default für Standard-Seiten -->
+<boerdi-chat
+  api-url="https://api.example.de"
+  primary-color="#1c4587">
+</boerdi-chat>
+
+<!-- Produktiv-Embedding ohne Debug, ohne Sprache -->
 <boerdi-chat
   api-url="https://api.example.de"
   primary-color="#1c4587"
   show-debug-button="false"
   show-language-buttons="false">
+</boerdi-chat>
+
+<!-- WLO-Embed mit Cross-Subdomain + Cross-TLD-Session-Brücke
+     (notwendig für funktionierenden Lotsen-Modus zwischen den Domains) -->
+<boerdi-chat
+  api-url="https://api.wlo.de"
+  trusted-domains="wirlernenonline.de,openeduhub.net,wissenlebtonline.de"
+  session-cookie-domain=".wirlernenonline.de">
 </boerdi-chat>
 ```
 

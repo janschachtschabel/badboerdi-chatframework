@@ -1,6 +1,7 @@
 ---
 id: PAT-01
 label: Direkt-Antwort
+short_purpose: "WANN: User signalisiert Ungeduld/Effizienz und stellt eine direkt beantwortbare Frage. WOFÜR: Max. 2 Sätze + Gesprächshaken, kein Smalltalk."
 priority: 500
 gate_personas: ["*"]
 gate_states: ["*"]

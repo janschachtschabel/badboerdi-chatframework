@@ -1,6 +1,7 @@
 ---
 id: PAT-12
 label: Ueberbrueckungs-Hinweis
+short_purpose: "WANN: Bot kann gerade nicht direkt antworten (z.B. Tool-Lag, Backend-Issue, Crawl-Wartezeit). WOFÜR: Kurzer Status-Hinweis + Schätzdauer + Alternative, damit User nicht im Leeren wartet."
 priority: 420
 gate_personas: ["*"]
 gate_states: ["*"]

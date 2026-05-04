@@ -35,6 +35,13 @@ SNAPSHOTS_DIR = _BACKEND_DIR / "snapshots"
 
 router = APIRouter()
 
+# Public sub-router for endpoints the embedded widget consumes WITHOUT
+# Studio auth — e.g. ``/api/config/guide-mode`` is fetched by every
+# Web-Component instance at boot to learn the allow-list. Studio-auth on
+# the main router would block that with 401 in production. Mounted
+# separately in main.py with NO ``_studio_deps``.
+public_router = APIRouter()
+
 
 @router.get("/files")
 async def get_config_files():
@@ -93,6 +100,22 @@ async def get_privacy_config():
     """Return the current chat/memory/quality logging toggles."""
     from app.services.config_loader import load_privacy_config
     return PrivacyConfig(**load_privacy_config())
+
+
+@public_router.get("/guide-mode")
+async def get_guide_mode_config_route():
+    """Public Webseiten-Guide-Modus configuration consumed by the widget.
+
+    The widget calls this once at boot to learn (a) the default toggle
+    state and (b) the allow-list of hosts on which the toggle should
+    even appear. The toggle is hidden + Mode forcibly off on any other
+    domain.
+
+    Mounted on ``public_router`` (no Studio auth) — the widget runs in
+    every embedder's browser and doesn't have the Studio API key.
+    """
+    from app.services.config_loader import load_guide_mode_config
+    return load_guide_mode_config()
 
 
 @router.put("/privacy", response_model=PrivacyConfig)

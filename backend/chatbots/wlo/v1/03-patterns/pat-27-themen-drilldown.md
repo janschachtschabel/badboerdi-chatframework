@@ -1,7 +1,13 @@
 ---
 id: PAT-27
 label: Themen-Drilldown
-priority: 470
+short_purpose: "WANN: User will Sub-Themen/Bereiche eines KONKRETEN Fachs/Sammlung sehen (INT-W-14, Singular-Fach + Drilldown-Verb). WOFÜR: ZUERST get_subject_portals (UUID fuer das Fach holen), DANN browse_collection_tree mit DIESER UUID."
+# Priority 500: muss gegen PAT-16 Themen-Exploration (priority 400 +
+# spec_bonus 0.02) gewinnen, wenn beide für INT-W-14 in Frage kommen.
+# Eval 2026-05-03 zeigte: PAT-16 schlug PAT-27 knapp (0.060 vs 0.057),
+# weil PAT-16 mehr spezifische Gates hat. Mit priority 500 ist der
+# Priority-Vorsprung 0.013, deutlich über PAT-16's spec-bonus.
+priority: 500
 gate_personas: ["*"]
 gate_states: ["*"]
 gate_intents: ["INT-W-14"]
@@ -19,8 +25,18 @@ rag_areas: []
 format_primary: cards
 format_follow_up: quick_replies
 card_text_mode: minimal
-tools: ["search_wlo_collections", "get_subject_portals", "browse_collection_tree"]
-core_rule: ""
+tools: ["get_subject_portals", "browse_collection_tree"]
+force_tool_use: true
+requires_all_tools: true
+core_rule: |
+  ZWEI-SCHRITT-FLOW:
+  1. ``get_subject_portals(includeContentCounts: false)`` aufrufen, um die nodeId
+     des gewuenschten Fachs zu erhalten. Filtere die Antwort nach dem Fachnamen
+     aus ``entities.fach`` (z.B. "Mathematik").
+  2. ``browse_collection_tree(nodeId=<gefundene UUID>, depth: 1,
+     includeContentCounts: true)`` mit der UUID des Top-Treffers.
+  Nur SO bekommst du die richtigen Sub-Themen. Erfindest du eine UUID
+  oder uebernimmst sie aus Beispielen → falsche Ergebnisse.
 ---
 
 # PAT-27: Themen-Drilldown
@@ -38,9 +54,14 @@ User will die **Sub-Sammlungen unter einer existierenden Sammlung oder Fachporta
   - "In welche Unterthemen ist Geschichte aufgeteilt?"
 
 ## Vorbedingung: nodeId der Eltern-Sammlung — UUID, NICHT Fach-Name!
-**KRITISCH**: `browse_collection_tree(nodeId=...)` erwartet eine UUID
-wie `742d8c87-e5a3-4658-86f9-419c2cea6574`, NIEMALS einen Fach-Namen
-wie `'Informatik'`. Wer das ignoriert, bekommt leere Antworten.
+**KRITISCH — und der haeufigste Fehler**: `browse_collection_tree(nodeId=...)`
+erwartet eine UUID, NIEMALS einen Fach-Namen wie `'Informatik'` oder
+`'Mathematik'`. Wer das ignoriert, bekommt leere oder FALSCHE Antworten
+(z.B. Informatik-Sammlungen, weil ein Beispiel-UUID kopiert wurde).
+
+**REGEL: Du kennst die UUID NICHT.** Erfinde sie nicht. Kopiere sie
+nicht aus Pattern-Doc, vorherigen Turns oder Trainingsdaten. Hole sie
+in einem expliziten Tool-Call.
 
 Damit `browse_collection_tree` aufgerufen werden kann, muss zuerst
 eine UUID beschafft werden. Drei Wege:
@@ -48,16 +69,23 @@ eine UUID beschafft werden. Drei Wege:
 1. **Aus Page-Context oder vorherigem Turn**: wenn der User auf einer
    Sammlungs-Karte ist (page_context.collection_id) oder im letzten Turn
    ein Fachportal angezeigt wurde, ist die nodeId in `entities.thema` /
-   `entities.collection_id` / `session_state` zu finden.
+   `entities.collection_id` / `session_state` zu finden — und dann
+   ausschliesslich DIESE konkrete UUID nutzen.
 
-2. **Über Fachname auflösen**: wenn `entities.fach` gesetzt ist (z.B.
-   "Mathematik"), erst `get_subject_portals(includeContentCounts: false)`
-   aufrufen, das passende Portal anhand des Titels finden, dann mit
-   dessen nodeId `browse_collection_tree`.
+2. **Über Fachname auflösen** (haeufigster Fall): wenn `entities.fach`
+   gesetzt ist (z.B. "Mathematik"), MUSS zuerst
+   `get_subject_portals(includeContentCounts: false)` aufgerufen werden.
+   Aus der Antwort den Eintrag mit `title == entities.fach` (oder dem
+   semantisch nahesten Treffer) waehlen und DESSEN `nodeId` an
+   `browse_collection_tree` weitergeben.
 
 3. **Über Sammlungs-Suche**: wenn nur ein Thema-String genannt wurde
    ("Algebra"), erst `search_wlo_collections(query, maxResults: 3)`,
    dann den Top-Treffer als Eltern-Sammlung nehmen.
+
+**NIEMALS** eine UUID aus diesem Pattern-Doc oder aus Beispielen
+verwenden — die sind aus didaktischen Gruenden vorhanden und zeigen
+NICHT auf das vom User gewuenschte Fach.
 
 ## Verhalten
 - `browse_collection_tree(nodeId, depth: 1, includeContentCounts: true)`

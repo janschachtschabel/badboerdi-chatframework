@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
 import { ChatComponent } from '../chat/chat.component';
 import { detectPageContext } from './page-context-detector';
 import { CanvasComponent, CanvasViewMode, CanvasCardAction } from '../canvas/canvas.component';
-import { WloCard, PaginationInfo } from '../services/api.service';
+import { ApiService, WloCard, PaginationInfo } from '../services/api.service';
 import { BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
 
 /** Snapshot of the canvas state — pushed onto history when the user
@@ -100,12 +100,43 @@ interface CanvasSnapshot {
                     [title]="chatRef?.showDebug ? 'Debug aus' : 'Debug an'">
               <span class="action-icon">🔍</span>
             </button>
+            <!-- Webseiten-Guide-Modus: nur sichtbar auf Allow-Listen-
+                 Hosts (wirlernenonline.de etc.). Auf Drittseiten bleibt
+                 der Toggle ausgeblendet (kein Sinn ohne Navigationsziel). -->
+            <button *ngIf="guideModeAvailable()"
+                    class="boerdi-action-btn"
+                    [class.is-on]="guideMode()"
+                    [class.is-off]="!guideMode()"
+                    (click)="toggleGuideMode()"
+                    [title]="guideMode() ? 'Lotsen-Modus aus (öffnet Links in neuem Tab)' : 'Lotsen-Modus an (führt dich zu den Treffern)'">
+              <span class="action-icon">🧭</span>
+            </button>
             <button class="boerdi-action-btn boerdi-action-btn--neutral"
                     (click)="chatRef?.restart()"
                     title="Neuer Chat">🔄</button>
             <button class="boerdi-close"
                     (click)="toggle()"
                     aria-label="Schließen">×</button>
+          </div>
+        </div>
+
+        <!-- Lotsen-Banner: vom Bot vorgeschlagene Navigation. Wir verlassen
+             die Host-Seite NIE ohne explizite Zustimmung — daher zwei
+             Buttons und ein klares Label. -->
+        <div *ngIf="guideNavTarget()" class="boerdi-nav-banner" role="alert">
+          <span class="nav-banner-icon" aria-hidden="true">🧭</span>
+          <span class="nav-banner-text">
+            Soll ich dich zu „<strong>{{ guideNavTarget()!.label }}</strong>" bringen?
+          </span>
+          <div class="nav-banner-actions">
+            <button type="button" class="nav-banner-btn nav-banner-btn--primary"
+                    (click)="confirmGuideNav()">
+              Bring mich hin
+            </button>
+            <button type="button" class="nav-banner-btn nav-banner-btn--secondary"
+                    (click)="cancelGuideNav()">
+              Hier bleiben
+            </button>
           </div>
         </div>
 
@@ -144,6 +175,8 @@ interface CanvasSnapshot {
               [pageContext]="resolvedPageContext"
               [persistSession]="persistSession"
               [sessionKey]="sessionKey"
+              [sessionCookieDomain]="sessionCookieDomain"
+              [sessionCookieMaxAge]="sessionCookieMaxAge"
               [greeting]="greeting"
               [showDebugButton]="showDebugButton"
               [showLanguageButtons]="showLanguageButtons"
@@ -151,6 +184,7 @@ interface CanvasSnapshot {
               [hideCards]="canvasOpen()"
               [canvasShowingCards]="canvasOpen() && canvasMode() === 'cards'"
               [canvasState]="canvasStateForBackend()"
+              [guideModeActive]="guideModeAvailable() && guideMode()"
               (pageAction)="handlePageAction($event)">
             </badboerdi-chat>
           </div>
@@ -407,6 +441,67 @@ interface CanvasSnapshot {
     }
     .boerdi-close:hover { opacity: 1; }
 
+    /* ── Lotsen-Banner ─────────────────────────────────────────
+       Vom Bot vorgeschlagene Navigation. Schmaler Streifen über
+       dem Body in dezentem Hellgrau-Blau, mit Header-Akzentfarbe
+       als Primär-Button. Kein Orange — der Banner soll informieren,
+       nicht alarmieren. */
+    .boerdi-nav-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+      color: #1e293b;
+      font-size: 13px;
+      flex-wrap: wrap;
+    }
+    .nav-banner-icon {
+      font-size: 16px;
+      color: var(--boerdi-primary, #1c4587);
+    }
+    .nav-banner-text {
+      flex: 1 1 220px;
+      min-width: 0;
+      line-height: 1.3;
+    }
+    .nav-banner-text strong {
+      font-weight: 600;
+      word-break: break-word;
+      color: var(--boerdi-primary, #1c4587);
+    }
+    .nav-banner-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .nav-banner-btn {
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .nav-banner-btn--primary {
+      background: var(--boerdi-primary, #1c4587);
+      color: #fff;
+    }
+    .nav-banner-btn--primary:hover {
+      filter: brightness(1.1);
+    }
+    .nav-banner-btn--secondary {
+      background: #ffffff;
+      color: #475569;
+      border-color: #cbd5e1;
+    }
+    .nav-banner-btn--secondary:hover {
+      background: #f8fafc;
+      border-color: #94a3b8;
+    }
+
     /* Mobile tab switcher — hidden on desktop */
     .boerdi-tabs {
       display: none;
@@ -519,6 +614,23 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() primaryColor = '#1c4587';
   @Input() persistSession: boolean | string = true;
   @Input() sessionKey = 'boerdi_session_id';
+  /** Cookie domain for cross-subdomain session sharing.
+   *  Set to e.g. ".wirlernenonline.de" so the session-id cookie is
+   *  visible on suche.wirlernenonline.de, wp-test.wirlernenonline.de
+   *  etc. Empty string = pure localStorage (origin-isolated). */
+  @Input() sessionCookieDomain = '';
+  /** Cookie max-age in seconds (default 30 days). */
+  @Input() sessionCookieMaxAge: number | string = 30 * 24 * 60 * 60;
+  /** Comma-separated whitelist of trusted hostnames the widget may
+   *  pass the session-id to via ?bsid=…  in outgoing-link rewrites.
+   *  Use bare domains ("openeduhub.net") or full hostnames
+   *  ("redaktion.openeduhub.net"). Subdomain match is automatic
+   *  (entry "openeduhub.net" matches any *.openeduhub.net).
+   *  Empty (default) = no rewrite, no cross-TLD handoff.
+   *
+   *  Example: trusted-domains="wirlernenonline.de,openeduhub.net"
+   */
+  @Input() trustedDomains = '';
   @Input() greeting = '';
   @Input() autoContext: boolean | string = true;
   /** Show the 🔍 debug-toggle button in the chat header. Default true. */
@@ -528,6 +640,24 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
 
   expanded = false;
   resolvedPageContext: Record<string, any> = {};
+
+  // ── Webseiten-Guide-Modus (Lotsen-Modus) ──────────────────────
+  /** True when this host is on the backend-configured allow-list. The
+   *  toggle is hidden on every other domain — there's nothing to lotse
+   *  to. Re-evaluated once at init from /api/config/guide-mode. */
+  guideModeAvailable = signal(false);
+  /** Toggle state. Persisted in ``localStorage['boerdi.guide_mode']``,
+   *  default from backend config (``default_enabled`` in guide-mode.yaml). */
+  guideMode = signal(false);
+  /** Hostname snapshot we send to the backend so it knows whether to
+   *  attach ``guide_url`` to outgoing cards. Filled at init. */
+  private guideHost = '';
+  private static readonly GUIDE_LS_KEY = 'boerdi.guide_mode';
+  /** Bot-initiated navigation target — set when the backend sends a
+   *  ``page_action: navigate`` payload. The widget shows a banner with
+   *  "Bring mich hin" / "Hier bleiben"; the user must explicitly confirm
+   *  before we leave the host page. ``null`` hides the banner. */
+  guideNavTarget = signal<{ url: string; label: string } | null>(null);
 
   // ── Canvas state (signals) ──
   // Beide Signals (Markdown und Cards) leben parallel. Der User kann im
@@ -601,7 +731,7 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   // the same page_action via the CustomEvent the chat component dispatches.
   private _onWindowPageAction?: (e: Event) => void;
 
-  constructor(private zone: NgZone) {}
+  constructor(private zone: NgZone, private api: ApiService) {}
 
   ngOnInit() {
     this.expanded = this.initialState === 'expanded';
@@ -618,6 +748,14 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
     } catch { /* ignore */ }
+
+    // ── Webseiten-Guide-Modus initialisieren ────────────────────
+    // Allow-Liste + Default-Status vom Backend laden, mit dem aktuellen
+    // ``window.location.hostname`` matchen, dann localStorage-Override
+    // anwenden. Komplett async und non-blocking — der Toggle bleibt
+    // versteckt bis die Antwort da ist (typisch <50 ms).
+    this.guideHost = (window?.location?.hostname || '').toLowerCase();
+    this.initGuideMode();
 
     // Merge automatic + manual page context
     const auto = this.autoContext === true || this.autoContext === 'true';
@@ -676,12 +814,93 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     };
     window.addEventListener('badboerdi:page-action', this._onWindowPageAction);
+
+    // Outgoing-Link-Rewrite für Cross-TLD-Session-Handoff. Nur aktiv wenn
+    // trustedDomains konfiguriert ist. Greift JEDEN Link-Klick auf der
+    // Host-Seite ab (nicht nur im Widget) und hängt ?bsid=… an, falls
+    // das Link-Ziel zu einer Whitelist-Domain führt.
+    if (this._parsedTrustedDomains().length > 0) {
+      this._onDocumentLinkClick = (e: Event) => this._maybeRewriteOutgoingLink(e);
+      document.addEventListener('click', this._onDocumentLinkClick, true);
+    }
   }
 
   ngOnDestroy() {
     if (this._onWindowPageAction) {
       window.removeEventListener('badboerdi:page-action', this._onWindowPageAction);
     }
+    if (this._onDocumentLinkClick) {
+      document.removeEventListener('click', this._onDocumentLinkClick, true);
+    }
+  }
+
+  // ── Cross-TLD-Session-Handoff ─────────────────────────────────────
+  private _onDocumentLinkClick?: (e: Event) => void;
+
+  /** Cached parsed list of trusted hostnames (lower-case). */
+  private _trustedDomainsCache: string[] | null = null;
+
+  private _parsedTrustedDomains(): string[] {
+    if (this._trustedDomainsCache !== null) return this._trustedDomainsCache;
+    const list = (this.trustedDomains || '')
+      .split(/[,\s]+/)
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s.length > 0);
+    this._trustedDomainsCache = list;
+    return list;
+  }
+
+  /** True wenn host zur Whitelist passt — exakter Match ODER Subdomain. */
+  private _isTrustedHost(host: string): boolean {
+    const h = (host || '').toLowerCase();
+    if (!h) return false;
+    for (const t of this._parsedTrustedDomains()) {
+      if (h === t) return true;
+      if (h.endsWith('.' + t)) return true;  // *.t matches t
+    }
+    return false;
+  }
+
+  /** Click-Handler: hängt ?bsid=<sessionId> an Links zu trusted hosts an. */
+  private _maybeRewriteOutgoingLink(e: Event): void {
+    try {
+      // Find the closest <a href="..."> from the click target — manche Sites
+      // wrappen Links in span/div, MouseEvent.target ist dann nicht der Anchor.
+      let el = e.target as HTMLElement | null;
+      while (el && el.tagName !== 'A') {
+        el = el.parentElement;
+        if (!el || el === document.body) return;
+      }
+      const anchor = el as HTMLAnchorElement | null;
+      if (!anchor || !anchor.href) return;
+
+      // URL parsen — wenn das fehlschlägt (mailto:, javascript:, …), nichts tun.
+      let target: URL;
+      try { target = new URL(anchor.href, window.location.href); }
+      catch { return; }
+      if (target.protocol !== 'http:' && target.protocol !== 'https:') return;
+
+      // Nicht selbst-rewriten: Sprünge auf dieselbe Origin können einfach
+      // localStorage / Cookie nutzen — bsid würde nur unnötig die URL füllen.
+      if (target.origin === window.location.origin) return;
+
+      // Ziel in Whitelist?
+      if (!this._isTrustedHost(target.hostname)) return;
+
+      // Session-ID aus dem Chat-Component holen (ViewChild) — das ist die
+      // Quelle der Wahrheit, weil sie Stufe-A-Pickup, Cookie und localStorage
+      // bereits konsolidiert hat.
+      const sid = this.chatRef?.sessionId;
+      if (!sid || !/^bb-[0-9a-f-]{32,40}$/i.test(sid)) return;
+
+      // Schon vorhanden? Nicht doppelt setzen.
+      if (target.searchParams.has('bsid')) return;
+
+      target.searchParams.set('bsid', sid);
+      anchor.href = target.toString();
+      // (Wir verändern nur href, kein preventDefault — der Klick wird normal
+      //  durchgereicht, der Browser navigiert mit dem aktualisierten href.)
+    } catch { /* never break user clicks */ }
   }
 
   toggle() {
@@ -772,9 +991,36 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
         this.closeCanvas();
         break;
       }
+      case 'navigate': {
+        // Bot recommends an external navigation. We never auto-leave the
+        // host page — show a banner and require an explicit user click.
+        // Only honoured when guide mode is on AND the URL host is on the
+        // configured allow list (the URL is enforced backend-side too).
+        if (!this.guideMode()) break;
+        const p = pa.payload || {};
+        const url = typeof p.url === 'string' ? p.url.trim() : '';
+        const label = typeof p.label === 'string' ? p.label : (p.title || '');
+        if (!url) break;
+        this.guideNavTarget.set({ url, label: label || url });
+        break;
+      }
       default:
         break;
     }
+  }
+
+  /** User clicked "Bring mich hin" on the navigate banner. Leaves the
+   *  page in the current tab. */
+  confirmGuideNav(): void {
+    const t = this.guideNavTarget();
+    if (!t) return;
+    this.guideNavTarget.set(null);
+    this.navigateToGuideUrl(t.url);
+  }
+
+  /** User clicked "Hier bleiben" — dismiss the navigate banner. */
+  cancelGuideNav(): void {
+    this.guideNavTarget.set(null);
   }
 
   /** User clicked a tab in the canvas header — switch preferred view. */
@@ -897,6 +1143,18 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
     switch (ev.action) {
+      case 'guide': {
+        // Lotsen-Modus: navigate the current tab to the allow-listed
+        // target URL. ``guide_url`` only exists when the backend judged
+        // the card eligible — no extra check needed here.
+        const url = (c as WloCard & { guide_url?: string }).guide_url || '';
+        if (!url) {
+          console.warn('[canvas] guide action without guide_url on card');
+          return;
+        }
+        this.navigateToGuideUrl(url);
+        return;   // page is leaving — no further state changes
+      }
       case 'preview':
         // Stay inside the canvas — show metadata-driven preview.
         this.openCanvasPreview(c);
@@ -940,6 +1198,153 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
     }
     this.mobileTab.set('chat');
+  }
+
+  // ── Guide-Mode: Init / Allow-Liste / Toggle / Navigation ─────
+
+  /** Match the current host against ``*.example.com``-style patterns.
+   *  Same semantics as the backend's ``host_is_allowed`` so allow/deny
+   *  decisions stay consistent on both sides. */
+  private hostMatchesPattern(host: string, pattern: string): boolean {
+    if (!host || !pattern) return false;
+    const p = pattern.trim().toLowerCase();
+    if (p.startsWith('*.')) {
+      const suffix = p.slice(1);          // ".example.com"
+      return host.endsWith(suffix) && host !== p.slice(2);
+    }
+    return host === p;
+  }
+
+  /** Fetch the guide-mode allow-list from the backend, decide whether
+   *  the toggle should appear here, and apply any saved override from
+   *  localStorage. Failures default to "guide off" — never block the
+   *  widget. */
+  private async initGuideMode(): Promise<void> {
+    let allowedHosts: string[] = [];
+    let defaultEnabled = true;
+    try {
+      const apiBase = (this.apiUrl || '').replace(/\/+$/, '');
+      const resp = await fetch(`${apiBase}/api/config/guide-mode`);
+      if (resp.ok) {
+        const data = await resp.json();
+        allowedHosts = Array.isArray(data?.allowed_hosts) ? data.allowed_hosts : [];
+        defaultEnabled = !!data?.default_enabled;
+      }
+    } catch {
+      // Backend nicht erreichbar — Toggle bleibt aus.
+    }
+    // Strip leading "www." and lowercase the host for matching, same
+    // as the backend ``_normalize_host``.
+    const h = this.guideHost.replace(/^www\./, '');
+    const allowed = allowedHosts.some(p => this.hostMatchesPattern(h, p));
+    this.guideModeAvailable.set(allowed);
+
+    if (!allowed) {
+      this.guideMode.set(false);
+      this.api.setGuideEnv(false, this.guideHost);
+      return;
+    }
+
+    // Stage A — URL-Param ?bgm=1/0 als Cross-TLD-Handoff. Wenn der User
+    // gerade von einer anderen WLO-Domain via "Bring mich hin" hierher
+    // navigiert wurde, hängt der Toggle-Wert in der URL. Nach dem Pickup
+    // entfernen wir den Param wieder (kein Bookmark-Leak) und persistieren
+    // in localStorage, sodass spätere Reloads den Wert behalten.
+    let urlOverride: boolean | null = null;
+    try {
+      const url = new URL(window.location.href);
+      const fromUrl = url.searchParams.get('bgm');
+      if (fromUrl === '1') urlOverride = true;
+      else if (fromUrl === '0') urlOverride = false;
+      if (urlOverride !== null) {
+        url.searchParams.delete('bgm');
+        const cleaned = url.pathname
+          + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '')
+          + url.hash;
+        try { history.replaceState({}, '', cleaned); } catch { /* ignore */ }
+        try {
+          localStorage.setItem(
+            WidgetComponent.GUIDE_LS_KEY, urlOverride ? '1' : '0',
+          );
+        } catch { /* ignore */ }
+      }
+    } catch { /* ignore — URL parse failures shouldn't block boot */ }
+
+    // Stage B — localStorage (Origin-spezifisch). Wenn der User auf dieser
+    // Origin schon mal getoggelt hat, gewinnt der Wert.
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(WidgetComponent.GUIDE_LS_KEY); } catch { /* ignore */ }
+
+    let on: boolean;
+    if (urlOverride !== null) on = urlOverride;
+    else if (stored === '1') on = true;
+    else if (stored === '0') on = false;
+    else on = defaultEnabled;
+
+    this.guideMode.set(on);
+    // Push into ApiService so subsequent chat requests carry guide_mode
+    // and host in the environment payload.
+    this.api.setGuideEnv(on, this.guideHost);
+  }
+
+  /** Header-Toggle. Persists the new value in localStorage so it
+   *  survives reloads and host-page navigation within the same domain. */
+  toggleGuideMode(): void {
+    const next = !this.guideMode();
+    this.guideMode.set(next);
+    this.api.setGuideEnv(next, this.guideHost);
+    try {
+      localStorage.setItem(WidgetComponent.GUIDE_LS_KEY, next ? '1' : '0');
+    } catch { /* ignore */ }
+  }
+
+  /** Direct same-tab navigation to a card's guide URL.
+   *
+   *  Cross-Origin-Handoff: wenn das Ziel auf einer anderen Origin liegt
+   *  als die aktuelle Host-Seite, hängen wir zwei URL-Parameter an:
+   *  - ``bsid=<session-id>`` — damit der Bot-Verlauf auch auf der
+   *    Zielseite weiterläuft (Cross-TLD-Session-Bridge, bestehender
+   *    Mechanismus aus ``_maybeRewriteOutgoingLink``).
+   *  - ``bgm=1/0`` — damit der Lotsen-Modus-Toggle auf der Zielseite
+   *    aktiv bleibt; ohne dieses Flag wäre der Toggle-Wert in
+   *    localStorage origin-isoliert und auf der neuen Domain weg.
+   *
+   *  Beide Parameter werden auf der Zielseite vom Widget gelesen,
+   *  sofort aus der URL entfernt (kein Bookmark-Leak), und in den
+   *  jeweiligen Persistenz-Layer (Cookie/localStorage) übernommen.
+   */
+  private navigateToGuideUrl(url: string): void {
+    if (!url) return;
+    let finalUrl = url;
+    try {
+      const target = new URL(url, window.location.href);
+      // Nur Handoff bei echtem Origin-Wechsel — same-origin hat schon
+      // Zugriff auf Cookie/localStorage und braucht keine URL-Params.
+      if (target.origin !== window.location.origin) {
+        const sid = this.chatRef?.sessionId;
+        if (sid && /^bb-[0-9a-f-]{32,40}$/i.test(sid)
+            && !target.searchParams.has('bsid')) {
+          target.searchParams.set('bsid', sid);
+        }
+        // Toggle-State (1 = an, 0 = aus) — ``bgm`` für "boerdi guide mode".
+        // Bewusst auch bei Toggle=aus mitgeschickt, damit ein User der
+        // bewusst deaktiviert hat, auf der Zielseite nicht plötzlich
+        // wieder den Default sieht.
+        if (!target.searchParams.has('bgm')) {
+          target.searchParams.set('bgm', this.guideMode() ? '1' : '0');
+        }
+        finalUrl = target.toString();
+      }
+    } catch {
+      // Bei Parse-Fehler einfach Plain-URL nehmen (kein Cross-TLD-Bridge,
+      // aber Navigation klappt trotzdem).
+    }
+    try {
+      window.location.href = finalUrl;
+    } catch {
+      // Fallback for sandboxed iframes that block direct nav.
+      window.open(finalUrl, '_self', 'noopener');
+    }
   }
 
   /** Pull a UUID (collection id) out of any URL the card exposes.

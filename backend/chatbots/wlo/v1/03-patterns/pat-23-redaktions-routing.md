@@ -1,6 +1,7 @@
 ---
 id: PAT-23
 label: Redaktions-Routing
+short_purpose: "WANN: User meldet Fehler/Lücke, möchte Material einreichen oder an Redaktion weiterleiten (INT-W-05). WOFÜR: Klares Routing zur richtigen Stelle mit Erwartungs-Management."
 priority: 550
 gate_personas: ["*"]
 gate_states: ["*"]

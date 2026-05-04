@@ -1,6 +1,7 @@
 ---
 id: PAT-18
 label: Unterrichts-Paket
+short_purpose: "WANN: Lehrkraft braucht ein KOMPLETTES Material-Bundle für eine Stunde/Reihe (kein Single-Item). WOFÜR: Gepacktes Set aus Einstieg + Aufgaben + Vertiefung mit klarer Zeit-Struktur."
 priority: 470
 gate_personas: ["P-W-LK", "P-AND", "P-ELT"]
 gate_states: ["*"]

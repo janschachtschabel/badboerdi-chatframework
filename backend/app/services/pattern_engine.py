@@ -46,7 +46,14 @@ class PatternDef(BaseModel):
     # RAG-only answer would be a regression. WLO-MCP calls are cheap so the
     # extra round-trip is acceptable.
     force_tool_use: bool = False
+    # Phase B1 — Multi-Step-Tools: when True, the Reflection-Loop in
+    # generate_response insists that ALL listed tools were called (full
+    # coverage), not just one (intersection-non-empty). Use for patterns
+    # that need a deterministic sequence (e.g. lookup_vocab → search_content)
+    # rather than a single-tool answer. Default False = "any one suffices".
+    requires_all_tools: bool = False
     core_rule: str = ""
+    short_purpose: str = ""
 
 
 # ── Config-driven tables (loaded from YAML on each request) ──────────
@@ -242,7 +249,9 @@ def phase3_modulate(
         "max_items": device_max.get(device, 6),
         "tools": list(pattern.tools),
         "force_tool_use": pattern.force_tool_use,
+        "requires_all_tools": pattern.requires_all_tools,
         "core_rule": pattern.core_rule,
+        "short_purpose": pattern.short_purpose,
         "rag_areas": list(pattern.rag_areas),
         "skip_intro": False,
         "one_option": False,
@@ -289,6 +298,7 @@ def select_pattern(
     entities: dict[str, Any],
     intent_confidence: float = 0.8,
     enforced_pattern_id: str | None = None,
+    pattern_id_hint: str | None = None,
 ) -> tuple[PatternDef, dict[str, Any], dict[str, float], list[str]]:
     """Run all 3 phases and return (winner, modulated_output, scores, eliminated).
 
@@ -297,6 +307,12 @@ def select_pattern(
     Its ``core_rule`` and ``tools``/``sources`` are honoured so the LLM gets
     a proper instruction (instead of just having tone/length overridden on
     whatever pattern happened to win the scoring phase).
+
+    ``pattern_id_hint`` is the LLM-Klassifikator's advisory pattern guess.
+    By default it's pure telemetry (Shadow-Mode). If the tie-breaker config
+    (``01-base/tie-breaker.yaml``) is enabled and the engine score is a
+    tight race, the hint can override the engine choice — selectively per
+    pattern. See the YAML for the calibration knobs.
     """
     patterns = get_patterns()
 
@@ -318,9 +334,63 @@ def select_pattern(
     scores = phase2_score(candidates, signals, page, entities, intent_confidence)
 
     winner_id = max(scores, key=scores.get)
+
+    # ── Tie-Breaker (Bonus 2) — selektiv aktivierbar ────────────────
+    # Override winner with LLM-Hint when:
+    #   * tie_breaker.enabled is true
+    #   * Score-gap (top1 − top2) < max_score_gap
+    #   * LLM-Hint is among the top-N Score-Patterns
+    #   * Engine-Winner OR LLM-Hint is in allow_patterns_winner (= Pattern-
+    #     Cluster, in dem Override erlaubt ist)
+    tie_breaker_log: dict[str, Any] | None = None
+    if pattern_id_hint and pattern_id_hint != winner_id:
+        try:
+            from app.services.config_loader import load_tie_breaker_config
+            tb_cfg = load_tie_breaker_config()
+        except Exception:
+            tb_cfg = {"enabled": False}
+        if tb_cfg.get("enabled"):
+            ranked = sorted(scores.items(), key=lambda kv: -kv[1])
+            top_window = ranked[: max(2, int(tb_cfg.get("top_n_window") or 2))]
+            top_window_ids = {pid for pid, _ in top_window}
+            score_gap = (
+                ranked[0][1] - ranked[1][1] if len(ranked) >= 2 else 1.0
+            )
+            allow = set(tb_cfg.get("allow_patterns_winner") or [])
+            hint_in_window = pattern_id_hint in top_window_ids
+            hint_candidate = any(p.id == pattern_id_hint for p in candidates)
+            cluster_match = (winner_id in allow) or (pattern_id_hint in allow)
+            if (
+                hint_candidate
+                and hint_in_window
+                and cluster_match
+                and score_gap < float(tb_cfg.get("max_score_gap") or 0.05)
+            ):
+                tie_breaker_log = {
+                    "applied": True,
+                    "from": winner_id,
+                    "to": pattern_id_hint,
+                    "score_gap": round(score_gap, 4),
+                    "max_score_gap": tb_cfg.get("max_score_gap"),
+                    "reason": "llm_hint_override",
+                }
+                winner_id = pattern_id_hint
+            else:
+                tie_breaker_log = {
+                    "applied": False,
+                    "engine_winner": winner_id,
+                    "llm_hint": pattern_id_hint,
+                    "score_gap": round(score_gap, 4),
+                    "hint_in_window": hint_in_window,
+                    "hint_candidate": hint_candidate,
+                    "cluster_match": cluster_match,
+                }
+
     winner = next(p for p in candidates if p.id == winner_id)
 
     output = phase3_modulate(winner, signals, device, entities, persona_id)
+    if tie_breaker_log is not None:
+        output["tie_breaker"] = tie_breaker_log
 
     # Propagate missing-slot info from patterns with precondition_slots,
     # but ONLY when the user's intent actually targets complex tasks

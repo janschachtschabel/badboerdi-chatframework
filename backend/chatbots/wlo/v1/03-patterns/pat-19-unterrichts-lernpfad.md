@@ -1,6 +1,7 @@
 ---
 id: PAT-19
 label: Unterrichts-Lernpfad
+short_purpose: "WANN: Lehrkraft (P-W-LK) plant strukturiert einen Lernpfad/Stundenentwurf zu konkretem Thema (INT-W-10 oder INT-W-03b mit Plan-Sprache). WOFÜR: Sequenzieller Lernpfad mit MCP-Materialien an passenden Stellen."
 priority: 480
 gate_personas: ["P-W-LK"]
 gate_states: ["state-5", "state-6", "state-12"]

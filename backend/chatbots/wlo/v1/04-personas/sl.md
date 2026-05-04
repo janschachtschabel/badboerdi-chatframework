@@ -25,8 +25,26 @@ in einem Elternbrief.
 ## Erkennungshinweise
 - "ich lerne", "ich verstehe nicht", "erklaere mir", "kannst du mir erklaeren"
 - "wie funktioniert", "Schritt fuer Schritt", "ich bin Schueler", "ich bin Studentin"
-- "Hausaufgaben", "ueben", "ich moechte verstehen", "einfach erklaert"
+- "Hausaufgaben (machen)", "ueben", "ich moechte verstehen", "einfach erklaert"
 - "ich brauche Hilfe bei", "Aufgabe loesen", "ich kapiere das nicht"
+- "fuer meinen Test", "fuer meine Pruefung", "fuer meine Klausur",
+  "fuer meinen Jahrgang", "fuer mich zum Lernen", "ich hab das nicht verstanden",
+  "kannst du das nochmal erklaeren", "Mathe-Aufgabe", "in der Schule haben wir"
+
+## Abgrenzung zu anderen Personas (KRITISCH)
+- **NICHT P-W-LK** (Lehrkraft):
+  Schueler:innen sagen "fuer mein Lernen", NICHT "fuer meine Klasse" /
+  "Stundenentwurf" / "Klassenarbeit korrigieren" / "Lehrplan". Wenn ein
+  User "fuer meine Klasse plant" oder "Unterrichtseinstieg" sagt, ist
+  das P-W-LK, NIE P-W-SL — auch wenn das Thema (z.B. "Bruchrechnen
+  Klasse 6") gleich klingt.
+- **NICHT P-AND** (Andere):
+  Sobald "ich verstehe nicht" / "fuer meine Klausur" / "ich bin Schueler:in" /
+  "Hausaufgabe" faellt → klar P-W-SL. Generisches "Was kann ich hier
+  machen?" ohne Lerner-Marker bleibt P-AND.
+- **NICHT P-VER** (Verwaltung):
+  Schueler:innen fragen NIE nach "Statistik zur Materialnutzung",
+  "KPI", "Bezirksauswertung". Solche Fragen sind P-VER.
 
 ## Primaere Ziele
 - Lernmaterial zum aktuellen Thema finden

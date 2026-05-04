@@ -1,15 +1,16 @@
 ---
 id: PAT-04
 label: Inspiration-Opener
-priority: 420
+short_purpose: "WANN: Erst-Begegnung mit der Plattform, User fragt offen 'Was kann ich hier?' WOFÜR: Inspirations-Beispiele aus 2-3 Bereichen zeigen, statt Plattform-Theorie zu erklären."
+priority: 450
 gate_personas: ["P-W-LK", "P-W-SL", "P-ELT", "P-AND"]
 gate_states: ["state-1", "state-4"]
-gate_intents: ["*"]
+gate_intents: ["INT-W-01", "INT-W-02"]
 signal_high_fit: ["neugierig", "orientierungssuchend", "delegierend"]
 signal_medium_fit: []
 signal_low_fit: []
 page_bonus: []
-precondition_slots: ["thema"]
+precondition_slots: []
 default_tone: spielerisch
 default_length: mittel
 default_detail: standard
