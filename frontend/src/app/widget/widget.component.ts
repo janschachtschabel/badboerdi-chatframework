@@ -1,5 +1,5 @@
 import {
-  Component, Input, ViewChild, ElementRef, OnInit, AfterViewInit, OnDestroy,
+  Component, Input, Output, EventEmitter, ViewChild, ElementRef, OnInit, AfterViewInit, OnDestroy,
   NgZone, signal, computed,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -637,6 +637,12 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() showDebugButton: boolean | string = true;
   /** Show the 🔊 TTS and 🎤 mic buttons. Default true. */
   @Input() showLanguageButtons: boolean | string = true;
+  /** When true, link clicks are intercepted: navigation is suppressed and
+   *  `linkClicked` is emitted with the path+search (e.g.
+   *  `/components/collections?id=…`). Default false = navigate normally. */
+  @Input() interceptEduSharingLinks: boolean | string = false;
+  /** Emitted (instead of navigating) when `interceptEduSharingLinks` is true. */
+  @Output() linkClicked = new EventEmitter<string>();
 
   expanded = false;
   resolvedPageContext: Record<string, any> = {};
@@ -819,7 +825,8 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
     // trustedDomains konfiguriert ist. Greift JEDEN Link-Klick auf der
     // Host-Seite ab (nicht nur im Widget) und hängt ?bsid=… an, falls
     // das Link-Ziel zu einer Whitelist-Domain führt.
-    if (this._parsedTrustedDomains().length > 0) {
+    const shouldIntercept = this.interceptEduSharingLinks === true || this.interceptEduSharingLinks === 'true';
+    if (this._parsedTrustedDomains().length > 0 || shouldIntercept) {
       this._onDocumentLinkClick = (e: Event) => this._maybeRewriteOutgoingLink(e);
       document.addEventListener('click', this._onDocumentLinkClick, true);
     }
@@ -879,6 +886,16 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
       try { target = new URL(anchor.href, window.location.href); }
       catch { return; }
       if (target.protocol !== 'http:' && target.protocol !== 'https:') return;
+
+      // Intercept mode: suppress navigation, emit the direct link instead.
+      if (this.interceptEduSharingLinks === true || this.interceptEduSharingLinks === 'true') {
+        const linkTarget: string = target.pathname + (target.search || '');
+        if (linkTarget.includes('/edu-sharing')) {
+          e.preventDefault();
+          this.linkClicked.emit(linkTarget);
+          return;
+        }
+      }
 
       // Nicht selbst-rewriten: Sprünge auf dieselbe Origin können einfach
       // localStorage / Cookie nutzen — bsid würde nur unnötig die URL füllen.
