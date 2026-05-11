@@ -239,6 +239,7 @@ interface CanvasSnapshot {
        Web Components (Custom Elements) zuverlässig. */
     .boerdi-owl {
       width: 38px;
+      max-width: unset;
       height: 38px;
       display: block;
       object-fit: contain;
@@ -851,10 +852,18 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this._trustedDomainsCache !== null) return this._trustedDomainsCache;
     const list = (this.trustedDomains || '')
       .split(/[,\s]+/)
-      .map(s => s.trim().toLowerCase())
+      .map(s => this._normalizeDomain(s))
       .filter(s => s.length > 0);
     this._trustedDomainsCache = list;
     return list;
+  }
+
+  private _normalizeDomain(input: string): string {
+    return (input || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^https?:\/\//, '')
+        .split('/')[0];
   }
 
   /** True wenn host zur Whitelist passt — exakter Match ODER Subdomain. */
