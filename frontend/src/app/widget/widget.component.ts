@@ -239,6 +239,7 @@ interface CanvasSnapshot {
        Web Components (Custom Elements) zuverlässig. */
     .boerdi-owl {
       width: 38px;
+      max-width: unset;
       height: 38px;
       display: block;
       object-fit: contain;
