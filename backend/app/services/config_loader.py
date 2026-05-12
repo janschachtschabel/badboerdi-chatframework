@@ -343,25 +343,164 @@ def get_all_rag_areas() -> list[str]:
     return list(config.keys())
 
 
+# ID des Primary-Servers (WLO). Seine URL ist *ausschließlich* per Env
+# steuerbar (``MCP_SERVER_URL``); Studio / YAML können sie nicht ändern.
+# Alle anderen Server in der Registry sind über das Studio frei
+# editier-, hinzufüg- und entfernbar.
+_PRIMARY_MCP_SERVER_ID = "wlo-mcp"
+_PRIMARY_MCP_URL_ENV = "MCP_SERVER_URL"
+_PRIMARY_MCP_URL_DEFAULT = "https://wlo-mcp-server.vercel.app/mcp"
+
+
+def _resolve_primary_mcp_url() -> str:
+    """URL des Primary-MCP-Servers — Env hat Vorrang, sonst Hardcoded-Default.
+
+    Toleriert die docker-compose-Falle eines leeren Env-Strings und
+    entfernt Trailing-Slashes.
+    """
+    import os as _os
+    raw = (_os.getenv(_PRIMARY_MCP_URL_ENV) or "").strip().rstrip("/")
+    return raw or _PRIMARY_MCP_URL_DEFAULT
+
+
+# Default-Skeleton für den Primary-Eintrag — wird genutzt, wenn der Save-
+# Schutz den Primary wiederherstellen muss und die YAML keinen brauchbaren
+# Stand mehr liefert (z.B. weil sie überhaupt nicht existiert).
+_PRIMARY_MCP_DEFAULT_ENTRY: dict[str, Any] = {
+    "id": _PRIMARY_MCP_SERVER_ID,
+    "name": "WLO edu-sharing",
+    "description": "WirLernenOnline MCP-Server mit Such- und Metadaten-Tools",
+    "enabled": True,
+    "tools": [
+        "search_wlo_collections",
+        "search_wlo_content",
+        "get_collection_contents",
+        "get_node_details",
+        "lookup_wlo_vocabulary",
+        "search_wlo_topic_pages",
+        "get_subject_portals",
+        "browse_collection_tree",
+        "wlo_health_check",
+        "get_nodes_details",
+    ],
+}
+
+
+def _load_primary_from_yaml() -> dict[str, Any]:
+    """Liefert den aktuellen Primary-Eintrag direkt aus der YAML — ohne
+    Env-Override oder UI-Hint-Felder. Wird beim Save genutzt, falls der
+    Primary aus dem eingehenden Payload fehlt; wir greifen dann auf den
+    zuletzt persistierten Stand zurück. Wenn die YAML keinen Primary
+    hat, kommt der Hardcoded-Skeleton (mit allen 10 Default-Tools).
+    """
+    try:
+        data = _load_yaml("05-knowledge/mcp-servers.yaml")
+        for s in data.get("servers", []):
+            if isinstance(s, dict) and s.get("id") == _PRIMARY_MCP_SERVER_ID:
+                # Defensiv-kopieren, damit Anrufer den Cache nicht mutieren.
+                # ``url`` (falls historisch in der YAML) raus — der Primary
+                # bekommt seine URL beim Read aus der Env-Var.
+                clone = {k: v for k, v in s.items() if k != "url"}
+                return clone
+    except Exception:
+        pass
+    # Defensivkopie der Default-Tool-Liste — damit ein späterer Aufrufer
+    # die Modul-Konstante nicht versehentlich mutiert.
+    return {**_PRIMARY_MCP_DEFAULT_ENTRY, "tools": list(_PRIMARY_MCP_DEFAULT_ENTRY["tools"])}
+
+
 def load_mcp_servers() -> list[dict[str, Any]]:
     """Load registered MCP servers from 05-knowledge/mcp-servers.yaml.
 
     Returns list of server dicts with id, name, url, description, enabled, tools.
+
+    URL-Auflösung pro Server:
+      * **Primary (id=wlo-mcp)**: URL kommt *immer* aus
+        ``MCP_SERVER_URL`` (Env), Default ``_PRIMARY_MCP_URL_DEFAULT``.
+        Ein eventueller ``url``-Wert in der YAML wird ignoriert. Zusätzlich
+        bekommt der Eintrag ``url_source: "env"`` + ``url_env_var`` und
+        ``url_readonly: True``, damit das Studio-UI die URL als read-only
+        markieren kann.
+      * **Sonstige Server** (vom Studio hinzugefügt): YAML-``url`` gilt,
+        ``url_source: "yaml"``, ``url_readonly: False``.
     """
     data = _load_yaml("05-knowledge/mcp-servers.yaml")
-    servers = data.get("servers", [])
-    return [s for s in servers if isinstance(s, dict) and s.get("id")]
+    servers = [s for s in data.get("servers", []) if isinstance(s, dict) and s.get("id")]
+
+    primary_url = _resolve_primary_mcp_url()
+    for s in servers:
+        if s.get("id") == _PRIMARY_MCP_SERVER_ID:
+            s["url"] = primary_url
+            s["url_source"] = "env"
+            s["url_env_var"] = _PRIMARY_MCP_URL_ENV
+            s["url_readonly"] = True
+        else:
+            s.setdefault("url_source", "yaml")
+            s.setdefault("url_readonly", False)
+    return servers
 
 
 def save_mcp_servers(servers: list[dict[str, Any]]) -> None:
-    """Save MCP server registry to 05-knowledge/mcp-servers.yaml."""
+    """Save MCP server registry to 05-knowledge/mcp-servers.yaml.
+
+    Schutzlogik:
+      * **Primary (id=wlo-mcp)**: ``url`` wird vor dem Schreiben aus dem
+        Eintrag entfernt (kommt zur Laufzeit immer aus der Env-Var).
+        Schickt das Studio versehentlich eine geänderte URL für den
+        Primary mit, wird sie silent verworfen.
+      * **Primary-Pflicht**: Fehlt der Primary-Eintrag in der eingehenden
+        Liste komplett (z.B. weil ihn jemand im Studio gelöscht hat oder
+        weil ein versehentliches ``PUT []`` kam), legen wir ihn aus dem
+        zuvor-persistierten YAML-Stand wieder an. Notfallminimum: ein
+        leerer Skeleton mit Default-Tools. Damit kann der Primary nicht
+        weggeschossen werden — die Bot-Funktionalität bleibt erhalten.
+      * **Meta-Felder** (``url_source``, ``url_env_var``, ``url_readonly``)
+        sind reine Anzeigehilfen für die UI und werden nicht persistiert.
+      * **Sonstige Server**: bleiben wie übergeben.
+    """
     import yaml as _yaml
+
+    cleaned: list[dict[str, Any]] = []
+    has_primary = False
+    for s in servers:
+        if not isinstance(s, dict) or not s.get("id"):
+            continue
+        # Strip UI-only meta fields
+        out = {k: v for k, v in s.items()
+               if k not in ("url_source", "url_env_var", "url_readonly", "tool_descriptions")}
+        # Primary: niemals eine url persistieren — sie kommt aus Env.
+        if s.get("id") == _PRIMARY_MCP_SERVER_ID:
+            out.pop("url", None)
+            has_primary = True
+        cleaned.append(out)
+
+    # Primary-Pflicht: wenn er gelöscht wurde, wiederherstellen.
+    if not has_primary:
+        primary_entry = _load_primary_from_yaml()
+        # An Position 0 einsetzen, damit der Primary in der Studio-UI
+        # weiterhin oben auftaucht (gleiche Lese-Reihenfolge wie load).
+        cleaned.insert(0, primary_entry)
+        import logging
+        logging.getLogger(__name__).warning(
+            "save_mcp_servers: Primary-Eintrag (id=%s) fehlte im Payload — "
+            "automatisch wiederhergestellt. Die UI sollte den Primary nicht "
+            "löschbar machen.",
+            _PRIMARY_MCP_SERVER_ID,
+        )
+
     content = (
         "# MCP-Server-Registry\n"
-        "# Registrierte MCP-Server fuer den Chatbot.\n\n"
+        "# Registrierte MCP-Server fuer den Chatbot.\n"
+        f"#\n# Primary-Server (id={_PRIMARY_MCP_SERVER_ID}): URL kommt aus der\n"
+        f"# Env-Variable ``{_PRIMARY_MCP_URL_ENV}`` (Default:\n"
+        f"# {_PRIMARY_MCP_URL_DEFAULT}). Nicht in dieser YAML eintragen — sie\n"
+        "# wird vom Backend automatisch gefiltert.\n#\n"
+        "# Weitere Server können über das Studio (System → MCP-Server →\n"
+        "# Hinzufuegen) frei verwaltet werden — sie bekommen ihre url\n"
+        "# regulaer aus dieser YAML.\n\n"
     )
     content += _yaml.dump(
-        {"servers": servers},
+        {"servers": cleaned},
         default_flow_style=False,
         allow_unicode=True,
         sort_keys=False,
@@ -427,6 +566,30 @@ def load_guide_mode_config() -> dict[str, Any]:
             max_guide_qrs = 2
     max_guide_qrs = max(1, min(3, max_guide_qrs))
 
+    # Cross-TLD-Session-Brücke: Liste vertrauenswürdiger Domains für
+    # ``?bsid=…&bgm=…``-Handoff. Env-Override per ``GUIDE_TRUSTED_DOMAINS``
+    # (Komma- oder Whitespace-getrennt) — überschreibt YAML komplett,
+    # damit pro Deployment unterschiedliche Allow-Listen gefahren werden
+    # können (Staging vs. Prod).
+    import os as _os
+    import re as _re_td
+    env_td = (_os.getenv("GUIDE_TRUSTED_DOMAINS") or "").strip()
+    if env_td:
+        td_raw = _re_td.split(r"[,\s]+", env_td)
+    else:
+        td_raw = list(cfg.get("trusted_domains") or [])
+    trusted_domains: list[str] = []
+    for d in td_raw:
+        s = str(d or "").strip()
+        if not s:
+            continue
+        # Toleriere ``https://``/``http://``-Präfix und trailing-slashes —
+        # gleiche Normalisierung wie im Frontend.
+        s = _re_td.sub(r"^https?://", "", s, flags=_re_td.IGNORECASE)
+        s = s.strip("/").lower()
+        if s and s not in trusted_domains:
+            trusted_domains.append(s)
+
     return {
         "default_enabled": bool(cfg.get("default_enabled", True)),
         "allowed_hosts": [str(h).strip().lower()
@@ -437,6 +600,56 @@ def load_guide_mode_config() -> dict[str, Any]:
         ]),
         "max_guide_targets_per_turn": max_targets,
         "max_guide_quick_replies": max_guide_qrs,
+        "trusted_domains": trusted_domains,
+    }
+
+
+def load_widget_modes_config() -> dict[str, Any]:
+    """Load Widget-Embed-Modi configuration.
+
+    Returns the parsed ``widget_modes`` block from 01-base/widget-modes.yaml
+    with safe defaults. The four host-side flags (cards-enabled, canvas-
+    enabled, ai-content-enabled, quick-replies-enabled) come from the
+    embedded widget via the Environment block — this file just specifies
+    the *consequences* (link limits, fallback texts).
+
+    Limits are clamped to sane bounds so a misconfigured YAML can't break
+    the response shape.
+    """
+    data = _load_yaml("01-base/widget-modes.yaml") or {}
+    cfg = data.get("widget_modes") or {}
+
+    # cards_inline_link_limit: 1..6, default 3
+    raw_limit = cfg.get("cards_inline_link_limit")
+    try:
+        limit = int(raw_limit) if raw_limit is not None else 3
+    except (TypeError, ValueError):
+        limit = 3
+    limit = max(1, min(6, limit))
+
+    # cards_inline_link_title_max: 30..200 chars, default 70
+    raw_title = cfg.get("cards_inline_link_title_max")
+    try:
+        title_max = int(raw_title) if raw_title is not None else 70
+    except (TypeError, ValueError):
+        title_max = 70
+    title_max = max(30, min(200, title_max))
+
+    alt = cfg.get("ai_disabled_alt_response") or {}
+    alt_text = str(alt.get("text") or
+                   "Auf dieser Seite kann ich gerade kein neues Material "
+                   "für dich erstellen. Magst du dir stattdessen bestehende "
+                   "Inhalte zeigen lassen?").strip()
+    alt_qrs = [str(q).strip() for q in (alt.get("quick_replies") or [])
+               if str(q).strip()]
+
+    return {
+        "cards_inline_link_limit": limit,
+        "cards_inline_link_title_max": title_max,
+        "ai_disabled_alt_response": {
+            "text": alt_text,
+            "quick_replies": alt_qrs,
+        },
     }
 
 

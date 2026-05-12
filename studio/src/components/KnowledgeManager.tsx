@@ -35,6 +35,24 @@ interface McpServer {
    * unreachable when /mcp-servers was loaded.
    */
   tool_descriptions?: Record<string, string>;
+  /**
+   * `"env"` → URL kommt aus einer Backend-Env-Variable und ist im
+   * Studio nicht editierbar (Primary-MCP). `"yaml"` (oder undefined) →
+   * URL wird ganz normal aus der YAML gelesen und ist editierbar.
+   */
+  url_source?: "env" | "yaml";
+  /**
+   * Name der Env-Variable, aus der die URL stammt — wird neben dem
+   * URL-Feld als Hint angezeigt, damit der User weiß wo er die URL
+   * ändern muss. Nur gesetzt wenn `url_source === "env"`.
+   */
+  url_env_var?: string;
+  /**
+   * Backend-Hint: dieser Server-Eintrag ist nicht editier-/löschbar
+   * (gilt für den Primary-MCP). Das Studio rendert dann Edit/Delete-
+   * Buttons deaktiviert mit Tooltip-Erklärung.
+   */
+  url_readonly?: boolean;
 }
 
 /**
@@ -474,7 +492,14 @@ export default function KnowledgeManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ servers }),
       });
-      setMcpServers(servers);
+      // Re-load from backend statt nur lokal zu setzen — fängt zwei Fälle ab:
+      // (1) Primary-Schutz: Backend stellt den Primary wieder her, wenn er
+      //     versehentlich aus der Liste verschwunden ist — die UI muss das
+      //     spiegeln, sonst denkt der User der Primary wäre gelöscht.
+      // (2) UI-Hint-Felder (url_source, url_readonly, url_env_var) kommen
+      //     vom Backend und sind nicht im lokalen State, der zurückgeschickt
+      //     wird — ohne Reload würden die Hints verschwinden.
+      await loadMcpServers();
     } catch { /* ignore */ }
   };
 
@@ -486,6 +511,19 @@ export default function KnowledgeManager() {
   };
 
   const deleteMcpServer = async (id: string) => {
+    // Primary-MCP ist über die Env-Variable an die Backend-Instanz
+    // gebunden und nicht aus dem Studio entfernbar — das Backend würde
+    // ihn beim Save eh wiederherstellen. Wir kommunizieren das klar in
+    // der UI statt den Versuch durchzulassen und dann zu verwirren.
+    const target = mcpServers.find(s => s.id === id);
+    if (target?.url_readonly) {
+      alert(
+        'Dieser Server ist der Primary-MCP und wird über die Backend-' +
+        `Env-Variable ${target.url_env_var || 'MCP_SERVER_URL'} gesteuert. ` +
+        'Er kann nicht aus dem Studio entfernt werden.'
+      );
+      return;
+    }
     if (!confirm('MCP-Server wirklich entfernen?')) return;
     const updated = mcpServers.filter(s => s.id !== id);
     await saveMcpServers(updated);
@@ -978,11 +1016,20 @@ export default function KnowledgeManager() {
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 700, fontSize: '.95rem' }}>{server.name || server.id}</span>
                         <span className={`tag ${server.enabled ? 'tag-green' : 'tag-muted'}`}>
                           {server.enabled ? 'Aktiv' : 'Deaktiviert'}
                         </span>
+                        {server.url_readonly && (
+                          <span
+                            className="tag"
+                            title={`URL wird über Env-Variable ${server.url_env_var || 'MCP_SERVER_URL'} gesteuert und kann nur beim Backend-Deployment geändert werden`}
+                            style={{ background: '#E0F2FE', color: '#075985', borderColor: '#7DD3FC' }}
+                          >
+                            &#x1F512; Primary &middot; via {server.url_env_var || 'MCP_SERVER_URL'}
+                          </span>
+                        )}
                       </div>
                       <div className="text-sm text-muted" style={{ marginBottom: 4 }}>{server.description}</div>
                       <div className="text-xs text-muted" style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
@@ -1026,12 +1073,20 @@ export default function KnowledgeManager() {
                           setMcpDiscoverUrl(server.url);
                           setMcpDiscoveredTools(server.tools.map(t => ({ name: t, description: '' })));
                         }}
+                        title={server.url_readonly
+                          ? `URL wird über Env-Variable ${server.url_env_var || 'MCP_SERVER_URL'} gesteuert — nur Tool-Liste editierbar`
+                          : 'Server-URL und Tools bearbeiten'}
                       >
-                        Bearbeiten
+                        {server.url_readonly ? 'Tools ansehen' : 'Bearbeiten'}
                       </button>
                       <button
                         className="btn btn-danger btn-sm"
                         onClick={() => deleteMcpServer(server.id)}
+                        disabled={server.url_readonly}
+                        title={server.url_readonly
+                          ? `Primary-MCP (über ${server.url_env_var || 'MCP_SERVER_URL'} Env gesteuert) — nicht entfernbar`
+                          : 'MCP-Server entfernen'}
+                        style={server.url_readonly ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                       >
                         &#x1F5D1;
                       </button>
@@ -1060,18 +1115,36 @@ export default function KnowledgeManager() {
                       value={mcpDiscoverUrl}
                       onChange={e => setMcpDiscoverUrl(e.target.value)}
                       placeholder="https://example.com/mcp"
-                      style={{ flex: 1 }}
+                      style={{
+                        flex: 1,
+                        ...(mcpEditing.url_readonly ? { background: '#F3F4F6', cursor: 'not-allowed' } : {}),
+                      }}
+                      readOnly={mcpEditing.url_readonly}
                     />
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={discoverTools}
                       disabled={mcpDiscovering || !mcpDiscoverUrl}
+                      title={mcpEditing.url_readonly
+                        ? 'Tools auf der aktuellen Primary-URL erneut abfragen'
+                        : 'Tool-Liste vom Server abfragen'}
                     >
                       {mcpDiscovering ? 'Verbinde...' : 'Tools erkennen'}
                     </button>
                   </div>
                   <div className="form-hint">
-                    MCP-Server-Endpunkt (JSON-RPC 2.0 / SSE). Klicke &quot;Tools erkennen&quot; um verfuegbare Tools abzufragen.
+                    {mcpEditing.url_readonly ? (
+                      <>
+                        &#x1F512; <strong>Primary-MCP</strong> — URL wird über die
+                        Backend-Env-Variable <code>{mcpEditing.url_env_var || 'MCP_SERVER_URL'}</code> gesteuert
+                        und ist hier nicht editierbar. Zum Wechseln (z.B. Prod ↔ Staging)
+                        die Env-Variable auf der Backend-Instanz anpassen und neu starten.
+                      </>
+                    ) : (
+                      <>
+                        MCP-Server-Endpunkt (JSON-RPC 2.0 / SSE). Klicke &quot;Tools erkennen&quot; um verfuegbare Tools abzufragen.
+                      </>
+                    )}
                   </div>
                 </div>
 

@@ -9,6 +9,8 @@ import { WloCard, PaginationInfo } from '../services/api.service';
 import {
   getCardPrimaryUrl, isCollection, isContent, isPureCollection, isTopicPage,
 } from '../services/card-utils';
+import { ICONS } from '../shared/icons';
+import { SafeSvgPipe } from '../shared/safe-svg.pipe';
 
 export type CanvasViewMode = 'empty' | 'content' | 'cards' | 'preview';
 
@@ -31,11 +33,13 @@ export type CanvasCardAction = 'browse' | 'learning_path' | 'remix' | 'open' | '
 @Component({
   selector: 'badboerdi-canvas',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, SafeSvgPipe],
   templateUrl: './canvas.component.html',
   styleUrls: ['./canvas.component.scss'],
 })
 export class CanvasComponent {
+  /** Material-Symbols-Icon-Set, im Template referenzierbar. */
+  readonly ICONS = ICONS;
   @Input() set markdown(value: string) {
     const next = value || '';
     // If this value comes from outside (i.e. bot-generated content replacing
@@ -558,19 +562,27 @@ ${clean}
 
   // ── Tile-Design Helper (gespiegelt aus chat.component.ts, damit
   //    Canvas-Kacheln dasselbe Look-and-feel haben) ─────────────────────
+  /**
+   * Liefert das passende Inline-SVG für den Inhaltstyp einer Kachel.
+   * Verwendung im Template:
+   *   <span class="card-content-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
+   */
   getCardIcon(card: WloCard): string {
-    if (card.node_type === 'collection') return '📚';
+    if (card.node_type === 'collection') {
+      if (card.topic_pages && card.topic_pages.length) return ICONS.topic;
+      return ICONS.auto_stories;
+    }
     const types = card.learning_resource_types || [];
-    if (types.some(t => t.toLowerCase().includes('video'))) return '🎬';
-    if (types.some(t => t.toLowerCase().includes('arbeitsblatt'))) return '📄';
-    if (types.some(t => t.toLowerCase().includes('interaktiv'))) return '🎮';
-    if (types.some(t => t.toLowerCase().includes('audio'))) return '🎧';
-    if (types.some(t => t.toLowerCase().includes('quiz') || t.toLowerCase().includes('test'))) return '❓';
-    if (types.some(t => t.toLowerCase().includes('präsent') || t.toLowerCase().includes('praesent'))) return '🖼️';
-    if (types.some(t => t.toLowerCase().includes('übung') || t.toLowerCase().includes('uebung'))) return '✏️';
-    if (types.some(t => t.toLowerCase().includes('kurs'))) return '🎓';
-    if (types.some(t => t.toLowerCase().includes('webseite') || t.toLowerCase().includes('website'))) return '🌍';
-    return '📖';
+    if (types.some(t => t.toLowerCase().includes('video'))) return ICONS.play_circle;
+    if (types.some(t => t.toLowerCase().includes('arbeitsblatt'))) return ICONS.article;
+    if (types.some(t => t.toLowerCase().includes('interaktiv'))) return ICONS.videogame_asset;
+    if (types.some(t => t.toLowerCase().includes('audio'))) return ICONS.headphones;
+    if (types.some(t => t.toLowerCase().includes('quiz') || t.toLowerCase().includes('test'))) return ICONS.quiz;
+    if (types.some(t => t.toLowerCase().includes('präsent') || t.toLowerCase().includes('praesent'))) return ICONS.image;
+    if (types.some(t => t.toLowerCase().includes('übung') || t.toLowerCase().includes('uebung'))) return ICONS.edit_note;
+    if (types.some(t => t.toLowerCase().includes('kurs'))) return ICONS.school;
+    if (types.some(t => t.toLowerCase().includes('webseite') || t.toLowerCase().includes('website'))) return ICONS.language;
+    return ICONS.menu_book;
   }
 
   /** Lesbares Label für den Inhaltstyp (über dem Bild). */

@@ -391,22 +391,49 @@ Verzeichnis auf und prüfen anschließend, dass `main.js` existiert. Mehr in
 Das Widget akzeptiert die folgenden Attribute auf `<boerdi-chat>`. Werte sind Strings (HTML-Attribute);
 Booleans erkennen `"true"` / `"false"`.
 
+> **Neu für Embed-Hosts (2026-05):**
+> - `cards-enabled`, `canvas-enabled`, `ai-content-enabled`, `quick-replies-enabled` —
+>   feature-by-feature minimaler Auftritt (siehe Tabelle unten).
+> - `show-guide-button`, `guide-mode-default` — Lotsen-Toggle-Button verstecken oder
+>   den Modus stillschweigend aktivieren, unabhängig voneinander.
+> - `trusted-domains` ist jetzt **additiv** zur Backend-Allow-Liste
+>   (`guide-mode.yaml` / Env `GUIDE_TRUSTED_DOMAINS`) — Stored-XSS auf der Host-Seite
+>   kann die Liste nicht mehr aushebeln. Für Default-WLO-Domains kann das HTML-Attribut
+>   leer bleiben.
+> - `primary-color` kann durch CSS-Variable `boerdi-chat { --boerdi-primary: red; }`
+>   überschrieben werden (wenn das Attribut nicht gesetzt ist).
+> - Public JS-API: `el.openChatbot()` / `closeChatbot()` / `toggleChatbot()` /
+>   `isChatbotOpen()` — siehe Abschnitt unten. `initial-state` ist jetzt reaktiv.
+
 | Attribut | Default | Wirkung |
 |----------|---------|---------|
 | `api-url` | _Pflicht_ | Backend-Basis-URL (z.B. `https://api.example.de`). Wird zu `…/api` normalisiert. |
 | `position` | `bottom-right` | FAB-Position: `bottom-right` · `bottom-left` · `top-right` · `top-left` |
 | `initial-state` | `collapsed` | `collapsed` (FAB) oder `expanded` (Panel offen) |
-| `primary-color` | `#1c4587` | Hauptfarbe (CSS-Hex) |
+| `primary-color` | _leer_ (→ CSS-Default `#1c4587`) | Hauptfarbe (CSS-Hex). Alternativ per CSS-Variable überschreibbar: `boerdi-chat { --boerdi-primary: red; }`. Wenn das Attribut gesetzt ist, gewinnt es gegen die CSS-Regel (Inline-Style wins). |
 | `greeting` | _leer_ | Eigene Begrüßungsnachricht beim ersten Öffnen |
 | `persist-session` | `true` | Session-ID in `localStorage` halten — Verlauf bleibt über Page-Reload |
 | `session-key` | `boerdi_session_id` | localStorage-Schlüssel |
 | `session-cookie-domain` | _leer_ | Cross-Subdomain-Session-Cookie. Setzt parallel zu localStorage ein Cookie auf dieser Domain. Beispiel: `.wirlernenonline.de` verbindet `suche.wlo.de` ↔ `wp-test.wlo.de`. Leer = origin-isoliert. |
 | `session-cookie-max-age` | `2592000` (30 Tage) | Cookie-Lifetime in Sekunden. Greift nur mit `session-cookie-domain`. |
-| `trusted-domains` | _leer_ | Komma-Liste vertrauenswürdiger Hostnames für Cross-TLD-Session/Toggle-Handoff. Beim Klick auf einen Link/Button zu einer dieser Domains hängt das Widget `?bsid=<sid>&bgm=<0\|1>` an. Empfangsseite übernimmt Session + Lotsen-Toggle und entfernt die Parameter aus der URL. **Pflicht für Lotsen-Modus über Domain-Grenzen** (z.B. `wirlernenonline.de,openeduhub.net,wissenlebtonline.de`). Subdomain-Match automatisch. |
+| `trusted-domains` | _leer_ | **Zusätzlich** zur Backend-Allow-Liste (siehe `trusted_domains` in `guide-mode.yaml` bzw. `GUIDE_TRUSTED_DOMAINS` Env-Var) per HTML eintragbare Hostnames für Cross-TLD-Session/Toggle-Handoff. Beim Klick auf einen Link/Button zu einer dieser Domains hängt das Widget `?bsid=<sid>&bgm=<0\|1>` an. Backend-Liste hat Vorrang als Vertrauensanker; das Attribut darf nur **ergänzend** (additiv) wirken — eine Stored-XSS auf der Host-Seite kann die Backend-Liste also nicht aushebeln. Subdomain-Match automatisch (`.example.com` matcht alle Subs). `https://`/`http://`-Präfix und Trailing-Slashes werden toleriert. |
 | `auto-context` | `true` | Seitenkontext (URL, Title) automatisch ans Backend senden |
 | `page-context` | _leer_ | Zusätzlicher Kontext als JSON-String oder Objekt |
 | `show-debug-button` | `true` | 🔍 Debug-Toggle im Header. `false` = Button ausgeblendet (für Produktiv-Embeddings) |
 | `show-language-buttons` | `true` | 🔊 Text-to-Speech und 🎤 Mic-Aufnahme. `false` = beide Buttons aus (kein Sprach-Feature) |
+| `cards-enabled` | `true` | Kachel-Anzeige. `false` rendert Treffer als dezente Inline-Markdown-Links im Bot-Text (max. N Links, Schwellen in `chatbots/wlo/v1/01-base/widget-modes.yaml`). URL-Auswahl: Lotsen-Modus → Repo-/WLO-Seite (`guide_url`), sonst → Direktlink (`wlo_url`). |
+| `canvas-enabled` | `true` | Canvas-Pane (Material-Erstellung, Lernpfad-Anzeige). `false` rendert Material/Lernpfad-Markdown direkt im Chat — kein Canvas-Aufgehen, kein Split-Panel. |
+| `ai-content-enabled` | `true` | KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix). `false` lehnt Erstell-Anfragen mit der Alt-Antwort aus `widget-modes.yaml` freundlich ab — kein LLM-Aufruf für Material-Erstellung. |
+| `quick-replies-enabled` | `true` | Gesprächsvorschläge-Pillen unter Bot-Antworten. `false` blendet alle QR-Buttons komplett aus. Lotsen-Hinweise werden in jedem Modus als Inline-Link im Bot-Text gerendert, nicht als Pillen. |
+| `show-guide-button` | `true` | Sichtbarkeit des 🧭-Lotsen-Toggle-Buttons im Header. `false` blendet den Button aus — der Lotsen-Modus selbst bleibt nutzbar (per `guide-mode-default` oder Backend-Default + Cross-TLD-`?bgm=`-Handoff). Empfohlen für Embeds, in denen der Host das Lotsen-Toggling per eigenem UI-Element steuert. |
+| `guide-mode-default` | `auto` | Initial-State des Lotsen-Modus. `true`/`false` = explizit ein/aus; `auto` = wie heute (URL `?bgm` → localStorage → Backend-Default aus `guide-mode.yaml`). Wirkt nur beim allerersten Boot — späteres User-Toggle hat Vorrang und wird in localStorage persistiert. |
+
+> **Widget-Embed-Modi** (die vier `*-enabled`-Attribute) lassen die einbettende Seite das Widget
+> feature-by-feature minimaler auftreten — für Themenseiten, WordPress-Themes oder fremde
+> CMS-Hosts mit eigenem Layout. Defaults bleiben `true`, Bestandsintegrationen sehen keine
+> Änderung. Die Schwellen für den Inline-Link-Modus (max. Anzahl, Titel-Kürzung,
+> Alt-Antwort-Text) liegen in `chatbots/wlo/v1/01-base/widget-modes.yaml` und sind über
+> das Studio editierbar.
 
 > **Lotsen-Modus** wird **nicht** über ein Custom-Element-Attribut gesteuert, sondern
 > komplett serverseitig via `chatbots/wlo/v1/01-base/guide-mode.yaml` (Allow-Liste,
@@ -437,9 +464,64 @@ Booleans erkennen `"true"` / `"false"`.
   trusted-domains="wirlernenonline.de,openeduhub.net,wissenlebtonline.de"
   session-cookie-domain=".wirlernenonline.de">
 </boerdi-chat>
+
+<!-- Schlanke Themenseite: nur Chat + Inline-Links, kein Canvas, keine Kacheln -->
+<boerdi-chat
+  api-url="https://api.example.de"
+  cards-enabled="false"
+  canvas-enabled="false">
+</boerdi-chat>
+
+<!-- Reduziert: Kacheln ja, aber keine KI-Material-Erstellung und keine Quick-Replies
+     (z.B. wenn der Host bereits eigene Material-Erstellungs-Tools mitbringt) -->
+<boerdi-chat
+  api-url="https://api.example.de"
+  ai-content-enabled="false"
+  quick-replies-enabled="false">
+</boerdi-chat>
+
+<!-- Minimal-Bubble: praktisch nur Text-Chat mit Inline-Links
+     (für eingebettete Hilfe-Bubbles in fremden CMS) -->
+<boerdi-chat
+  api-url="https://api.example.de"
+  cards-enabled="false"
+  canvas-enabled="false"
+  ai-content-enabled="false"
+  quick-replies-enabled="false">
+</boerdi-chat>
 ```
 
 Im Studio dokumentiert unter **System → Info → Widget-Einbettung**.
+
+### Public JavaScript-API auf dem Custom Element
+
+Das `<boerdi-chat>`-Element exponiert vier Methoden, mit denen die einbettende Seite
+das Panel programmatisch steuern kann — ohne Shadow-DOM-Tricks:
+
+```js
+const el = document.querySelector('boerdi-chat');
+el.openChatbot();    // Chat-Panel öffnen
+el.closeChatbot();   // Panel schließen (FAB sichtbar)
+el.toggleChatbot();  // Toggle zwischen offen/zu
+el.isChatbotOpen();  // → boolean
+```
+
+Methoden sind **idempotent**: zwei aufeinanderfolgende `openChatbot()`-Calls schaden nicht.
+Vor Widget-Bootup (z.B. wenn die Host-Seite das Element vor dem Bundle-Load anlegt)
+geben sie `undefined` zurück und werfen nichts.
+
+Alternativ — und für Angular-Templates oft praktischer — über reaktive Attribut-Änderungen:
+
+```js
+// equivalent zu openChatbot():
+el.setAttribute('initial-state', 'expanded');
+// equivalent zu closeChatbot():
+el.setAttribute('initial-state', 'collapsed');
+```
+
+In Angular per `[attr.initial-state]="state()"` direkt im Template binden — das Widget
+reagiert via `ngOnChanges` auf jede Änderung.
+Live-Demos: `/widget/` (Default mit Kacheln + Canvas), `/widget/inline` (kompakter Inline-Modus).
 
 ---
 
@@ -489,7 +571,8 @@ Alle URL-/Key-/Modell-Einstellungen sind über Umgebungsvariablen steuerbar. **A
 | **Embedding-Override** | `EMBED_DIM` | auto-lookup | Escape-Hatch für exotische Modelle |
 | **Speech** | `STT_MODEL` | `gpt-4o-mini-transcribe` | Speech-to-Text (Fallbacks `gpt-4o-transcribe`, `whisper-1`) |
 | | `TTS_MODEL` | `tts-1` | Text-to-Speech (`tts-1-hd` für Qualität) |
-| **MCP** | `MCP_SERVER_URL` | `https://wlo-mcp-server.vercel.app/mcp` | MCP-Server (Wissensquelle) |
+| **MCP** | `MCP_SERVER_URL` | `https://wlo-mcp-server.vercel.app/mcp` | Primary-MCP-Server (überschreibt zur Laufzeit die `url` des Eintrags `id: wlo-mcp` in `chatbots/wlo/v1/05-knowledge/mcp-servers.yaml`). Weitere MCP-Server lassen sich im Studio anhängen — Sessions laufen pro Server-URL getrennt. |
+| **Lotsen-Modus** | `GUIDE_TRUSTED_DOMAINS` | _(aus `guide-mode.yaml`)_ | Komma-/Whitespace-getrennte Liste vertrauenswürdiger Hostnames für Cross-TLD-Session-Brücke (`?bsid=…&bgm=…`). Überschreibt die `trusted_domains`-Liste aus der YAML komplett. Frontend mergt diese Backend-Liste mit dem optionalen HTML-Attribut `trusted-domains` (Backend hat Vorrang als Vertrauensanker, HTML kann nur additiv ergänzen). Wildcards `*.example.com` matchen alle Subdomains. <br>**Default-Abdeckung** (aus `guide-mode.yaml`): `wirlernenonline.de` + `*.wirlernenonline.de` (deckt `wp-test.wirlernenonline.de`), `openeduhub.net` + `*.openeduhub.net` (deckt `repository.staging.openeduhub.net`), `openeduhub.de` + `*.openeduhub.de` (deckt `wordpress.openeduhub.de`), `wissenlebtonline.de` + `*.wissenlebtonline.de`, `localhost`/`127.0.0.1` (Ports werden beim Matching gestrippt, also auch `localhost:4200`). |
 | **Text-Extraction** | `TEXT_EXTRACTION_URL` | `https://text-extraction.prod.openeduhub.net` | **Base-URL** des OEH-Volltext-Service. `/from-url` wird intern angehängt, Trailing-Slash + Legacy-Voll-URL werden toleriert. Staging-Variante: `https://text-extraction.staging.openeduhub.net` |
 | **RAG** | `RAG_TOP_K` | `15` | Pre-Fetch Top-K |
 | | `RAG_MIN_SCORE` | `0.30` | Relevanz-Mindestwert |

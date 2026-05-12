@@ -13,15 +13,19 @@ import {
 } from '../services/api.service';
 import { getCardPrimaryUrl } from '../services/card-utils';
 import { BOERDI_LOGO_SVG, BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
+import { ICONS } from '../shared/icons';
+import { SafeSvgPipe } from '../shared/safe-svg.pipe';
 
 @Component({
   selector: 'badboerdi-chat',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SafeSvgPipe],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss'],
 })
 export class ChatComponent implements OnInit, AfterViewChecked {
+  /** Material-Symbols-Icon-Set, im Template referenzierbar. */
+  readonly ICONS = ICONS;
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   @ViewChild('inputField') inputField!: ElementRef;
 
@@ -101,6 +105,16 @@ export class ChatComponent implements OnInit, AfterViewChecked {
    *  wir blenden den ``__guide__|...``-Eintrag komplett aus, weil die
    *  Lotsen-Funktion bewusst deaktiviert wurde. */
   @Input() guideModeActive = false;
+  /** Widget-Embed-Modi — vom WidgetComponent forwarded. Steuern, ob
+   *  Cards/Canvas/KI-Content/Quick-Replies dieser Embed-Instanz
+   *  überhaupt angezeigt werden. Default jeweils ``true`` — bestehende
+   *  Integrationen sehen keine Änderung.
+   *  Bei ``cardsEnabled=false`` werden Kacheln im Template ausgeblendet;
+   *  das Backend liefert dann ohnehin Inline-Markdown-Links im Bot-Text. */
+  @Input() cardsEnabled: boolean | string = true;
+  @Input() canvasEnabled: boolean | string = true;
+  @Input() aiContentEnabled: boolean | string = true;
+  @Input() quickRepliesEnabled: boolean | string = true;
   /** Emitted for every page_action from the backend (host + widget integration). */
   @Output() pageAction = new EventEmitter<{ action: string; payload: any }>();
 
@@ -115,11 +129,36 @@ export class ChatComponent implements OnInit, AfterViewChecked {
 
   constructor(private api: ApiService, private zone: NgZone, private sanitizer: DomSanitizer) {}
 
+  /** Coerces a boolean | string input (HTML attributes always arrive as
+   *  strings) into a true boolean. Default = true, so an absent attribute
+   *  preserves the legacy "all features on" behaviour. Only the explicit
+   *  string ``"false"`` (or the literal boolean ``false``) toggles off. */
+  private modeFlag(v: boolean | string): boolean {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'string') return v.toLowerCase() !== 'false';
+    return true;
+  }
+  get cardsEnabledBool(): boolean { return this.modeFlag(this.cardsEnabled); }
+  get canvasEnabledBool(): boolean { return this.modeFlag(this.canvasEnabled); }
+  get aiContentEnabledBool(): boolean { return this.modeFlag(this.aiContentEnabled); }
+  get quickRepliesEnabledBool(): boolean { return this.modeFlag(this.quickRepliesEnabled); }
+
   ngOnInit() {
     // Configure API base URL if provided as attribute
     if (this.apiUrl) {
       this.api.setBaseUrl(this.apiUrl);
     }
+
+    // Tell ApiService which embed modes the host has configured — only
+    // explicit ``false`` values are forwarded to the backend; everything
+    // else is left as undefined so older backends and Bestandsintegrationen
+    // continue to behave exactly as before.
+    this.api.setWidgetModes(
+      this.cardsEnabledBool ? undefined : false,
+      this.canvasEnabledBool ? undefined : false,
+      this.aiContentEnabledBool ? undefined : false,
+      this.quickRepliesEnabledBool ? undefined : false,
+    );
 
     // Parse page-context attribute (JSON string or already an object)
     if (typeof this.pageContext === 'string' && this.pageContext.trim()) {
@@ -878,19 +917,30 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     if (url) window.open(url, '_blank');
   }
 
+  /**
+   * Liefert das passende Material-Symbol-Inline-SVG für den Inhaltstyp einer
+   * Kachel. Template-Verwendung:
+   *   <span class="card-content-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
+   */
   getCardIcon(card: WloCard): string {
-    if (card.node_type === 'collection') return '📚';
+    if (card.node_type === 'collection') {
+      // Themenseiten bekommen ihr eigenes Icon — sie sind kuratierte
+      // Webseiten, keine reinen Sammlungen, und unterscheiden sich
+      // visuell vom "Stapel"-Symbol der klassischen Sammlung.
+      if (Array.isArray(card.topic_pages) && card.topic_pages.length) return ICONS.topic;
+      return ICONS.auto_stories;
+    }
     const types = card.learning_resource_types || [];
-    if (types.some(t => t.toLowerCase().includes('video'))) return '🎬';
-    if (types.some(t => t.toLowerCase().includes('arbeitsblatt'))) return '📄';
-    if (types.some(t => t.toLowerCase().includes('interaktiv'))) return '🎮';
-    if (types.some(t => t.toLowerCase().includes('audio'))) return '🎧';
-    if (types.some(t => t.toLowerCase().includes('quiz') || t.toLowerCase().includes('test'))) return '❓';
-    if (types.some(t => t.toLowerCase().includes('präsent') || t.toLowerCase().includes('praesent'))) return '🖼️';
-    if (types.some(t => t.toLowerCase().includes('übung') || t.toLowerCase().includes('uebung'))) return '✏️';
-    if (types.some(t => t.toLowerCase().includes('kurs'))) return '🎓';
-    if (types.some(t => t.toLowerCase().includes('webseite') || t.toLowerCase().includes('website'))) return '🌍';
-    return '📖';
+    if (types.some(t => t.toLowerCase().includes('video'))) return ICONS.play_circle;
+    if (types.some(t => t.toLowerCase().includes('arbeitsblatt'))) return ICONS.article;
+    if (types.some(t => t.toLowerCase().includes('interaktiv'))) return ICONS.videogame_asset;
+    if (types.some(t => t.toLowerCase().includes('audio'))) return ICONS.headphones;
+    if (types.some(t => t.toLowerCase().includes('quiz') || t.toLowerCase().includes('test'))) return ICONS.quiz;
+    if (types.some(t => t.toLowerCase().includes('präsent') || t.toLowerCase().includes('praesent'))) return ICONS.image;
+    if (types.some(t => t.toLowerCase().includes('übung') || t.toLowerCase().includes('uebung'))) return ICONS.edit_note;
+    if (types.some(t => t.toLowerCase().includes('kurs'))) return ICONS.school;
+    if (types.some(t => t.toLowerCase().includes('webseite') || t.toLowerCase().includes('website'))) return ICONS.language;
+    return ICONS.menu_book;
   }
 
   /**

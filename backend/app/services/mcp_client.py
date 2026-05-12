@@ -41,20 +41,20 @@ _TOOL_ARG_MODELS: dict[str, type] = {
     "get_nodes_details":      NodesDetailsArgs,
 }
 
-# MCP-Server-URL. Robust gegen die Docker-Compose-Falle, in der
-# ``${MCP_SERVER_URL:-}`` einen leeren String an den Container reicht
-# (statt ``unset`` zu lassen) — wir behandeln Leer-String wie Unset und
-# tolerieren Trailing-Slash.
+# Default-MCP-URL (Fallback). Wird genutzt, wenn weder die Studio-
+# Registry (mcp-servers.yaml) noch ``MCP_SERVER_URL`` eine URL liefern.
+# Robust gegen die Docker-Compose-Falle, in der ``${MCP_SERVER_URL:-}``
+# einen leeren String an den Container reicht — Leer-String wie Unset
+# behandeln, Trailing-Slash tolerieren.
 _DEFAULT_MCP_URL = "https://wlo-mcp-server.vercel.app/mcp"
 MCP_URL = ((os.getenv("MCP_SERVER_URL") or "").strip().rstrip("/") or _DEFAULT_MCP_URL)
 
-# Session state per server URL (initialized on first tool call)
-_sessions: dict[str, dict[str, Any]] = {}  # url -> {session_id, initialized}
+# Session state pro Server-URL: ``_sessions[url] = {"session_id": str|None,
+# "initialized": bool}``. Multi-Server-fähig, damit der Bot parallel den
+# Primary-WLO-MCP UND ggf. zusätzliche, im Studio registrierte MCPs
+# ansprechen kann, ohne dass die Sessions sich gegenseitig stören.
+_sessions: dict[str, dict[str, Any]] = {}
 _request_id: int = 0
-
-# Legacy single-server compat
-_session_id: str | None = None
-_initialized: bool = False
 
 
 def _next_id() -> int:
@@ -63,15 +63,45 @@ def _next_id() -> int:
     return _request_id
 
 
-def _build_headers(include_session: bool = True) -> dict[str, str]:
-    """Build HTTP headers matching boerdi's MCP client."""
+def _session_for(url: str) -> dict[str, Any]:
+    """Hole (oder erzeuge) den Session-Slot zu einer MCP-Server-URL."""
+    slot = _sessions.get(url)
+    if slot is None:
+        slot = {"session_id": None, "initialized": False}
+        _sessions[url] = slot
+    return slot
+
+
+def _build_headers(url: str, include_session: bool = True) -> dict[str, str]:
+    """Build HTTP headers matching boerdi's MCP client.
+
+    Session-ID kommt aus dem Per-URL-State (``_sessions[url]``) — beim
+    Initialize-Call lassen wir den Header weg, bei allen Folge-Calls
+    setzen wir die zur URL passende Session-ID.
+    """
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
     }
-    if include_session and _session_id:
-        headers["Mcp-Session-Id"] = _session_id
+    if include_session:
+        sid = _session_for(url).get("session_id")
+        if sid:
+            headers["Mcp-Session-Id"] = sid
     return headers
+
+
+# PEP-562 ``__getattr__`` für Legacy-Globals — manche externe Konsumenten
+# (Tests, Debug-Endpoints) importieren noch ``_session_id`` / ``_initialized``
+# direkt aus diesem Modul. Wir geben den State des Default-MCP-Servers
+# zurück, damit alte Importe nicht crashen. Schreib-Zugriffe (``_session_id =
+# ...``) gehen weiterhin durch — sie landen als reguläre Modul-Attribute
+# und werden von ``__getattr__`` dann nicht mehr angefasst.
+def __getattr__(name: str):  # noqa: ANN001 — module-level getattr
+    if name == "_session_id":
+        return (_sessions.get(MCP_URL) or {}).get("session_id")
+    if name == "_initialized":
+        return bool((_sessions.get(MCP_URL) or {}).get("initialized", False))
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _parse_sse(text: str) -> Any:
@@ -106,8 +136,21 @@ def _parse_response(text: str) -> dict:
     return {}
 
 
-async def _json_rpc(method: str, params: dict | None = None, is_notification: bool = False) -> dict:
-    """Send a JSON-RPC 2.0 request to the MCP server."""
+async def _json_rpc(
+    method: str,
+    params: dict | None = None,
+    is_notification: bool = False,
+    url: str | None = None,
+) -> dict:
+    """Send a JSON-RPC 2.0 request to the MCP server at ``url``.
+
+    Wenn ``url`` nicht gesetzt ist, fällt es auf den Default-Server
+    (``MCP_URL`` aus der Env-Var) zurück — so bleibt der Aufruf-Pfad
+    für Code-Stellen, die explizit gegen den Primary-Server reden
+    wollen, ohne Tool-Lookup einfach.
+    """
+    target_url = (url or MCP_URL).rstrip("/")
+
     body: dict[str, Any] = {
         "jsonrpc": "2.0",
         "method": method,
@@ -117,23 +160,22 @@ async def _json_rpc(method: str, params: dict | None = None, is_notification: bo
     if not is_notification:
         body["id"] = _next_id()
 
-    headers = _build_headers(include_session=(method != "initialize"))
+    headers = _build_headers(target_url, include_session=(method != "initialize"))
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
-            MCP_URL,
+            target_url,
             json=body,
             headers=headers,
         )
 
-    # Capture session ID from any response
-    global _session_id
+    # Session-ID aus der Antwort einfangen und im Per-URL-Slot persistieren.
     sid = resp.headers.get("mcp-session-id") or resp.headers.get("Mcp-Session-Id")
     if sid:
-        _session_id = sid
+        _session_for(target_url)["session_id"] = sid
 
     if resp.status_code not in (200, 202):
-        logger.error("MCP HTTP %d for %s: %s", resp.status_code, method, resp.text[:300])
+        logger.error("MCP HTTP %d for %s @ %s: %s", resp.status_code, method, target_url, resp.text[:300])
         return {"error": {"message": f"HTTP {resp.status_code}"}}
 
     if is_notification or not resp.text.strip():
@@ -142,11 +184,11 @@ async def _json_rpc(method: str, params: dict | None = None, is_notification: bo
     return _parse_response(resp.text)
 
 
-async def _ensure_initialized():
-    """Perform MCP handshake if not yet done."""
-    global _session_id, _initialized
-
-    if _initialized:
+async def _ensure_initialized(url: str | None = None):
+    """Perform MCP handshake if not yet done — pro Server-URL einzeln."""
+    target_url = (url or MCP_URL).rstrip("/")
+    slot = _session_for(target_url)
+    if slot.get("initialized"):
         return
 
     # Step 1: Initialize
@@ -154,29 +196,32 @@ async def _ensure_initialized():
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}},
         "clientInfo": {"name": "badboerdi", "version": "1.0.0"},
-    })
+    }, url=target_url)
 
     if "error" in result:
-        logger.error("MCP initialize failed: %s", result["error"])
+        logger.error("MCP initialize failed @ %s: %s", target_url, result["error"])
         return
 
-    # Extract session ID from response (may be in headers or result)
-    # The session ID is typically returned in the response
     if "result" in result:
-        logger.info("MCP initialized: %s", json.dumps(result["result"])[:200])
+        logger.info("MCP initialized @ %s: %s", target_url, json.dumps(result["result"])[:200])
 
     # Step 2: Send initialized notification
-    await _json_rpc("notifications/initialized", is_notification=True)
+    await _json_rpc("notifications/initialized", is_notification=True, url=target_url)
 
-    _initialized = True
-    logger.info("MCP handshake complete (session_id=%s)", _session_id)
+    slot["initialized"] = True
+    logger.info("MCP handshake complete @ %s (session_id=%s)", target_url, slot.get("session_id"))
 
 
-async def _ensure_initialized_with_session():
-    """Perform MCP handshake, capturing session ID from HTTP response headers."""
-    global _session_id, _initialized
+async def _ensure_initialized_with_session(url: str | None = None):
+    """Perform MCP handshake, capturing session ID from HTTP response headers.
 
-    if _initialized:
+    Pro Server-URL einzeln — beim ersten Tool-Call gegen einen neuen
+    MCP-Server wird hier die Handshake-Sequenz durchlaufen und der State
+    in ``_sessions[url]`` persistiert.
+    """
+    target_url = (url or MCP_URL).rstrip("/")
+    slot = _session_for(target_url)
+    if slot.get("initialized"):
         return
 
     body = {
@@ -196,21 +241,21 @@ async def _ensure_initialized_with_session():
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(MCP_URL, json=body, headers=headers)
+        resp = await client.post(target_url, json=body, headers=headers)
 
     if resp.status_code not in (200, 202):
-        logger.error("MCP initialize HTTP %d: %s", resp.status_code, resp.text[:300])
+        logger.error("MCP initialize HTTP %d @ %s: %s", resp.status_code, target_url, resp.text[:300])
         return
 
-    # Capture session ID from response header
+    # Capture session ID from response header (per-URL).
     sid = resp.headers.get("mcp-session-id") or resp.headers.get("Mcp-Session-Id")
     if sid:
-        _session_id = sid
-        logger.info("MCP session ID: %s", sid)
+        slot["session_id"] = sid
+        logger.info("MCP session ID @ %s: %s", target_url, sid)
 
     result = _parse_response(resp.text)
     if "result" in result:
-        logger.info("MCP server: %s", json.dumps(result["result"])[:200])
+        logger.info("MCP server @ %s: %s", target_url, json.dumps(result["result"])[:200])
 
     # Send initialized notification
     notif_body = {
@@ -218,14 +263,14 @@ async def _ensure_initialized_with_session():
         "method": "notifications/initialized",
     }
     notif_headers = dict(headers)
-    if _session_id:
-        notif_headers["Mcp-Session-Id"] = _session_id
+    if slot.get("session_id"):
+        notif_headers["Mcp-Session-Id"] = slot["session_id"]
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        await client.post(MCP_URL, json=notif_body, headers=notif_headers)
+        await client.post(target_url, json=notif_body, headers=notif_headers)
 
-    _initialized = True
-    logger.info("MCP handshake complete")
+    slot["initialized"] = True
+    logger.info("MCP handshake complete @ %s", target_url)
 
 
 # All 10 WLO MCP tools v2 (for OpenAI function calling)
@@ -630,8 +675,16 @@ _TOOL_CACHE_BLOCKLIST = frozenset({"wlo_health_check"})
 
 
 async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
-    """Call a WLO MCP tool via JSON-RPC 2.0 with MCP protocol handshake."""
-    global _initialized, _session_id
+    """Call a WLO MCP tool via JSON-RPC 2.0 with MCP protocol handshake.
+
+    Resolved den Tool-Namen über die Studio-Registry (mcp-servers.yaml,
+    Env-Override durch ``MCP_SERVER_URL``) auf die passende Server-URL.
+    Wenn kein Server den Tool deklariert, fällt es auf den Default-Server
+    (``MCP_URL``) zurück — Backward-Compat für Tools, die im Code
+    registriert sind aber (noch) nicht in der YAML.
+    """
+    # Per-Call-Server-URL: zuerst aus der Studio-Registry, sonst Default.
+    target_url = _get_server_url_for_tool(tool_name)
 
     # Debug: log raw LLM-supplied arguments BEFORE validation/resolution so we
     # can see exactly what the model wanted to send. Keeps this at INFO — the
@@ -680,31 +733,32 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
             logger.info("MCP tool %s cache HIT (%d entries)", tool_name, len(_TOOL_CACHE))
             return cached
 
-    # Ensure we have a valid session
-    await _ensure_initialized_with_session()
+    # Ensure we have a valid session for the resolved server URL
+    await _ensure_initialized_with_session(url=target_url)
 
     # Make the actual tool call
     result = await _json_rpc("tools/call", {
         "name": tool_name,
         "arguments": arguments,
-    })
+    }, url=target_url)
 
     if "error" in result:
         error_msg = result["error"].get("message", "Unknown error")
-        logger.error("MCP tool %s error: %s", tool_name, error_msg)
-        # Reset session state so next call re-initializes
-        _initialized = False
-        _session_id = None
+        logger.error("MCP tool %s error @ %s: %s", tool_name, target_url, error_msg)
+        # Reset per-URL session state so next call re-initializes
+        slot = _session_for(target_url)
+        slot["initialized"] = False
+        slot["session_id"] = None
         # Retry once with fresh session
-        logger.info("Retrying MCP tool %s with fresh session...", tool_name)
-        await _ensure_initialized_with_session()
+        logger.info("Retrying MCP tool %s with fresh session @ %s...", tool_name, target_url)
+        await _ensure_initialized_with_session(url=target_url)
         result = await _json_rpc("tools/call", {
             "name": tool_name,
             "arguments": arguments,
-        })
+        }, url=target_url)
         if "error" in result:
             error_msg = result["error"].get("message", "Unknown error")
-            logger.error("MCP tool %s retry failed: %s", tool_name, error_msg)
+            logger.error("MCP tool %s retry failed @ %s: %s", tool_name, target_url, error_msg)
             return f"MCP error: {error_msg}"
 
     # Extract text content from result

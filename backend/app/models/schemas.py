@@ -53,6 +53,17 @@ class Environment(BaseModel):
     # matches one of the configured allowed_hosts patterns.
     host: str = ""
 
+    # ── Widget-Embed-Modi (None = Default-Verhalten "an" behalten) ──
+    # Vier optionale Schalter, mit denen die einbettende Host-Seite das
+    # Widget feature-by-feature herunterregeln kann. None bedeutet "Feld
+    # nicht mitgeschickt" → Backend bleibt beim heutigen Verhalten,
+    # Bestandsintegrationen sehen keine Änderung. Nur explizites ``False``
+    # schaltet das jeweilige Feature ab.
+    cards_enabled: bool | None = None
+    canvas_enabled: bool | None = None
+    ai_content_enabled: bool | None = None
+    quick_replies_enabled: bool | None = None
+
 
 # ── Chat request / response ────────────────────────────────────────
 class ChatRequest(BaseModel):

@@ -11,7 +11,9 @@
       <!-- Bot avatar -->
       <img *ngIf="msg.sender === 'bot'" class="msg-avatar" [src]="boerdiLogo" alt="" />
 
-      <div class="msg-bubble" [class.bot-bubble]="msg.sender === 'bot'" [class.user-bubble]="msg.sender === 'user'">
+      <div class="msg-bubble"
+           [class.bot-bubble]="msg.sender === 'bot'"
+           [class.user-bubble]="msg.sender === 'user'">
         <!-- Loading dots + live phase label (from POST /api/chat/stream) -->
         <div *ngIf="msg.isLoading" class="typing-row">
           <div class="typing-dots">
@@ -26,7 +28,8 @@
         <!-- Lernpfad: prominenter Druck-Button am Ende des Textes -->
         <div *ngIf="!msg.isLoading && isLearningPath(msg)" class="lp-print-bar">
           <button class="btn-lp-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
-            🖨 Lernpfad drucken / als PDF speichern
+            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
+            <span>Lernpfad drucken / als PDF speichern</span>
           </button>
         </div>
 
@@ -39,41 +42,51 @@
             <div class="coll-row">
               <div class="coll-row-title">
                 <span *ngIf="card.topic_pages && card.topic_pages.length"
-                      class="chip chip-typpille chip-tp-topicpage">🌐 Themenseite</span>
+                      class="chip chip-typpille chip-tp-topicpage">
+                  <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
+                  <span>Themenseite</span>
+                </span>
                 <span *ngIf="!(card.topic_pages && card.topic_pages.length)"
-                      class="chip chip-typpille chip-tp-sammlung">📚 Sammlung</span>
+                      class="chip chip-typpille chip-tp-sammlung">
+                  <span class="bb-icon" [innerHTML]="ICONS.auto_stories | safeSvg"></span>
+                  <span>Sammlung</span>
+                </span>
                 <span class="coll-row-name">{{ card.title }}</span>
               </div>
               <div class="coll-row-actions">
                 <button type="button" class="card-btn card-btn--primary"
                         [disabled]="isLoading"
                         (click)="browseCollection(card.node_id, card.title)">
-                  📋 Inhalte
+                  <span class="bb-icon" [innerHTML]="ICONS.list | safeSvg"></span>
+                  <span>Inhalte</span>
                 </button>
                 <button type="button" class="card-btn card-btn--secondary"
                         [disabled]="isLoading"
                         (click)="generateLearningPath(card.node_id, card.title)">
-                  🗺️ Lernpfad
+                  <span class="bb-icon" [innerHTML]="ICONS.route | safeSvg"></span>
+                  <span>Lernpfad</span>
                 </button>
                 <a *ngIf="card.topic_pages && card.topic_pages.length"
                    class="card-btn card-btn--tertiary"
                    [href]="card.topic_pages[0].url"
                    target="_blank"
                    rel="noopener noreferrer">
-                  🌐 Themenseite
+                  <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
+                  <span>Themenseite</span>
                 </a>
                 <button type="button" class="card-btn card-btn--remix"
                         [disabled]="isLoading"
                         (click)="remixCard(card)">
-                  🔄 Remix
+                  <span class="bb-icon" [innerHTML]="ICONS.refresh | safeSvg"></span>
+                  <span>Remix</span>
                 </button>
               </div>
             </div>
           </ng-container>
         </div>
 
-        <!-- Cards -->
-        <div *ngIf="msg.cards && msg.cards.length && !hideCards" class="cards-list">
+        <!-- Cards (nur wenn cardsEnabled — Host-Flag aus <boerdi-chat cards-enabled="...">) -->
+        <div *ngIf="msg.cards && msg.cards.length && !hideCards && cardsEnabledBool" class="cards-list">
           <div *ngFor="let card of getVisibleCards(msg)"
                class="wlo-card-wrapper"
                [class.is-themenseite]="isThemenseite(card)"
@@ -85,16 +98,15 @@
                rel="noopener noreferrer"
                (click)="$event.stopPropagation()">
 
-              <!-- Typ-Header: Inhaltstyp-Icon links, Themenseite/Sammlung/Inhalt-Badge rechts -->
+              <!-- Typ-Header: Inhaltstyp-Icon + Label links oben.
+                   Bei Sammlungen/Themenseiten wird die Kategorie hier benannt
+                   ("📚 Sammlung", "🌐 Themenseite"); bei einzelnen Inhalten
+                   reicht der konkrete Typ ("🎬 Video", "📄 Arbeitsblatt", …) —
+                   ein redundantes "Inhalt"-Badge brauchen wir nicht. -->
               <div class="card-header">
                 <span class="card-content-type">
-                  <span class="card-content-icon">{{ getCardIcon(card) }}</span>
+                  <span class="card-content-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
                   <span class="card-content-label">{{ getContentTypeLabel(card) }}</span>
-                </span>
-                <span class="card-kind-badge">
-                  <span *ngIf="isThemenseite(card)" class="kind kind-themenseite">🌐 Themenseite</span>
-                  <span *ngIf="isSammlung(card)" class="kind kind-sammlung">📚 Sammlung</span>
-                  <span *ngIf="isInhalt(card)" class="kind kind-inhalt">📄 Inhalt</span>
                 </span>
               </div>
 
@@ -117,36 +129,34 @@
               <div class="card-footer">
                 <span *ngIf="card.educational_contexts && card.educational_contexts.length"
                       class="footer-meta footer-stufe">
-                  <span class="footer-icon">🎓</span>
+                  <span class="footer-icon" [innerHTML]="ICONS.school | safeSvg"></span>
                   <span>{{ card.educational_contexts[0] }}</span>
                 </span>
                 <span *ngIf="card.disciplines && card.disciplines.length"
                       class="footer-meta footer-fach">
-                  <span class="footer-icon">📘</span>
+                  <span class="footer-icon" [innerHTML]="ICONS.menu_book | safeSvg"></span>
                   <span>{{ card.disciplines[0] }}</span>
                 </span>
               </div>
             </a>
-            <!-- Collection action buttons -->
-            <div *ngIf="(card.node_type === 'collection' && card.node_id) || card.guide_url" class="card-actions">
-              <button *ngIf="card.guide_url"
-                      class="card-btn card-btn--guide"
-                      [disabled]="isLoading"
-                      (click)="onGuideNavigate(card.guide_url)"
-                      title="Im aktuellen Tab zu dieser Seite navigieren">
-                🧭 Bring mich hin
-              </button>
+            <!-- Collection action buttons.
+                 Lotsen-Hinweise erscheinen ausschließlich als Inline-Link
+                 im Chat-Text (siehe Backend ``_extract_guide_inline``); ein
+                 zusätzlicher "Bring mich hin"-Card-Button wäre redundant. -->
+            <div *ngIf="card.node_type === 'collection' && card.node_id" class="card-actions">
               <button *ngIf="card.node_type === 'collection' && card.node_id"
                       class="card-btn card-btn--primary"
                       [disabled]="isLoading"
                       (click)="browseCollection(card.node_id, card.title)">
-                📋 Inhalte
+                <span class="bb-icon" [innerHTML]="ICONS.list | safeSvg"></span>
+                <span>Inhalte</span>
               </button>
               <button *ngIf="card.node_type === 'collection' && card.node_id"
                       class="card-btn card-btn--secondary"
                       [disabled]="isLoading"
                       (click)="generateLearningPath(card.node_id, card.title)">
-                🗺️ Lernpfad
+                <span class="bb-icon" [innerHTML]="ICONS.route | safeSvg"></span>
+                <span>Lernpfad</span>
               </button>
               <!-- Topic page: single smart button (best match first from backend) -->
               <div *ngIf="card.topic_pages && card.topic_pages.length" class="tp-wrapper">
@@ -157,12 +167,15 @@
                    [title]="card.topic_pages.length > 1
                      ? 'Themenseite (' + card.topic_pages[0].label + ') — weitere verfügbar'
                      : 'Themenseite öffnen'">
-                  🌐 Themenseite
+                  <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
+                  <span>Themenseite</span>
                 </a>
                 <!-- Dropdown toggle for alternative variants -->
                 <div *ngIf="card.topic_pages.length > 1" class="tp-dropdown-wrap">
                   <button class="tp-toggle" (click)="toggleTopicDropdown($event, card.node_id)"
-                          [attr.aria-expanded]="openTopicDropdown === card.node_id">▾</button>
+                          [attr.aria-expanded]="openTopicDropdown === card.node_id">
+                    <span class="bb-icon" [innerHTML]="ICONS.arrow_drop_down | safeSvg"></span>
+                  </button>
                   <div class="tp-dropdown" *ngIf="openTopicDropdown === card.node_id">
                     <a *ngFor="let tp of card.topic_pages"
                        class="tp-dropdown-item"
@@ -188,24 +201,26 @@
           <button *ngIf="hasHiddenCards(msg)"
                   class="btn-load-more"
                   (click)="showMoreCards(msg.id)">
-            Mehr anzeigen ▼
+            <span>Mehr anzeigen</span>
+            <span class="bb-icon" [innerHTML]="ICONS.arrow_drop_down | safeSvg"></span>
           </button>
           <!-- Server-side: load next page from collection -->
           <button *ngIf="!hasHiddenCards(msg) && msg.pagination?.has_more && msg.pagination?.collection_id"
                   class="btn-load-more"
                   [disabled]="isLoading"
                   (click)="loadMore(msg.id)">
-            {{ isLoading ? 'Lade…' : 'Weitere laden ▼' }}
+            <span>{{ isLoading ? 'Lade…' : 'Weitere laden' }}</span>
+            <span *ngIf="!isLoading" class="bb-icon" [innerHTML]="ICONS.arrow_drop_down | safeSvg"></span>
           </button>
         </div>
 
         <!-- Action buttons for bot messages: TTS + Lernpfad drucken -->
         <div *ngIf="msg.sender === 'bot' && !msg.isLoading && msg.content" class="msg-actions">
           <button class="btn-speak" (click)="speakText(msg.content)" [title]="isSpeaking ? 'Stop' : 'Vorlesen'">
-            {{ isSpeaking ? '⏹️' : '🔈' }}
+            <span class="bb-icon" [innerHTML]="(isSpeaking ? ICONS.stop_circle : ICONS.volume_up) | safeSvg"></span>
           </button>
           <button *ngIf="isLearningPath(msg)" class="btn-speak btn-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
-            🖨
+            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
           </button>
         </div>
 
@@ -216,7 +231,7 @@
              Wenn Lotsen-Modus aus ist, blendet shouldHideQuickReply() Guide-QRs
              komplett aus — Backend filtert sie zwar serverseitig, aber das ist
              defense-in-depth gegen alte Caches / Race-Conditions. -->
-        <div *ngIf="msg.quickReplies && msg.quickReplies.length" class="quick-replies">
+        <div *ngIf="msg.quickReplies && msg.quickReplies.length && quickRepliesEnabledBool" class="quick-replies">
           <ng-container *ngFor="let qr of msg.quickReplies">
             <ng-container *ngIf="!shouldHideQuickReply(qr)">
               <button *ngIf="isGuideQuickReply(qr); else regularQr"
@@ -224,7 +239,8 @@
                       class="qr-btn qr-btn--guide"
                       (click)="onGuideQuickReply(qr)"
                       [title]="'Im aktuellen Tab zur Seite navigieren'">
-                🧭 {{ guideQuickReplyLabel(qr) }}
+                <span class="bb-icon" [innerHTML]="ICONS.explore | safeSvg"></span>
+                <span>{{ guideQuickReplyLabel(qr) }}</span>
               </button>
               <ng-template #regularQr>
                 <button type="button" class="qr-btn" (click)="onQuickReply(qr)">{{ qr }}</button>
@@ -370,7 +386,7 @@
   <div class="chat-footer">
     <button *ngIf="languageButtonsVisible" class="btn-mic" [class.recording]="isRecording" (click)="toggleRecording()"
             [title]="isRecording ? 'Aufnahme stoppen' : 'Spracheingabe starten'">
-      <span *ngIf="!isRecording">🎤</span>
+      <span *ngIf="!isRecording" class="bb-icon" [innerHTML]="ICONS.mic | safeSvg"></span>
       <span *ngIf="isRecording" class="recording-indicator">
         <span class="rec-dot"></span>
         {{ recordingSeconds }}s
@@ -382,11 +398,11 @@
       class="chat-input"
       [(ngModel)]="userInput"
       (keydown)="onKeydown($event)"
-      [placeholder]="isRecording ? 'Aufnahme laeuft… Klicke ⏹ zum Stoppen' : (isLoading ? 'Boerdi denkt nach…' : 'Nachricht eingeben…')"
+      [placeholder]="isRecording ? 'Aufnahme läuft… Klicke Stop zum Beenden' : (isLoading ? 'Boerdi denkt nach…' : 'Nachricht eingeben…')"
       [disabled]="isLoading || isRecording"
     >
     <button class="btn-send" (click)="sendMessage()" [disabled]="isLoading || !userInput.trim()" title="Senden">
-      ➤
+      <span class="bb-icon" [innerHTML]="ICONS.send | safeSvg"></span>
     </button>
   </div>
 </div>

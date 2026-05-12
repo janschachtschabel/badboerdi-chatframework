@@ -8,6 +8,43 @@
   color: #111827;
 }
 
+/* Universal Material-Symbols-SVG-Wrapper.
+ * Sorgt für sauberes Inline-Alignment, color: currentColor (via SVG-Attribut)
+ * und 1em-Skalierung mit der umgebenden Schriftgröße. */
+.bb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  vertical-align: -0.18em;
+  flex-shrink: 0;
+}
+.bb-icon > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+  display: block;
+}
+.bb-icon--large > svg {
+  width: 1.6em;
+  height: 1.6em;
+}
+
+/* Empty-State-Icons: SVG soll größer als Text dargestellt werden.
+ * Die font-size auf .empty-icon (48px) skaliert die SVG-Größe (1em). */
+.empty-icon--svg {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  line-height: 0;
+}
+.empty-icon--svg > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+  opacity: inherit;
+}
+
 .canvas-shell {
   display: flex;
   flex-direction: column;
@@ -51,9 +88,13 @@
   border-radius: 6px;
   width: 26px;
   height: 26px;
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #374151;
   color: #374151;
   padding: 0;
   flex-shrink: 0;
@@ -122,6 +163,9 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   line-height: 1.2;
   transition: background 0.15s, color 0.15s;
 }
@@ -151,6 +195,9 @@
   line-height: 1;
   cursor: pointer;
   color: #374151;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   transition: background 0.15s, border-color 0.15s;
 
   &:hover {
@@ -607,6 +654,14 @@ $canvas-text-muted: #64748B;
 .card-content-icon {
   font-size: .95rem;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -0.15em;
+}
+.card-content-icon > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
 }
 .card-content-label {
   white-space: nowrap;
@@ -743,6 +798,15 @@ $canvas-text-muted: #64748B;
 .footer-icon {
   font-size: .8rem;
   opacity: .85;
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+  vertical-align: -0.18em;
+}
+.footer-icon > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
 }
 
 /* ── Content Preview (single card metadata view) ───────── */
@@ -869,6 +933,7 @@ $canvas-text-muted: #64748B;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
+  gap: 4px;
 
   // Alle Button-Varianten in einheitlichem Hellblau-Ton.
   // Ursprünglich hatten primary/secondary/tertiary/remix unterschiedliche

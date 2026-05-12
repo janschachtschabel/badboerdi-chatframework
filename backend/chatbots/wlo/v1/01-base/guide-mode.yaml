@@ -21,10 +21,12 @@ guide_mode:
   # anderen Domain wird der Toggle automatisch ausgeblendet und der
   # Modus implicit deaktiviert (= heute nutiges "neuer Tab"-Verhalten).
   allowed_hosts:
-    - wirlernenonline.de
-    - "*.wirlernenonline.de"
-    - openeduhub.net
-    - "*.openeduhub.net"
+    - wirlernenonline.de            # wirlernenonline.de
+    - "*.wirlernenonline.de"        # wp-test.wirlernenonline.de etc.
+    - openeduhub.net                # openeduhub.net
+    - "*.openeduhub.net"            # repository.staging.openeduhub.net etc.
+    - openeduhub.de                 # WordPress-Embed auf .de-TLD
+    - "*.openeduhub.de"             # wordpress.openeduhub.de etc.
     - wissenlebtonline.de
     - "*.wissenlebtonline.de"
     # ── Verbundene Plattformen (RAG-Quell-Domains) ───────────────
@@ -46,7 +48,9 @@ guide_mode:
     # Diese Einträge erlauben das lokale Testen des Lotsen-Modus.
     # Auf einer Live-WLO-Seite haben sie keine Wirkung (kein Match
     # gegen ``window.location.hostname``), aber sauberer ist es, sie
-    # vor dem Deploy zu entfernen.
+    # vor dem Deploy zu entfernen. ``localhost`` deckt beliebige Ports
+    # ab (z.B. http://localhost:4200 vom Angular-Dev-Server) — der
+    # Matcher strippt ``:port`` vor dem Vergleich.
     - localhost
     - 127.0.0.1
     - "*.nip.io"
@@ -79,3 +83,37 @@ guide_mode:
   # Werte >3 werden im Code auf 3 gekappt — sonst bleibt kein Platz für
   # eine sinnvolle Folge-Frage im Chat (UX-Anti-Pattern).
   max_guide_quick_replies: 2
+
+  # Cross-TLD-Session-Brücke: beim Klick auf einen Link zu einer dieser
+  # Domains hängt das Widget ``?bsid=<sid>&bgm=<0|1>`` an die URL —
+  # damit Session-ID und Lotsen-Toggle die TLD-Grenze überleben.
+  # Frontend tolerierte bisher Eingaben mit und ohne ``https://``-Präfix;
+  # diese Server-seitige Liste wird ebenfalls normalisiert (Protokoll
+  # und Trailing-Slash raus). Verwende Subdomain-Wildcards (``*.x.de``)
+  # für Mehr-Subdomain-Setups.
+  #
+  # Default-Abdeckung (Stand 2026-05):
+  #   - wirlernenonline.de             (WordPress-Hauptseite)
+  #   - wp-test.wirlernenonline.de     (WordPress-Staging — via *-Wildcard)
+  #   - repository.staging.openeduhub.net (edu-sharing-Staging — via *-Wildcard)
+  #   - wordpress.openeduhub.de        (WordPress auf .de-TLD — via *-Wildcard)
+  #   - localhost:<port>               (Angular-Dev-Server, Port wird gestrippt)
+  #
+  # Env-Override: ``GUIDE_TRUSTED_DOMAINS`` (Komma- oder Whitespace-Liste)
+  # überschreibt diese Liste komplett. Hilfreich, wenn pro Deployment
+  # andere Allow-Listen gelten (z.B. Staging vs. Prod).
+  trusted_domains:
+    - wirlernenonline.de
+    - "*.wirlernenonline.de"          # wp-test.wirlernenonline.de etc.
+    - openeduhub.net
+    - "*.openeduhub.net"              # repository.staging.openeduhub.net etc.
+    - openeduhub.de                   # WordPress-Embed auf .de-TLD
+    - "*.openeduhub.de"               # wordpress.openeduhub.de etc.
+    - wissenlebtonline.de
+    - "*.wissenlebtonline.de"
+    # ── Dev-Hosts (vor Production wieder entfernen) ──────────────
+    # ``localhost`` deckt beliebige Ports ab (z.B. localhost:4200 vom
+    # Angular-Dev-Server) — der Matcher strippt ``:port`` vor dem Vergleich.
+    - localhost
+    - 127.0.0.1
+    - "*.nip.io"

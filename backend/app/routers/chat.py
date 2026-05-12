@@ -271,6 +271,236 @@ async def _topic_pages_with_warmup(
     return primary
 
 
+def _widget_modes(req: "ChatRequest") -> dict[str, bool]:
+    """Extract the four widget-embed-mode flags from the request environment.
+
+    Returns a dict with the four toggles (``cards_enabled``,
+    ``canvas_enabled``, ``ai_content_enabled``, ``quick_replies_enabled``).
+    Each defaults to ``True`` when the frontend has not sent the field
+    (``None`` in the Pydantic Environment block) — that preserves
+    backward compatibility with older widget bundles that don't know
+    about these flags.
+
+    Only an explicit ``False`` from the frontend disables a feature.
+    """
+    env = req.environment
+    def _val(attr: str) -> bool:
+        v = getattr(env, attr, None)
+        return True if v is None else bool(v)
+    return {
+        "cards_enabled": _val("cards_enabled"),
+        "canvas_enabled": _val("canvas_enabled"),
+        "ai_content_enabled": _val("ai_content_enabled"),
+        "quick_replies_enabled": _val("quick_replies_enabled"),
+    }
+
+
+def _truncate_title(title: str, max_chars: int) -> str:
+    """Word-boundary-aware truncation with ellipsis.
+
+    Cuts at the last whitespace before ``max_chars`` (kein Mitten-im-Wort-
+    Cut), appends "…" if anything was removed. Returns the original title
+    if it fits.
+    """
+    t = (title or "").strip()
+    if len(t) <= max_chars:
+        return t
+    cut = t[:max_chars]
+    space = cut.rfind(" ")
+    if space >= max_chars // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:-") + "…"
+
+
+def _inline_card_url(card: Any, guide_mode: bool) -> str:
+    """Pick the right URL to expose in an inline link.
+
+    Lotsen-Modus an → ``guide_url`` (Repo/WLO-Seite, falls Backend es
+    annotiert hat); sonst → ``wlo_url`` (Direktlink auf Inhalt).
+    Fallback: ``url`` (kann external sein) → ``content_url``.
+    """
+    def _g(name: str) -> str:
+        v = getattr(card, name, None) if not isinstance(card, dict) else card.get(name)
+        return (v or "").strip() if isinstance(v, str) else ""
+    if guide_mode:
+        url = _g("guide_url")
+        if url:
+            return url
+    return _g("wlo_url") or _g("url") or _g("content_url")
+
+
+def _build_inline_card_links(
+    cards: list[Any],
+    guide_mode: bool,
+    limit: int,
+    title_max: int,
+) -> str:
+    """Render up to ``limit`` cards as a Markdown bullet-list of links.
+
+    Returns "" if no usable cards remain. Each entry is::
+
+        - [Kurztitel](URL)
+
+    URL fallback chain: guide_url (only when guide_mode on) → wlo_url →
+    url → content_url. If even that is empty, the entry is skipped (no
+    naked-text dangling). If a card has no title, the URL stands in as
+    the visible label.
+    """
+    if not cards:
+        return ""
+    lines: list[str] = []
+    seen_urls: set[str] = set()
+    for c in cards:
+        if len(lines) >= limit:
+            break
+        url = _inline_card_url(c, guide_mode)
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        title = ""
+        try:
+            title = (c.get("title") if isinstance(c, dict)
+                     else getattr(c, "title", "")) or ""
+        except Exception:
+            title = ""
+        title = _truncate_title(title, title_max) or url
+        lines.append(f"- [{title}]({url})")
+    return "\n".join(lines)
+
+
+def _apply_widget_modes_postprocess(
+    modes: dict[str, bool],
+    quick_replies: list[str],
+    cards: list[Any],
+    page_action: dict[str, Any] | None,
+    response_text: str,
+    guide_mode_on: bool,
+) -> tuple[list[str], list[Any], dict[str, Any] | None, str]:
+    """Wendet die 3 Display-Toggle-Effekte auf die fertige Response an.
+
+    Reihenfolge wichtig:
+    1. ``canvas_enabled=false`` zuerst — wenn Canvas aus, müssen wir den
+       Canvas-Markdown aus der ``page_action`` zurück in ``response_text``
+       holen, BEVOR wir entscheiden, ob Cards inline gerendert werden.
+    2. ``cards_enabled=false`` danach — wenn Cards aus, hängen wir die
+       (jetzt finalen) Cards als Markdown-Liste an ``response_text`` an
+       und leeren die Card-Liste.
+    3. ``quick_replies_enabled=false`` zuletzt — Quick-Replies komplett
+       wegfallen lassen.
+    """
+    from app.services.config_loader import load_widget_modes_config as _lwm
+
+    # Vor jeder Transformation festhalten, ob die Antwort eine "echte"
+    # Information anbietet (Cards oder Canvas-Material). Lotsen-Inline-
+    # Links zu RAG-Quellen (FAQ, WLO-Webseite, Fachportale…) sind nur
+    # dann sinnvoll, wenn die Antwort sonst rein textuell wäre. Sobald
+    # Cards oder ein Canvas-Dokument im Spiel sind, lenken zusätzliche
+    # Off-Topic-Links nur ab und sehen wie Werbung aus — der User möchte
+    # dann die Hauptinformation lesen.
+    _has_substantive_content = bool(cards) or (
+        isinstance(page_action, dict)
+        and page_action.get("action") in {
+            "canvas_open", "canvas_update", "canvas_show_cards",
+        }
+        and (
+            page_action.get("action") != "canvas_show_cards"
+            or ((page_action.get("payload") or {}).get("cards"))
+        )
+    )
+
+    # ── 1) canvas_enabled=false ──────────────────────────────────────
+    if not modes["canvas_enabled"] and page_action and isinstance(page_action, dict):
+        action = page_action.get("action") or ""
+        payload = page_action.get("payload") or {}
+        if action in {"canvas_open", "canvas_update"}:
+            md = (payload.get("markdown") or "").strip() if isinstance(payload, dict) else ""
+            if md:
+                # Markdown ins Chat-Text einbauen, Canvas-Action droppen.
+                response_text = (response_text + "\n\n" + md).strip()
+            page_action = None
+        elif action == "canvas_show_cards":
+            # Cards aus dem Canvas-Payload zurück ins Top-Level cards-Feld
+            # heben, damit (falls cards_enabled=true) die normale Card-
+            # Anzeige im Chat greift. Bei cards_enabled=false werden sie
+            # weiter unten zu Inline-Links transformiert.
+            inner = (payload.get("cards") or []) if isinstance(payload, dict) else []
+            if isinstance(inner, list) and inner:
+                cards = list(inner) + list(cards or [])
+            page_action = None
+
+    # Lotsen-QRs (``__guide__|Label|URL``) werden als Inline-Markdown-Links
+    # ans Antwort-Ende gehängt — aber nur, wenn die Antwort sonst rein
+    # textuell wäre. Pillen-Buttons für Absprung-Links sehen UX-mäßig
+    # schlecht aus; die Chatfortführungs-Pillen sollen für *Konversation*
+    # da sein, nicht für Navigation. Card-Buttons (``card.guide_url``)
+    # sind ein separater Mechanismus und bleiben unverändert.
+    def _extract_guide_inline(qrs: list[str]) -> tuple[list[str], list[str]]:
+        kept: list[str] = []
+        inline: list[str] = []
+        for qr in qrs:
+            if isinstance(qr, str) and qr.startswith("__guide__|"):
+                rest = qr[len("__guide__|"):]
+                if "|" in rest:
+                    label, url = rest.split("|", 1)
+                    label = label.strip() or "Bring mich hin"
+                    url = url.strip()
+                    if url:
+                        inline.append(f"- [{label}]({url})")
+                        continue
+            kept.append(qr)
+        return kept, inline
+
+    if _has_substantive_content:
+        # Cards / Canvas-Material decken die Information ab — Lotsen-
+        # Inline-Links zu RAG-Quellen wären off-topic. Lotsen-QRs aus
+        # den Quick-Replies droppen, damit sie auch nicht als Pille
+        # auftauchen.
+        quick_replies = [
+            qr for qr in quick_replies
+            if not (isinstance(qr, str) and qr.startswith("__guide__|"))
+        ]
+        _guide_inline_lines: list[str] = []
+    else:
+        quick_replies, _guide_inline_lines = _extract_guide_inline(quick_replies)
+
+    # ── 2) cards_enabled=false ───────────────────────────────────────
+    if not modes["cards_enabled"]:
+        wm = _lwm()
+        limit = int(wm.get("cards_inline_link_limit", 3))
+        title_max = int(wm.get("cards_inline_link_title_max", 70))
+        # Nur die ersten N Cards in Inline-Links umwandeln; den Rest
+        # verwerfen wir bewusst (siehe widget-modes.yaml: Token-Sparen).
+        inline_md = _build_inline_card_links(
+            cards or [], guide_mode_on, limit, title_max,
+        )
+        if inline_md:
+            # Mit Leerzeile vom Bot-Text trennen, damit Markdown-Renderer
+            # die Liste sauber abgrenzt.
+            response_text = (response_text.rstrip() + "\n\n" + inline_md).strip()
+        cards = []  # nichts mehr durchreichen — die Inline-Variante hat alles
+        # Falls die page_action noch Cards hält (z.B. show_results auf
+        # /suche), ebenfalls leeren — wir wollen konsistent "keine
+        # Kacheln, nur Inline-Links".
+        if page_action and isinstance(page_action, dict):
+            payload = page_action.get("payload") or {}
+            if isinstance(payload, dict) and "cards" in payload:
+                payload["cards"] = []
+                page_action["payload"] = payload
+
+    # ── 2b) Lotsen-Inline-Links anhängen (nach Cards-Inline, damit sie
+    #         als eigene Liste darunter auftauchen) ──────────────────────
+    if _guide_inline_lines:
+        response_text = (
+            response_text.rstrip() + "\n\n" + "\n".join(_guide_inline_lines)
+        ).strip()
+
+    # ── 3) quick_replies_enabled=false ───────────────────────────────
+    if not modes["quick_replies_enabled"]:
+        quick_replies = []
+
+    return quick_replies, cards, page_action, response_text
+
+
 def _attach_guide_qr(
     req: "ChatRequest",
     quick_replies: list[str],
@@ -1453,6 +1683,49 @@ async def _handle_canvas_edit(
 
 
 # ── Main chat endpoint ───────────────────────────────────────────
+def _postprocess_response_for_widget_modes(
+    req: ChatRequest, resp: ChatResponse,
+) -> ChatResponse:
+    """Wrap response through widget-modes postprocess.
+
+    Greift NACH ``_chat_impl`` und allen ``_handle_*``-Action-Handlern,
+    damit auch direct-action-Responses (Canvas-Create, Lernpfad usw.)
+    die Display-Flags des Hosts berücksichtigen.
+
+    Idempotent: wenn alle Modes default sind (Pydantic-None → True),
+    ist das ein No-Op. Bei einem Bestand-Frontend ohne neue Flags
+    bleibt das Verhalten 1:1 wie vorher.
+    """
+    try:
+        modes = _widget_modes(req)
+        # Kein Early-Return mehr: Lotsen-QRs werden auch im Default-Modus
+        # zu Inline-Links umgewandelt (siehe _extract_guide_inline). Die
+        # 3 Display-Toggles sind eh per ``if not modes[...]``-Conditions
+        # geschützt — bei alles-True bleibt jede Operation idempotent.
+        env = req.environment
+        guide_mode_on = bool(getattr(env, "guide_mode", False))
+        qrs, cards_out, pa, txt = _apply_widget_modes_postprocess(
+            modes=modes,
+            quick_replies=list(resp.quick_replies or []),
+            cards=list(resp.cards or []),
+            page_action=resp.page_action if isinstance(resp.page_action, dict)
+                        else (resp.page_action.model_dump() if resp.page_action else None),
+            response_text=resp.content or "",
+            guide_mode_on=guide_mode_on,
+        )
+        # ChatResponse rekonstruieren — Pydantic-Modell aufgrund von
+        # Validierungsregeln kopieren wir per model_copy(update=...).
+        return resp.model_copy(update={
+            "content": txt,
+            "cards": cards_out,
+            "quick_replies": qrs,
+            "page_action": pa,
+        })
+    except Exception as _e:  # pragma: no cover — postprocess darf nie blockieren
+        logger.warning("widget-modes postprocess failed: %s", _e)
+        return resp
+
+
 @router.post("", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     """Process a chat message through the 3-phase pattern engine.
@@ -1465,7 +1738,8 @@ async def chat(req: ChatRequest):
     try:
         async with lock:
             try:
-                return await _chat_impl(req)
+                _resp = await _chat_impl(req)
+                return _postprocess_response_for_widget_modes(req, _resp)
             except Exception as _impl_err:
                 # Top-level safety net: any unhandled exception in _chat_impl
                 # (config bug, attribute error in pattern engine, DB hiccup, …)
@@ -1629,7 +1903,34 @@ async def _chat_impl(
             )
         if req.action == "browse_collection":
             return await _handle_browse_collection(req, session_state)
-        elif req.action == "generate_learning_path":
+        # Host-Flag ai-content-enabled="false" sperrt die KI-Material-
+        # Actions vollständig — selbst wenn das Frontend sie direkt
+        # anfragt (z.B. via Canvas-Quick-Reply). Alt-Response statt LLM-
+        # Aufruf, damit kein Token-Verbrauch und kein Canvas-Aufgehen.
+        _ai_blocked_actions = {
+            "generate_learning_path", "canvas_create",
+            "canvas_edit", "canvas_remix",
+        }
+        if req.action in _ai_blocked_actions:
+            _modes_act = _widget_modes(req)
+            if not _modes_act["ai_content_enabled"]:
+                from app.services.config_loader import load_widget_modes_config as _lwm
+                _wm = _lwm()
+                _alt = _wm.get("ai_disabled_alt_response") or {}
+                _alt_text = str(_alt.get("text") or
+                                "Ich kann gerade kein neues Material erstellen.").strip()
+                _alt_qrs = list(_alt.get("quick_replies") or []) \
+                    if _modes_act["quick_replies_enabled"] else []
+                await add_message(req.session_id, "user", req.message)
+                await add_message(req.session_id, "assistant", _alt_text)
+                return ChatResponse(
+                    session_id=req.session_id,
+                    content=_alt_text,
+                    cards=[],
+                    quick_replies=_alt_qrs,
+                    page_action=None,
+                )
+        if req.action == "generate_learning_path":
             return await _handle_generate_learning_path(req, session_state)
         elif req.action == "canvas_create":
             return await _handle_canvas_create(req, session_state)
@@ -2338,6 +2639,51 @@ async def _chat_impl(
     if safety.enforced_pattern and winner.id == safety.enforced_pattern:
         logger.info("Safety enforced pattern active: %s", winner.id)
 
+    # ── Widget-Embed-Modus: ai-content-enabled=false ─────────────────
+    # Wenn der Host die KI-Material-Generierung abgeschaltet hat und der
+    # User trotzdem nach Lernpfad/Material fragt, antworten wir aus
+    # widget-modes.yaml — kein LLM, kein Canvas, kein Token-Verbrauch.
+    # Die Patterns PAT-19 (Lernpfad) und PAT-21 (Canvas-Create) decken
+    # genau diese Anfragen; Intent INT-W-10 / INT-W-11 funktioniert als
+    # robuster Backup-Trigger, falls die Pattern-Engine degradiert.
+    _modes_early = _widget_modes(req)
+    if not _modes_early["ai_content_enabled"] and (
+        winner.id in ("PAT-19", "PAT-21")
+        or classification.intent_id in ("INT-W-10", "INT-W-11")
+    ):
+        from app.services.config_loader import load_widget_modes_config as _lwm
+        _wm = _lwm()
+        _alt = _wm.get("ai_disabled_alt_response") or {}
+        _alt_text = str(_alt.get("text") or
+                        "Ich kann gerade kein neues Material erstellen.").strip()
+        _alt_qrs = list(_alt.get("quick_replies") or []) \
+            if _modes_early["quick_replies_enabled"] else []
+        debug = DebugInfo(
+            persona=session_state.get("persona_id", "P-AND"),
+            intent=classification.intent_id,
+            state=new_state,
+            pattern=f"ACTION: ai_content_disabled (was {winner.id})",
+            tools_called=[],
+            policy=policy,
+            safety=safety,
+        )
+        await update_session(
+            req.session_id,
+            new_state,
+            session_state["persona_id"],
+            classification.intent_id,
+        )
+        await add_message(req.session_id, "user", req.message)
+        await add_message(req.session_id, "assistant", _alt_text)
+        return ChatResponse(
+            session_id=req.session_id,
+            content=_alt_text,
+            cards=[],
+            quick_replies=_alt_qrs,
+            page_action=None,
+            debug=debug,
+        )
+
     # 4. RAG areas → presented as callable tools alongside MCP tools
     #    "always" areas are always available as tools
     #    "on-demand" areas are available when pattern sources include "rag"
@@ -2391,8 +2737,12 @@ async def _chat_impl(
     _persona_blocks_lp = session_state.get("persona_id") in (
         "P-W-PRESSE", "P-W-POL",
     )
+    # Host-Flag ai-content-enabled="false" sperrt LP-Erzeugung komplett —
+    # die Alt-Response unten greift (siehe _ai_content_alt_response).
+    _modes_main = _widget_modes(req)
     _has_lp_intent = (
-        classification.intent_id not in _lp_blocking_intents
+        _modes_main["ai_content_enabled"]
+        and classification.intent_id not in _lp_blocking_intents
         and not _persona_blocks_lp
         and (
             any(kw in _msg_lower for kw in _lp_keywords)
@@ -2741,7 +3091,12 @@ async def _chat_impl(
     # the pattern engine eliminated PAT-21 (e.g. precondition_slots missing).
     # In that case we want to show the material-type degradation, not fall
     # through to a generic PAT-02 Clarification response.
-    if not _lp_routed and classification.intent_id == "INT-W-11":
+    # Canvas-Create-Flow nur, wenn der Host ai-content-enabled NICHT auf
+    # false gesetzt hat. Bei abgeschaltetem KI-Content liefert die
+    # Alt-Response unten den freundlichen Hinweis.
+    if (not _lp_routed
+            and classification.intent_id == "INT-W-11"
+            and _modes_main["ai_content_enabled"]):
         # Topic priority (fixes "stale topic" bug, same logic as material_typ):
         # 1. classifier extraction from THIS turn
         # 2. sticky session value (prior turn) — only when classifier is silent
@@ -3603,6 +3958,12 @@ async def _chat_impl(
     # IF the user has the toggle on AND runs on an allow-listed host.
     _attach_guide_urls(req, cards, page_action)
 
+    # Widget-Embed-Modi (cards-/canvas-/quick-replies-enabled) werden
+    # zentral im Endpoint-Wrapper ``_postprocess_response_for_widget_modes``
+    # angewandt — siehe @router.post("") oben. Dadurch greifen sie auch
+    # für direct-action-Returns (Canvas-Create, Lernpfad-Action) ohne
+    # dass jeder Handler-Pfad einzeln angefasst werden muss.
+
     return ChatResponse(
         session_id=req.session_id,
         content=response_text,
@@ -3742,6 +4103,13 @@ async def chat_stream(req: ChatRequest):
             )
             yield f"event: error\ndata: {json.dumps(err_payload)}\n\n"
         else:
+            # Widget-Embed-Modi (cards/canvas/quick-replies) auch im SSE-
+            # Pfad anwenden — der Wrapper in /api/chat greift hier nicht,
+            # weil der Stream-Endpoint _chat_impl direkt aufruft.
+            try:
+                result = _postprocess_response_for_widget_modes(req, result)
+            except Exception as _we:
+                logger.warning("stream widget-modes postprocess failed: %s", _we)
             try:
                 payload = result.model_dump()
             except Exception as _pe:

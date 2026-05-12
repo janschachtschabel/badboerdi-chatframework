@@ -1,6 +1,6 @@
 import {
-  Component, Input, Output, EventEmitter, ViewChild, ElementRef, OnInit, AfterViewInit, OnDestroy,
-  NgZone, signal, computed,
+  Component, Input, Output, EventEmitter, ViewChild, ElementRef, OnInit, AfterViewInit, OnDestroy, OnChanges, SimpleChanges,
+  NgZone, signal, computed, ChangeDetectorRef, HostBinding,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatComponent } from '../chat/chat.component';
@@ -8,6 +8,8 @@ import { detectPageContext } from './page-context-detector';
 import { CanvasComponent, CanvasViewMode, CanvasCardAction } from '../canvas/canvas.component';
 import { ApiService, WloCard, PaginationInfo } from '../services/api.service';
 import { BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
+import { ICONS } from '../shared/icons';
+import { SafeSvgPipe } from '../shared/safe-svg.pipe';
 
 /** Snapshot of the canvas state — pushed onto history when the user
  *  drills down (e.g. Sammlung -> Inhalte, Kachel -> Preview) so the
@@ -43,14 +45,13 @@ interface CanvasSnapshot {
 @Component({
   selector: 'boerdi-chat-widget',
   standalone: true,
-  imports: [CommonModule, ChatComponent, CanvasComponent],
+  imports: [CommonModule, ChatComponent, CanvasComponent, SafeSvgPipe],
   template: `
     <div class="boerdi-widget"
          [class.expanded]="expanded"
-         [class.with-canvas]="canvasOpen()"
-         [class.mobile-canvas-active]="canvasOpen() && mobileTab() === 'canvas'"
-         [attr.data-position]="position"
-         [style.--boerdi-primary]="primaryColor">
+         [class.with-canvas]="canvasOpen() && canvasEnabledBool"
+         [class.mobile-canvas-active]="canvasOpen() && canvasEnabledBool && mobileTab() === 'canvas'"
+         [attr.data-position]="position">
 
       <!-- Chat panel -->
       <div class="boerdi-panel" *ngIf="expanded">
@@ -69,7 +70,7 @@ interface CanvasSnapshot {
           </div>
 
           <!-- Mitte: Mobile-only tab switcher -->
-          <div class="boerdi-tabs" *ngIf="canvasOpen()">
+          <div class="boerdi-tabs" *ngIf="canvasOpen() && canvasEnabledBool">
             <button type="button"
                     class="boerdi-tab"
                     [class.active]="mobileTab() === 'chat'"
@@ -90,7 +91,8 @@ interface CanvasSnapshot {
                     [class.is-off]="!chatRef?.autoSpeak"
                     (click)="chatRef?.toggleAutoSpeak()"
                     [title]="chatRef?.autoSpeak ? 'Sprachausgabe aus' : 'Sprachausgabe an'">
-              🔊
+              <span class="boerdi-icon"
+                    [innerHTML]="(chatRef?.autoSpeak ? ICONS.volume_up : ICONS.volume_off) | safeSvg"></span>
             </button>
             <button *ngIf="chatRef?.debugButtonVisible"
                     class="boerdi-action-btn"
@@ -98,25 +100,30 @@ interface CanvasSnapshot {
                     [class.is-off]="!chatRef?.showDebug"
                     (click)="chatRef?.toggleDebug()"
                     [title]="chatRef?.showDebug ? 'Debug aus' : 'Debug an'">
-              <span class="action-icon">🔍</span>
+              <span class="boerdi-icon" [innerHTML]="ICONS.bug_report | safeSvg"></span>
             </button>
             <!-- Webseiten-Guide-Modus: nur sichtbar auf Allow-Listen-
-                 Hosts (wirlernenonline.de etc.). Auf Drittseiten bleibt
-                 der Toggle ausgeblendet (kein Sinn ohne Navigationsziel). -->
-            <button *ngIf="guideModeAvailable()"
+                 Hosts (wirlernenonline.de etc.) UND wenn show-guide-button
+                 nicht abgeschaltet wurde. Auf Drittseiten bleibt der
+                 Toggle ausgeblendet (kein Sinn ohne Navigationsziel). -->
+            <button *ngIf="guideModeAvailable() && showGuideButtonBool"
                     class="boerdi-action-btn"
                     [class.is-on]="guideMode()"
                     [class.is-off]="!guideMode()"
                     (click)="toggleGuideMode()"
                     [title]="guideMode() ? 'Lotsen-Modus aus (öffnet Links in neuem Tab)' : 'Lotsen-Modus an (führt dich zu den Treffern)'">
-              <span class="action-icon">🧭</span>
+              <span class="boerdi-icon" [innerHTML]="ICONS.explore | safeSvg"></span>
             </button>
             <button class="boerdi-action-btn boerdi-action-btn--neutral"
                     (click)="chatRef?.restart()"
-                    title="Neuer Chat">🔄</button>
+                    title="Neuer Chat">
+              <span class="boerdi-icon" [innerHTML]="ICONS.refresh | safeSvg"></span>
+            </button>
             <button class="boerdi-close"
                     (click)="toggle()"
-                    aria-label="Schließen">×</button>
+                    aria-label="Schließen">
+              <span class="boerdi-icon" [innerHTML]="ICONS.close | safeSvg"></span>
+            </button>
           </div>
         </div>
 
@@ -124,7 +131,7 @@ interface CanvasSnapshot {
              die Host-Seite NIE ohne explizite Zustimmung — daher zwei
              Buttons und ein klares Label. -->
         <div *ngIf="guideNavTarget()" class="boerdi-nav-banner" role="alert">
-          <span class="nav-banner-icon" aria-hidden="true">🧭</span>
+          <span class="nav-banner-icon boerdi-icon" aria-hidden="true" [innerHTML]="ICONS.explore | safeSvg"></span>
           <span class="nav-banner-text">
             Soll ich dich zu „<strong>{{ guideNavTarget()!.label }}</strong>" bringen?
           </span>
@@ -143,7 +150,7 @@ interface CanvasSnapshot {
         <div class="boerdi-panel-body">
           <!-- Canvas pane (if open). Order depends on FAB position: canvas lives
                on the opposite side so it expands toward the page center. -->
-          <div class="boerdi-canvas-pane" *ngIf="canvasOpen()">
+          <div class="boerdi-canvas-pane" *ngIf="canvasOpen() && canvasEnabledBool">
             <badboerdi-canvas
               [title]="canvasTitle()"
               [materialTypeLabel]="canvasMaterialLabel()"
@@ -185,6 +192,10 @@ interface CanvasSnapshot {
               [canvasShowingCards]="canvasOpen() && canvasMode() === 'cards'"
               [canvasState]="canvasStateForBackend()"
               [guideModeActive]="guideModeAvailable() && guideMode()"
+              [cardsEnabled]="cardsEnabled"
+              [canvasEnabled]="canvasEnabled"
+              [aiContentEnabled]="aiContentEnabled"
+              [quickRepliesEnabled]="quickRepliesEnabled"
               (pageAction)="handlePageAction($event)">
             </badboerdi-chat>
           </div>
@@ -215,6 +226,22 @@ interface CanvasSnapshot {
     :host([data-position="bottom-left"]) { left: 20px; right: auto; }
     :host([data-position="top-right"]) { top: 20px; bottom: auto; }
     :host([data-position="top-left"]) { top: 20px; left: 20px; right: auto; bottom: auto; }
+
+    /* ── Material-Symbols-Icons (Inline-SVG) ─────────────────────
+       Alle Icon-Container nutzen currentColor als Fill — das SVG
+       erbt die Schriftfarbe des Buttons. Größe 20px passt in die
+       40er-Action-Buttons mit etwas Padding. */
+    .boerdi-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 0;
+    }
+    .boerdi-icon > svg {
+      width: 20px;
+      height: 20px;
+      fill: currentColor;
+    }
 
     /* ── FAB ──────────────────────────────────────────────── */
     .boerdi-fab {
@@ -255,7 +282,7 @@ interface CanvasSnapshot {
       background: #fff;
       border: 3px solid var(--boerdi-primary);
     }
-    .boerdi-fab:hover { border-color: #2c5aa0; }
+    .boerdi-fab:hover { border-color: color-mix(in srgb, var(--boerdi-primary, #1c4587) 70%, white); }
     @keyframes boerdi-breathe {
       0%, 100% { transform: scale(1); }
       50%      { transform: scale(1.06); }
@@ -389,13 +416,20 @@ interface CanvasSnapshot {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      transition: background .15s, transform .1s, box-shadow .15s;
+      transition: background .15s, color .15s, transform .1s, box-shadow .15s;
       padding: 0;
+      /* Default-Icon-Farbe — weiß auf dem dunkelblauen Header. SVG-Icons
+         erben currentColor, also wird das Material-Symbol weiß. Wird
+         vom is-on-State auf dunkelblau überschrieben (Kontrast auf
+         weißem Pill-Background). */
+      color: #fff;
     }
 
-    /* ON-State: solider weißer Pill, klar "gedrückt" */
+    /* ON-State: solider weißer Pill, klar "gedrückt".
+       Icon wird dunkelblau, damit Kontrast zum weißen Background passt. */
     .boerdi-action-btn.is-on {
       background: #ffffff;
+      color: var(--boerdi-primary, #1c4587);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15),
                   inset 0 -1px 0 rgba(0, 0, 0, 0.06);
     }
@@ -405,7 +439,8 @@ interface CanvasSnapshot {
     }
 
     /* OFF-State: transparent + weißer Outline. Der Farbkontrast zum
-       solid-weißen ON-Pill reicht aus — kein Slash-Overlay nötig. */
+       solid-weißen ON-Pill reicht aus — kein Slash-Overlay nötig.
+       Icon bleibt weiß (vom Default) — auf dem dunklen Header sichtbar. */
     .boerdi-action-btn.is-off {
       background: rgba(255, 255, 255, 0.08);
       border: 1.5px solid rgba(255, 255, 255, 0.45);
@@ -597,7 +632,7 @@ interface CanvasSnapshot {
     }
   `],
 })
-export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
+export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges {
   // ChatComponent instance — we need public methods like browseCollection
   // and generateLearningPath, so this is the actual component, not an ElementRef.
   @ViewChild('chat') chatRef!: ChatComponent;
@@ -607,12 +642,33 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
    *  vom Browser-Sanitizer-Pfad gestrippt werden kann). Quelle:
    *  shared/boerdi-logo.ts */
   readonly boerdiLogo = BOERDI_LOGO_DATA_URL;
+  /** Material Symbols als SVG-Strings — siehe ``shared/icons.ts``. */
+  readonly ICONS = ICONS;
 
   @Input() apiUrl = '';
   @Input() pageContext: string | Record<string, any> = '';
   @Input() position: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' = 'bottom-right';
   @Input() initialState: 'collapsed' | 'expanded' = 'collapsed';
-  @Input() primaryColor = '#1c4587';
+  /** Akzentfarbe (CSS-Hex/CSS-Color). Wenn leer/unset, greift der
+   *  ``:host``-CSS-Default ``#1c4587``. Der Host kann die Farbe auch
+   *  per CSS-Variable überschreiben:
+   *    ``boerdi-chat { --boerdi-primary: red; }``
+   *  → das funktioniert nur sauber, solange ``primary-color`` NICHT
+   *  zusätzlich gesetzt ist (Inline-Style wins). Daher: für Themes mit
+   *  globalem Brand-Color setze entweder das HTML-Attribut ODER die
+   *  CSS-Variable, nicht beides. */
+  @Input() primaryColor = '';
+
+  /** Bindet ``--boerdi-primary`` direkt aufs Host-Element — aber nur
+   *  wenn der Embedder einen expliziten Wert mitgegeben hat. Ohne Wert
+   *  bleibt das Attribut ungesetzt, sodass eine User-CSS-Regel wie
+   *  ``boerdi-chat { --boerdi-primary: red }`` ungestört greifen kann.
+   *  Mit Wert hat das Attribut Vorrang (Inline-Style schlägt CSS). */
+  @HostBinding('style.--boerdi-primary')
+  get hostPrimaryColor(): string | null {
+    const v = (this.primaryColor || '').trim();
+    return v || null;
+  }
   @Input() persistSession: boolean | string = true;
   @Input() sessionKey = 'boerdi_session_id';
   /** Cookie domain for cross-subdomain session sharing.
@@ -638,12 +694,71 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   @Input() showDebugButton: boolean | string = true;
   /** Show the 🔊 TTS and 🎤 mic buttons. Default true. */
   @Input() showLanguageButtons: boolean | string = true;
+
+  // ── Widget-Embed-Modi ──────────────────────────────────────────
+  // Vier Schalter, mit denen der einbettende Host (WordPress, Edu-Sharing,
+  // Themenseite…) das Widget feature-by-feature minimaler auftreten lässt.
+  // Default jeweils ``true`` — Bestandsintegrationen sehen keine Änderung.
+  // HTML-Attribute werden in Angular Custom Elements als Strings übergeben,
+  // daher akzeptieren wir auch ``"false"``/``"true"`` neben den Booleans.
+  /** Canvas-Pane (Material-Erstellung, Lernpfad-Anzeige) deaktivieren.
+   *  Bei ``false`` rendert das Backend Material/Lernpfad direkt in den
+   *  Chat-Verlauf, das Canvas öffnet sich nicht mehr. */
+  @Input() canvasEnabled: boolean | string = true;
+  /** KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix)
+   *  deaktivieren. Bei ``false`` lehnt der Bot Erstell-Anfragen mit der
+   *  Alt-Response aus ``widget-modes.yaml`` freundlich ab. */
+  @Input() aiContentEnabled: boolean | string = true;
+  /** Kachel-Anzeige deaktivieren. Bei ``false`` werden Treffer als
+   *  Inline-Markdown-Links in der Bot-Antwort gerendert (max. N aus
+   *  Studio-Setting ``cards_inline_link_limit``). */
+  @Input() cardsEnabled: boolean | string = true;
+  /** Gesprächsvorschläge-Pillen deaktivieren. Bei ``false`` werden alle
+   *  Quick-Reply-Buttons ausgeblendet — Lotsen-`__guide__|…`-QRs werden
+   *  vom Backend stattdessen als Inline-Markdown am Antwort-Ende eingebaut. */
+  @Input() quickRepliesEnabled: boolean | string = true;
+
+  /** Boolean-Coercion für die vier Embed-Mode-Inputs.
+   *  HTML-Custom-Element-Attribute kommen immer als Strings rein
+   *  (``cards-enabled="false"`` → String ``"false"``). Default = true,
+   *  damit eine fehlende Attribut-Setzung das Legacy-Verhalten erhält.
+   *  Nur die expliziten Werte ``false`` (bool) und ``"false"`` (string,
+   *  case-insensitive) deaktivieren das Feature. */
+  private modeFlag(v: boolean | string): boolean {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'string') return v.toLowerCase() !== 'false';
+    return true;
+  }
+  get canvasEnabledBool(): boolean { return this.modeFlag(this.canvasEnabled); }
+  get cardsEnabledBool(): boolean { return this.modeFlag(this.cardsEnabled); }
+  get aiContentEnabledBool(): boolean { return this.modeFlag(this.aiContentEnabled); }
+  get quickRepliesEnabledBool(): boolean { return this.modeFlag(this.quickRepliesEnabled); }
   /** When true, link clicks are intercepted: navigation is suppressed and
    *  `linkClicked` is emitted with the path+search (e.g.
    *  `/components/collections?id=…`). Default false = navigate normally. */
   @Input() interceptEduSharingLinks: boolean | string = false;
   /** Emitted (instead of navigating) when `interceptEduSharingLinks` is true. */
   @Output() linkClicked = new EventEmitter<string>();
+
+  // ── Lotsen-Modus-Inputs ─────────────────────────────────────────
+  /** Sichtbarkeit des 🧭-Toggle-Buttons im Header. Default `true`.
+   *  Wenn `false`, wird der Button ausgeblendet — der Lotsen-Modus
+   *  selbst kann aber trotzdem aktiv sein (per `guide-mode-default` oder
+   *  per Backend-Default aus `guide-mode.yaml`). Nützlich für Embeds,
+   *  in denen der Host das Toggling selbst steuert (z.B. über einen
+   *  globalen Settings-Switch) und das Widget keine eigene UI dafür
+   *  anbieten soll. */
+  @Input() showGuideButton: boolean | string = true;
+  /** Initial-State des Lotsen-Modus. Drei Werte:
+   *    - `"true"` / `true`  → an
+   *    - `"false"` / `false` → aus
+   *    - leer / `"auto"`     → wie heute (URL-Param ?bgm → localStorage →
+   *                            Backend-Default aus `guide-mode.yaml`)
+   *  Wird ein expliziter Wert gesetzt, überschreibt er URL und
+   *  localStorage NICHT — heißt, ein User-Toggle hat weiter Vorrang.
+   *  Der Wert dient als Default beim allerersten Boot, wenn weder URL
+   *  noch localStorage etwas hergeben. */
+  @Input() guideModeDefault: boolean | string = 'auto';
 
   expanded = false;
   resolvedPageContext: Record<string, any> = {};
@@ -656,6 +771,32 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Toggle state. Persisted in ``localStorage['boerdi.guide_mode']``,
    *  default from backend config (``default_enabled`` in guide-mode.yaml). */
   guideMode = signal(false);
+
+  /** Bool-Coercion für ``show-guide-button``. HTML-Attribute kommen als
+   *  String rein — wir erlauben den expliziten ``"false"`` zum Abschalten;
+   *  alles andere (true, "true", undefined, leer) ist an. */
+  get showGuideButtonBool(): boolean {
+    if (typeof this.showGuideButton === 'boolean') return this.showGuideButton;
+    if (typeof this.showGuideButton === 'string') {
+      return this.showGuideButton.toLowerCase() !== 'false';
+    }
+    return true;
+  }
+  /** Tristate für ``guide-mode-default``:
+   *    `true`  → Default = an
+   *    `false` → Default = aus
+   *    `null`  → Backend/URL/localStorage entscheiden (Default-Verhalten)
+   */
+  get guideModeDefaultTristate(): boolean | null {
+    const v = this.guideModeDefault;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'string') {
+      const s = v.toLowerCase().trim();
+      if (s === 'true' || s === '1' || s === 'on') return true;
+      if (s === 'false' || s === '0' || s === 'off') return false;
+    }
+    return null;  // 'auto' / leer / unbekannt → Backend-Default greift
+  }
   /** Hostname snapshot we send to the backend so it knows whether to
    *  attach ``guide_url`` to outgoing cards. Filled at init. */
   private guideHost = '';
@@ -738,7 +879,34 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   // the same page_action via the CustomEvent the chat component dispatches.
   private _onWindowPageAction?: (e: Event) => void;
 
-  constructor(private zone: NgZone, private api: ApiService) {}
+  constructor(
+    private zone: NgZone,
+    private api: ApiService,
+    private cdr: ChangeDetectorRef,
+  ) {}
+
+  /** Reaktiv auf Attribut-Änderungen zur Laufzeit.
+   *
+   *  Angular Custom Elements (``createCustomElement``) ruft beim Setzen
+   *  eines HTML-Attributs nicht den Eingangs-Setter direkt auf, sondern
+   *  delegiert an ``@Input``-Properties → ``ngOnChanges`` läuft. Dadurch
+   *  kann die einbettende Seite z.B. ``element.setAttribute('initial-state',
+   *  'expanded')`` aufrufen und das Widget öffnet sich automatisch.
+   *
+   *  Gleicher Mechanismus erlaubt:
+   *    - ``setAttribute('initial-state', 'expanded')``  → öffnen
+   *    - ``setAttribute('initial-state', 'collapsed')`` → schließen
+   *  oder die Public-Methoden ``openChatbot() / closeChatbot()`` (siehe
+   *  unten). Beide Wege sind erlaubt und idempotent.
+   */
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['initialState'] && !changes['initialState'].firstChange) {
+      const next = this.initialState === 'expanded';
+      if (next !== this.expanded) {
+        this.setExpanded(next);
+      }
+    }
+  }
 
   ngOnInit() {
     this.expanded = this.initialState === 'expanded';
@@ -845,17 +1013,39 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Cross-TLD-Session-Handoff ─────────────────────────────────────
   private _onDocumentLinkClick?: (e: Event) => void;
 
-  /** Cached parsed list of trusted hostnames (lower-case). */
+  /** Cached parsed list of trusted hostnames (lower-case), merged from
+   *  HTML-attribute + backend ``/api/config/guide-mode.trusted_domains``.
+   *  Beide Quellen werden zusammengeführt; das HTML-Attribut darf die
+   *  Backend-Liste ergänzen (z.B. für lokale Dev-Hosts), kann aber
+   *  Backend-Einträge nicht *entfernen* — das verhindert, dass ein
+   *  Stored-XSS auf einer Host-Seite die Backend-Allow-Liste umgehen
+   *  könnte (Defense-in-Depth). */
   private _trustedDomainsCache: string[] | null = null;
+  /** Backend-Liste aus ``initGuideMode`` — wird einmal beim Boot
+   *  befüllt; Cache-Invalidierung in ``_parsedTrustedDomains`` schaut
+   *  ``trustedDomains``-Attribut UND diese Liste an. */
+  private _backendTrustedDomains: string[] = [];
 
   private _parsedTrustedDomains(): string[] {
     if (this._trustedDomainsCache !== null) return this._trustedDomainsCache;
-    const list = (this.trustedDomains || '')
+    const fromAttr = (this.trustedDomains || '')
       .split(/[,\s]+/)
       .map(s => this._normalizeDomain(s))
       .filter(s => s.length > 0);
-    this._trustedDomainsCache = list;
-    return list;
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    // Backend zuerst (vertrauenswürdige Quelle); Attribut ergänzt
+    // additiv für Dev-Hosts (`localhost`, eigene Testdomains).
+    for (const list of [this._backendTrustedDomains, fromAttr]) {
+      for (const d of list) {
+        if (d && !seen.has(d)) {
+          seen.add(d);
+          merged.push(d);
+        }
+      }
+    }
+    this._trustedDomainsCache = merged;
+    return merged;
   }
 
   private _normalizeDomain(input: string): string {
@@ -930,14 +1120,54 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   toggle() {
-    this.expanded = !this.expanded;
+    this.setExpanded(!this.expanded);
+  }
+
+  /** **Public API** — Chat-Panel öffnen.
+   *
+   *  Wird vom Custom Element exponiert, sodass die einbettende Seite
+   *  einfach ``document.querySelector('boerdi-chat').openChatbot()``
+   *  aufrufen kann. Kein Shadow-DOM-Hack mehr nötig.
+   *
+   *  Idempotent: erneutes Aufrufen bei bereits offenem Panel ist ein No-Op.
+   */
+  openChatbot(): void {
+    this.setExpanded(true);
+  }
+
+  /** **Public API** — Chat-Panel schließen (FAB sichtbar). */
+  closeChatbot(): void {
+    this.setExpanded(false);
+  }
+
+  /** **Public API** — Toggle zwischen offen/zu. */
+  toggleChatbot(): void {
+    this.toggle();
+  }
+
+  /** **Public API** — Aktueller Zustand (für Hosts, die nach Click auf
+   *  ihren eigenen Trigger wissen wollen, ob das Panel grad offen ist). */
+  isChatbotOpen(): boolean {
+    return this.expanded;
+  }
+
+  /** Zentraler Setter — sorgt dafür, dass alle Öffnen/Schließen-Pfade
+   *  (Toggle-Button, Public-API, attributeChangedCallback) konsistent
+   *  localStorage pflegen und Angular die View neu rendert. */
+  private setExpanded(open: boolean): void {
+    if (this.expanded === open) return;
+    this.expanded = open;
     try {
-      if (this.expanded) {
+      if (open) {
         localStorage.setItem(this.OPEN_KEY, String(Date.now()));
       } else {
         localStorage.removeItem(this.OPEN_KEY);
       }
     } catch { /* ignore */ }
+    // Angular Change-Detection läuft beim Klick automatisch — bei
+    // externen Aufrufen (außerhalb Zone) müssen wir manuell anstoßen,
+    // damit die View aktualisiert wird.
+    try { this.cdr?.markForCheck?.(); } catch { /* ignore */ }
   }
 
   /**
@@ -949,6 +1179,17 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
    */
   handlePageAction(pa: { action: string; payload: any }) {
     if (!pa || !pa.action) return;
+    // Defense-in-Depth: bei canvasEnabled=false werden Canvas-PageActions
+    // ignoriert, falls das Backend doch eine durchgelassen hat (alte
+    // Bundle-Version, Race-Condition). Der Backend-Postprocess sollte
+    // sie bereits in den Bot-Text gepatcht haben — hier nur zur Sicherheit.
+    if (!this.canvasEnabledBool && (
+      pa.action === 'canvas_open' ||
+      pa.action === 'canvas_update' ||
+      pa.action === 'canvas_show_cards'
+    )) {
+      return;
+    }
     switch (pa.action) {
       case 'canvas_open': {
         const p = pa.payload || {};
@@ -1255,6 +1496,19 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
         const data = await resp.json();
         allowedHosts = Array.isArray(data?.allowed_hosts) ? data.allowed_hosts : [];
         defaultEnabled = !!data?.default_enabled;
+        // Backend-trusted_domains in den Cache ziehen — werden bei der
+        // Cross-TLD-Brücke (?bsid=…) mit der HTML-Attribut-Liste gemerged.
+        // Bei späteren Builds liefert das Backend hier optional eine
+        // Liste; alte Backends (<= vor diesem Feature) lassen das Feld
+        // weg → ``[]`` und Verhalten = exakt wie früher (nur Attribut).
+        if (Array.isArray(data?.trusted_domains)) {
+          this._backendTrustedDomains = data.trusted_domains
+            .map((d: unknown) => this._normalizeDomain(String(d || '')))
+            .filter((d: string) => d.length > 0);
+          // Cache invalidieren, damit der Merge beim nächsten
+          // ``_parsedTrustedDomains()``-Aufruf neu berechnet wird.
+          this._trustedDomainsCache = null;
+        }
       }
     } catch {
       // Backend nicht erreichbar — Toggle bleibt aus.
@@ -1301,10 +1555,17 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy {
     let stored: string | null = null;
     try { stored = localStorage.getItem(WidgetComponent.GUIDE_LS_KEY); } catch { /* ignore */ }
 
+    // Priorität:
+    //   1. URL-Param ?bgm   (Cross-TLD-Handoff hat höchste Priorität)
+    //   2. localStorage     (vom User selbst getoggelt)
+    //   3. ``guide-mode-default``-Attribut (Embed-spezifischer Default)
+    //   4. Backend-``default_enabled`` (globaler Default aus guide-mode.yaml)
+    const attrDefault = this.guideModeDefaultTristate;
     let on: boolean;
     if (urlOverride !== null) on = urlOverride;
     else if (stored === '1') on = true;
     else if (stored === '0') on = false;
+    else if (attrDefault !== null) on = attrDefault;
     else on = defaultEnabled;
 
     this.guideMode.set(on);

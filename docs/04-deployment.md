@@ -334,6 +334,55 @@ Das Widget wird in einen festen Container auf der Seite eingebettet, ohne schweb
 | `session-key` | String | `boerdi_session_id` | localStorage-Key fuer Session |
 | `page-context` | JSON-String | `""` | Zusaetzlicher Kontext (z.B. `'{"thema":"eiszeit"}'`) |
 | `auto-context` | Boolean | `true` | Automatisch URL, Titel, Referrer erfassen |
+| `canvas-enabled` | Boolean | `true` | Canvas-Pane (Material-Erstellung, Lernpfad-Anzeige). `false` rendert Material direkt im Chat. |
+| `ai-content-enabled` | Boolean | `true` | KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix). `false` lehnt Erstell-Anfragen freundlich ab. |
+| `cards-enabled` | Boolean | `true` | Kachel-Anzeige. `false` rendert Treffer als dezente Inline-Markdown-Links im Bot-Text. |
+| `quick-replies-enabled` | Boolean | `true` | Gespraechsvorschlaege-Pillen. `false` blendet alle QR-Buttons aus; Lotsen-Hinweise werden inline eingebaut. |
+
+### Widget-Embed-Modi (kompakte Embed-Varianten)
+
+Die vier `*-enabled`-Properties lassen die einbettende Seite das Widget **feature-by-feature minimaler** auftreten — wichtig fuer WordPress, Edu-Sharing, Themenseiten und andere Hosts mit eigenem Layout. Alle Defaults bleiben `true`, Bestandsintegrationen sehen keine Aenderung.
+
+**Studio-pflegbar:** Die Schwellen fuer den Inline-Link-Modus (max. Anzahl, Titel-Kuerzung, Alt-Antwort-Text) liegen in `chatbots/wlo/v1/01-base/widget-modes.yaml` und koennen ohne Deploy ueber das Studio angepasst werden.
+
+#### Variante D — Schlanke Themenseite (nur Chat + Inline-Links)
+
+Fuer Themenseiten mit viel eigenem Content: keine Kachel-Komponente und kein Canvas-Aufgehen — der Bot bleibt eine textuelle Chat-Bubble mit dezenten Inline-Links.
+
+```html
+<boerdi-chat
+  api-url="https://api.meinedomain.de"
+  cards-enabled="false"
+  canvas-enabled="false"
+  position="bottom-right">
+</boerdi-chat>
+```
+
+#### Variante E — Reduziert (Kacheln ja, KI-Erstellung nein)
+
+Wo der Host selbst Material-Erstellungs-Tools anbietet, lehnt der Bot konkurrierende KI-Generierungs-Anfragen freundlich ab.
+
+```html
+<boerdi-chat
+  api-url="https://api.meinedomain.de"
+  ai-content-enabled="false"
+  quick-replies-enabled="false">
+</boerdi-chat>
+```
+
+#### Variante F — Minimal-Bubble (nur Text + Inline-Links)
+
+Praktisch nur ein Text-Chat — der "in fremder Plattform eingebettet"-Anwendungsfall. Kein Canvas, keine Kacheln, keine Pillen, keine KI-Generierung.
+
+```html
+<boerdi-chat
+  api-url="https://api.meinedomain.de"
+  cards-enabled="false"
+  canvas-enabled="false"
+  ai-content-enabled="false"
+  quick-replies-enabled="false">
+</boerdi-chat>
+```
 
 ### Backend-URL zur Laufzeit setzen
 

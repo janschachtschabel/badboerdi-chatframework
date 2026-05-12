@@ -3,29 +3,40 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-
-  --bot-bg:     #FFFFFF;
-  --user-bg:    #DAE8F5;
-  --chat-bg:    #FFFFFF;
-  --footer-bg:  #E2EEF8;
-  --primary:    #2B6CB0;
-  --primary-dk: #1A4A8A;
-  --text:       #1A1A2E;
-  --text-muted: #6B7280;
-  --link-color: #2563EB;
-  --border:     rgba(0,0,0,.08);
 }
 
-$primary:    #2B6CB0;
-$primary-dk: #1A4A8A;
+// Akzentfarbe + abgeleitete Tönungen kommen alle aus der CSS-Custom-Property
+// ``--boerdi-primary`` (gesetzt vom Embedder via ``primary-color``-Attribut,
+// oder per CSS-Regel ``boerdi-chat { --boerdi-primary: red }``, sonst
+// Default ``#1c4587``). User-Bubble-BG, Footer-BG, Hover-/Border-Varianten
+// werden zur Laufzeit per ``color-mix()`` aus diesem einen Wert berechnet —
+// damit ist jede vom Embedder gesetzte Farbe konsistent ohne dass wir pro
+// Variante einen Wert pflegen müssen.
 $bot-bg:     #FFFFFF;
-$user-bg:    #DAE8F5;
-$footer-bg:  #E2EEF8;
 $text:       #1A1A2E;
 $text-link:  #2563EB;
 $text-muted: #777;
 $border:     rgba(0,0,0,.10);
 $radius:     14px;
+
+// ── Material-Symbols-SVG-Wrapper ─────────────────────────────────────
+// Universeller Helper für Inline-SVGs (Icons aus `shared/icons.ts`),
+// die via `<span class="bb-icon" [innerHTML]="ICONS.xxx | safeSvg">`
+// gerendert werden. Sorgt für sauberes Inline-Alignment und 1em-Skalierung.
+.bb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  vertical-align: -0.18em;
+  flex-shrink: 0;
+}
+.bb-icon > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+  display: block;
+}
 
 // ── Wrapper ─────────────────────────────────────────────────────────────────
 .chat-wrapper {
@@ -48,7 +59,7 @@ $radius:     14px;
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  background: $primary;
+  background: var(--boerdi-primary, #1c4587);
   color: #fff;
 }
 
@@ -195,8 +206,16 @@ $radius:     14px;
   border-bottom-left-radius: 4px;
 }
 
+// (Der frühere ``.bot-bubble.inline-links-mode``-Override ist entfernt:
+//  ``.msg-content a`` rendert jetzt global in Schriftfarbe — die Inline-
+//  Demo und die Standard-Demo verhalten sich gleich.)
+
 .user-bubble {
-  background: $user-bg;
+  // 10% Primary auf Weiß — heller Tönungs-Pendant zum Bot-Weiß, der mit der
+  // gesetzten Akzentfarbe (``--boerdi-primary``) automatisch harmoniert.
+  // Bewusst identisch zum ``.qr-btn``-Hintergrund, damit User-Nachrichten und
+  // Quick-Reply-Vorschläge visuell als eine Familie wirken.
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
   color: $text;
   border-bottom-right-radius: 4px;
 }
@@ -206,18 +225,45 @@ $radius:     14px;
   word-break: break-word;
   min-width: 0;
 
-  a {
-    color: $text-link;
+  // Inline-Links im Bot-Text fügen sich in die Schriftfarbe ein
+  // (statt blau hervorzustechen) — Material- und Lotsen-Links sollen
+  // sich als normale Text-Referenzen lesen, nicht als CTA-Buttons.
+  // Kacheln + Card-Buttons übernehmen die "klickbare CTA"-Rolle.
+  //
+  // ``::ng-deep`` ist nötig, weil die ``<a>``-Tags via ``[innerHTML]`` aus
+  // dem Markdown-Renderer kommen und kein ``_ngcontent-...``-Attribut
+  // bekommen — Component-Encapsulation-Selektoren würden sie sonst nicht
+  // matchen und der Browser-Default (blau-unterstrichen) bleibt aktiv.
+  ::ng-deep a {
+    color: inherit !important;
     text-decoration: underline;
     text-decoration-thickness: 1px;
     text-underline-offset: 2px;
     word-break: break-all;
     &:hover { text-decoration-thickness: 2px; }
+    &:visited { color: inherit !important; }
   }
 
   // Native lists (fallback)
   ul, ol { margin: 6px 0; padding: 0 0 0 1.4em; }
   li { margin-bottom: 4px; }
+
+  // Inline-Link-Bullet-Listen (Material/Lotsen-Treffer im Inline-Mode):
+  // Wenn ein ``<li>`` nur einen einzigen Link enthält, expandieren wir die
+  // Klick-Fläche auf die ganze Zeile. Vorher trafen Klicks oberhalb/unter-
+  // halb/rechts vom Link-Text das ``<li>`` statt das ``<a>``, weil das
+  // ``<li>`` breiter ist als der Link-Text. Browser navigiert dann nicht,
+  // User klickt nochmal — das ist die "ich muss 2x klicken"-Story.
+  //
+  // ``display: block`` macht den Link zum Block-Element und füllt damit
+  // die volle Breite des ``<li>``-Content-Bereichs (rechts der Bullet).
+  // ``padding: 1px 0`` schließt den vertikalen Mini-Gap (~1.6 px) zwischen
+  // ``<li>``-Top und Link-Top, sodass auch leichte Vertikal-Verfehler den
+  // Link treffen.
+  ::ng-deep li > a:only-child {
+    display: block;
+    padding: 1px 0;
+  }
 
   // Headings (rendered by marked) — compact for chat bubbles
   h1, h2, h3, h4, h5, h6 {
@@ -279,7 +325,7 @@ $radius:     14px;
   span {
     width: 7px;
     height: 7px;
-    background: $primary;
+    background: var(--boerdi-primary, #1c4587);
     border-radius: 50%;
     animation: blink 1.2s infinite both;
     &:nth-child(2) { animation-delay: .2s; }
@@ -379,7 +425,6 @@ $accent-orange: #E79800;
 .card-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
   padding: 6px 10px 4px;
   border-bottom: 1px solid #F1F5F9;
@@ -398,6 +443,14 @@ $accent-orange: #E79800;
 .card-content-icon {
   font-size: .95rem;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -0.15em;
+}
+.card-content-icon > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
 }
 .card-content-label {
   white-space: nowrap;
@@ -406,24 +459,9 @@ $accent-orange: #E79800;
   max-width: 110px;
 }
 
-// Kind-Badge: einheitlich grau für alle 3 Typen (Themenseite/Sammlung/Inhalt)
-// — visueller Stil-Marker bleibt am Wrapper (Top-Stripe / Linker-Streifen),
-// das Badge ist nur ein neutrales Label.
-.card-kind-badge {
-  flex-shrink: 0;
-  .kind {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    font-size: .62rem;
-    font-weight: 600;
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: #F3F4F6;
-    color: #475569;
-    border: 1px solid #E2E8F0;
-  }
-}
+// (Das frühere ``.card-kind-badge`` rechts oben in der Card ist entfernt:
+//  der Inhaltstyp links oben — "🌐 Themenseite", "📚 Sammlung", "🎬 Video"
+//  etc. — sagt das gleiche aus, das zusätzliche Badge war redundant.)
 
 // ── Card Body ──────────────────────────────────────────────────────────
 //   Layout: Titel volle Breite oben, dann Desc + kleines Thumb nebeneinander
@@ -521,6 +559,15 @@ $accent-orange: #E79800;
 .footer-icon {
   font-size: .8rem;
   opacity: .85;
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+  vertical-align: -0.18em;
+}
+.footer-icon > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
 }
 
 // ── Card Actions (für Sammlungs-/Themenseiten-Karten) ──────────────────
@@ -540,47 +587,59 @@ $accent-orange: #E79800;
 }
 
 .card-btn {
-  font-size: .7rem;
+  font-size: .72rem;
   font-weight: 600;
-  padding: 4px 10px;
+  padding: 5px 11px;
   border-radius: 8px;
-  border: none;
   cursor: pointer;
-  transition: background .15s, transform .1s;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
   line-height: 1.3;
   white-space: nowrap;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 
-  // Alle Button-Varianten in einheitlichem Hellblau-Ton.
-  // Ursprünglich hatten primary/secondary/tertiary unterschiedliche Farben
-  // (blau/grün/gelb) — sah zu bunt aus. Jetzt nur ein Stil.
+  // ─── Hierarchie ──────────────────────────────────────────────────
+  // ``--guide``  = Primary (gefüllt dunkelblau) — wichtigste CTA der Card,
+  //                "Bring mich hin" im Lotsen-Modus.
+  // Alle anderen = Secondary (outlined dunkelblau) — sekundäre Aktionen,
+  //                visuell ruhiger, damit pro Card eine klare Aktion
+  //                heraussticht.
+  //
+  // Bei mehreren Aktionen sieht die Card so aus:
+  //   [▮ Bring mich hin]  [▢ Inhalte]  [▢ Lernpfad]  [▢ Themenseite]
+  // ohne Lotsen:
+  //   [▢ Inhalte]  [▢ Lernpfad]  [▢ Themenseite]
+
+  &--guide {
+    background: var(--boerdi-primary, #1c4587);
+    color: #ffffff;
+    border: 1px solid var(--boerdi-primary, #1c4587);
+    &:hover {
+      background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 88%, black);
+      border-color: color-mix(in srgb, var(--boerdi-primary, #1c4587) 88%, black);
+    }
+  }
+
   &--primary,
   &--secondary,
   &--tertiary,
   &--remix {
-    background: #e0f2fe;
-    color: #0369a1;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    &:hover { background: #bae6fd; }
-    &:disabled { opacity: .45; cursor: default; }
+    background: transparent;
+    color: var(--boerdi-primary, #1c4587);
+    border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 35%, transparent);
+    &:hover {
+      background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 8%, transparent);
+      border-color: var(--boerdi-primary, #1c4587);
+    }
   }
 
-  // Lotsen-Modus: dunkelblau (Header-Akzentfarbe), klar als primäre
-  // Aktion erkennbar ohne mit Orange zu schreien. Klick führt direkt
-  // im aktuellen Tab zur Themenseite/Sammlung.
-  &--guide {
-    background: var(--boerdi-primary, #1c4587);
-    color: #ffffff;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    font-weight: 600;
-    &:hover { filter: brightness(1.1); }
-    &:disabled { opacity: .45; cursor: default; }
+  &:disabled {
+    opacity: .45;
+    cursor: default;
+    &:hover { background: inherit; border-color: inherit; }
   }
-
-  &:disabled { opacity: .45; cursor: default; }
 }
 
 // Topic page smart button + dropdown — einheitlich hellblau
@@ -600,16 +659,23 @@ $accent-orange: #E79800;
 }
 
 .tp-toggle {
-  font-size: .65rem;
-  padding: 2px 5px;
-  border: none;
+  font-size: .85rem;
+  padding: 5px 7px;
   cursor: pointer;
-  background: #e0f2fe;
-  color: #0369a1;
-  border-left: 1px solid rgba(0,0,0,.08);
+  background: transparent;
+  color: var(--boerdi-primary, #1c4587);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 35%, transparent);
+  border-left: none;
   border-radius: 0 8px 8px 0;
   line-height: 1;
-  &:hover { background: #bae6fd; }
+  margin-left: -1px;  // overlap mit angrenzendem Themenseite-Button
+  &:hover {
+    background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 8%, transparent);
+    border-color: var(--boerdi-primary, #1c4587);
+  }
 }
 
 .tp-dropdown-wrap {
@@ -632,12 +698,12 @@ $accent-orange: #E79800;
 
 .tp-dropdown-item {
   display: block;
-  padding: 5px 10px;
-  font-size: .65rem;
-  color: #0369a1;
+  padding: 6px 12px;
+  font-size: .7rem;
+  color: var(--boerdi-primary, #1c4587);
   text-decoration: none;
   white-space: nowrap;
-  &:hover { background: #e0f2fe; }
+  &:hover { background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, transparent); }
   &.tp-active { font-weight: 700; }
 }
 
@@ -732,18 +798,21 @@ $accent-orange: #E79800;
 }
 
 .btn-load-more {
-  background: #EBF5FF;
-  color: $primary;
-  border: 1px solid rgba($primary, .25);
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
+  color: var(--boerdi-primary, #1c4587);
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 25%, transparent);
   border-radius: 16px;
   padding: 5px 16px;
   font-size: .78rem;
   cursor: pointer;
   font-weight: 600;
   transition: background .15s, color .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 
   &:hover:not(:disabled) {
-    background: $primary;
+    background: var(--boerdi-primary, #1c4587);
     color: #fff;
   }
 
@@ -762,9 +831,11 @@ $accent-orange: #E79800;
 }
 
 .qr-btn {
-  background: #EBF5FF;
-  color: $primary;
-  border: 1px solid rgba($primary, .25);
+  // Bewusst identisch zur ``.user-bubble``-Hintergrundfarbe — beide gehören
+  // visuell zusammen (User-Aktion-Familie).
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
+  color: var(--boerdi-primary, #1c4587);
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 25%, transparent);
   border-radius: 16px;
   padding: 5px 14px;
   font-size: .78rem;
@@ -772,9 +843,12 @@ $accent-orange: #E79800;
   line-height: 1.3;
   cursor: pointer;
   transition: background .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 
   &:hover {
-    background: $primary;
+    background: var(--boerdi-primary, #1c4587);
     color: #fff;
   }
 }
@@ -783,14 +857,14 @@ $accent-orange: #E79800;
 // Voll-eingefärbt im Header-Dunkelblau, damit sich die Aktion klar von den
 // hellblauen Standard-QRs abhebt — ohne Orange.
 .qr-btn--guide {
-  background: $primary;
+  background: var(--boerdi-primary, #1c4587);
   color: #fff;
-  border-color: $primary;
+  border-color: var(--boerdi-primary, #1c4587);
   font-weight: 600;
 
   &:hover {
     filter: brightness(1.1);
-    background: $primary;     // Override: don't dim the bg on hover
+    background: var(--boerdi-primary, #1c4587);     // Override: don't dim the bg on hover
     color: #fff;
   }
 }
@@ -808,11 +882,15 @@ $accent-orange: #E79800;
   background: none;
   border: none;
   cursor: pointer;
-  font-size: .7rem;
-  opacity: .4;
+  font-size: 1rem;
+  color: var(--boerdi-primary, #1c4587);
+  opacity: .55;
   transition: opacity .15s;
   padding: 2px 4px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   &:hover { opacity: 1; }
 }
 
@@ -868,7 +946,7 @@ $accent-orange: #E79800;
 }
 
 .debug-row { margin-bottom: 2px; max-width: 100%; }
-.debug-label { font-weight: 600; color: $primary; }
+.debug-label { font-weight: 600; color: var(--boerdi-primary, #1c4587); }
 
 // ── Input Footer ─────────────────────────────────────────────────────────────
 .chat-footer {
@@ -876,13 +954,15 @@ $accent-orange: #E79800;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: $footer-bg;
+  // 10% Primary auf Weiß — sehr dezenter Tönungs-Untergrund, der den
+  // Eingabe-Bereich vom Chat-Body absetzt und mit der Akzentfarbe harmoniert.
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
   border-top: 1px solid $border;
 }
 
 .btn-mic {
   background: none;
-  border: 1px solid rgba($primary, .3);
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 30%, transparent);
   border-radius: 18px;
   min-width: 36px;
   height: 36px;
@@ -896,7 +976,7 @@ $accent-orange: #E79800;
   transition: all .2s;
   white-space: nowrap;
 
-  &:hover { background: rgba($primary, .1); }
+  &:hover { background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, transparent); }
   &.recording {
     background: #FEE2E2;
     border-color: #EF4444;
@@ -943,13 +1023,13 @@ $accent-orange: #E79800;
   color: $text;
   font-family: inherit;
 
-  &:focus { border-color: $primary; box-shadow: 0 0 0 2px rgba($primary, .15); }
+  &:focus { border-color: var(--boerdi-primary, #1c4587); box-shadow: 0 0 0 2px color-mix(in srgb, var(--boerdi-primary, #1c4587) 15%, transparent); }
   &:disabled { opacity: .6; }
   &::placeholder { color: $text-muted; }
 }
 
 .btn-send {
-  background: $primary;
+  background: var(--boerdi-primary, #1c4587);
   color: #fff;
   border: none;
   border-radius: 50%;
@@ -962,7 +1042,7 @@ $accent-orange: #E79800;
   justify-content: center;
   transition: background .15s;
 
-  &:hover { background: $primary-dk; }
+  &:hover { background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 88%, black); }
   &:disabled { opacity: .4; cursor: default; }
 }
 

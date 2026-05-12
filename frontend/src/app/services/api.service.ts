@@ -15,6 +15,15 @@ export interface Environment {
    *  ``wirlernenonline.de``). Sent so the backend can verify the host is
    *  on its allow-list before annotating cards. */
   host?: string;
+  /** Widget-Embed-Modi: vier Schalter, die der einbettende Host setzt,
+   *  damit das Widget feature-by-feature minimaler auftritt.
+   *  ``undefined`` = Feld nicht mitgeschickt → Backend behält das
+   *  Default-Verhalten (alles an). Nur explizites ``false`` schaltet
+   *  ein Feature ab. */
+  cards_enabled?: boolean;
+  canvas_enabled?: boolean;
+  ai_content_enabled?: boolean;
+  quick_replies_enabled?: boolean;
 }
 
 export interface WloCard {
@@ -186,6 +195,19 @@ export class ApiService {
    *  cards. Defaults are off / empty until ``setGuideEnv`` is called. */
   private guideMode = false;
   private guideHost = '';
+  /** Widget-Embed-Modi — gesetzt vom WidgetComponent aus den HTML-Attributen
+   *  ``cards-enabled``, ``canvas-enabled``, ``ai-content-enabled``,
+   *  ``quick-replies-enabled``. ``undefined`` heisst "Attribut nicht
+   *  gesetzt" — wir schicken das Feld dann gar nicht erst mit, damit das
+   *  Backend sein Default-Verhalten beibehält (alles an). Nur explizites
+   *  ``false`` wird durchgereicht und schaltet das Feature backend-seitig
+   *  ab. */
+  private widgetModes: {
+    cards?: boolean;
+    canvas?: boolean;
+    ai?: boolean;
+    qr?: boolean;
+  } = {};
 
   constructor() {
     // Allow the hosting page to override the backend URL at runtime by
@@ -219,6 +241,35 @@ export class ApiService {
     this.guideHost = (host || '').trim().toLowerCase();
   }
 
+  /** Updated by ``WidgetComponent`` whenever one of the four embed-mode
+   *  Inputs is set (or its absence is detected). Pass ``undefined`` for
+   *  any flag the host did not set explicitly — that field is then NOT
+   *  included in the outgoing ``environment`` block, so older backends
+   *  and the default-on flow remain unaffected.
+   */
+  setWidgetModes(
+    cards: boolean | undefined,
+    canvas: boolean | undefined,
+    ai: boolean | undefined,
+    qr: boolean | undefined,
+  ): void {
+    this.widgetModes = { cards, canvas, ai, qr };
+  }
+
+  /** Build the optional widget-mode fields for the environment block.
+   *  Only writes a key when the value is an explicit boolean — undefined
+   *  is treated as "host didn't say", and we don't ship that field at all.
+   */
+  private widgetModeEnv(): Partial<Environment> {
+    const m = this.widgetModes;
+    const out: Partial<Environment> = {};
+    if (typeof m.cards === 'boolean') out.cards_enabled = m.cards;
+    if (typeof m.canvas === 'boolean') out.canvas_enabled = m.canvas;
+    if (typeof m.ai === 'boolean') out.ai_content_enabled = m.ai;
+    if (typeof m.qr === 'boolean') out.quick_replies_enabled = m.qr;
+    return out;
+  }
+
   async sendMessage(
     sessionId: string,
     message: string,
@@ -236,6 +287,7 @@ export class ApiService {
       referrer: env?.referrer || document.referrer || 'direkt',
       guide_mode: env?.guide_mode ?? this.guideMode,
       host: env?.host ?? this.guideHost,
+      ...this.widgetModeEnv(),
     };
 
     const body: Record<string, any> = {
@@ -287,6 +339,7 @@ export class ApiService {
       referrer: env?.referrer || document.referrer || 'direkt',
       guide_mode: env?.guide_mode ?? this.guideMode,
       host: env?.host ?? this.guideHost,
+      ...this.widgetModeEnv(),
     };
 
     const body: Record<string, any> = {

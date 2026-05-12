@@ -1,0 +1,46 @@
+# Widget-Embed-Modi — Display-Limits und Texte für Host-Konfigurationen.
+#
+# Diese Datei steuert, wie das Widget auf Hosts auftritt, die einzelne
+# Features per HTML-Attribut deaktiviert haben:
+#   <boerdi-chat
+#     cards-enabled="false"
+#     canvas-enabled="false"
+#     ai-content-enabled="false"
+#     quick-replies-enabled="false">
+#
+# Die Schalter selbst kommen vom Host (Frontend) — hier stehen nur die
+# abhängigen Limits und Texte, die das Backend daraus ableitet.
+#
+# Default-Verhalten (kein Attribut gesetzt): alle Features an, wie bisher.
+
+widget_modes:
+  # Bei cards-enabled="false": Maximale Anzahl Inline-Links pro Antwort,
+  # wenn Cards als Markdown-Links in den Bot-Text gerendert werden.
+  # Mehr Treffer aus der Suche werden vom Backend gar nicht durchgereicht,
+  # um Token & Tokenkosten zu sparen.
+  #
+  # Default 3 — 4 wird in Usability-Tests oft als "zu viel auf einmal"
+  # empfunden, 2 lässt zu wenig Auswahl. Auf [1, 6] geclamped.
+  cards_inline_link_limit: 3
+
+  # Bei cards-enabled="false": Maximale Titel-Länge in der Inline-Link-
+  # Anzeige. Frontend kürzt mit Word-Boundary-Cut und Ellipsis ("…"),
+  # kein hartes truncate-mid-word.
+  #
+  # Default 70 Zeichen — kommt aus Tests mit typischen WLO-Material-
+  # titeln und passt in den meisten Chat-Bubble-Breiten in eine Zeile.
+  cards_inline_link_title_max: 70
+
+  # Bei ai-content-enabled="false": Alternativ-Antwort, wenn der User
+  # PAT-19 (Lernpfad) oder PAT-21 (Canvas-Create) triggert. Backend
+  # setzt diesen Text direkt als bot-Antwort — keine LLM-Generierung,
+  # keine Tools, kein Canvas. Quick-Replies kommen nur ins Response,
+  # wenn quick_replies_enabled (Host-Flag) ebenfalls aktiv ist.
+  ai_disabled_alt_response:
+    text: |
+      Auf dieser Seite kann ich gerade kein neues Material für dich
+      erstellen. Magst du dir stattdessen bestehende Inhalte zeigen
+      lassen?
+    quick_replies:
+      - Zeig mir Material zum Thema
+      - Was kannst du sonst?

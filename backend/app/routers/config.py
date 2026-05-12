@@ -389,7 +389,16 @@ class McpServerUpdate(BaseModel):
 
 @router.put("/mcp-servers")
 async def update_mcp_servers(data: McpServerUpdate):
-    """Update the full MCP server registry."""
+    """Update the full MCP server registry.
+
+    Schutzregel: Wenn das Studio die URL des Primary-Servers
+    (id=wlo-mcp) zu ändern versucht, ignorieren wir das stillschweigend.
+    Die Primary-URL wird ausschließlich per ``MCP_SERVER_URL`` Env-Var
+    gesteuert; ein YAML-Override würde nur Verwirrung schaffen.
+    Der Save-Layer (``save_mcp_servers``) filtert das URL-Feld für den
+    Primary automatisch raus, sodass auch eingeschmuggelte Werte
+    nicht persistiert werden.
+    """
     from app.services.config_loader import save_mcp_servers
     save_mcp_servers(data.servers)
     return {"status": "saved", "count": len(data.servers)}

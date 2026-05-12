@@ -226,19 +226,29 @@ async def health():
 @app.get("/api/debug/mcp-test", dependencies=[Depends(require_studio_key)])
 async def mcp_test():
     """Test MCP connection directly."""
-    from app.services.mcp_client import call_mcp_tool, parse_wlo_cards, resolve_discipline_labels, _session_id, _initialized
+    # Lazy import + runtime attribute lookup, damit ``_session_id`` /
+    # ``_initialized`` nach dem Multi-Server-Refactor immer den aktuellen
+    # Stand des Default-MCP-Slots zurückgeben (PEP 562 __getattr__).
+    from app.services import mcp_client as _mc
     try:
-        result = await call_mcp_tool("search_wlo_collections", {"query": "Mathematik"})
-        cards = parse_wlo_cards(result)
-        await resolve_discipline_labels(cards)
+        result = await _mc.call_mcp_tool("search_wlo_collections", {"query": "Mathematik"})
+        cards = _mc.parse_wlo_cards(result)
+        await _mc.resolve_discipline_labels(cards)
         return {
             "status": "ok",
-            "session_id": _session_id,
-            "initialized": _initialized,
+            "session_id": _mc._session_id,
+            "initialized": _mc._initialized,
+            "all_sessions": _mc._sessions,
             "result_length": len(result),
             "result_preview": result[:300],
             "cards_count": len(cards),
             "cards": cards[:2],
         }
     except Exception as e:
-        return {"status": "error", "error": str(e), "session_id": _session_id, "initialized": _initialized}
+        return {
+            "status": "error",
+            "error": str(e),
+            "session_id": _mc._session_id,
+            "initialized": _mc._initialized,
+            "all_sessions": _mc._sessions,
+        }

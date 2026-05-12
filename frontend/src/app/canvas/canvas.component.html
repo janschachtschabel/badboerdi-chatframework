@@ -5,7 +5,9 @@
               *ngIf="canGoBack"
               (click)="onGoBack()"
               title="Zur vorherigen Ansicht"
-              aria-label="Zurück">‹</button>
+              aria-label="Zurück">
+        <span class="bb-icon" [innerHTML]="ICONS.arrow_back | safeSvg"></span>
+      </button>
       <span class="canvas-title" *ngIf="viewMode === 'content'">{{ title || 'Canvas' }}</span>
       <span class="canvas-title" *ngIf="viewMode === 'cards'">{{ title || ('Treffer' + (query ? ' zu „' + query + '"' : '')) }}</span>
       <span class="canvas-title" *ngIf="viewMode === 'preview'">{{ previewCard?.title || 'Vorschau' }}</span>
@@ -24,13 +26,15 @@
               class="canvas-tab"
               [class.active]="viewMode === 'content'"
               (click)="onSwitchView('material')">
-        📝 Material
+        <span class="bb-icon" [innerHTML]="ICONS.description | safeSvg"></span>
+        <span>Material</span>
       </button>
       <button type="button"
               class="canvas-tab"
               [class.active]="viewMode === 'cards'"
               (click)="onSwitchView('cards')">
-        🔎 Treffer <span class="count" *ngIf="cards?.length">({{ cards.length }})</span>
+        <span class="bb-icon" [innerHTML]="ICONS.search | safeSvg"></span>
+        <span>Treffer</span> <span class="count" *ngIf="cards?.length">({{ cards.length }})</span>
       </button>
     </div>
 
@@ -40,7 +44,8 @@
               *ngIf="viewMode === 'content' && editMode()"
               (click)="onSaveEdit()"
               title="Änderungen speichern">
-        <span aria-hidden="true">✓</span> Speichern
+        <span class="bb-icon" [innerHTML]="ICONS.check | safeSvg"></span>
+        <span>Speichern</span>
       </button>
       <button type="button" class="canvas-btn"
               *ngIf="viewMode === 'content' && editMode()"
@@ -53,44 +58,56 @@
               *ngIf="viewMode === 'content' && !editMode()"
               (click)="onToggleEdit()"
               title="Markdown direkt bearbeiten">
-        <span aria-hidden="true">✎</span>
+        <span class="bb-icon" [innerHTML]="ICONS.edit | safeSvg"></span>
       </button>
       <!-- Bot-Version wiederherstellen — nur wenn User editiert hat -->
       <button type="button" class="canvas-btn"
               *ngIf="viewMode === 'content' && !editMode() && userEditedSinceBot"
               (click)="onRestoreBotVersion()"
               title="Zur Bot-Version zurückkehren (deine Änderungen verwerfen)">
-        <span aria-hidden="true">↺</span>
+        <span class="bb-icon" [innerHTML]="ICONS.restore | safeSvg"></span>
       </button>
       <button type="button" class="canvas-btn"
               *ngIf="viewMode === 'content' && !editMode()"
               (click)="onPrint()"
               title="Drucken / als PDF speichern">
-        <span aria-hidden="true">🖨</span>
+        <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
       </button>
       <button type="button" class="canvas-btn"
               *ngIf="viewMode === 'content' && !editMode()"
               (click)="onDownload()"
               title="Als Markdown-Datei herunterladen">
-        <span aria-hidden="true">⬇</span>
+        <span class="bb-icon" [innerHTML]="ICONS.download | safeSvg"></span>
       </button>
       <button type="button" class="canvas-btn close"
               (click)="onClose()"
               title="Canvas schließen"
-              aria-label="Canvas schließen">×</button>
+              aria-label="Canvas schließen">
+        <span class="bb-icon" [innerHTML]="ICONS.close | safeSvg"></span>
+      </button>
     </div>
   </header>
 
   <div class="canvas-body" [ngSwitch]="viewMode">
     <!-- Empty state -->
     <div *ngSwitchCase="'empty'" class="canvas-empty">
-      <div class="empty-icon" aria-hidden="true">🎨</div>
+      <div class="empty-icon empty-icon--svg" aria-hidden="true"
+           [innerHTML]="ICONS.palette | safeSvg"></div>
       <h3>Canvas-Arbeitsfläche</h3>
       <p>Hier erscheinen erstellte Materialien und Inhaltskacheln.</p>
       <div class="empty-hints">
-        <div class="hint">📝 <em>„Erstelle ein Arbeitsblatt zur Photosynthese"</em></div>
-        <div class="hint">❓ <em>„Mach mir ein Quiz zur Eiszeit"</em></div>
-        <div class="hint">🔎 <em>„Zeig mir Material zu Gletschern"</em></div>
+        <div class="hint">
+          <span class="bb-icon" [innerHTML]="ICONS.description | safeSvg"></span>
+          <em>„Erstelle ein Arbeitsblatt zur Photosynthese"</em>
+        </div>
+        <div class="hint">
+          <span class="bb-icon" [innerHTML]="ICONS.help | safeSvg"></span>
+          <em>„Mach mir ein Quiz zur Eiszeit"</em>
+        </div>
+        <div class="hint">
+          <span class="bb-icon" [innerHTML]="ICONS.search | safeSvg"></span>
+          <em>„Zeig mir Material zu Gletschern"</em>
+        </div>
       </div>
     </div>
 
@@ -104,7 +121,8 @@
       <!-- Edit-Modus: direktes Markdown-Editieren -->
       <div *ngIf="editMode()" class="canvas-edit">
         <div class="canvas-edit-hint">
-          📝 Direkter Markdown-Editor. Änderungen übernehmen mit <strong>Speichern</strong>.
+          <span class="bb-icon" [innerHTML]="ICONS.description | safeSvg"></span>
+          Direkter Markdown-Editor. Änderungen übernehmen mit <strong>Speichern</strong>.
           Der Bot arbeitet danach mit deiner Version weiter.
         </div>
         <textarea class="canvas-edit-textarea"
@@ -124,16 +142,12 @@
            [class.is-inhalt]="isInhaltCard(previewCard)">
         <div class="wlo-card preview-card">
 
-          <!-- Header: Inhaltstyp links, Kind-Badge rechts (wie Kacheln) -->
+          <!-- Header: nur Inhaltstyp links (kategoriebezeichnender Badge
+               rechts war redundant — siehe chat.component.html). -->
           <div class="card-header">
             <span class="card-content-type">
-              <span class="card-content-icon">{{ getCardIcon(previewCard) }}</span>
+              <span class="card-content-icon" [innerHTML]="getCardIcon(previewCard) | safeSvg"></span>
               <span class="card-content-label">{{ getContentTypeLabel(previewCard) }}</span>
-            </span>
-            <span class="card-kind-badge">
-              <span *ngIf="isThemenseiteCard(previewCard)" class="kind">🌐 Themenseite</span>
-              <span *ngIf="isSammlungCard(previewCard)" class="kind">📚 Sammlung</span>
-              <span *ngIf="isInhaltCard(previewCard)" class="kind">📄 Inhalt</span>
             </span>
           </div>
 
@@ -143,7 +157,9 @@
                  class="preview-img"
                  [src]="previewCard.preview_url"
                  [alt]="previewCard.title">
-            <div *ngIf="!previewCard.preview_url" class="preview-img placeholder" aria-hidden="true">📄</div>
+            <div *ngIf="!previewCard.preview_url" class="preview-img placeholder" aria-hidden="true">
+              <span class="bb-icon bb-icon--large" [innerHTML]="ICONS.article | safeSvg"></span>
+            </div>
             <span *ngIf="previewCard.license" class="card-license-badge-side"
                   [title]="previewCard.license">{{ getLicenseShort(previewCard.license) }}</span>
           </div>
@@ -161,39 +177,40 @@
           <div class="card-footer">
             <span *ngIf="previewCard.educational_contexts && previewCard.educational_contexts.length"
                   class="footer-meta footer-stufe">
-              <span class="footer-icon">🎓</span>
+              <span class="footer-icon" [innerHTML]="ICONS.school | safeSvg"></span>
               <span>{{ previewCard.educational_contexts[0] }}</span>
             </span>
             <span *ngIf="previewCard.disciplines && previewCard.disciplines.length"
                   class="footer-meta footer-fach">
-              <span class="footer-icon">📘</span>
+              <span class="footer-icon" [innerHTML]="ICONS.menu_book | safeSvg"></span>
               <span>{{ previewCard.disciplines[0] }}</span>
             </span>
           </div>
         </div>
 
-        <!-- Action buttons (uniform hellblau) -->
+        <!-- Action buttons.
+             Lotsen-Hinweise erscheinen ausschließlich als Inline-Link
+             im Chat-Text (siehe Backend ``_extract_guide_inline``); ein
+             zusätzlicher "Bring mich hin"-Card-Button wäre redundant. -->
         <div class="card-actions preview-actions">
-          <button *ngIf="previewCard?.guide_url" type="button" class="card-btn card-btn--guide"
-                  (click)="onCardAction('guide', previewCard!, $event)"
-                  title="Im aktuellen Tab zu diesem Inhalt navigieren">
-            🧭 Bring mich hin
-          </button>
           <a class="card-btn card-btn--primary"
              [href]="cardUrl(previewCard)"
              target="_blank"
              rel="noopener noreferrer">
-            🔗 In neuem Tab öffnen
+            <span class="bb-icon" [innerHTML]="ICONS.open_in_new | safeSvg"></span>
+            <span>In neuem Tab öffnen</span>
           </a>
           <button type="button" class="card-btn card-btn--primary"
                   (click)="onCardAction('remix', previewCard!, $event)">
-            🔄 Remix
+            <span class="bb-icon" [innerHTML]="ICONS.refresh | safeSvg"></span>
+            <span>Remix</span>
           </button>
         </div>
       </div>
 
       <p class="preview-hint" *ngIf="previewCard">
-        💬 Frag den Chat nach einer Zusammenfassung, einem Quiz dazu oder
+        <span class="bb-icon" [innerHTML]="ICONS.chat | safeSvg"></span>
+        Frag den Chat nach einer Zusammenfassung, einem Quiz dazu oder
         lass den Inhalt als Arbeitsblatt umwandeln.
       </p>
     </div>
@@ -210,7 +227,7 @@
       <h3 class="canvas-cards-heading canvas-cards-heading--topic"
           *ngIf="visibleTopicPageCards.length &&
                  (visiblePureCollectionCards.length || visibleContentCards.length)">
-        🌐 Themenseiten
+        Themenseiten
       </h3>
       <div *ngFor="let c of visibleTopicPageCards; trackBy: trackByNodeId"
            class="wlo-card-wrapper is-themenseite">
@@ -219,14 +236,12 @@
            target="_blank"
            rel="noopener noreferrer">
 
-          <!-- Header: Inhaltstyp links, Kind-Badge rechts -->
+          <!-- Header: nur Inhaltstyp links (Inhaltstyp links oben sagt
+               schon "Themenseite"; das Badge rechts war redundant). -->
           <div class="card-header">
             <span class="card-content-type">
-              <span class="card-content-icon">{{ getCardIcon(c) }}</span>
+              <span class="card-content-icon" [innerHTML]="getCardIcon(c) | safeSvg"></span>
               <span class="card-content-label">{{ getContentTypeLabel(c) }}</span>
-            </span>
-            <span class="card-kind-badge">
-              <span class="kind kind-themenseite">🌐 Themenseite</span>
             </span>
           </div>
 
@@ -256,12 +271,12 @@
           <div class="card-footer">
             <span *ngIf="c.educational_contexts && c.educational_contexts.length"
                   class="footer-meta footer-stufe">
-              <span class="footer-icon">🎓</span>
+              <span class="footer-icon" [innerHTML]="ICONS.school | safeSvg"></span>
               <span>{{ c.educational_contexts[0] }}</span>
             </span>
             <span *ngIf="c.disciplines && c.disciplines.length"
                   class="footer-meta footer-fach">
-              <span class="footer-icon">📘</span>
+              <span class="footer-icon" [innerHTML]="ICONS.menu_book | safeSvg"></span>
               <span>{{ c.disciplines[0] }}</span>
             </span>
           </div>
@@ -279,7 +294,8 @@
                target="_blank"
                rel="noopener noreferrer"
                [title]="'Themenseite öffnen — Variante: ' + (selectedVariant(c) ? variantLabel(c, selectedVariant(c)!) : 'Allgemein')">
-              🌐 Themenseite
+              <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
+              <span>Themenseite</span>
             </a>
             <button *ngIf="c.topic_pages && c.topic_pages.length > 1"
                     type="button"
@@ -288,7 +304,7 @@
                     [attr.aria-haspopup]="'menu'"
                     [title]="c.topic_pages.length + ' Varianten — andere auswählen'"
                     (click)="toggleVariantMenu(c, $event)">
-              <span aria-hidden="true">▾</span>
+              <span class="bb-icon" [innerHTML]="ICONS.arrow_drop_down | safeSvg"></span>
             </button>
             <div *ngIf="openVariantMenuId === c.node_id"
                  class="card-btn-split__menu"
@@ -302,32 +318,31 @@
                  [title]="variantLabel(c, v) + ' — ' + (v.url || '')"
                  [class.is-selected]="v.variant_id === selectedVariant(c)?.variant_id"
                  (click)="onPickVariant(c, v.variant_id, $event)">
-                <span class="variant-check" aria-hidden="true"
-                      *ngIf="v.variant_id === selectedVariant(c)?.variant_id">✓</span>
+                <span class="variant-check bb-icon" aria-hidden="true"
+                      *ngIf="v.variant_id === selectedVariant(c)?.variant_id"
+                      [innerHTML]="ICONS.check | safeSvg"></span>
                 {{ variantLabel(c, v) }}
               </a>
             </div>
           </div>
 
-          <button *ngIf="c.guide_url" type="button" class="card-btn card-btn--guide"
-                  (click)="onCardAction('guide', c, $event)"
-                  title="Im aktuellen Tab zu dieser Themenseite navigieren">
-            🧭 Bring mich hin
-          </button>
           <button type="button" class="card-btn card-btn--secondary"
                   (click)="onCardAction('browse', c, $event)"
                   title="Inhalte dieser Sammlung anzeigen">
-            📋 Inhalte
+            <span class="bb-icon" [innerHTML]="ICONS.list | safeSvg"></span>
+            <span>Inhalte</span>
           </button>
           <button type="button" class="card-btn card-btn--secondary"
                   (click)="onCardAction('learning_path', c, $event)"
                   title="Lernpfad aus dieser Sammlung generieren">
-            🗺️ Lernpfad
+            <span class="bb-icon" [innerHTML]="ICONS.route | safeSvg"></span>
+            <span>Lernpfad</span>
           </button>
           <button type="button" class="card-btn card-btn--remix"
                   (click)="onCardAction('remix', c, $event)"
                   title="Neues Material basierend auf dieser Sammlung erstellen">
-            🔄 Remix
+            <span class="bb-icon" [innerHTML]="ICONS.refresh | safeSvg"></span>
+            <span>Remix</span>
           </button>
         </div>
       </div>
@@ -336,7 +351,7 @@
       <h3 class="canvas-cards-heading canvas-cards-heading--collection"
           *ngIf="visiblePureCollectionCards.length &&
                  (visibleTopicPageCards.length || visibleContentCards.length)">
-        📚 Sammlungen
+        Sammlungen
       </h3>
       <div *ngFor="let c of visiblePureCollectionCards; trackBy: trackByNodeId"
            class="wlo-card-wrapper is-sammlung">
@@ -347,11 +362,8 @@
 
           <div class="card-header">
             <span class="card-content-type">
-              <span class="card-content-icon">{{ getCardIcon(c) }}</span>
+              <span class="card-content-icon" [innerHTML]="getCardIcon(c) | safeSvg"></span>
               <span class="card-content-label">{{ getContentTypeLabel(c) }}</span>
-            </span>
-            <span class="card-kind-badge">
-              <span class="kind kind-sammlung">📚 Sammlung</span>
             </span>
           </div>
 
@@ -374,37 +386,35 @@
           <div class="card-footer">
             <span *ngIf="c.educational_contexts && c.educational_contexts.length"
                   class="footer-meta footer-stufe">
-              <span class="footer-icon">🎓</span>
+              <span class="footer-icon" [innerHTML]="ICONS.school | safeSvg"></span>
               <span>{{ c.educational_contexts[0] }}</span>
             </span>
             <span *ngIf="c.disciplines && c.disciplines.length"
                   class="footer-meta footer-fach">
-              <span class="footer-icon">📘</span>
+              <span class="footer-icon" [innerHTML]="ICONS.menu_book | safeSvg"></span>
               <span>{{ c.disciplines[0] }}</span>
             </span>
           </div>
         </a>
 
-        <div class="card-actions" *ngIf="c.node_id || c.guide_url">
-          <button *ngIf="c.guide_url" type="button" class="card-btn card-btn--guide"
-                  (click)="onCardAction('guide', c, $event)"
-                  title="Im aktuellen Tab zu dieser Sammlung navigieren">
-            🧭 Bring mich hin
-          </button>
+        <div class="card-actions" *ngIf="c.node_id">
           <button *ngIf="c.node_id" type="button" class="card-btn card-btn--primary"
                   (click)="onCardAction('browse', c, $event)"
                   title="Inhalte dieser Sammlung anzeigen">
-            📋 Inhalte
+            <span class="bb-icon" [innerHTML]="ICONS.list | safeSvg"></span>
+            <span>Inhalte</span>
           </button>
           <button *ngIf="c.node_id" type="button" class="card-btn card-btn--secondary"
                   (click)="onCardAction('learning_path', c, $event)"
                   title="Lernpfad aus dieser Sammlung generieren">
-            🗺️ Lernpfad
+            <span class="bb-icon" [innerHTML]="ICONS.route | safeSvg"></span>
+            <span>Lernpfad</span>
           </button>
           <button *ngIf="c.node_id" type="button" class="card-btn card-btn--remix"
                   (click)="onCardAction('remix', c, $event)"
                   title="Neues Material basierend auf dieser Sammlung erstellen">
-            🔄 Remix
+            <span class="bb-icon" [innerHTML]="ICONS.refresh | safeSvg"></span>
+            <span>Remix</span>
           </button>
         </div>
       </div>
@@ -413,7 +423,7 @@
       <h3 class="canvas-cards-heading canvas-cards-heading--content"
           *ngIf="visibleContentCards.length &&
                  (visibleTopicPageCards.length || visiblePureCollectionCards.length)">
-        📄 Einzelmaterialien
+        Einzelmaterialien
       </h3>
       <div *ngFor="let c of visibleContentCards; trackBy: trackByNodeId"
            class="wlo-card-wrapper is-inhalt">
@@ -424,11 +434,8 @@
 
           <div class="card-header">
             <span class="card-content-type">
-              <span class="card-content-icon">{{ getCardIcon(c) }}</span>
+              <span class="card-content-icon" [innerHTML]="getCardIcon(c) | safeSvg"></span>
               <span class="card-content-label">{{ getContentTypeLabel(c) }}</span>
-            </span>
-            <span class="card-kind-badge">
-              <span class="kind kind-inhalt">📄 Inhalt</span>
             </span>
           </div>
 
@@ -451,37 +458,35 @@
           <div class="card-footer">
             <span *ngIf="c.educational_contexts && c.educational_contexts.length"
                   class="footer-meta footer-stufe">
-              <span class="footer-icon">🎓</span>
+              <span class="footer-icon" [innerHTML]="ICONS.school | safeSvg"></span>
               <span>{{ c.educational_contexts[0] }}</span>
             </span>
             <span *ngIf="c.disciplines && c.disciplines.length"
                   class="footer-meta footer-fach">
-              <span class="footer-icon">📘</span>
+              <span class="footer-icon" [innerHTML]="ICONS.menu_book | safeSvg"></span>
               <span>{{ c.disciplines[0] }}</span>
             </span>
           </div>
         </a>
-        <div class="card-actions" *ngIf="c.url || c.wlo_url || c.guide_url">
-          <button *ngIf="c.guide_url" type="button" class="card-btn card-btn--guide"
-                  (click)="onCardAction('guide', c, $event)"
-                  title="Im aktuellen Tab zu diesem Inhalt navigieren">
-            🧭 Bring mich hin
-          </button>
+        <div class="card-actions" *ngIf="c.url || c.wlo_url">
           <button *ngIf="c.url || c.wlo_url" type="button" class="card-btn card-btn--primary"
                   (click)="onCardAction('preview', c, $event)"
                   title="Im Canvas ansehen">
-            🔍 Anschauen
+            <span class="bb-icon" [innerHTML]="ICONS.visibility | safeSvg"></span>
+            <span>Anschauen</span>
           </button>
           <button type="button" class="card-btn card-btn--remix"
                   (click)="onCardAction('remix', c, $event)"
                   title="Neues Material auf Basis dieses Inhalts erstellen">
-            🔄 Remix
+            <span class="bb-icon" [innerHTML]="ICONS.refresh | safeSvg"></span>
+            <span>Remix</span>
           </button>
         </div>
       </div>
 
       <div *ngIf="!cards?.length" class="canvas-empty">
-        <div class="empty-icon" aria-hidden="true">🔍</div>
+        <div class="empty-icon empty-icon--svg" aria-hidden="true"
+             [innerHTML]="ICONS.search | safeSvg"></div>
         <p>Keine Treffer für diese Suche.</p>
       </div>
 
@@ -511,6 +516,7 @@
   </div>
 
   <footer class="canvas-foot" *ngIf="viewMode === 'content'">
-    💡 Schreib im Chat, was ich ändern soll — z.B. <em>„Mach es einfacher"</em> oder <em>„Füge Lösungen hinzu"</em>.
+    <span class="bb-icon" [innerHTML]="ICONS.lightbulb | safeSvg"></span>
+    Schreib im Chat, was ich ändern soll — z.B. <em>„Mach es einfacher"</em> oder <em>„Füge Lösungen hinzu"</em>.
   </footer>
 </div>

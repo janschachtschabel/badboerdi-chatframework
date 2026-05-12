@@ -1295,6 +1295,14 @@ State: {classification.get('next_state', 'state-1')}""",
 
     # Card-text-mode: how to handle overlap between text and material cards
     _card_mode = pattern_output.get("card_text_mode", "minimal")
+    # Host-Flag cards-enabled=false signalisiert: das Frontend rendert
+    # *keine* Kacheln, sondern hängt nur 3 dezente Inline-Markdown-Links
+    # ans Antwort-Ende. Der User sieht also weniger visuelles Feedback —
+    # eine refinement-Rückfrage ("Was brauchst du gerade am meisten?")
+    # wirkt dann wie eine Sackgasse, nicht wie ein Angebot. Wenn der
+    # Embed-Host diesen Modus aktiv anfordert, sollen wir die Treffer
+    # direkt liefern statt zurückzufragen.
+    _cards_inline_mode = environment.get("cards_enabled") is False
     if _card_mode == "minimal":
         system_parts.append("""
 ## Darstellungsregel: Materialien als Kacheln (Modus: minimal)
@@ -1331,6 +1339,28 @@ im Text kurz hervorheben und begruenden, warum sie besonders passen.
 - RICHTIG: "Besonders empfehlenswert ist [Fotosynthese verstehen](https://wirlernenonline.de/...), weil es anschaulich erklaert."
 - FALSCH: "1. *Fotosynthese verstehen* — Video, CC BY... 2. *Arbeitsblatt Fotosynthese* — PDF..."
 - Dein Text liefert die Empfehlung, die Kacheln liefern den Ueberblick.""")
+
+    # Inline-Link-Mode (Host hat cards-enabled="false" gesetzt) — Override:
+    # Die Treffer werden NICHT als Kacheln angezeigt, sondern vom Backend
+    # nach deiner Antwort als 3 dezente Inline-Markdown-Links angehaengt.
+    # Der User sieht also nur deinen Text + die 3 Links. Eine Refinement-
+    # Rueckfrage am Ende fuehlt sich dann wie eine Sackgasse an
+    # ("der Bot fragt schon wieder?") statt wie ein hilfreicher Folge-Schritt.
+    # In diesem Modus sollst du direkt liefern, nicht zurueckfragen.
+    if _cards_inline_mode:
+        system_parts.append("""
+## Inline-Link-Mode (Host-Setting cards-enabled="false")
+Die Treffer werden NICHT als Kacheln gerendert. Stattdessen haengt das
+Backend nach deiner Antwort 3 dezente Markdown-Inline-Links an.
+- Schreibe eine kurze, klare Einleitung (1-2 Saetze): Was wurde gefunden, warum passt es.
+- BEENDE deine Antwort ohne Refinement-Rueckfrage. KEIN "Was brauchst du gerade?",
+  KEIN "Bist du Lehrkraft oder Schueler:in?", KEIN "Soll ich noch X oder Y?".
+- Wenn Folge-Aktionen sinnvoll sind, schlage sie als bestaetigte naechste
+  Schritte vor, NICHT als Frage: "Ich kann als Naechstes Videos suchen — sag
+  Bescheid, wenn du das willst." statt "Was waere dir am liebsten?".
+- Quick-Replies (Pillen-Buttons) liefern dem User Folge-Optionen — du musst
+  also nicht im Text explizit nach Details fragen.
+- Tonalitaet: liefernd, nicht fragend.""")
 
     # Signal-driven modulation rules
     if pattern_output.get("skip_intro"):

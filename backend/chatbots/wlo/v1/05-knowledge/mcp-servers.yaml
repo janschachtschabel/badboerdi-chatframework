@@ -1,30 +1,28 @@
 # MCP-Server-Registry
 # Registrierte MCP-Server fuer den Chatbot.
-# Jeder Server stellt Tools bereit, die in Patterns referenziert werden koennen.
+#
+# Primary-Server (id=wlo-mcp): URL kommt aus der
+# Env-Variable ``MCP_SERVER_URL`` (Default:
+# https://wlo-mcp-server.vercel.app/mcp). Nicht in dieser YAML eintragen — sie
+# wird vom Backend automatisch gefiltert.
+#
+# Weitere Server können über das Studio (System → MCP-Server →
+# Hinzufuegen) frei verwaltet werden — sie bekommen ihre url
+# regulaer aus dieser YAML.
 
 servers:
-  - id: wlo-mcp
-    name: WLO edu-sharing
-    url: https://wlo-mcp-server.vercel.app/mcp
-    description: WirLernenOnline MCP-Server mit Such- und Metadaten-Tools
-    enabled: true
-    # WLO MCP server v2: 10 Tools. Die ehemaligen Web-Crawler
-    # (get_wirlernenonline_info, get_edu_sharing_*, get_metaventis_info)
-    # wurden im Server-v2 entfernt — diese Themen deckt jetzt das
-    # Boerdi-RAG ab.
-    #
-    # ACHTUNG ähnliche Namen, NICHT verwechseln:
-    #   get_node_details   = Singular: Metadaten EINES Knotens (1 nodeId)
-    #   get_nodes_details  = Plural/Bulk: Metadaten MEHRERER Knoten parallel
-    #                        (Liste von nodeIds, max 50 pro Call)
-    tools:
-      - search_wlo_collections
-      - search_wlo_content
-      - get_collection_contents
-      - get_node_details          # Singular - 1 Knoten
-      - lookup_wlo_vocabulary
-      - search_wlo_topic_pages
-      - get_subject_portals       # NEU: Top-Level-Fachportale
-      - browse_collection_tree    # NEU: strukturierter Drilldown
-      - wlo_health_check          # NEU: Verfuegbarkeitspruefung
-      - get_nodes_details         # NEU: Bulk-Metadaten (mehrere Knoten)
+- id: wlo-mcp
+  name: WLO edu-sharing
+  description: WirLernenOnline MCP-Server mit Such- und Metadaten-Tools
+  enabled: true
+  tools:
+  - search_wlo_collections
+  - search_wlo_content
+  - get_collection_contents
+  - get_node_details
+  - lookup_wlo_vocabulary
+  - search_wlo_topic_pages
+  - get_subject_portals
+  - browse_collection_tree
+  - wlo_health_check
+  - get_nodes_details
