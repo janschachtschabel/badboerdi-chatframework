@@ -83,6 +83,48 @@ def is_guide_eligible_url(url: str | None) -> bool:
     return host_is_allowed(parsed.hostname)
 
 
+# Regex zum Umschreiben von edu-sharing-Render-URLs auf die Sammlungs-
+# Browse-Ansicht. Greift host-agnostisch (Staging, Production, beliebige
+# edu-sharing-Instanzen) und nur auf den charakteristischen Pfad:
+#   https://<host>/edu-sharing/components/render/<uuid>
+# wird zu:
+#   https://<host>/edu-sharing/components/collections?id=<uuid>
+import re as _re_es
+_ES_RENDER_RE = _re_es.compile(
+    r"^(https?://[^/]+/edu-sharing/components/)render/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(.*)$",
+    _re_es.IGNORECASE,
+)
+
+
+def _is_pure_collection_card(card: dict[str, Any]) -> bool:
+    """True, wenn die Card eine reine Sammlung ist (keine Themenseite).
+    Themenseiten-Cards haben ``topic_pages`` befüllt — für die wollen wir
+    den Render-URL NICHT umschreiben (die Themenseiten-URL wurde ohnehin
+    schon via ``topic_page_url`` priorisiert)."""
+    if card.get("node_type") != "collection":
+        return False
+    tp = card.get("topic_pages")
+    return not (isinstance(tp, list) and tp)
+
+
+def _rewrite_collection_render_to_browse(url: str) -> str:
+    """Sammlungs-Render-URLs (Detail einer Sammlung als Node) auf die
+    Sammlungs-Browse-Ansicht umschreiben — dort sieht der User direkt die
+    enthaltenen Materialien statt nur die Metadaten der Sammlung selbst.
+
+    Host bleibt unverändert (Production, Staging, eigene edu-sharing-
+    Installation funktionieren alle gleich). Non-Render-URLs bleiben
+    durchgereicht.
+    """
+    if not isinstance(url, str):
+        return url
+    m = _ES_RENDER_RE.match(url)
+    if not m:
+        return url
+    prefix, uuid, suffix = m.group(1), m.group(2), m.group(3)
+    return f"{prefix}collections?id={uuid}{suffix}"
+
+
 def pick_guide_url(card: dict[str, Any] | Any) -> str | None:
     """Pick the first allow-listed URL from a card's URL fields.
 
@@ -93,6 +135,12 @@ def pick_guide_url(card: dict[str, Any] | Any) -> str | None:
 
     For topic-page-cards, also checks each entry in ``card['topic_pages']``
     so the persona-preferred variant URL surfaces too.
+
+    **Sammlungs-Spezialfall**: Wenn die Card eine reine Sammlung ist (keine
+    Themenseite-Variante), wird die gepickt Render-URL auf die Sammlungs-
+    Browse-Ansicht (``/components/collections?id=…``) umgeschrieben — dort
+    landet der Lotsen-Klick direkt im Inhaltsbereich der Sammlung statt auf
+    deren Metadaten-Detailseite.
 
     Returns ``None`` when no field has an allow-listed URL.
     """
@@ -115,19 +163,32 @@ def pick_guide_url(card: dict[str, Any] | Any) -> str | None:
         "topic_page_url", "wlo_url", "url", "content_url", "preview_url",
     ]
 
+    picked: str | None = None
     for field in priority:
         val = card.get(field)
         if isinstance(val, str) and is_guide_eligible_url(val):
-            return val
+            picked = val
+            break
 
-    # Topic-page variants — each variant is {variant_id, target_group, label, url}
-    for tp in card.get("topic_pages") or []:
-        if isinstance(tp, dict):
-            url = tp.get("url")
-            if isinstance(url, str) and is_guide_eligible_url(url):
-                return url
+    if picked is None:
+        # Topic-page variants — each variant is {variant_id, target_group, label, url}
+        for tp in card.get("topic_pages") or []:
+            if isinstance(tp, dict):
+                url = tp.get("url")
+                if isinstance(url, str) and is_guide_eligible_url(url):
+                    picked = url
+                    break
 
-    return None
+    if picked is None:
+        return None
+
+    # Sammlungs-Cards: Render-URL → Browse-Ansicht umschreiben (siehe
+    # oben). Greift host-agnostisch, dadurch funktionieren beliebige
+    # edu-sharing-Instanzen (Staging, Production, eigene Hosts).
+    if _is_pure_collection_card(card):
+        picked = _rewrite_collection_render_to_browse(picked)
+
+    return picked
 
 
 def annotate_cards_with_guide_url(

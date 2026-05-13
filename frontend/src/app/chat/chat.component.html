@@ -33,6 +33,17 @@
           </button>
         </div>
 
+        <!-- Canvas-Material im Inline-Modus: Print-Button anbieten, sodass
+             generierte Inhalte (Arbeitsblatt, Quiz, Bericht, …) genauso
+             als PDF abgreifbar sind wie Lernpfade. Backend setzt den
+             Sentinel-HTML-Kommentar bei canvas-enabled=false. -->
+        <div *ngIf="!msg.isLoading && isPrintableCanvasMaterial(msg)" class="lp-print-bar">
+          <button class="btn-lp-print" (click)="printCanvasMaterial(msg)" title="Material als PDF drucken">
+            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
+            <span>{{ printableCanvasLabel(msg) }} drucken / als PDF speichern</span>
+          </button>
+        </div>
+
         <!-- Compact collection-action bar: only shown when the canvas is NOT
              open (otherwise the canvas owns every interaction and the chat
              stays purely textual, as the user explicitly asked). -->
@@ -220,6 +231,11 @@
             <span class="bb-icon" [innerHTML]="(isSpeaking ? ICONS.stop_circle : ICONS.volume_up) | safeSvg"></span>
           </button>
           <button *ngIf="isLearningPath(msg)" class="btn-speak btn-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
+            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
+          </button>
+          <button *ngIf="isPrintableCanvasMaterial(msg)" class="btn-speak btn-print"
+                  (click)="printCanvasMaterial(msg)"
+                  [title]="printableCanvasLabel(msg) + ' als PDF drucken'">
             <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
           </button>
         </div>

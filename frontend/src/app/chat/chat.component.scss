@@ -244,9 +244,63 @@ $radius:     14px;
     &:visited { color: inherit !important; }
   }
 
+  // Material-Symbol-Icon vor Inline-Treffer-Links (Lotsen/Inline-Modus).
+  // Backend emittiert ``@@ICON:NAME@@`` als Sentinel, ``renderMarkdown``
+  // ersetzt es mit dem Inline-SVG aus ``shared/icons.ts``.
+  // Dezent hellgrau, nicht im Bot-Text-Farbton — damit der Link-Titel
+  // dominant bleibt und das Icon nur als Typ-Hinweis dient. Nicht
+  // unterstrichen, leicht angehoben für visuelle Balance neben Text.
+  ::ng-deep .bb-inline-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+    vertical-align: -0.18em;
+    margin-right: 6px;
+    color: #94a3b8;   // slate-400 — dezent, kein Schreischrei
+  }
+  ::ng-deep .bb-inline-icon > svg {
+    width: 1em;
+    height: 1em;
+    fill: currentColor;
+    display: block;
+  }
+  // Inline-Card-Link (= ``<a>`` mit ``.bb-inline-icon``-Child):
+  // Underline NICHT aufs ``<a>`` sondern nur auf den Title-Span legen,
+  // damit der ``margin-right``-Gap zwischen Icon und Titel KEINEN
+  // Underline-Strich bekommt (sah hässlich aus weil der Strich vor
+  // dem Titel-Text anfing).
+  ::ng-deep a:has(> .bb-inline-icon) {
+    text-decoration: none !important;
+  }
+  ::ng-deep .bb-link-title {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  ::ng-deep a:hover .bb-link-title {
+    text-decoration-thickness: 2px;
+  }
+
   // Native lists (fallback)
   ul, ol { margin: 6px 0; padding: 0 0 0 1.4em; }
   li { margin-bottom: 4px; }
+
+  // Inline-Treffer-Listen (Lotsen/Inline-Modus): wenn die ``<li>``-Items
+  // einen Link mit Material-Symbol-Icon enthalten, übernimmt das Icon die
+  // visuelle Rolle des Bullet-Markers — also kein zusätzliches • mehr,
+  // keine Einrückung. Spart Platz nach links + visueller Doppelung.
+  // ``:has()`` Selektor — supportiert in Chrome 105+, Safari 15.4+,
+  // Firefox 121+ (Dez 2023). Bei älteren Browsern fällt's auf die obigen
+  // Default-List-Styles zurück (visuell sub-optimal, funktional OK).
+  ::ng-deep ul:has(> li > a > .bb-inline-icon) {
+    list-style: none;
+    padding-left: 0;
+    margin: 8px 0;
+  }
+  ::ng-deep ul:has(> li > a > .bb-inline-icon) > li {
+    margin-bottom: 2px;   // dichter zusammen — Icons geben sowieso visuelle Struktur
+  }
 
   // Inline-Link-Bullet-Listen (Material/Lotsen-Treffer im Inline-Mode):
   // Wenn ein ``<li>`` nur einen einzigen Link enthält, expandieren wir die
@@ -912,21 +966,24 @@ $accent-orange: #E79800;
   padding: 7px 14px;
   font-size: .82rem;
   font-weight: 500;
-  color: #1e40af;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  // Akzentfarbe vom Embedder (``--boerdi-primary``): das Widget erbt z.B.
+  // auf der Themenseite-Demo den dortigen Rotton (#8b0000), in der Default-
+  // Variante das Blau. Vorher waren die Farben hier hardgecodet und sahen
+  // im roten Theme fehl am Platz aus.
+  color: var(--boerdi-primary, #1c4587);
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 30%, transparent);
   border-radius: 6px;
   cursor: pointer;
   transition: background .15s, border-color .15s, color .15s;
 
   &:hover {
-    background: #dbeafe;
-    border-color: #93c5fd;
-    color: #1e3a8a;
+    background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 18%, white);
+    border-color: color-mix(in srgb, var(--boerdi-primary, #1c4587) 50%, transparent);
   }
 
   &:active {
-    background: #bfdbfe;
+    background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 26%, white);
   }
 }
 

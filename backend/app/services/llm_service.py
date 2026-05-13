@@ -1208,6 +1208,7 @@ async def generate_response(
     rag_config: dict[str, Any] | None = None,
     blocked_tools: list[str] | None = None,
     prefetched_tool: dict[str, Any] | None = None,
+    prefetched_extras: list[dict[str, Any]] | None = None,
     canvas_state: dict | None = None,
     usage_acc: dict[str, Any] | None = None,
     on_token: Any = None,
@@ -1350,17 +1351,102 @@ im Text kurz hervorheben und begruenden, warum sie besonders passen.
     if _cards_inline_mode:
         system_parts.append("""
 ## Inline-Link-Mode (Host-Setting cards-enabled="false")
-Die Treffer werden NICHT als Kacheln gerendert. Stattdessen haengt das
-Backend nach deiner Antwort 3 dezente Markdown-Inline-Links an.
-- Schreibe eine kurze, klare Einleitung (1-2 Saetze): Was wurde gefunden, warum passt es.
-- BEENDE deine Antwort ohne Refinement-Rueckfrage. KEIN "Was brauchst du gerade?",
-  KEIN "Bist du Lehrkraft oder Schueler:in?", KEIN "Soll ich noch X oder Y?".
-- Wenn Folge-Aktionen sinnvoll sind, schlage sie als bestaetigte naechste
-  Schritte vor, NICHT als Frage: "Ich kann als Naechstes Videos suchen — sag
-  Bescheid, wenn du das willst." statt "Was waere dir am liebsten?".
-- Quick-Replies (Pillen-Buttons) liefern dem User Folge-Optionen — du musst
-  also nicht im Text explizit nach Details fragen.
-- Tonalitaet: liefernd, nicht fragend.""")
+Die Treffer werden NICHT als Kacheln gerendert. Stattdessen hängt das
+Backend nach deiner Antwort eine strukturierte Liste mit den von DIR
+ausgewählten Treffern an (mit kleinem Material-Symbol-Icon pro Treffer:
+Themenseite / Sammlung / Einzelmaterial). Der User sieht deinen Text +
+darunter diese Link-Liste.
+
+**TURN-FLOW (STRIKT):**
+1. **search_wlo_***-Tools aufrufen, um Treffer zu beschaffen. Wenn nur
+   Sammlungen/Themenseiten gefunden werden, kannst du zusätzlich
+   ``search_wlo_content`` rufen, um die Auswahl mit Einzelinhalten zu
+   ergänzen.
+2. **select_top_cards(card_ids=[...], reasoning="...")** aufrufen —
+   wähle aus den Treffern bis zu 5 node_ids in Anzeige-Reihenfolge aus.
+   Auswahl-Regeln siehe Tool-Beschreibung. **Dieser Schritt ist
+   verpflichtend, sobald du etwas zeigen willst** — sonst weiß das Backend
+   nicht, welche Treffer es anzeigen soll, und die User sieht nur deinen
+   Text ohne Links. Wenn du gar nichts gefunden hast: kein select_top_cards
+   und keine Liefer-Behauptung („rausgesucht", „gefunden") — stattdessen
+   eine Klärungsfrage.
+3. Plain-Text-Antwort — kurze 1-2-Satz-Prosa als Einleitung der Liste.
+
+**AUSWAHL-PRIORITÄT** für select_top_cards:
+- **ZIEL: bis zu 5 Treffer** — wenn die Search-Tools genug geliefert haben.
+- DEFAULT-Reihenfolge: Themenseiten zuerst (geben breiten Überblick),
+  dann Sammlungen, dann Einzelinhalte.
+- **MIX**: 1 Sammlung + 3-4 Einzelinhalte ist meist besser als 1 Sammlung
+  alleine. Fülle freie Slots mit passenden Einzelinhalten auf.
+- AUSNAHME (Typ-Fokus): Wenn der User explizit nach Material-Typ fragt
+  (Video, Arbeitsblatt, Übung, Quiz, Audio, Präsentation, Interaktiv,
+  Kurs) → bis zu 5 Einzelinhalte dieses Typs. Keine Themenseiten/
+  Sammlungen dazwischen.
+- Auch 1-2 Treffer sind OK, wenn wirklich nicht mehr passend ist — dann
+  trotzdem select_top_cards mit diesen IDs aufrufen, NIE leer lassen.
+
+**WICHTIG zur Intro-Formulierung — Backend-Auto-Augmentation:**
+Wenn du nur Sammlungen oder Themenseiten gewählt hast (keine Einzelinhalte
+dabei), ergänzt das Backend automatisch passende Einzelinhalte (Video,
+Arbeitsblatt, Lehrbuch …) auf insgesamt bis zu 5 Treffer. Deshalb:
+- **Schreibe deine Einleitung GENERISCH genug**, dass sie sowohl 1 Treffer
+  als auch 5 gemischte Treffer abdeckt. NICHT "eine passende Sammlung"
+  (Singular festgenagelt) — BESSER "Hier ist eine passende Sammlung und
+  ergänzende Materialien" / "Hier ist das, was zum Thema passt" / "Hier
+  sind passende Treffer".
+- Bei Typ-Fokus-Anfragen ("Hast du Videos?") gibt es KEINE Augmentation —
+  da kannst du Plural konkret nennen ("Hier sind 5 Videos zum Thema").
+- Zähle keine Materialtypen aus deinem select_top_cards-Call im Text auf
+  ("eine Sammlung und ein Video") — du weißt vorher nicht, was das Backend
+  zusätzlich anhängt. Generisch bleiben.
+
+**WEITERE REGELN (STRIKT):**
+1. **NIE Markdown-Links in deinem Text** — auch nicht zu Fachportalen,
+   FAQ-Seiten, Suchseiten, WLO-Unterseiten, Wikipedia o.ä. Das Backend
+   hängt strukturierte Links separat an. WENN KEINE Treffer da sind
+   (Klärungs-/Frage-Turn ohne select_top_cards), antwortest du PLAIN
+   TEXT — keine Links. Auch keine "siehe XY"-Verweise.
+2. **Keine Aufzählung von Material-Titeln** im Text — die Liste darunter
+   zeigt sie eh. Schreibe stattdessen eine kurze kontextuelle Einleitung
+   (1-2 Sätze): Was wurde gefunden, warum passt es.
+3. **LIEFERN, NICHT VERSPRECHEN.** Wenn du Tools aufgerufen und Treffer
+   per select_top_cards ausgewählt hast → schreibe im **Präsens/Perfekt**,
+   niemals im Futur:
+     * RICHTIG: "Hier sind passende Sammlungen zu Bruchrechnung..."
+     * RICHTIG: "Ich habe dir vier kuratierte Sammlungen rausgefischt..."
+     * FALSCH:  "Ich schau dir die besten Treffer raus..." ← FUTUR-PROMISE
+     * FALSCH:  "Gleich folgen die Treffer..."             ← FUTUR-PROMISE
+     * FALSCH:  "Lass mich kurz suchen..."                 ← FUTUR-PROMISE
+   Die Backend-Link-Liste wird **DIREKT nach deinem Text** angezeigt — es
+   gibt kein "danach", kein "gleich", kein zweistufiges Reveal.
+   **WICHTIG**: Behaupte NIEMALS, etwas geliefert zu haben („rausgefischt",
+   „gefunden", „hier sind die Treffer"…), ohne tatsächlich vorher
+   search_wlo_*-Tools UND select_top_cards aufgerufen zu haben. Wenn du
+   keine Treffer hast → Klärungsfrage statt Liefer-Behauptung.
+4. **Keine Refinement-Rückfrage** wenn Treffer geliefert wurden.
+   Bei Klärungs-Turn (kein Material gefunden, kein select_top_cards)
+   darfst du EINE Rückfrage stellen (z.B. "Was ist dein Thema?"). Sonst
+   beende mit Aussage oder bestätigtem nächsten Schritt.
+5. **Tools tatsächlich aufrufen.** Wenn der User Material will, rufe
+   die Search-Tools UND select_top_cards auf — schreibe nicht "ich finde
+   X" ohne den ganzen Flow durchzuziehen.
+6. **Quick-Replies** (Pillen-Buttons unterm Text) liefern Folge-
+   Optionen — du musst nicht im Text um Details bitten.
+7. **Tonalität**: liefernd, nicht fragend, nicht Wissen-Predigen.
+
+RICHTIG (Klärung, keine Treffer):
+   "Gerne — sag mir kurz dein Thema, dann schau ich passende Sammlungen
+   für deinen Unterricht raus."
+RICHTIG (Treffer gefunden, select_top_cards aufgerufen):
+   "Hier sind passende Sammlungen zu Klimawandel — die Themenseite
+   darunter fasst die zentralen Aspekte zusammen, die anderen vertiefen
+   einzelne Schwerpunkte wie Nachhaltigkeit oder Naturschutz."
+FALSCH:
+   "Mehr dazu finden Sie auf [den Fachportalen](https://...)."
+   "Hier sind: [Umwelt](https://...), [Nachhaltigkeit](https://...)."
+   "Ich schau dir die besten Treffer raus — gleich folgen sie." ← FUTUR
+   "Lass mich kurz nach Bruchrechnung suchen..."                ← FUTUR
+""")
 
     # Signal-driven modulation rules
     if pattern_output.get("skip_intro"):
@@ -1710,6 +1796,79 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         }
         active_tools = [knowledge_tool] + active_tools  # Knowledge first!
 
+    # ── Inline-Mode-Curation-Tool: select_top_cards ───────────────────
+    # In Inline-Mode (cards-enabled=false) übergibt das LLM die finale
+    # Treffer-Auswahl explizit per Tool-Call. Backend filtert dann die
+    # Card-Liste auf genau diese IDs (in dieser Reihenfolge) und rendert
+    # sie als Inline-Markdown. Ohne diesen Call würde das Backend
+    # algorithmisch sortieren — der Tool-Call gibt dem LLM die Chance,
+    # nach Klassenstufe / Material-Mix / Typ-Priorität semantisch
+    # auszuwählen statt nur nach MCP-Relevanz.
+    if _cards_inline_mode:
+        select_cards_tool = {
+            "type": "function",
+            "function": {
+                "name": "select_top_cards",
+                "description": (
+                    "FINAL-SELECTION für Inline-Modus. RUFE DIESES TOOL NACH "
+                    "DEN SEARCH-TOOLS AUF. Wähle aus den eben gefundenen "
+                    "Treffern 1-5 IDs aus, in der Reihenfolge in der sie dem "
+                    "User gezeigt werden sollen. Wenn du gar nichts gefunden "
+                    "hast, RUFE DIESES TOOL NICHT — antworte stattdessen mit "
+                    "einer Klärungsfrage.\n\n"
+                    "**Wenn etwas gefunden wurde, ist dieser Tool-Call "
+                    "obligatorisch.** Ohne diesen Call sieht der User keinen "
+                    "Link — nur deinen Text.\n\n"
+                    "AUSWAHL-REGELN:\n"
+                    "1. **ZIEL: bis zu 5 IDs** — wenn die Tools genug geliefert "
+                    "haben. Aber auch 1, 2 oder 3 sind OK, wenn wirklich nicht "
+                    "mehr Passendes da ist. Lieber wenige gute als gar keine.\n"
+                    "2. **Typ-Priorität (DEFAULT)**: Themenseiten zuerst "
+                    "(geben Überblick), dann Sammlungen, dann Einzelinhalte. "
+                    "Themenseiten erkennst du an Tool-Result-Einträgen mit "
+                    "node_type='collection' UND nicht-leerem topic_pages-Array.\n"
+                    "3. **MIX**: Wenn nur 1 Themenseite oder 1 Sammlung "
+                    "perfekt passt, fülle die freien Slots mit passenden "
+                    "Einzelinhalten auf (z.B. 1 Sammlung + 3 Einzelinhalte). "
+                    "1 Sammlung + Mix von Einzelinhalten ist meist besser als "
+                    "nur 1 Sammlung alleine.\n"
+                    "4. AUSNAHME (Typ-Fokus): Wenn der User explizit nach "
+                    "Material-Typ fragt (Video, Arbeitsblatt, Übung, Quiz, "
+                    "Audio, Präsentation, Interaktiv, Kurs) → bis zu 5 "
+                    "Einzelinhalte dieses Typs, KEINE Themenseiten/Sammlungen "
+                    "dazwischen.\n"
+                    "5. Klar Unpassendes (falsches Fach, falsche Klassenstufe) "
+                    "weglassen. Thematisch verwandte Treffer sind erlaubt.\n\n"
+                    "Die IDs sind die ``node_id``-Werte aus den search-Tool-"
+                    "Ergebnissen — exakt im UUID-Format wie geliefert."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "card_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "1-5 node_ids in Anzeige-Reihenfolge. Erste ID "
+                                "wird oben angezeigt."
+                            ),
+                            "minItems": 1,
+                            "maxItems": 5,
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": (
+                                "1 Satz: warum diese Auswahl in dieser "
+                                "Reihenfolge — landet im Debug-Log."
+                            ),
+                        },
+                    },
+                    "required": ["card_ids"],
+                },
+            },
+        }
+        active_tools.append(select_cards_tool)
+
     # Combined-output tool (opt-in) — see env CHAT_INLINE_QUICK_REPLIES.
     # When enabled, the model is instructed to call ``respond_to_user`` for
     # the FINAL answer instead of plain content, with both ``text`` and
@@ -1923,8 +2082,75 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         })
         mcp_prefetched = True
 
+    # Extra-prefetches — Themenseiten + Einzelinhalte (oder die jeweils
+    # andere Kombination) laufen in chat.py parallel zum primary spec_task.
+    # Wir injizieren JEDEN als simulated tool call, damit der LLM den
+    # GESAMTEN Treffer-Pool (Themenseite + Sammlung + Einzelinhalt) im
+    # current turn sieht. Effekt: er kann fundiert 5 IDs auswählen, kennt
+    # die Titel/Beschreibungen für seine Intro-Prosa, UND kann in folge-
+    # turns auf jeden einzelnen Treffer per node_id Bezug nehmen (z.B.
+    # für Remix-Anfragen).
+    prefetched_extras_cards: list[dict] = []
+    if prefetched_extras:
+        from app.services.mcp_client import parse_wlo_topic_page_cards as _ptp
+        for _i, _ex in enumerate(prefetched_extras):
+            _ex_name = _ex.get("name") or ""
+            _ex_args = _ex.get("arguments") or {}
+            _ex_text = _ex.get("result_text") or ""
+            if not _ex_name or not _ex_text:
+                continue
+            if _ex_name in (blocked_tools or []):
+                continue
+            # Cards parsen mit dem richtigen Parser. topic_pages liefert
+            # variant-Arrays, normale Such-Tools nicht.
+            try:
+                if _ex_name == "search_wlo_topic_pages":
+                    _ex_cards = _ptp(_ex_text) or []
+                else:
+                    _ex_cards = parse_wlo_cards(_ex_text) or []
+                await resolve_discipline_labels(_ex_cards)
+                if _ex_name == "search_wlo_collections":
+                    for _c in _ex_cards:
+                        _c.setdefault("node_type", "collection")
+            except Exception:
+                _ex_cards = []
+            prefetched_extras_cards.extend(_ex_cards)
+            # In messages als simulated tool call einbinden — eindeutige
+            # tool_call_id pro extra, damit OpenAI's tool-result-pairing
+            # nicht durcheinanderkommt.
+            _tc_id = f"prefetch_extra_{_i}"
+            messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": _tc_id,
+                    "type": "function",
+                    "function": {
+                        "name": _ex_name,
+                        "arguments": json.dumps(_ex_args),
+                    },
+                }],
+            })
+            messages.append({
+                "role": "tool",
+                "tool_call_id": _tc_id,
+                "content": _ex_text[:4000],
+            })
+
     # Tool calling loop
-    all_cards: list[dict] = list(mcp_prefetch_cards)
+    # mcp_prefetch_cards = primary; prefetched_extras_cards = extras.
+    # Beide dedupen per node_id, damit Mehrfach-Listing nicht passiert
+    # (gleicher Treffer kann z.B. in collections- UND content-Suche
+    # auftauchen).
+    all_cards: list[dict] = []
+    _seen_ids: set[str] = set()
+    for _c in list(mcp_prefetch_cards) + list(prefetched_extras_cards):
+        _nid = _c.get("node_id") if isinstance(_c, dict) else None
+        if _nid and _nid in _seen_ids:
+            continue
+        if _nid:
+            _seen_ids.add(_nid)
+        all_cards.append(_c)
     tools_called: list[str] = []
     outcomes: list = []  # ToolOutcome list (Triple-Schema T-23)
     if knowledge_prefetched:
@@ -1937,6 +2163,16 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
             status="success" if mcp_prefetch_cards else "empty",
             item_count=len(mcp_prefetch_cards),
         ))
+    if prefetched_extras:
+        from app.models.schemas import ToolOutcome
+        for _ex in prefetched_extras:
+            _ex_name = _ex.get("name") or "?"
+            tools_called.append(f"{_ex_name} (prefetch-extra)")
+            outcomes.append(ToolOutcome(
+                tool=_ex_name,
+                status="success",
+                item_count=0,  # zähle hier nicht detailliert — primary deckt's ab
+            ))
     max_iterations = 5
     first_iteration = True
     # Phase A1 — Reflection-Loop-Flag: nur EINMAL retryen, sonst Endlosschleife
@@ -2055,6 +2291,42 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                 tool_name = tc.function.name
                 tool_args = json.loads(tc.function.arguments)
                 tools_called.append(tool_name)
+
+                # ── Inline-Mode-Curation: select_top_cards ────────────
+                # LLM-Auswahl der finalen Treffer-Anzeige (siehe Tool-
+                # Definition oben). IDs in session_state stashen — wird im
+                # Postprocess (_apply_widget_modes_postprocess) genutzt, um
+                # die Cards auf genau diese IDs zu filtern in dieser
+                # Reihenfolge.
+                if tool_name == "select_top_cards":
+                    ids = tool_args.get("card_ids") or []
+                    reasoning = (tool_args.get("reasoning") or "").strip()
+                    # Sanitize: nur Strings, dedupe, max 5
+                    clean_ids: list[str] = []
+                    seen: set[str] = set()
+                    for x in ids:
+                        if isinstance(x, str) and x.strip() and x not in seen:
+                            clean_ids.append(x.strip())
+                            seen.add(x.strip())
+                        if len(clean_ids) >= 5:
+                            break
+                    session_state["_selected_card_ids"] = clean_ids
+                    session_state["_selected_card_reasoning"] = reasoning
+                    _logger.info(
+                        "select_top_cards: %d IDs picked — %s",
+                        len(clean_ids), reasoning[:120],
+                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": (
+                            f"OK — Auswahl gespeichert ({len(clean_ids)} IDs). "
+                            "Rufe jetzt respond_to_user mit der Prosa-Antwort auf."
+                            if _inline_qr_enabled
+                            else f"OK — Auswahl gespeichert ({len(clean_ids)} IDs)."
+                        ),
+                    })
+                    continue
 
                 # ── Combined-output: model emitted FINAL answer + quick_replies ─
                 # See env CHAT_INLINE_QUICK_REPLIES + the respond_to_user tool
@@ -2696,7 +2968,16 @@ async def generate_learning_path_text(
     system = f"""Du bist BOERDi, ein paedagogischer Assistent fuer WirLernenOnline.de.
 Erstelle einen strukturierten Lernpfad aus den gegebenen Inhalten.
 Persona: {persona_id}
-Kontext: {learner_ctx}{default_hint}"""
+Kontext: {learner_ctx}{default_hint}
+
+FORMATIERUNGS-REGELN — WICHTIG:
+- KEINE LaTeX-Syntax verwenden. Kein \\frac{{}}{{}}, kein \\sqrt{{}}, keine $...$-Delimiter.
+- Brueche als Unicode darstellen wo moeglich: 1/2, 1/3, 3/4 — oder ausgeschrieben
+  ("ein Drittel", "drei Viertel"). NIEMALS \\frac12 oder ( \\frac12 ).
+- Mathematische Ausdruecke als einfacher Text: x^2 statt x^{{2}}, sqrt(2) statt
+  \\sqrt{{2}}.
+- Markdown wird zu HTML gerendert (marked.js + DOMPurify) — alles, was nicht
+  Standard-Markdown ist, kommt beim User als Rohtext an."""
 
     prompt = f"""Erstelle einen paedagogisch strukturierten **Lernpfad** zum Thema \"{collection_title}\".
 

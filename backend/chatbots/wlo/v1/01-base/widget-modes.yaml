@@ -19,9 +19,9 @@ widget_modes:
   # Mehr Treffer aus der Suche werden vom Backend gar nicht durchgereicht,
   # um Token & Tokenkosten zu sparen.
   #
-  # Default 3 — 4 wird in Usability-Tests oft als "zu viel auf einmal"
-  # empfunden, 2 lässt zu wenig Auswahl. Auf [1, 6] geclamped.
-  cards_inline_link_limit: 3
+  # Default 5 — bei dezenten Icons + kurzen Titeln passen mehrere Treffer
+  # gut in den Chat-Bubble, ohne aufdringlich zu wirken. Auf [1, 6] geclamped.
+  cards_inline_link_limit: 5
 
   # Bei cards-enabled="false": Maximale Titel-Länge in der Inline-Link-
   # Anzeige. Frontend kürzt mit Word-Boundary-Cut und Ellipsis ("…"),

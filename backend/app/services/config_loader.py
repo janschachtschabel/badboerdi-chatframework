@@ -619,12 +619,12 @@ def load_widget_modes_config() -> dict[str, Any]:
     data = _load_yaml("01-base/widget-modes.yaml") or {}
     cfg = data.get("widget_modes") or {}
 
-    # cards_inline_link_limit: 1..6, default 3
+    # cards_inline_link_limit: 1..6, default 5
     raw_limit = cfg.get("cards_inline_link_limit")
     try:
-        limit = int(raw_limit) if raw_limit is not None else 3
+        limit = int(raw_limit) if raw_limit is not None else 5
     except (TypeError, ValueError):
-        limit = 3
+        limit = 5
     limit = max(1, min(6, limit))
 
     # cards_inline_link_title_max: 30..200 chars, default 70

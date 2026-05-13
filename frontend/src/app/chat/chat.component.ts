@@ -639,6 +639,209 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     return /\*\*Lernpfad:/i.test(c) || /^#{1,3}\s*Schritt\s*\d/mi.test(c);
   }
 
+  // Sentinel-Format vom Backend (chat.py _apply_widget_modes_postprocess):
+  //   <!-- boerdi:printable-canvas|<material_type>|<title> -->
+  // Wird vor jedes Canvas-Markdown im Inline-Modus (canvas-enabled="false")
+  // gestellt, sodass das Frontend den Print-Button anbieten kann.
+  private readonly PRINTABLE_CANVAS_RE =
+    /<!--\s*boerdi:printable-canvas\|([^|]*)\|([^>]*?)\s*-->/;
+
+  // Unicode-Brüche für die häufigsten Werte aus Mathe-Materialien.
+  private readonly _UNI_FRAC: Record<string, string> = {
+    '1/2': '½', '1/3': '⅓', '2/3': '⅔', '1/4': '¼', '3/4': '¾',
+    '1/5': '⅕', '2/5': '⅖', '3/5': '⅗', '4/5': '⅘',
+    '1/6': '⅙', '5/6': '⅚', '1/7': '⅐',
+    '1/8': '⅛', '3/8': '⅜', '5/8': '⅝', '7/8': '⅞',
+    '1/9': '⅑', '1/10': '⅒',
+  };
+
+  /**
+   * Konvertiert LaTeX-Fragmente die der LLM trotz Anti-LaTeX-Prompt
+   * gelegentlich produziert (vor allem ``\frac12``, ``\frac{1}{2}``,
+   * ``\sqrt{2}``, ``$x^2$``) zu lesbarem Unicode-Text. Wird sowohl im
+   * Inline-Markdown-Render (Bot-Bubble) als auch in den Print-Views
+   * (PDF-Window) benutzt — sonst sieht der User in einem von beiden
+   * weiterhin Rohlatex.
+   */
+  private stripLatex(text: string): string {
+    const fr = (n: string, d: string): string =>
+      this._UNI_FRAC[`${n}/${d}`] || `${n}⁄${d}`;
+    return text
+      .replace(/\\frac\s*\{\s*(\d+)\s*\}\s*\{\s*(\d+)\s*\}/g, (_m, n, d) => fr(n, d))
+      .replace(/\\frac\s*(\d)\s*(\d)/g, (_m, n, d) => fr(n, d))
+      .replace(/\\sqrt\s*\{\s*([^}]+?)\s*\}/g, (_m, x) => `√${x}`)
+      .replace(/\$([^$\n]+?)\$/g, '$1');
+  }
+
+  /**
+   * Detects whether a bot message contains canvas-generated content (Arbeits-
+   * blatt, Quiz, Bericht, etc.) that landed inline because the host has
+   * ``canvas-enabled="false"``. Lernpfade have their own dedicated detector
+   * + button (the opening blockquote acts as the trigger), so we exclude
+   * them here to avoid showing two print buttons on the same message.
+   */
+  isPrintableCanvasMaterial(msg: ChatMessage): boolean {
+    if (msg.sender !== 'bot' || !msg.content) return false;
+    if (this.isLearningPath(msg)) return false;
+    return this.PRINTABLE_CANVAS_RE.test(msg.content);
+  }
+
+  /**
+   * Returns a human-readable label of the canvas material (e.g.
+   * "Arbeitsblatt", "Quiz", "Material"). Used as the print-dialog title.
+   */
+  printableCanvasLabel(msg: ChatMessage): string {
+    const m = (msg.content || '').match(this.PRINTABLE_CANVAS_RE);
+    if (!m) return 'Material';
+    const type = (m[1] || '').trim();
+    const title = (m[2] || '').trim();
+    return title || type || 'Material';
+  }
+
+  /**
+   * Render an inline canvas-material message (Arbeitsblatt, Quiz, Bericht,
+   * …) into a clean printable window — same pattern as ``printLearningPath``
+   * but generic over the material type. The sentinel-comment is stripped
+   * from the markdown before rendering so it doesn't show up in print.
+   */
+  printCanvasMaterial(msg: ChatMessage): void {
+    const m = (msg.content || '').match(this.PRINTABLE_CANVAS_RE);
+    if (!m) return;
+    const materialType = ((m[1] || 'material').trim() || 'material');
+    const docTitle = ((m[2] || 'Material').trim() || 'Material');
+    // Markdown ohne Sentinel — der ist nur ein Marker, nicht Teil des Inhalts.
+    const md = (msg.content || '')
+      .replace(this.PRINTABLE_CANVAS_RE, '')
+      .trim();
+
+    const esc = (s: string) =>
+      (s || '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c] as string));
+
+    // Minimaler Markdown→HTML-Renderer, identisch zu printLearningPath
+    // (bewusst duplikat — die Print-Page läuft im neuen Window ohne Angular).
+    // LaTeX-Stripping wird vorab angewendet, damit \frac12 etc. nicht roh
+    // in den Print landen.
+    const stripLatex = (t: string): string => this.stripLatex(t);
+    const mdToHtml = (text: string): string => {
+      let html = stripLatex(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/^&gt;\s?/gm, '> ')
+        .replace(/\[(.+?)\]\((https?:[^)]+)\)/g,
+          '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      const lines = html.split('\n');
+      const out: string[] = [];
+      for (const raw of lines) {
+        const line = raw.trim();
+        const h = line.match(/^(#{1,6})\s+(.*)$/);
+        if (h) {
+          const lvl = Math.min(h[1].length + 1, 6);
+          out.push(`<h${lvl}>${h[2]}</h${lvl}>`);
+          continue;
+        }
+        const bq = line.match(/^>\s?(.*)$/);
+        if (bq) { out.push(`<blockquote>${bq[1]}</blockquote>`); continue; }
+        const ol = line.match(/^(\d+)\.\s+(.*)$/);
+        if (ol) { out.push(`<div class="ol"><span class="n">${ol[1]}.</span> ${ol[2]}</div>`); continue; }
+        const li = line.match(/^(?:[-•]|\*(?!\*))\s+(.*)/);
+        if (li) { out.push(`<div class="li"><span class="b">•</span> ${li[1]}</div>`); continue; }
+        if (line) out.push(`<p>${line}</p>`);
+      }
+      return out.join('\n');
+    };
+
+    // Material-Type-Label für Header — capitalize first letter.
+    const typeLabel = materialType
+      ? materialType.charAt(0).toUpperCase() + materialType.slice(1)
+      : 'Material';
+    const today = new Date().toLocaleDateString('de-DE', {
+      year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+    const html = `<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>${esc(docTitle)} – BadBoerdi</title>
+<style>
+  /* @page steuert den Druck-Rand (A4 mit komfortabler Marge). Im Browser-
+     Modus arbeitet der body mit auto-margin + festem max-width, damit der
+     Inhalt zentriert ist und genug Rand-Whitespace zum Fenster bleibt. */
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+  html { background: #f1f5f9; }
+  body {
+    font: 11pt/1.55 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #222; max-width: 760px; margin: 32px auto 64px;
+    padding: 36px 44px; background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    border-radius: 4px;
+  }
+  header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin-bottom: 14px; }
+  header h1 { margin: 0; font-size: 16pt; color: #1e40af; }
+  header .meta { font-size: 9pt; color: #6b7280; }
+  h1, h2, h3, h4 { color: #1e40af; margin: 14px 0 4px; }
+  h2 { font-size: 13pt; }
+  h3 { font-size: 12pt; }
+  blockquote { border-left: 3px solid #c5cbd6; background: #f6f8fb; margin: 6px 0; padding: 6px 12px; color: #3a4252; }
+  p { margin: 4px 0; }
+  .ol, .li { display: flex; margin: 3px 0; padding-left: 2px; }
+  .ol .n, .li .b { flex-shrink: 0; margin-right: 8px; color: #3b82f6; font-weight: 600; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 8.5pt; color: #6b7280; text-align: center; }
+  .print-bar { position: fixed; top: 0; right: 0; padding: 10px 14px; background: #fff; border-bottom-left-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.1); z-index: 10; }
+  .print-bar button { padding: 6px 14px; background: #3b82f6; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 10pt; }
+  .print-bar button:hover { background: #2563eb; }
+  /* Im Druck: keine Schatten, keine max-width — die @page-margins über-
+     nehmen das Seiten-Layout, sonst verschwendet die feste body-Breite
+     Platz auf der Druckseite. Body behält ein Mindest-Padding, falls
+     der User in Chrome "Ränder: Minimum" oder "Keine" wählt und damit
+     die @page-margins überschreibt — sonst wäre der Druck randlos. */
+  @media print {
+    html { background: #fff; }
+    .print-bar { display: none; }
+    body {
+      padding: 12mm 14mm;
+      margin: 0;
+      max-width: none;
+      box-shadow: none;
+      border-radius: 0;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="print-bar"><button onclick="window.print()">🖨 Drucken / Als PDF speichern</button></div>
+<header>
+  <h1><img src="${BOERDI_LOGO_DATA_URL}" alt="" style="width:28px;height:28px;vertical-align:-6px;margin-right:6px;"/> ${esc(docTitle || typeLabel)}</h1>
+  <span class="meta">BadBoerdi · ${esc(today)}</span>
+</header>
+<main>
+  ${mdToHtml(md)}
+</main>
+<footer>Erstellt mit BadBoerdi · WirLernenOnline.de · ${esc(today)}</footer>
+<!-- Kein auto-print mehr: der User sieht erst die Preview im neuen
+     Tab und klickt dann selbst "Drucken / Als PDF speichern". Vorher
+     auto-print direkt nach load, was den User vor dem Druck-Dialog
+     stranden ließ wenn er ihn versehentlich abbrach. -->
+</body>
+</html>`;
+
+    const w = window.open('', '_blank', 'width=900,height=1100');
+    if (!w) {
+      alert('Bitte erlaube Pop-ups für diese Seite, um das Material zu drucken.');
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
   /**
    * Open a clean, printable Lernpfad view in a new window and trigger the
    * browser print dialog. Users can then "Save as PDF" from the dialog —
@@ -652,9 +855,11 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
 
     // Markdown → simple printable HTML (reuses the same rules as
     // renderMarkdown() but stays independent so we don't drag Angular
-    // DomSanitizer into the new window).
+    // DomSanitizer into the new window). LaTeX-Stripping via Helper
+    // — sonst landet \frac12 roh im PDF.
+    const stripLatex = (t: string): string => this.stripLatex(t);
     const mdToHtml = (text: string): string => {
-      let html = text
+      let html = stripLatex(text)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -685,6 +890,13 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
       return out.join('\n');
     };
 
+    // Wenn der Lernpfad im Inline-Modus erzeugt wurde, hat das Backend einen
+    // ``<!-- boerdi:printable-canvas|... -->``-Sentinel vor das Markdown
+    // gestellt (siehe chat.py _apply_widget_modes_postprocess). Im PDF-
+    // Render-Pfad würde mdToHtml den Kommentar HTML-escapen und als
+    // sichtbaren Text auswerfen — daher hier vorher strippen, identisch
+    // zu printCanvasMaterial.
+    const lpContent = (msg.content || '').replace(this.PRINTABLE_CANVAS_RE, '').trim();
     const cards = msg.cards || [];
     const cardsHtml = cards.map(c => {
       const types = (c.learning_resource_types || []).filter(
@@ -725,8 +937,17 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
 <meta charset="utf-8">
 <title>Lernpfad – BadBoerdi</title>
 <style>
+  /* Browser-Preview: zentriertes "Papier" auf grauem Hintergrund. Im
+     Druck übernehmen die @page-margins, body wird entkleidet. */
   @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
-  body { font: 11pt/1.55 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #222; margin: 0; padding: 24px; max-width: 780px; }
+  html { background: #f1f5f9; }
+  body {
+    font: 11pt/1.55 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #222; max-width: 760px; margin: 32px auto 64px;
+    padding: 36px 44px; background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    border-radius: 4px;
+  }
   header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin-bottom: 14px; }
   header h1 { margin: 0; font-size: 16pt; color: #1e40af; }
   header .meta { font-size: 9pt; color: #6b7280; }
@@ -751,10 +972,22 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   .desc { font-size: 9.5pt; color: #4b5563; margin: 3px 0; }
   .card-url { font-size: 8pt; color: #6b7280; word-break: break-all; }
   footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 8.5pt; color: #6b7280; text-align: center; }
-  .print-bar { position: fixed; top: 0; right: 0; padding: 10px 14px; background: #fff; border-bottom-left-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+  .print-bar { position: fixed; top: 0; right: 0; padding: 10px 14px; background: #fff; border-bottom-left-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.1); z-index: 10; }
   .print-bar button { padding: 6px 14px; background: #3b82f6; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 10pt; }
   .print-bar button:hover { background: #2563eb; }
-  @media print { .print-bar { display: none; } body { padding: 0; } }
+  @media print {
+    html { background: #fff; }
+    .print-bar { display: none; }
+    /* Mindest-Padding, falls der User "Ränder: Minimum/Keine" wählt und
+       damit die @page-margins (18/16mm) überschreibt. Sonst randlos. */
+    body {
+      padding: 12mm 14mm;
+      margin: 0;
+      max-width: none;
+      box-shadow: none;
+      border-radius: 0;
+    }
+  }
 </style>
 </head>
 <body>
@@ -764,11 +997,14 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   <span class="meta">BadBoerdi · ${esc(today)}</span>
 </header>
 <main>
-  ${mdToHtml(msg.content)}
+  ${mdToHtml(lpContent)}
 </main>
 ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length})</h2>${cardsHtml}</section>` : ''}
 <footer>Erstellt mit BadBoerdi · WirLernenOnline.de · ${esc(today)}</footer>
-<script>window.addEventListener('load', () => setTimeout(() => window.print(), 250));</script>
+<!-- Kein auto-print mehr: der User sieht erst die Preview im neuen
+     Tab und klickt dann selbst "Drucken / Als PDF speichern". Vorher
+     auto-print direkt nach load, was den User vor dem Druck-Dialog
+     stranden ließ wenn er ihn versehentlich abbrach. -->
 </body>
 </html>`;
 
@@ -1604,6 +1840,32 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     const cacheKey = sender + '|' + text;
     const cached = this._renderCache.get(cacheKey);
     if (cached) return cached;
+    // Backend-Sentinel ``<!-- boerdi:printable-canvas|... -->`` strippen,
+    // bevor marked parsed wird. Diese Marker signalisieren dem Frontend
+    // (siehe isPrintableCanvasMaterial + printCanvasMaterial), dass das
+    // angehängte Markdown via Print-Button als PDF abgreifbar ist. Im
+    // Render-Output sind sie nicht erwünscht — DOMPurify würde HTML-
+    // Kommentare zwar grundsätzlich abräumen, aber sicherer ist sie hier
+    // schon vor marked.js zu entfernen.
+    const withoutCanvasSentinel = text.replace(
+      /<!--\s*boerdi:printable-canvas\|[^|]*\|[^>]*?\s*-->\s*/g,
+      '',
+    );
+    // LaTeX-Stripping via gemeinsamen Helper — wandelt ``\frac12``,
+    // ``\frac{1}{2}``, ``\sqrt{2}`` und ``$x$`` in lesbaren Text.
+    const withoutLatex = this.stripLatex(withoutCanvasSentinel);
+    // Backend-Sentinel ``@@ICON:NAME@@`` durch Inline-SVG-Span ersetzen,
+    // bevor marked parsed. Backend emittiert das vor jedem Inline-Card-
+    // Link in Lotsen/Inline-Modus, damit der User Themenseiten,
+    // Sammlungen und Einzel-Inhalte optisch unterscheiden kann.
+    // Ersatz passiert VOR marked, damit das Span IN den ``<a>``-Tag
+    // wandert (Sentinel steht innerhalb der Link-Klammern beim Backend).
+    const withIcons = withoutLatex.replace(/@@ICON:([a-z_]+)@@/g, (_match, name) => {
+      const key = name as keyof typeof ICONS;
+      const svg = ICONS[key];
+      if (!svg) return '';
+      return `<span class="bb-inline-icon">${svg}</span>`;
+    });
     // Use marked to parse Markdown to HTML, then DOMPurify to defang any
     // injected HTML/JS coming from bot output, persisted history, or tool
     // results. NEVER bypass sanitization on raw text — replace-based regex
@@ -1616,12 +1878,55 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     // with inline markup only — no outer block element.
     let html: string;
     if (sender === 'user') {
-      html = marked.parseInline(text, { async: false, gfm: true, breaks: true }) as string;
+      html = marked.parseInline(withIcons, { async: false, gfm: true, breaks: true }) as string;
     } else {
-      html = marked.parse(text, { async: false, gfm: true, breaks: true }) as string;
+      html = marked.parse(withIcons, { async: false, gfm: true, breaks: true }) as string;
     }
-    const clean = DOMPurify.sanitize(html, { ADD_ATTR: ['target', 'rel'] });
-    const safe = this.sanitizer.bypassSecurityTrustHtml(clean);
+    // Inline-SVG-Icons aus Backend-Sentinels müssen die DOMPurify-Sanitization
+    // überleben — der ``svg``-Profile erlaubt die nötigen Tags + Attribute.
+    // Sicherheit: trotzdem werden Skript-Tags, on*-Attribute usw. weiter
+    // gestripped, weil HTML+SVG-Profile additiv sind.
+    const clean = DOMPurify.sanitize(html, {
+      ADD_ATTR: ['target', 'rel'],
+      USE_PROFILES: { html: true, svg: true, svgFilters: true },
+    });
+    // Post-Process: bei Inline-Card-Links den Titel in ``.bb-link-title``
+    // wrappen. CSS setzt dann ``text-decoration: none`` auf das ``<a>`` und
+    // ``text-decoration: underline`` auf das Title-Span — damit der
+    // Underline NICHT durch den ``margin-right``-Gap zwischen Icon und
+    // Titel zieht (das war optisch unschön: Underline begann vor dem
+    // Titel-Text). Wirkt nur auf Links die ein ``.bb-inline-icon``-Span
+    // als ersten Child haben (= Backend-Inline-Card-Links). Regulär
+    // Markdown-Links bleiben durchgehend unterstrichen wie bisher.
+    let final = clean;
+    if (clean.includes('bb-inline-icon')) {
+      try {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = clean;
+        tmp.querySelectorAll('a').forEach(a => {
+          const iconSpan = a.querySelector(':scope > .bb-inline-icon');
+          if (!iconSpan) return;
+          // Alle Nodes nach dem Icon einsammeln und in eine Title-Span wrappen.
+          const titleSpan = document.createElement('span');
+          titleSpan.className = 'bb-link-title';
+          let node = iconSpan.nextSibling;
+          while (node) {
+            const next = node.nextSibling;
+            titleSpan.appendChild(node);
+            node = next;
+          }
+          // Leerzeichen vom Anfang abschneiden (marked.js fügt manchmal
+          // welche zwischen Inline-HTML-Element und Folge-Text ein).
+          if (titleSpan.firstChild?.nodeType === 3) {
+            const t = titleSpan.firstChild as Text;
+            t.textContent = (t.textContent ?? '').replace(/^\s+/, '');
+          }
+          a.appendChild(titleSpan);
+        });
+        final = tmp.innerHTML;
+      } catch { /* fall back to unprocessed clean */ }
+    }
+    const safe = this.sanitizer.bypassSecurityTrustHtml(final);
     this._renderCache.set(cacheKey, safe);
     return safe;
   }

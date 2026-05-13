@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import re as _re
 from typing import Any
 
 # Matches the header line the LP generator emits, e.g. "> **Lernpfad: Eiszeit**".
@@ -329,17 +330,170 @@ def _inline_card_url(card: Any, guide_mode: bool) -> str:
     return _g("wlo_url") or _g("url") or _g("content_url")
 
 
+def _user_wants_specific_content_type(message: str) -> bool:
+    """Heuristik: fragt der User nach einem konkreten Material-Format?
+
+    Wenn der User „Such mir ein Arbeitsblatt zu …" oder „Hast du Videos
+    zu …" schreibt, will er Einzelinhalte — keine kuratierten Sammlungen.
+    Dann kehren wir in der Inline-Link-Reihenfolge die Standardgruppierung
+    um (Einzel zuerst statt Themenseite zuerst).
+    """
+    msg = (message or "").lower()
+    keywords = (
+        "video", "videos",
+        "arbeitsblatt", "arbeitsblätter", "arbeitsblaetter",
+        "übung", "uebung", "übungen", "uebungen",
+        "quiz", "test", "tests",
+        "audio", "podcast", "podcasts", "hörspiel", "hoerspiel",
+        "präsentation", "praesentation", "präsentationen", "praesentationen",
+        "interaktiv", "interaktive",
+        "kurs", "kurse", "tutorial", "tutorials",
+        "lernspiel", "lernspiele", "spiel",
+        "infografik", "grafik",
+    )
+    return any(kw in msg for kw in keywords)
+
+
+def _apply_llm_card_selection(
+    cards: list[Any], selected_ids: list[str] | None,
+) -> list[Any]:
+    """Filtere ``cards`` auf die vom LLM via ``select_top_cards`` gewählten
+    IDs, in der vom LLM angegebenen Reihenfolge.
+
+    ID-Vergleich auf ``node_id``-Feld (UUID-String). Nicht-Matching-IDs
+    werden ignoriert (LLM könnte mal halluziniert haben). Cards, die im
+    Original sind aber NICHT in der Auswahl, werden weggelassen — der LLM
+    hat sich bewusst gegen sie entschieden.
+
+    Bei leerer/None-Selection → unveränderte Card-Liste zurückgeben
+    (Caller fällt auf algorithmische Sortierung zurück).
+    """
+    if not selected_ids:
+        return list(cards or [])
+    if not cards:
+        return []
+    # Build node_id → card lookup
+    by_id: dict[str, Any] = {}
+    for c in cards:
+        nid = c.get("node_id") if isinstance(c, dict) else getattr(c, "node_id", None)
+        if isinstance(nid, str) and nid:
+            by_id[nid] = c
+    # Pick in LLM order; skip IDs the LLM produced but we can't find
+    ordered: list[Any] = []
+    for nid in selected_ids:
+        c = by_id.get(nid)
+        if c is not None:
+            ordered.append(c)
+    # Salvage: wenn die LLM-Auswahl ZERO matches produziert (typisch wenn
+    # das Modell IDs aus früheren Turns oder Halluzinationen liefert),
+    # nehmen wir lieber die ungefilterte Card-Liste als gar nichts —
+    # algorithmisch sortiert ist immer noch besser als leere Inline-Liste.
+    if not ordered and cards:
+        logger.warning(
+            "select_top_cards: %d selected IDs aber 0 Matches in %d cards — "
+            "fallback auf ungefilterte Liste",
+            len(selected_ids), len(cards),
+        )
+        return list(cards)
+    return ordered
+
+
+def _sort_cards_for_inline(cards: list[Any], prefer_content: bool) -> list[Any]:
+    """Sortiere Cards für Inline-Link-Anzeige in Gruppen.
+
+    Default: Themenseite → Sammlungen → Einzelinhalte (wie im Canvas).
+    Bei ``prefer_content=True`` (User fragt nach konkretem Format):
+    Einzelinhalte → Themenseiten → Sammlungen.
+
+    Innerhalb jeder Gruppe bleibt die ursprüngliche Reihenfolge (Relevanz
+    aus MCP) erhalten.
+    """
+    def _g(c: Any, name: str) -> Any:
+        return c.get(name) if isinstance(c, dict) else getattr(c, name, None)
+
+    def is_topic_page(c: Any) -> bool:
+        return _g(c, "node_type") == "collection" and bool(_g(c, "topic_pages"))
+
+    def is_collection_only(c: Any) -> bool:
+        return _g(c, "node_type") == "collection" and not _g(c, "topic_pages")
+
+    def is_content(c: Any) -> bool:
+        return _g(c, "node_type") != "collection"
+
+    topic = [c for c in cards if is_topic_page(c)]
+    coll = [c for c in cards if is_collection_only(c)]
+    content = [c for c in cards if is_content(c)]
+
+    if prefer_content:
+        return content + topic + coll
+    return topic + coll + content
+
+
+def _icon_name_for_card(card: Any) -> str:
+    """Pick a Material-Symbol-Name passend zum Inhaltstyp einer Card.
+
+    Wird beim Inline-Link-Rendering (``_build_inline_card_links``) als
+    Sentinel ``@@ICON:NAME@@`` voran gestellt — das Frontend ersetzt das
+    in ``renderMarkdown`` mit dem passenden Inline-SVG aus ``shared/icons.ts``.
+    Damit sieht der User auf einen Blick, ob ein Inline-Treffer eine
+    Themenseite, eine Sammlung oder ein einzelnes Material ist.
+    """
+    def _g(name: str) -> Any:
+        return card.get(name) if isinstance(card, dict) else getattr(card, name, None)
+    node_type = _g("node_type") or ""
+    topic_pages = _g("topic_pages") or []
+    if node_type == "collection":
+        if topic_pages:
+            return "topic"          # Themenseite (Stern-Icon)
+        return "auto_stories"        # Sammlung (Buch-Stapel)
+    # Einzel-Inhalt — Typ aus learning_resource_types ableiten
+    types = _g("learning_resource_types") or []
+    types_l = [str(t).lower() for t in types if t]
+    has = lambda needle: any(needle in t for t in types_l)
+    if has("video"):
+        return "play_circle"
+    if has("arbeitsblatt"):
+        return "article"
+    if has("interaktiv"):
+        return "videogame_asset"
+    if has("audio"):
+        return "headphones"
+    if has("quiz") or has("test"):
+        return "quiz"
+    if has("präsent") or has("praesent"):
+        return "image"
+    if has("übung") or has("uebung"):
+        return "edit_note"
+    if has("kurs"):
+        return "school"
+    if has("webseite") or has("website"):
+        return "language"
+    return "menu_book"
+
+
 def _build_inline_card_links(
     cards: list[Any],
     guide_mode: bool,
     limit: int,
     title_max: int,
+    prefer_content: bool = False,
 ) -> str:
     """Render up to ``limit`` cards as a Markdown bullet-list of links.
 
     Returns "" if no usable cards remain. Each entry is::
 
-        - [Kurztitel](URL)
+        - [@@ICON:NAME@@ Kurztitel](URL)
+
+    Das Frontend ersetzt das ``@@ICON:NAME@@``-Sentinel mit dem passenden
+    Material-Symbol-Inline-SVG (hellgrau gestylt), damit Nutzer
+    Themenseiten, Sammlungen und Einzelmaterialien optisch unterscheiden
+    können — ohne Kachel-Layout.
+
+    Reihenfolge: standardmäßig Themenseite → Sammlung → Einzelinhalt
+    (analog zum Canvas-Kachel-Grid). Bei ``prefer_content=True`` (User
+    fragt nach konkretem Format wie „Video", „Arbeitsblatt") kehrt sich
+    das um — Einzelinhalte stehen oben, damit der Treffer-Typ den die
+    User-Frage anvisiert hat, zuerst sichtbar ist.
 
     URL fallback chain: guide_url (only when guide_mode on) → wlo_url →
     url → content_url. If even that is empty, the entry is skipped (no
@@ -348,9 +502,10 @@ def _build_inline_card_links(
     """
     if not cards:
         return ""
+    ordered = _sort_cards_for_inline(cards, prefer_content)
     lines: list[str] = []
     seen_urls: set[str] = set()
-    for c in cards:
+    for c in ordered:
         if len(lines) >= limit:
             break
         url = _inline_card_url(c, guide_mode)
@@ -364,7 +519,14 @@ def _build_inline_card_links(
         except Exception:
             title = ""
         title = _truncate_title(title, title_max) or url
-        lines.append(f"- [{title}]({url})")
+        icon = _icon_name_for_card(c)
+        # Icon-Sentinel INSIDE der Markdown-Link-Klammern, damit das Span
+        # nach dem Parsen INNERHALB des ``<a>``-Tags landet und Teil der
+        # Klick-Fläche wird. KEIN Leerzeichen zwischen Sentinel und Titel
+        # — der Abstand kommt vom ``margin-right`` am ``.bb-inline-icon``-
+        # Span (CSS). Sonst würde der Link-Underline durch das Space-
+        # Zeichen vor dem Titel ziehen — optisch hässlich.
+        lines.append(f"- [@@ICON:{icon}@@{title}]({url})")
     return "\n".join(lines)
 
 
@@ -375,6 +537,8 @@ def _apply_widget_modes_postprocess(
     page_action: dict[str, Any] | None,
     response_text: str,
     guide_mode_on: bool,
+    user_message: str = "",
+    selected_card_ids: list[str] | None = None,
 ) -> tuple[list[str], list[Any], dict[str, Any] | None, str]:
     """Wendet die 3 Display-Toggle-Effekte auf die fertige Response an.
 
@@ -415,8 +579,29 @@ def _apply_widget_modes_postprocess(
         if action in {"canvas_open", "canvas_update"}:
             md = (payload.get("markdown") or "").strip() if isinstance(payload, dict) else ""
             if md:
+                # Sentinel-HTML-Kommentar als Marker für das Frontend.
+                # Das Frontend nutzt ihn um:
+                #   1. den Marker beim Render zu strippen (DOMPurify-safe),
+                #   2. einen Print-/PDF-Button für genau diese Nachricht
+                #      anzuzeigen (analog zum Lernpfad-Print-Button),
+                #   3. eine treffende Print-Überschrift zu setzen.
+                # Format: <!-- boerdi:printable-canvas|<type>|<title> -->
+                # <type> ist material_type aus dem Canvas-Payload
+                # (z.B. "lernpfad", "arbeitsblatt", "quiz"); <title> ist
+                # der vom Backend gesetzte Dokument-Titel.
+                _ct_type = ""
+                _ct_title = ""
+                if isinstance(payload, dict):
+                    _ct_type = str(payload.get("material_type") or "material").strip().lower()
+                    _ct_title = str(payload.get("title") or "Material").strip()
+                # Pipe in title escapen, damit das Parsing im Frontend
+                # nicht durcheinanderkommt.
+                _ct_title_safe = _ct_title.replace("|", "/").replace("-->", "--&gt;")
+                sentinel = f"<!-- boerdi:printable-canvas|{_ct_type}|{_ct_title_safe} -->"
                 # Markdown ins Chat-Text einbauen, Canvas-Action droppen.
-                response_text = (response_text + "\n\n" + md).strip()
+                response_text = (
+                    response_text + "\n\n" + sentinel + "\n\n" + md
+                ).strip()
             page_action = None
         elif action == "canvas_show_cards":
             # Cards aus dem Canvas-Payload zurück ins Top-Level cards-Feld
@@ -450,11 +635,19 @@ def _apply_widget_modes_postprocess(
             kept.append(qr)
         return kept, inline
 
-    if _has_substantive_content:
+    # Inline-Modus (Host-Setting cards-enabled="false") signalisiert „minimaler
+    # UI-Fußabdruck — nur Kachel-Treffer als Inline-Links". RAG-Fallback-
+    # Hinweise (FAQ, Themenseiten via guide_qr_injector) wären in diesem
+    # Modus Lärm: der User hat die schlanke Variante gewählt, will keine
+    # spekulativen Off-Topic-Hinweise. Daher Lotsen-QRs hier IMMER strippen,
+    # statt sie als Inline-Markdown anzuhängen.
+    _cards_inline_mode = not modes["cards_enabled"]
+
+    if _cards_inline_mode or _has_substantive_content:
         # Cards / Canvas-Material decken die Information ab — Lotsen-
         # Inline-Links zu RAG-Quellen wären off-topic. Lotsen-QRs aus
         # den Quick-Replies droppen, damit sie auch nicht als Pille
-        # auftauchen.
+        # auftauchen. Inline-Mode: ebenfalls strippen (kein FAQ-Append).
         quick_replies = [
             qr for qr in quick_replies
             if not (isinstance(qr, str) and qr.startswith("__guide__|"))
@@ -468,11 +661,84 @@ def _apply_widget_modes_postprocess(
         wm = _lwm()
         limit = int(wm.get("cards_inline_link_limit", 3))
         title_max = int(wm.get("cards_inline_link_title_max", 70))
-        # Nur die ersten N Cards in Inline-Links umwandeln; den Rest
-        # verwerfen wir bewusst (siehe widget-modes.yaml: Token-Sparen).
-        inline_md = _build_inline_card_links(
-            cards or [], guide_mode_on, limit, title_max,
+        # Wenn die Antwort schon KI-generiertes Canvas-Material enthält
+        # (Lernpfad, Arbeitsblatt, Quiz, Bericht …), die separate Inline-
+        # Card-Liste NICHT zusätzlich anhängen — die wäre redundant zum
+        # Material selbst (das im Lernpfad-Fall sogar die Cards bereits
+        # inline referenziert). Erkannt entweder am ``boerdi:printable-
+        # canvas``-Sentinel (Material-Erzeugung) oder am intrinsischen
+        # Lernpfad-Marker ``**Lernpfad:``.
+        _has_inline_canvas_material = (
+            "boerdi:printable-canvas" in (response_text or "")
+            or _re.search(r"\*\*Lernpfad:", response_text or "")
         )
+        if _has_inline_canvas_material:
+            logger.info(
+                "inline-mode: Antwort enthält Canvas-Material — "
+                "keine zusätzliche Inline-Card-Liste angehängt"
+            )
+            cards = []
+            # page_action kann gleich raus — Inline-Material läuft komplett
+            # über response_text.
+            if page_action and isinstance(page_action, dict):
+                _pl = page_action.get("payload") or {}
+                if isinstance(_pl, dict) and "cards" in _pl:
+                    _pl["cards"] = []
+                    page_action["payload"] = _pl
+            # ── 2b) Lotsen-Inline-Links anhängen (nach Cards-Inline, damit sie
+            #         als eigene Liste darunter auftauchen) ──────────────────────
+            if _guide_inline_lines:
+                response_text = (
+                    response_text.rstrip() + "\n\n" + "\n".join(_guide_inline_lines)
+                ).strip()
+            # ── 3) quick_replies_enabled=false ───────────────────────────────
+            if not modes["quick_replies_enabled"]:
+                quick_replies = []
+            return quick_replies, cards, page_action, response_text
+        # PRIO 1: vom LLM via select_top_cards-Tool getroffene Auswahl
+        # (siehe llm_service.py). Wenn das LLM Tool gerufen hat, ist diese
+        # Liste die Quelle der Wahrheit — kein Re-Sortieren auf algorith-
+        # mischer Basis. Damit folgt die Anzeige der semantischen Auswahl
+        # des Modells (Klassenstufe, Material-Mix, Typ-Priorität).
+        if selected_card_ids:
+            cards_for_display = _apply_llm_card_selection(cards or [], selected_card_ids)
+            # LLM hat schon sortiert + auf 5 begrenzt → kein algorithmischer
+            # Sort mehr.
+            prefer_content = False
+        else:
+            cards_for_display = list(cards or [])
+            # Fallback: User fragt explizit nach Inhaltstyp (Video/Arbeitsblatt/…)?
+            # Dann Einzelinhalte zuerst, sonst Themenseite → Sammlung → Einzel
+            # (gleiche Reihenfolge wie das Canvas-Grid).
+            prefer_content = _user_wants_specific_content_type(user_message)
+        inline_md = _build_inline_card_links(
+            cards_for_display, guide_mode_on, limit, title_max,
+            prefer_content=prefer_content,
+        )
+        # Diagnostic log: wenn cards da sind aber inline_md leer bleibt,
+        # ist meistens ein URL-Issue schuld (alle URLs leer oder nicht
+        # allow-listed). Wir wollen das sehen, weil sonst der User nur
+        # Text sieht und nicht weiß warum die Links fehlen.
+        if cards_for_display and not inline_md:
+            try:
+                _diag = []
+                for _c in cards_for_display[:3]:
+                    _g = (lambda n: _c.get(n) if isinstance(_c, dict)
+                          else getattr(_c, n, None))
+                    _diag.append({
+                        "node_id": _g("node_id"),
+                        "guide_url": bool(_g("guide_url")),
+                        "wlo_url": bool(_g("wlo_url")),
+                        "url": bool(_g("url")),
+                        "title": bool(_g("title")),
+                    })
+                logger.warning(
+                    "inline-mode: %d cards aber 0 Links — guide_mode=%s, "
+                    "limit=%d, sample=%s",
+                    len(cards_for_display), guide_mode_on, limit, _diag,
+                )
+            except Exception:
+                pass
         if inline_md:
             # Mit Leerzeile vom Bot-Text trennen, damit Markdown-Renderer
             # die Liste sauber abgrenzt.
@@ -1019,7 +1285,9 @@ def _extract_headings(markdown: str, topic: str, levels: str = "##") -> list[str
     return out[:6]
 
 
-def _canvas_completion_message(label: str, topic: str, markdown: str) -> str:
+def _canvas_completion_message(
+    label: str, topic: str, markdown: str, canvas_enabled: bool = True,
+) -> str:
     """Build a rich chat-bubble text when a canvas-material is created.
 
     Strategy (in order):
@@ -1081,15 +1349,28 @@ def _canvas_completion_message(label: str, topic: str, markdown: str) -> str:
                 lines.append(f"{i}. **{s}**")
 
     lines.append("")
-    lines.append(
-        "Du siehst es rechts im Canvas — ich kann es direkt anpassen, "
-        "wenn du z.B. \"mach die Aufgaben einfacher\" oder \"füge Lösungen "
-        "hinzu\" schreibst."
-    )
+    if canvas_enabled:
+        lines.append(
+            "Du siehst es rechts im Canvas — ich kann es direkt anpassen, "
+            "wenn du z.B. \"mach die Aufgaben einfacher\" oder \"füge Lösungen "
+            "hinzu\" schreibst."
+        )
+    else:
+        # Inline-Modus: das Material landet unter dieser Bubble im Chat-
+        # Verlauf statt im Canvas. Print-Button vom Frontend angeboten
+        # (siehe `boerdi:printable-canvas`-Sentinel).
+        lines.append(
+            "Das Material steht direkt unter dieser Nachricht — du kannst "
+            "es mit dem Druck-Button als PDF speichern. Sag mir gerne, was "
+            "angepasst werden soll (z.B. *\"mach die Aufgaben einfacher\"* "
+            "oder *\"füge Lösungen hinzu\"*)."
+        )
     return "\n".join(lines)
 
 
-def _lp_completion_message(topic: str, markdown: str) -> str:
+def _lp_completion_message(
+    topic: str, markdown: str, canvas_enabled: bool = True,
+) -> str:
     """Build a rich chat-bubble text for a completed learning path.
 
     The full path lives in the canvas — but the chat bubble needs more than
@@ -1097,20 +1378,37 @@ def _lp_completion_message(topic: str, markdown: str) -> str:
     from the markdown so the user sees the roadmap inline.
     """
     phases = _extract_headings(markdown, topic)
-    lines = [
-        f"Ich habe dir den **Lernpfad zu *{topic}*** im Canvas rechts aufgebaut."
-    ]
+    if canvas_enabled:
+        lines = [
+            f"Ich habe dir den **Lernpfad zu *{topic}*** im Canvas rechts aufgebaut."
+        ]
+    else:
+        # Inline-Modus: Lernpfad landet direkt im Chat-Verlauf, Print-Button
+        # vom Frontend angeboten (siehe `**Lernpfad:`-intrinsic marker plus
+        # `boerdi:printable-canvas`-Sentinel).
+        lines = [
+            f"Ich habe dir den **Lernpfad zu *{topic}*** direkt unter dieser "
+            f"Nachricht aufgebaut."
+        ]
     if phases:
         lines.append("")
         lines.append("Er ist in diese Phasen gegliedert:")
         for i, p in enumerate(phases, 1):
             lines.append(f"{i}. **{p}**")
     lines.append("")
-    lines.append(
-        "Du kannst ihn im Canvas drucken, als Markdown speichern oder mir "
-        "sagen, was angepasst werden soll (z.B. *\"mach ihn für Klasse 5 "
-        "einfacher\"* oder *\"füge einen Schritt zur Sicherung hinzu\"*)."
-    )
+    if canvas_enabled:
+        lines.append(
+            "Du kannst ihn im Canvas drucken, als Markdown speichern oder mir "
+            "sagen, was angepasst werden soll (z.B. *\"mach ihn für Klasse 5 "
+            "einfacher\"* oder *\"füge einen Schritt zur Sicherung hinzu\"*)."
+        )
+    else:
+        lines.append(
+            "Du kannst ihn mit dem Druck-Button unten als PDF speichern oder "
+            "mir sagen, was angepasst werden soll (z.B. *\"mach ihn für "
+            "Klasse 5 einfacher\"* oder *\"füge einen Schritt zur Sicherung "
+            "hinzu\"*)."
+        )
     return "\n".join(lines)
 
 
@@ -1267,7 +1565,11 @@ async def _handle_generate_learning_path(
             debug=debug,
         )
 
-    short_ack = _lp_completion_message(title, response_text or "")
+    # Im Inline-Modus (canvas-enabled="false") wird der Lernpfad direkt im
+    # Chat-Verlauf gerendert — Prosa muss das spiegeln, nicht „im Canvas
+    # rechts" sagen. _widget_modes() schaut auf req.environment.
+    _canvas_on = _widget_modes(req)["canvas_enabled"]
+    short_ack = _lp_completion_message(title, response_text or "", canvas_enabled=_canvas_on)
 
     _attach_guide_urls(req, cards, None)
 
@@ -1351,7 +1653,10 @@ async def _handle_canvas_create(
             debug=err_debug,
         )
 
-    response_text = _canvas_completion_message(label, topic, markdown)
+    _canvas_on_mat = _widget_modes(req)["canvas_enabled"]
+    response_text = _canvas_completion_message(
+        label, topic, markdown, canvas_enabled=_canvas_on_mat,
+    )
 
     debug = DebugInfo(
         persona=session_state.get("persona_id", ""),
@@ -1507,11 +1812,20 @@ async def _handle_canvas_remix(
         )
 
     short_note = "" if extraction_ok else " *(Volltext war nicht abrufbar — Remix basiert auf Metadaten.)*"
-    response_text = (
-        f"Ich habe dir einen **Remix als {label}** zum Thema *{topic}* im Canvas "
-        f"erstellt.{short_note} Sag mir einfach, was ich anpassen soll "
-        "(z.B. *\"mach es einfacher\"* oder *\"füge Lösungen hinzu\"*)."
-    )
+    _canvas_on_remix = _widget_modes(req)["canvas_enabled"]
+    if _canvas_on_remix:
+        response_text = (
+            f"Ich habe dir einen **Remix als {label}** zum Thema *{topic}* im Canvas "
+            f"erstellt.{short_note} Sag mir einfach, was ich anpassen soll "
+            "(z.B. *\"mach es einfacher\"* oder *\"füge Lösungen hinzu\"*)."
+        )
+    else:
+        response_text = (
+            f"Ich habe dir einen **Remix als {label}** zum Thema *{topic}* erstellt — "
+            f"er steht direkt unter dieser Nachricht.{short_note} Den Druck-Button "
+            f"findest du am Ende des Materials. Sag mir einfach, was ich anpassen "
+            f"soll (z.B. *\"mach es einfacher\"* oder *\"füge Lösungen hinzu\"*)."
+        )
 
     debug = DebugInfo(
         persona=session_state.get("persona_id", ""),
@@ -1683,8 +1997,84 @@ async def _handle_canvas_edit(
 
 
 # ── Main chat endpoint ───────────────────────────────────────────
-def _postprocess_response_for_widget_modes(
+_LLM_DELIVERY_CLAIM_RE = _re.compile(
+    r"\b("
+    r"hab(?:e)?\s+dir|hab\s+rausgefischt|hab(?:e)?\s+gefunden|"
+    r"rausgefischt|rausgezogen|rausgesucht|rausgelegt|rausgepickt|"
+    r"hier\s+sind\s+(?:die\s+)?(?:passende|treffer)|"
+    r"hab\s+direkt\s+(?:was|ein)|"
+    r"passende\s+(?:sammlung|themenseite|treffer|material|inhalte)|"
+    r"kuratierte?\s+(?:sammlung|auswahl|treffer)|"
+    r"hab\s+dir\s+was\s+passend|"
+    r"hab\s+ein\s+paar\s+passend|"
+    r"schau\s+(?:dir|mal)|zeig\s+(?:dir|ich)"
+    r")\b",
+    _re.IGNORECASE,
+)
+
+
+def _looks_like_search_query(message: str) -> bool:
+    """Heuristik: wirkt der User-Input wie eine konkrete Suchanfrage?
+
+    Greift wenn die Nachricht substantiellen Inhalt hat (>= 5 Zeichen Text
+    nach Whitespace) und nicht offensichtlich eine Klärungs- oder
+    Meta-Frage ist (z.B. ``"was kannst du?"`` triggert nicht).
+    """
+    msg = (message or "").strip()
+    if len(msg) < 5:
+        return False
+    low = msg.lower()
+    # Generic meta/clarification phrases that aren't real searches
+    no_search_phrases = (
+        "was kannst du", "was ist wlo", "wie kann ich", "hilfe", "help",
+        "hallo", "hi ", "moin", "guten tag",
+    )
+    if any(p in low for p in no_search_phrases) and len(low) < 25:
+        return False
+    return True
+
+
+async def _fallback_inline_search(message: str, classification_entities: dict) -> list[Any]:
+    """Kompakter Fallback-Search wenn der LLM eine Liefer-Aussage gemacht
+    hat aber keine Cards in der Response sind (Inline-Mode-Bug).
+
+    Strategie: ``search_wlo_content`` mit dem User-Message als ``query``,
+    plus optional ``discipline``/``educationalContext`` aus den
+    klassifizierten Entities — damit der Treffer thematisch passt.
+    Maximal 5 Treffer (passt zum Inline-Limit). Bei Fehlern leere Liste,
+    NIEMALS exception nach außen.
+    """
+    try:
+        from app.services.mcp_client import call_mcp_tool as _ct
+        from app.services.mcp_client import parse_wlo_cards as _pc
+        args: dict[str, Any] = {"query": message, "maxResults": 5}
+        # Optional Filter aus den klassifizierten Entities übernehmen
+        fach = classification_entities.get("fach") if isinstance(classification_entities, dict) else None
+        stufe = classification_entities.get("stufe") if isinstance(classification_entities, dict) else None
+        if isinstance(fach, str) and fach.strip():
+            args["discipline"] = fach.strip()
+        if isinstance(stufe, str) and stufe.strip():
+            args["educationalContext"] = stufe.strip()
+        raw = await _ct("search_wlo_content", args)
+        if not raw:
+            logger.info("fallback inline search: leer für query='%s'", message[:60])
+            return []
+        cards = _pc(raw)
+        logger.info(
+            "fallback inline search: %d Cards für query='%s'",
+            len(cards or []), message[:60],
+        )
+        return cards or []
+    except Exception as _e:
+        # WICHTIG: warning statt debug, damit Import-/MCP-Fehler nicht
+        # stillschweigend Fallback + Auto-Augmentation lahmlegen.
+        logger.warning("fallback inline search failed: %s", _e)
+        return []
+
+
+async def _postprocess_response_for_widget_modes(
     req: ChatRequest, resp: ChatResponse,
+    classification_entities: dict | None = None,
 ) -> ChatResponse:
     """Wrap response through widget-modes postprocess.
 
@@ -1695,23 +2085,199 @@ def _postprocess_response_for_widget_modes(
     Idempotent: wenn alle Modes default sind (Pydantic-None → True),
     ist das ein No-Op. Bei einem Bestand-Frontend ohne neue Flags
     bleibt das Verhalten 1:1 wie vorher.
+
+    **Inline-Mode-Safety-Net**: wenn ``cards_enabled=false`` UND die Cards
+    der Response leer sind UND der LLM-Antworttext eine Liefer-Aussage
+    enthält („hab dir rausgefischt", „hier sind die Treffer", …), startet
+    das Backend einen Fallback-``search_wlo_content``-Aufruf mit der
+    User-Frage als Query. So sieht der User die versprochenen Treffer auch
+    dann, wenn der LLM-Tool-Loop sie aus irgendeinem Grund nicht
+    durchgereicht hat (typisches Symptom: bot sagt „ich habe gefunden"
+    aber keine Inline-Links erscheinen).
     """
     try:
         modes = _widget_modes(req)
-        # Kein Early-Return mehr: Lotsen-QRs werden auch im Default-Modus
-        # zu Inline-Links umgewandelt (siehe _extract_guide_inline). Die
-        # 3 Display-Toggles sind eh per ``if not modes[...]``-Conditions
-        # geschützt — bei alles-True bleibt jede Operation idempotent.
         env = req.environment
         guide_mode_on = bool(getattr(env, "guide_mode", False))
+
+        # Vom LLM (via select_top_cards-Tool) gewählte IDs aus debug holen.
+        # _chat_impl stasht sie in phase3_modulations.selected_card_ids.
+        # Bei direct-action-Handlern (Canvas-Create etc.) ist die Liste leer
+        # und wir fallen auf algorithmische Sortierung zurück — kein Bruch.
+        selected_card_ids: list[str] = []
+        try:
+            dbg = resp.debug
+            if dbg is not None:
+                p3 = getattr(dbg, "phase3_modulations", None) or {}
+                raw_ids = p3.get("selected_card_ids") or []
+                if isinstance(raw_ids, list):
+                    selected_card_ids = [str(x) for x in raw_ids if isinstance(x, str) and x.strip()]
+        except Exception:
+            selected_card_ids = []
+
+        cards_for_postprocess: list[Any] = list(resp.cards or [])
+
+        # Safety-Net Trigger 1: bei Inline-Mode + Liefer-Aussage + Suchanfrage,
+        # aber KEINE Cards in der Response. Klassischer LLM-Bug: Modell
+        # behauptet etwas geliefert zu haben ohne Tools gerufen zu haben.
+        # Trigger 2: Cards waren da, aber select_top_cards filterte sie auf
+        # 0 — z.B. weil das LLM hallzinierte IDs gewählt hat. Auch hier
+        # Fallback-Search, damit der User die versprochenen Treffer sieht.
+        _claim = _LLM_DELIVERY_CLAIM_RE.search(resp.content or "")
+        _query_like = _looks_like_search_query(req.message or "")
+        # Trigger 2 wird ausgewertet nach dem ersten Filterversuch — aber
+        # wir können die Bedingung "Auswahl wäre leer" hier vorab prüfen.
+        _selection_collapses = (
+            bool(selected_card_ids)
+            and bool(cards_for_postprocess)
+            and not any(
+                (c.get("node_id") if isinstance(c, dict) else getattr(c, "node_id", None))
+                in set(selected_card_ids)
+                for c in cards_for_postprocess
+            )
+        )
+        if (
+            not modes["cards_enabled"]
+            and _claim
+            and _query_like
+            and (not cards_for_postprocess or _selection_collapses)
+        ):
+            logger.info(
+                "inline-mode safety-net: %s — Fallback-Search auf '%s'",
+                "leere Cards" if not cards_for_postprocess else "LLM-IDs matchen 0 Cards",
+                (req.message or "")[:60],
+            )
+            fb_cards = await _fallback_inline_search(
+                req.message or "",
+                classification_entities or {},
+            )
+            if fb_cards:
+                logger.info("inline-mode safety-net: %d Cards aus Fallback", len(fb_cards))
+                cards_for_postprocess = fb_cards
+                # Fallback-Cards haben frische IDs, die LLM-Auswahl ist
+                # ungültig dafür — sonst würde der Filter wieder auf 0
+                # zusammenklappen. Algorithmische Sortierung übernimmt.
+                selected_card_ids = []
+
+        # ── Auto-Augmentation v2: wenn LLM nur 1-2 Sammlungen/Themenseiten
+        # gepickt hat, automatisch Einzelinhalte dazuholen, damit der User
+        # bis zu 5 Optionen sieht. Deterministisch im Backend, statt den
+        # LLM mit Mix-Logik zu belasten (zu komplex/inkonsistent).
+        # Trigger:
+        #   - Inline-Modus aktiv
+        #   - LLM hat explizit IDs gewählt (kein Fallback-Pfad)
+        #   - Selection ist < 5
+        #   - ALLE gewählten Cards sind collection (Sammlung oder Themenseite)
+        # Dann: search_wlo_content auf User-Frage, bis zu (5 - selection)
+        # Einzelinhalte anhängen, IDs dedupen.
+        if (
+            not modes["cards_enabled"]
+            and selected_card_ids
+            and cards_for_postprocess
+            and not _selection_collapses  # nur wenn die LLM-Auswahl gültig ist
+        ):
+            _selected_set = set(selected_card_ids)
+            _picked = [
+                c for c in cards_for_postprocess
+                if (c.get("node_id") if isinstance(c, dict)
+                    else getattr(c, "node_id", None)) in _selected_set
+            ]
+            _user_msg = req.message or ""
+            _wants_specific_type = _user_wants_specific_content_type(_user_msg)
+            # Augmentations-Bedingung: LLM hat weniger als 5 gepickt, der
+            # In-Memory-Pool enthält noch ungenutzte Einzelinhalte, und der
+            # User hat nicht explizit nach einem Material-Typ gefragt
+            # (bei Typ-Fokus respektiert man die LLM-Auswahl strikt).
+            # Vorher war "alle gepickten sind Sammlung" Pflicht — aber bei
+            # einer 1+1-Mischauswahl (Sammlung + 1 Einzelinhalt) wollen wir
+            # auch auffüllen, sonst sieht der User nur 2 Treffer statt 5.
+            _has_extra_content_in_pool = any(
+                (c.get("node_type") if isinstance(c, dict)
+                 else getattr(c, "node_type", None)) != "collection"
+                and (c.get("node_id") if isinstance(c, dict)
+                     else getattr(c, "node_id", None)) not in _selected_set
+                for c in cards_for_postprocess
+            )
+            if (
+                _picked
+                and len(_picked) < 5
+                and _has_extra_content_in_pool
+                and not _wants_specific_type
+            ):
+                _needed = 5 - len(_picked)
+                logger.info(
+                    "inline-mode auto-augment: %d gepickt (LLM), "
+                    "ergänze bis zu %d Einzelinhalte aus Pool für '%s'",
+                    len(_picked), _needed, _user_msg[:60],
+                )
+                _existing_ids = {
+                    (c.get("node_id") if isinstance(c, dict)
+                     else getattr(c, "node_id", None))
+                    for c in _picked
+                }
+                # SCHRITT 1: Bereits geladene Einzelinhalte aus
+                # cards_for_postprocess nehmen (durch speculative extra-spec
+                # parallel zum primary tool oft schon vorhanden). Spart MCP-
+                # Round-Trip + ist konsistent mit der Card-Reihenfolge die
+                # der LLM gesehen hat.
+                _added = 0
+                for _c in cards_for_postprocess:
+                    if _added >= _needed:
+                        break
+                    _nid = (_c.get("node_id") if isinstance(_c, dict)
+                            else getattr(_c, "node_id", None))
+                    _ntype = (_c.get("node_type") if isinstance(_c, dict)
+                              else getattr(_c, "node_type", None))
+                    if not _nid or _nid in _existing_ids or _ntype == "collection":
+                        continue
+                    selected_card_ids.append(_nid)
+                    _existing_ids.add(_nid)
+                    _added += 1
+                logger.info(
+                    "inline-mode auto-augment: %d Einzelinhalte aus "
+                    "vorhandenen Cards ergänzt",
+                    _added,
+                )
+                # SCHRITT 2: Reicht der In-Memory-Pool noch nicht? Fallback
+                # auf frischen search_wlo_content-Call.
+                if _added < _needed:
+                    try:
+                        _extra = await _fallback_inline_search(
+                            _user_msg, classification_entities or {},
+                        )
+                    except Exception as _aug_err:
+                        logger.warning("auto-augment fallback failed: %s", _aug_err)
+                        _extra = []
+                    for _c in _extra:
+                        if _added >= _needed:
+                            break
+                        _nid = (_c.get("node_id") if isinstance(_c, dict)
+                                else getattr(_c, "node_id", None))
+                        _ntype = (_c.get("node_type") if isinstance(_c, dict)
+                                  else getattr(_c, "node_type", None))
+                        if not _nid or _nid in _existing_ids or _ntype == "collection":
+                            continue
+                        cards_for_postprocess.append(_c)
+                        selected_card_ids.append(_nid)
+                        _existing_ids.add(_nid)
+                        _added += 1
+                    if _extra:
+                        logger.info(
+                            "inline-mode auto-augment: nach Fallback insgesamt "
+                            "%d Einzelinhalte ergänzt",
+                            _added,
+                        )
+
         qrs, cards_out, pa, txt = _apply_widget_modes_postprocess(
             modes=modes,
             quick_replies=list(resp.quick_replies or []),
-            cards=list(resp.cards or []),
+            cards=cards_for_postprocess,
             page_action=resp.page_action if isinstance(resp.page_action, dict)
                         else (resp.page_action.model_dump() if resp.page_action else None),
             response_text=resp.content or "",
             guide_mode_on=guide_mode_on,
+            user_message=req.message or "",
+            selected_card_ids=selected_card_ids,
         )
         # ChatResponse rekonstruieren — Pydantic-Modell aufgrund von
         # Validierungsregeln kopieren wir per model_copy(update=...).
@@ -1739,7 +2305,7 @@ async def chat(req: ChatRequest):
         async with lock:
             try:
                 _resp = await _chat_impl(req)
-                return _postprocess_response_for_widget_modes(req, _resp)
+                return await _postprocess_response_for_widget_modes(req, _resp)
             except Exception as _impl_err:
                 # Top-level safety net: any unhandled exception in _chat_impl
                 # (config bug, attribute error in pattern engine, DB hiccup, …)
@@ -3069,7 +3635,12 @@ async def _chat_impl(
                 # Replace the long LP text in the chat bubble with a short
                 # announcement — the full path lives in the canvas, where
                 # the user can print, download or edit it via chat commands.
-                response_text = _lp_completion_message(topic, _lp_full_markdown)
+                # Im Inline-Modus (canvas-enabled="false") landet der Pfad
+                # direkt im Chat — Prosa-Variante muss das spiegeln.
+                _canvas_on_lp = _widget_modes(req)["canvas_enabled"]
+                response_text = _lp_completion_message(
+                    topic, _lp_full_markdown, canvas_enabled=_canvas_on_lp,
+                )
 
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Learning path from history failed: %s", e)
@@ -3332,7 +3903,10 @@ async def _chat_impl(
                     session_state=session_state,
                     memory_context=memory_context,
                 )
-                response_text = _canvas_completion_message(_label, _c_topic, _md)
+                _canvas_on_cc = _widget_modes(req)["canvas_enabled"]
+                response_text = _canvas_completion_message(
+                    _label, _c_topic, _md, canvas_enabled=_canvas_on_cc,
+                )
                 tools_called = ["canvas_service.generate_canvas_content"]
                 wlo_cards_raw = []
                 _canvas_routed = True
@@ -3463,6 +4037,48 @@ async def _chat_impl(
             except Exception as _e:
                 logger.warning("speculative %s failed: %s", spec_tool_name, _e)
 
+    # Extras (search_wlo_topic_pages, search_wlo_content) auch jetzt schon
+    # awaiten und an generate_response durchreichen. Sie laufen seit
+    # ``extra_spec_tasks.append`` parallel — wenn der LLM startet, sind sie
+    # meist längst fertig (MCP < LLM-Inferenz). Damit sieht der LLM den
+    # Gesamt-Treffer-Pool (Themenseiten + Sammlungen + Einzelinhalte) UND
+    # kann gezielt 5 IDs auswählen, OHNE selbst ein zweites Such-Tool zu
+    # rufen. Vorher: nur primary war sichtbar → LLM picked nur Sammlungen,
+    # Backend musste mit auto-augment Einzelinhalte nachreichen, die der
+    # LLM dann in seiner Prosa nicht erwähnen konnte.
+    prefetched_extras_payload: list[dict] = []
+    if extra_spec_tasks and not _lp_routed and not _canvas_routed:
+        for _ex_name, _ex_task in extra_spec_tasks:
+            if _ex_name in (safety.blocked_tools or []):
+                _ex_task.cancel()
+                try:
+                    await _ex_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                continue
+            try:
+                _ex_text = await _ex_task
+                if _ex_text:
+                    prefetched_extras_payload.append({
+                        "name": _ex_name,
+                        "arguments": {"query": spec_query, "maxResults": 5},
+                        "result_text": _ex_text,
+                    })
+            except Exception as _ex_err:
+                logger.warning(
+                    "speculative extra %s failed: %s", _ex_name, _ex_err,
+                )
+        # Nachgelagerte extra-spec-Merge-Loop (~Zeile 4080) braucht jetzt
+        # nichts mehr zu tun, weil die Cards via generate_response in
+        # all_cards landen. Liste leeren, damit der spätere `for _name,
+        # _task in extra_spec_tasks` no-op ist.
+        extra_spec_tasks = []
+        if prefetched_extras_payload:
+            logger.info(
+                "speculative extras pre-injected: %s",
+                [p["name"] for p in prefetched_extras_payload],
+            )
+
     if not _lp_routed and not _canvas_routed:
         # Hint the MCP client about the classifier's entities for this
         # turn (fach, thema, stufe, …). MCP tool preprocessors read these
@@ -3497,6 +4113,7 @@ async def _chat_impl(
                 rag_config=rag_config,
                 blocked_tools=safety.blocked_tools,
                 prefetched_tool=prefetched_tool_payload,
+                prefetched_extras=prefetched_extras_payload,
                 canvas_state=req.canvas_state,
                 usage_acc=usage_acc,
                 on_token=on_token,
@@ -3892,6 +4509,13 @@ async def _chat_impl(
             # Winner überstimmt hat. None = nicht ausgelöst (Hint == Engine
             # oder Tie-Breaker disabled).
             "tie_breaker": pattern_output.get("tie_breaker"),
+            # Inline-Mode-Curation (siehe llm_service.py:select_top_cards-Tool):
+            # vom LLM gewählte Card-IDs in Anzeige-Reihenfolge. Wird vom
+            # ``_apply_widget_modes_postprocess`` als Quelle der Wahrheit
+            # genutzt — fällt auf algorithmische Sortierung zurück wenn
+            # leer/None (LLM hat das Tool nicht gerufen).
+            "selected_card_ids": session_state.get("_selected_card_ids") or [],
+            "selected_card_reasoning": session_state.get("_selected_card_reasoning") or "",
         },
         # Triple-Schema v2
         outcomes=response_outcomes,
@@ -4107,7 +4731,7 @@ async def chat_stream(req: ChatRequest):
             # Pfad anwenden — der Wrapper in /api/chat greift hier nicht,
             # weil der Stream-Endpoint _chat_impl direkt aufruft.
             try:
-                result = _postprocess_response_for_widget_modes(req, result)
+                result = await _postprocess_response_for_widget_modes(req, result)
             except Exception as _we:
                 logger.warning("stream widget-modes postprocess failed: %s", _we)
             try:
