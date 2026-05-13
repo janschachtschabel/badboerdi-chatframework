@@ -990,15 +990,22 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     };
     window.addEventListener('badboerdi:page-action', this._onWindowPageAction);
 
-    // Outgoing-Link-Rewrite für Cross-TLD-Session-Handoff. Nur aktiv wenn
-    // trustedDomains konfiguriert ist. Greift JEDEN Link-Klick auf der
-    // Host-Seite ab (nicht nur im Widget) und hängt ?bsid=… an, falls
-    // das Link-Ziel zu einer Whitelist-Domain führt.
-    const shouldIntercept = this.interceptEduSharingLinks === true || this.interceptEduSharingLinks === 'true';
-    if (this._parsedTrustedDomains().length > 0 || shouldIntercept) {
-      this._onDocumentLinkClick = (e: Event) => this._maybeRewriteOutgoingLink(e);
-      document.addEventListener('click', this._onDocumentLinkClick, true);
-    }
+    // Outgoing-Link-Rewrite für Cross-TLD-Session-Handoff. Greift JEDEN
+    // Link-Klick auf der Host-Seite ab (nicht nur im Widget) und hängt
+    // ``?bsid=…`` an, falls das Link-Ziel zu einer Whitelist-Domain führt.
+    //
+    // WICHTIG: Handler IMMER registrieren, auch wenn die Trusted-Domain-
+    // Liste zum Zeitpunkt von ``ngAfterViewInit`` noch leer ist. Grund:
+    // ``initGuideMode()`` lädt die Backend-Liste async — die Liste kann
+    // zum AfterViewInit-Zeitpunkt noch nicht da sein. Würden wir den
+    // Handler nur installieren wenn die Liste schon voll ist, käme er
+    // bei langsamen Backend-Antworten nie zustande, und Inline-Links
+    // im Lotsen-Modus müssten erst beim zweiten Klick navigieren
+    // (Browser-Default-Pfad statt explizite ``window.location.href``-
+    // Navigation). Die Trusted-Host-Prüfung passiert pro Klick im
+    // Handler selbst — leere Liste = Handler bailt früh aus = Kosten 0.
+    this._onDocumentLinkClick = (e: Event) => this._maybeRewriteOutgoingLink(e);
+    document.addEventListener('click', this._onDocumentLinkClick, true);
   }
 
   ngOnDestroy() {
@@ -1113,9 +1120,37 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
       if (target.searchParams.has('bsid')) return;
 
       target.searchParams.set('bsid', sid);
-      anchor.href = target.toString();
-      // (Wir verändern nur href, kein preventDefault — der Klick wird normal
-      //  durchgereicht, der Browser navigiert mit dem aktualisierten href.)
+      const finalUrl = target.toString();
+      // Anchor-href IMMER aktualisieren — für Middle-Click und Modifier-Click
+      // (Ctrl/Cmd/Shift) nutzt der Browser die Anchor-href, um den Link in
+      // einem neuen Tab/Fenster zu öffnen; die sollen ebenfalls den
+      // ``bsid``-Param tragen.
+      anchor.href = finalUrl;
+      // Plain Left-Click ohne Modifier auf same-tab-Links: EXPLIZIT
+      // navigieren statt auf den Browser-Default zu hoffen. Manche
+      // Tracking-Blocker (Brave Shield, strict-mode Privacy-Erweiterungen)
+      // frieren die ``anchor.href`` zum Klick-Start ein und ignorieren
+      // spätere Mutationen — der erste Klick verpufft, erst der zweite
+      // folgt der neuen URL. Manuelle Navigation via ``window.location.href``
+      // umgeht dieses Behavior.
+      //
+      // Wichtig: NUR für same-tab-Links (kein ``target`` oder ``target="_self"``).
+      // Karten-Buttons mit ``target="_blank"`` sollen weiterhin in einem neuen
+      // Tab öffnen — das machen sie via Browser-Default mit der (jetzt
+      // mutierten) ``anchor.href``. Würden wir hier ``window.location.href``
+      // setzen, wäre das eine same-tab-Navigation und der Endnutzer würde
+      // die Host-Seite verlieren.
+      const tgt = (anchor.target || '').toLowerCase();
+      const isSameTab = tgt === '' || tgt === '_self';
+      if (
+        isSameTab
+        && e instanceof MouseEvent
+        && e.button === 0
+        && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey
+      ) {
+        e.preventDefault();
+        window.location.href = finalUrl;
+      }
     } catch { /* never break user clicks */ }
   }
 
@@ -1129,7 +1164,10 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  einfach ``document.querySelector('boerdi-chat').openChatbot()``
    *  aufrufen kann. Kein Shadow-DOM-Hack mehr nötig.
    *
-   *  Idempotent: erneutes Aufrufen bei bereits offenem Panel ist ein No-Op.
+   *  Beim Öffnen scrollt das Widget automatisch ans Ende der Nachrichten-
+   *  Liste (siehe ``setExpanded``), damit der User sofort die letzten
+   *  Bot-Antworten sieht — auch wenn beim vorherigen Schließen weiter
+   *  oben im Verlauf gescrollt war.
    */
   openChatbot(): void {
     this.setExpanded(true);
@@ -1155,12 +1193,19 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  (Toggle-Button, Public-API, attributeChangedCallback) konsistent
    *  localStorage pflegen und Angular die View neu rendert. */
   private setExpanded(open: boolean): void {
+    // Timestamp BEI JEDEM Öffnen-Call aktualisieren — auch wenn das Panel
+    // bereits offen ist. Hintergrund: ``boerdi_widget_open`` dient der
+    // Cross-Page-Persistenz innerhalb einer TTL. Wenn der User das Widget
+    // intensiv nutzt aber per ``openChatbot()`` immer dasselbe Panel
+    // erneut „anpinkt", soll die TTL nicht trotzdem ablaufen und das
+    // Widget auf der nächsten Seite zumachen.
+    if (open) {
+      try { localStorage.setItem(this.OPEN_KEY, String(Date.now())); } catch { /* ignore */ }
+    }
     if (this.expanded === open) return;
     this.expanded = open;
     try {
-      if (open) {
-        localStorage.setItem(this.OPEN_KEY, String(Date.now()));
-      } else {
+      if (!open) {
         localStorage.removeItem(this.OPEN_KEY);
       }
     } catch { /* ignore */ }
@@ -1168,6 +1213,28 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     // externen Aufrufen (außerhalb Zone) müssen wir manuell anstoßen,
     // damit die View aktualisiert wird.
     try { this.cdr?.markForCheck?.(); } catch { /* ignore */ }
+
+    // Beim Öffnen: Nachrichten-Liste ans Ende scrollen, damit der User
+    // die letzten Bot-Antworten sieht. Wichtig für ``openChatbot()``-
+    // Aufrufe vom Host — wenn z.B. ein WordPress-Button das Widget öffnet,
+    // soll nicht der oberste (lange zurückliegende) Verlauf-Anfang
+    // sichtbar sein. Greift auch für FAB-Click und ``initial-state``-
+    // Attribut-Änderung.
+    //
+    // requestAnimationFrame doppelt-gestapelt: erste rAF lässt Angular
+    // die ``expanded=true``-Bindings rendern (das Panel mountet, die
+    // Chat-Component initialisiert sich, ``ViewChild chatRef`` wird
+    // gefüllt). Zweite rAF wartet auf den Layout-Paint — erst dann hat
+    // der ``messagesContainer`` seine echte ``scrollHeight``.
+    if (open) {
+      try {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            try { this.chatRef?.scrollToLatest?.(); } catch { /* ignore */ }
+          });
+        });
+      } catch { /* ignore */ }
+    }
   }
 
   /**

@@ -60,11 +60,17 @@ const PUBLIC_METHODS: ReadonlyArray<BoerdiChatPublicMethods> = [
   for (const m of PUBLIC_METHODS) {
     if (typeof proto[m] === 'function') continue;  // schon vorhanden
     proto[m] = function (this: NgElement, ...args: unknown[]) {
-      // ``componentRef`` ist Angular's interne Property auf dem NgElement.
-      // Sie wird beim Connect-Lifecycle gesetzt — vor connectedCallback
-      // ist sie ``null`` und der Caller bekommt ``undefined`` zurück.
-      // Idempotent + sicher: kein Crash bei frühen Aufrufen.
-      const compRef = (this as unknown as { componentRef?: { instance: Record<string, unknown> } }).componentRef;
+      // Angular 17+: der Component-Ref liegt unter
+      // ``_ngElementStrategy.componentRef``, NICHT direkt auf der Element-
+      // Instanz. Frühere Versionen hatten ``element.componentRef`` — wir
+      // probieren beide Pfade, damit der Wrapper version-stable bleibt.
+      // Vor dem connectedCallback ist beides ``undefined`` — wir geben
+      // dann ``undefined`` zurück (kein Crash bei frühen Aufrufen).
+      const self = this as unknown as {
+        _ngElementStrategy?: { componentRef?: { instance: Record<string, unknown> } };
+        componentRef?: { instance: Record<string, unknown> };
+      };
+      const compRef = self._ngElementStrategy?.componentRef || self.componentRef;
       const instance = compRef?.instance;
       const fn = instance && typeof instance[m] === 'function' ? instance[m] : null;
       if (typeof fn !== 'function') return undefined;

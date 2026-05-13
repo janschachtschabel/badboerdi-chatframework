@@ -1,5 +1,5 @@
 import {
-  Component, ElementRef, HostListener, NgZone, ViewChild, AfterViewChecked, OnInit, signal, Input,
+  Component, ElementRef, HostListener, NgZone, ViewChild, AfterViewChecked, OnInit, OnDestroy, signal, Input,
   Output, EventEmitter,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -23,7 +23,7 @@ import { SafeSvgPipe } from '../shared/safe-svg.pipe';
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss'],
 })
-export class ChatComponent implements OnInit, AfterViewChecked {
+export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   /** Material-Symbols-Icon-Set, im Template referenzierbar. */
   readonly ICONS = ICONS;
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
@@ -122,6 +122,13 @@ export class ChatComponent implements OnInit, AfterViewChecked {
 
   // Scroll target: ID of the message to scroll into view
   private scrollTargetId: string | null = null;
+  /** Flag: scroll messages-Container ans Ende bei der nächsten gerenderten
+   *  View. Wird beim Wiederherstellen der History (``restoreHistory``) und
+   *  auf externen ``scrollToLatest()``-Aufruf (z.B. WidgetComponent beim
+   *  ``openChatbot()``) gesetzt. Konsumiert in ``ngAfterViewChecked``, sodass
+   *  der Scroll erst NACH Angular's CD + Browser-Paint passiert (wenn
+   *  ``messagesContainer.scrollHeight`` die finale Höhe hat). */
+  private scrollToBottomOnNextRender = false;
 
   /** Logo als Data-URL — funktioniert in Web-Components zuverlässig.
    *  Quelle: shared/boerdi-logo.ts */
@@ -244,6 +251,13 @@ export class ChatComponent implements OnInit, AfterViewChecked {
         this.addBotMessage(content);
       }
     }
+    // Nach dem Wiederherstellen ans Ende scrollen. Wir delegieren komplett
+    // an den Auto-Follow-Mechanismus aus ``scrollToLatest()`` — der setzt
+    // den permanenten MutationObserver auf, der jede zukünftige DOM-Änderung
+    // im Messages-Container am Tail hält (bis der User aktiv hochscrollt).
+    // So ist's egal wann genau die History-Bubbles fertig gerendert sind:
+    // jede einzelne Mutation triggert einen erneuten Scroll.
+    this.scrollToLatest();
   }
 
   /** Public API: clear current session and start fresh. Callable from host page. */
@@ -267,6 +281,25 @@ export class ChatComponent implements OnInit, AfterViewChecked {
       this.scrollToMessage(this.scrollTargetId);
       this.scrollTargetId = null;
     }
+    if (this.scrollToBottomOnNextRender) {
+      this.scrollToBottom();
+      this.scrollToBottomOnNextRender = false;
+    }
+  }
+
+  ngOnDestroy(): void {
+    // Auto-Follow-Tail-Observer aufräumen. Beim Schließen des Panels
+    // wird die Chat-Component via *ngIf zerstört — wenn wir den Observer
+    // hier nicht trennen, behält er Referenzen auf das zerstörte DOM und
+    // wird erst beim GC eingesammelt.
+    try { this._autoFollowObserver?.disconnect(); } catch { /* ignore */ }
+    this._autoFollowObserver = null;
+    try {
+      if (this._autoFollowScrollListener && this.messagesContainer?.nativeElement) {
+        this.messagesContainer.nativeElement.removeEventListener('scroll', this._autoFollowScrollListener);
+      }
+    } catch { /* ignore */ }
+    this._autoFollowScrollListener = null;
   }
 
   async sendMessage(text?: string) {
@@ -1362,6 +1395,74 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     } catch {}
   }
 
+  /** **Public** — scroll the messages container to the bottom.
+   *
+   *  Aufrufer (z.B. WidgetComponent beim `openChatbot()`-Call) können den
+   *  Chat damit auf die letzte Nachricht setzen, sobald sie sichtbar wird.
+   *  Toleriert "Container noch nicht im DOM" — silent No-Op statt Error.
+   *
+   *  Setzt das Flag, das ``ngAfterViewChecked`` beim nächsten Render
+   *  konsumiert — funktioniert deshalb auch wenn die Messages-Liste noch
+   *  asynchron geladen wird (History-Restore beim Remount).
+   */
+  scrollToLatest(): void {
+    this.scrollToBottomOnNextRender = true;
+    // User-Intention zurücksetzen — wenn er aktiv „öffne den Chat"-
+    // Action triggert (Reopen, neue Session, externes ``openChatbot()``),
+    // will er die letzten Nachrichten sehen, nicht eine vorherige
+    // Scroll-Position im Verlauf.
+    this._userScrolledAway = false;
+    // Sofort + 0/200ms-Stufen für synchron gerenderte Inhalte:
+    this.scrollToBottom();
+    setTimeout(() => this.scrollToBottom(), 0);
+    setTimeout(() => this.scrollToBottom(), 200);
+    setTimeout(() => this.scrollToBottom(), 800);
+    // Permanenter Auto-Follow-Observer aufsetzen (idempotent).
+    this._setupAutoFollowTail();
+  }
+
+  /** Marker: Hat der User aktiv hoch-gescrollt? Dann scrollt der
+   *  Auto-Follow NICHT mehr automatisch ans Ende — sonst würde jede
+   *  neue Bot-Antwort den User aus der älteren Stelle reißen.
+   *  ``scrollToLatest()`` (z.B. beim Reopen) resetted das Flag. */
+  private _userScrolledAway = false;
+  private _autoFollowObserver: MutationObserver | null = null;
+  private _autoFollowScrollListener: (() => void) | null = null;
+
+  /** Permanenter MutationObserver auf dem Messages-Container.
+   *  Scrollt bei JEDER DOM-Mutation ans Ende, außer der User hat sich
+   *  manuell weggescrollt. So bleibt der Chat während Bot-Streaming-
+   *  Antworten am Tail, und nach close+reopen sieht der User immer die
+   *  letzten Nachrichten — egal wie lange Backend-Roundtrips dauern.
+   *
+   *  Idempotent — Setup nur einmal pro Component-Lifecycle. */
+  private _setupAutoFollowTail(): void {
+    if (this._autoFollowObserver) return;
+    const container = this.messagesContainer?.nativeElement;
+    if (!container || typeof MutationObserver === 'undefined') return;
+
+    // User-Scroll-Detection: wenn der User wegscrollt → Flag setzen,
+    // damit Auto-Follow ihn nicht zurückzieht. Toleranz 60px: solange
+    // er im Bereich „nahe Boden" ist, gilt er als „will tail folgen".
+    const SCROLL_TOLERANCE_PX = 60;
+    this._autoFollowScrollListener = () => {
+      const max = container.scrollHeight - container.clientHeight;
+      const distFromBottom = max - container.scrollTop;
+      this._userScrolledAway = distFromBottom > SCROLL_TOLERANCE_PX;
+    };
+    container.addEventListener('scroll', this._autoFollowScrollListener, { passive: true });
+
+    this._autoFollowObserver = new MutationObserver(() => {
+      if (this._userScrolledAway) return;
+      container.scrollTop = container.scrollHeight;
+    });
+    this._autoFollowObserver.observe(container, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }
+
   private scrollToMessage(msgId: string) {
     try {
       const el = document.getElementById('msg-' + msgId);
@@ -1486,8 +1587,23 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       .replace(/[`~]/g, '');
   }
 
+  /** Cache pro (sender|text) → SafeHtml. Identische Inputs liefern bei
+   *  jeder Change-Detection-Auswertung dieselbe Instanz zurück, damit
+   *  Angular keinen "Wert geändert"-Diff sieht und das ``innerHTML`` NICHT
+   *  neu setzt. Ohne diesen Cache liefert ``bypassSecurityTrustHtml()``
+   *  bei jedem CD-Tick ein neues Wrapper-Objekt — Angular ersetzt dann
+   *  das DOM zwischen Mousedown und Mouseup, das Click-Event entsteht nicht,
+   *  Links brauchen 2 Klicks. WeakMap geht nicht weil der Key ein String ist;
+   *  Map mit primitivem Key reicht und altert mit der Component-Lebenszeit
+   *  (=> kein Memory-Leak über Page-Wechsel).
+   */
+  private readonly _renderCache = new Map<string, SafeHtml>();
+
   renderMarkdown(text: string, sender: 'bot' | 'user' = 'bot'): SafeHtml {
     if (!text) return this.sanitizer.bypassSecurityTrustHtml('');
+    const cacheKey = sender + '|' + text;
+    const cached = this._renderCache.get(cacheKey);
+    if (cached) return cached;
     // Use marked to parse Markdown to HTML, then DOMPurify to defang any
     // injected HTML/JS coming from bot output, persisted history, or tool
     // results. NEVER bypass sanitization on raw text — replace-based regex
@@ -1505,6 +1621,8 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       html = marked.parse(text, { async: false, gfm: true, breaks: true }) as string;
     }
     const clean = DOMPurify.sanitize(html, { ADD_ATTR: ['target', 'rel'] });
-    return this.sanitizer.bypassSecurityTrustHtml(clean);
+    const safe = this.sanitizer.bypassSecurityTrustHtml(clean);
+    this._renderCache.set(cacheKey, safe);
+    return safe;
   }
 }
