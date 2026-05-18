@@ -819,12 +819,16 @@ export default function InfoView() {
           verwenden können:
         </p>
         <ul style={{ fontSize: 12, lineHeight: 1.8, marginLeft: 16, marginBottom: 0 }}>
-          <li><code style={codeStyle}>badboerdi:link-clicked</code> — feuert bei interceptierten Edu-Sharing-Links (nur wenn <code>intercept-edu-sharing-links="true"</code>). Payload: Pfad + Query.</li>
-          <li><code style={codeStyle}>badboerdi:guide-suggestion</code> — feuert pro Bot-Turn mit Lotsen-Treffer (nur wenn <code>emit-guide-suggestion="true"</code>). Payload: <code>guide_url</code>, <code>label</code>, Score, Quelle.</li>
-          <li><code style={codeStyle}>badboerdi:routing-debug</code> — feuert pro Bot-Turn mit Klassifikations- und Pattern-Daten (nur wenn <code>emit-routing-debug="true"</code>). Payload: <code>{`{pattern, intent, state, persona, tools, modifier}`}</code>.</li>
+          <li><code style={codeStyle}>badboerdi:page-action</code> — <strong>immer aktiv</strong>. Backend-page_actions: <code>navigate</code>, <code>show_results</code>, <code>canvas_open</code>, <code>canvas_update</code>, <code>canvas_show_cards</code>, <code>canvas_close</code>. Payload: <code>{`{action, payload}`}</code>.</li>
+          <li><code style={codeStyle}>badboerdi:guide-suggestion</code> — nur wenn <code>emit-guide-suggestion="true"</code>. Feuert pro Bot-Turn mit Lotsen-eligible Cards. Payload: <code>{`{url, title, node_id, node_type, query, alternatives[]}`}</code>.</li>
+          <li><code style={codeStyle}>badboerdi:routing-debug</code> — nur wenn <code>emit-routing-debug="true"</code>. Routing-Telemetrie pro Bot-Turn. Payload: <code>{`{pattern, intent, state, persona, tools_called[], sources[], modifier{}}`}</code>.</li>
+          <li><code style={codeStyle}>badboerdi:query-meta</code> — <strong>immer aktiv</strong>. MCP-Suchanfragen-Metadaten. Payload: <code>{`{queries[]{tool_name, search_term, criteria[], pagination, search_url}}`}</code>.</li>
         </ul>
+        <p style={{ fontSize: 12, lineHeight: 1.6, marginTop: 6, marginBottom: 0 }}>
+          Angular-Outputs: <code style={codeStyle}>(pageAction)</code>, <code style={codeStyle}>(guideSuggestion)</code>, <code style={codeStyle}>(routingDebug)</code>, <code style={codeStyle}>(queryMeta)</code>, <code style={codeStyle}>(linkClicked)</code> (nur bei <code>intercept-edu-sharing-links="true"</code>).
+        </p>
         <div style={{ ...mutedStyle, marginTop: 8 }}>
-          Detailliertes Payload-Schema: <code style={codeStyle}>docs/05-widget-javascript-api.md</code>.
+          Detailliertes Payload-Schema:  <code style={codeStyle}>docs/05-widget-javascript-api.md</code>.
         </div>
       </Section>
 

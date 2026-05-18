@@ -1101,8 +1101,9 @@ $accent-orange: #E79800;
   background: #fff;
   color: $text;
   font-family: inherit;
+  margin: 0;
 
-  &:focus { border-color: var(--boerdi-primary, #1c4587); box-shadow: 0 0 0 2px color-mix(in srgb, var(--boerdi-primary, #1c4587) 15%, transparent); }
+  &:focus { border-color: var(--boerdi-primary, #1c4587); box-shadow: 0 0 0 2px color-mix(in srgb, var(--boerdi-primary, #1c4587) 15%, transparent); color: inherit; }
   &:disabled { opacity: .6; }
   &::placeholder { color: $text-muted; }
 }

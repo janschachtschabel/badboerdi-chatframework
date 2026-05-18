@@ -2223,13 +2223,18 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     # (gleicher Treffer kann z.B. in collections- UND content-Suche
     # auftauchen).
     all_cards: list[dict] = []
-    _seen_ids: set[str] = set()
+    _seen_ids: dict[str, dict] = {}
     for _c in list(mcp_prefetch_cards) + list(prefetched_extras_cards):
         _nid = _c.get("node_id") if isinstance(_c, dict) else None
         if _nid and _nid in _seen_ids:
+            _existing = _seen_ids[_nid]
+            if not _existing.get("topic_pages") and _c.get("topic_pages"):
+                _existing["topic_pages"] = _c["topic_pages"]
+            if not _existing.get("topic_page_url") and _c.get("topic_page_url"):
+                _existing["topic_page_url"] = _c["topic_page_url"]
             continue
         if _nid:
-            _seen_ids.add(_nid)
+            _seen_ids[_nid] = _c
         all_cards.append(_c)
     tools_called: list[str] = []
     outcomes: list = []  # ToolOutcome list (Triple-Schema T-23)
@@ -2607,12 +2612,21 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                             # check fails and the card renders as a flat
                             # Inhalt-card without the 🌐 Themenseite button.
                             existing["node_type"] = "collection"
-                # Deduplicate by node_id
-                existing_ids = {c.get("node_id") for c in all_cards if c.get("node_id")}
+                # Deduplicate by node_id — enrich topic_pages on collision
+                existing_by_id = {c.get("node_id"): c for c in all_cards if c.get("node_id")}
                 for c in cards:
-                    if c.get("node_id") not in existing_ids:
+                    _nid = c.get("node_id")
+                    if _nid and _nid in existing_by_id:
+                        _ex = existing_by_id[_nid]
+                        if not _ex.get("topic_pages") and c.get("topic_pages"):
+                            _ex["topic_pages"] = c["topic_pages"]
+                        if not _ex.get("topic_page_url") and c.get("topic_page_url"):
+                            _ex["topic_page_url"] = c["topic_page_url"]
+                    elif _nid:
                         all_cards.append(c)
-                        existing_ids.add(c.get("node_id"))
+                        existing_by_id[_nid] = c
+                    else:
+                        all_cards.append(c)
 
                 messages.append({
                     "role": "tool",

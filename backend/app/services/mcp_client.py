@@ -762,14 +762,28 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
             logger.error("MCP tool %s retry failed @ %s: %s", tool_name, target_url, error_msg)
             return f"MCP error: {error_msg}"
 
-    # Extract text content from result
+    # Extract text content from result, separating _queryMeta blocks.
     result_data = result.get("result", {})
     content_parts = result_data.get("content", [])
 
     texts = []
     for part in content_parts:
         if isinstance(part, dict) and part.get("type") == "text":
-            texts.append(part.get("text", ""))
+            raw_text = part.get("text", "")
+            # Detect _queryMeta JSON block and accumulate it instead of
+            # mixing it into the LLM-visible response text.
+            if raw_text.startswith('{"_queryMeta"'):
+                try:
+                    meta = json.loads(raw_text).get("_queryMeta")
+                    if meta:
+                        metas = _query_metas.get([])
+                        metas.append(meta)
+                        _query_metas.set(metas)
+                        logger.debug("extracted _queryMeta from %s: %s", tool_name, meta.get("queryType"))
+                except (json.JSONDecodeError, AttributeError):
+                    texts.append(raw_text)
+            else:
+                texts.append(raw_text)
         elif isinstance(part, str):
             texts.append(part)
 
@@ -815,6 +829,23 @@ import contextvars as _ctxvars
 _request_hints: _ctxvars.ContextVar[dict[str, Any]] = _ctxvars.ContextVar(
     "_request_hints", default={},
 )
+
+# Per-request accumulator for MCP query metadata (_queryMeta blocks).
+# Each MCP tool call that returns a _queryMeta content block gets appended
+# here. chat.py reads + clears it to forward as SSE events / debug info.
+_query_metas: _ctxvars.ContextVar[list[dict[str, Any]]] = _ctxvars.ContextVar(
+    "_query_metas", default=[],
+)
+
+
+def reset_query_metas() -> None:
+    """Clear the per-request query-meta accumulator (call at turn start)."""
+    _query_metas.set([])
+
+
+def get_query_metas() -> list[dict[str, Any]]:
+    """Return accumulated query metas for the current request."""
+    return list(_query_metas.get([]))
 
 
 def set_request_hints(hints: dict[str, Any]) -> None:

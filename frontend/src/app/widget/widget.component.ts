@@ -765,6 +765,11 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  consumers. Same payload as the global event. Gated by
    *  ``emitRoutingDebug``. */
   @Output() routingDebug = new EventEmitter<any>();
+  /** Emits MCP search query metadata (tool name, query type, criteria,
+   *  pagination, repository URL) for every bot turn that ran MCP searches.
+   *  Dispatched as ``badboerdi:query-meta`` CustomEvent on ``window`` AND
+   *  this Angular Output. Always active (no opt-in gate). */
+  @Output() queryMeta = new EventEmitter<any>();
 
   // ── Lotsen-Modus-Inputs ─────────────────────────────────────────
   /** Sichtbarkeit des 🧭-Toggle-Buttons im Header. Default `true`.
@@ -904,6 +909,7 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   // as a Custom Element that re-wraps the event flow), we still catch
   // the same page_action via the CustomEvent the chat component dispatches.
   private _onWindowPageAction?: (e: Event) => void;
+  private _onWindowQueryMeta?: (e: Event) => void;
 
   constructor(
     private zone: NgZone,
@@ -936,6 +942,16 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
 
   ngOnInit() {
     this.expanded = this.initialState === 'expanded';
+
+    // Cross-TLD-Handoff: if the URL contains ?bsid=… the user was
+    // navigated here from another page with an active chat session.
+    // Auto-open the widget so the conversation continues seamlessly.
+    try {
+      const sp = new URL(window.location.href).searchParams;
+      if (sp.has('bsid')) {
+        this.expanded = true;
+      }
+    } catch { /* ignore */ }
 
     // Restore expanded state across pages (within TTL)
     try {
@@ -1016,6 +1032,13 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     };
     window.addEventListener('badboerdi:page-action', this._onWindowPageAction);
 
+    // Forward query-meta events to the Angular Output emitter.
+    this._onWindowQueryMeta = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) this.zone.run(() => this.queryMeta.emit(detail));
+    };
+    window.addEventListener('badboerdi:query-meta', this._onWindowQueryMeta);
+
     // Outgoing-Link-Rewrite für Cross-TLD-Session-Handoff. Greift JEDEN
     // Link-Klick auf der Host-Seite ab (nicht nur im Widget) und hängt
     // ``?bsid=…`` an, falls das Link-Ziel zu einer Whitelist-Domain führt.
@@ -1037,6 +1060,9 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   ngOnDestroy() {
     if (this._onWindowPageAction) {
       window.removeEventListener('badboerdi:page-action', this._onWindowPageAction);
+    }
+    if (this._onWindowQueryMeta) {
+      window.removeEventListener('badboerdi:query-meta', this._onWindowQueryMeta);
     }
     if (this._onDocumentLinkClick) {
       document.removeEventListener('click', this._onDocumentLinkClick, true);
@@ -1331,6 +1357,7 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
             ...incoming.filter((c: WloCard) => !seen.has(c.node_id)),
           ];
           this.canvasCards.set(merged);
+          this.canvasVisibleCount.set(merged.length);
         } else {
           this.canvasCards.set(incoming);
           this.canvasVisibleCount.set(10);
@@ -1554,12 +1581,7 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
         break;
       }
       case 'open':
-        // Card-Pipeline v2: ``c.link`` ist die Single Source of Truth vom
-        // Backend — enthält bereits den Lotsen-Modus-aware Link (Repo-Render
-        // bei guide_mode=true für Content, collections?id= für Sammlungen).
-        // Fallback auf die alte Auswahl-Reihenfolge nur, wenn das Backend
-        // ``link`` aus irgendeinem Grund nicht gesetzt hat.
-        window.open(c.link || c.url || c.wlo_url || '#', '_blank', 'noopener');
+        window.open(c.link || c.guide_url || c.wlo_url || c.url || '#', '_blank', 'noopener');
         return;
     }
     this.mobileTab.set('chat');

@@ -98,6 +98,7 @@ from app.services.text_extraction_service import extract_text_from_url
 from app.services.mcp_client import (
     call_mcp_tool, parse_wlo_cards, parse_wlo_topic_page_cards,
     parse_total_count, resolve_discipline_labels,
+    reset_query_metas, get_query_metas,
 )
 from app.services.pattern_engine import select_pattern, get_patterns
 from app.services.rag_service import get_rag_context, get_always_on_rag_context
@@ -503,13 +504,18 @@ def _sort_cards_for_inline(cards: list[Any], prefer_content: bool) -> list[Any]:
         return c.get(name) if isinstance(c, dict) else getattr(c, name, None)
 
     def is_topic_page(c: Any) -> bool:
-        return _g(c, "node_type") == "collection" and bool(_g(c, "topic_pages"))
+        nt = _g(c, "node_type")
+        if nt == "topic_page":
+            return True
+        return nt == "collection" and bool(_g(c, "topic_pages"))
 
     def is_collection_only(c: Any) -> bool:
-        return _g(c, "node_type") == "collection" and not _g(c, "topic_pages")
+        nt = _g(c, "node_type")
+        return nt == "collection" and not _g(c, "topic_pages")
 
     def is_content(c: Any) -> bool:
-        return _g(c, "node_type") != "collection"
+        nt = _g(c, "node_type")
+        return nt not in ("collection", "topic_page")
 
     topic = [c for c in cards if is_topic_page(c)]
     coll = [c for c in cards if is_collection_only(c)]
@@ -533,6 +539,8 @@ def _icon_name_for_card(card: Any) -> str:
         return card.get(name) if isinstance(card, dict) else getattr(card, name, None)
     node_type = _g("node_type") or ""
     topic_pages = _g("topic_pages") or []
+    if node_type == "topic_page":
+        return "topic"              # Themenseite (Stern-Icon)
     if node_type == "collection":
         if topic_pages:
             return "topic"          # Themenseite (Stern-Icon)
@@ -1019,6 +1027,17 @@ def _rewrite_external_urls_to_repo(
         if ext in rewritten:
             rewritten = rewritten.replace(ext, repo)
             n_replaced += 1
+        else:
+            # LLM often adds/removes "www." — try the opposite variant.
+            if "://www." in ext:
+                alt = ext.replace("://www.", "://", 1)
+            elif "://" in ext:
+                alt = ext.replace("://", "://www.", 1)
+            else:
+                continue
+            if alt in rewritten:
+                rewritten = rewritten.replace(alt, repo)
+                n_replaced += 1
     if n_replaced:
         logger.info(
             "lotsen-mode URL-rewrite: %d external→repo replacements in response_text",
@@ -2635,6 +2654,22 @@ async def _postprocess_response_for_widget_modes(
                             _added,
                         )
 
+        # ── Lotsen-URL-Rewrite VOR v2 Curation ────────────────────────
+        # MUSS vor ``run_pipeline_v2`` laufen, weil v2 intern
+        # ``annotate_cards_with_link`` aufruft und dabei ``card.url``
+        # von der externen Provider-URL auf die Repo-Render-URL
+        # überschreibt. Danach wäre die ``{external→repo}``-Map leer
+        # und der LLM-Text behielte die externen URLs.
+        if guide_mode_on and resp.content and cards_for_postprocess:
+            try:
+                _rewritten_text = _rewrite_external_urls_to_repo(
+                    resp.content, cards_for_postprocess, guide_mode_on,
+                )
+                if _rewritten_text != resp.content:
+                    resp = resp.model_copy(update={"content": _rewritten_text})
+            except Exception as _rw_err:
+                logger.debug("pre-v2 response_text URL rewrite skipped: %s", _rw_err)
+
         # ── Option C v2 — Curation-Layer auf v1-Cards ────────────────
         # Wenn ``CARD_PIPELINE_V2=1`` aktiv UND keine direct-action UND
         # v1 hat Cards beschafft: v2 läuft als reine Curation-Schicht auf
@@ -2782,37 +2817,20 @@ async def _postprocess_response_for_widget_modes(
             except Exception as _ann_err:
                 logger.warning("inline-mode re-annotate guide_url failed: %s", _ann_err)
 
-        # ── Phase 4a: Card-Pipeline v2 — card.link VOR Postprocess ─
-        # Erst die Link-Annotation, dann widget_modes_postprocess. Damit
-        # kann ``_build_inline_card_links`` direkt auf ``card.link``
-        # zugreifen (Single Source of Truth für Sammlungs-Browse-URLs,
-        # Lotsen-Render-URLs, externe Content-Links).
+        # ── Phase 4a: Card-Pipeline v2 — card.link setzen ─────────
+        # ``annotate_cards_with_link`` ist idempotent: wenn v2 sie schon
+        # gerufen hat, ist das hier ein no-op. Ohne v2 (Feature-Toggle
+        # aus, direct-action, keine Cards) setzt dieser Aufruf card.link
+        # erstmalig. Danach kann ``_build_inline_card_links`` direkt auf
+        # ``card.link`` zugreifen (Single Source of Truth).
         #
-        # Idempotent + deterministisch (kein MCP-Call). Sicher auch bei
-        # leerer cards_for_postprocess-Liste.
-        # Welle C Sprint 6 Hotfix — Reihenfolge wichtig:
-        #
-        # ZUERST den ``response_text``-Markdown-Rewrite (externe URLs →
-        # Repo-Render-URLs), SOLANGE ``card.url`` noch die externe
-        # Provider-URL enthält (= der LLM hat genau diese URL gesehen und
-        # in den Markdown-Antwort-Text eingebaut). Sonst baut der
-        # Rewriter eine ``{repo→repo}``-Map (no-op) und der LLM-Text
-        # bleibt mit externen URLs durchsetzt.
-        #
-        # DANN ``annotate_cards_with_link`` aufrufen — der überschreibt
-        # ``card.url`` mit dem Repo-Link, sodass ALLE Frontend-Pfade
-        # (Event-Inspector, Canvas-Card-Buttons, ``c.url || c.wlo_url``-
-        # Fallbacks) im Lotsen-Modus auch aufs Repo zeigen.
-        if guide_mode_on and resp.content:
-            try:
-                _rewritten_text = _rewrite_external_urls_to_repo(
-                    resp.content, cards_for_postprocess or [], guide_mode_on,
-                )
-                if _rewritten_text != resp.content:
-                    resp = resp.model_copy(update={"content": _rewritten_text})
-            except Exception as _rw_err:
-                logger.debug("response_text URL rewrite skipped: %s", _rw_err)
-
+        # Hinweis: der ``_rewrite_external_urls_to_repo``-Aufruf wurde
+        # BEWUSST nach oben (vor v2 Curation) verschoben, weil v2 intern
+        # ``annotate_cards_with_link`` ruft und dabei ``card.url`` von der
+        # externen Provider-URL auf die Repo-URL überschreibt. Stünde der
+        # Rewrite hier, wäre ``card.url == card.link`` (beides Repo) und
+        # die ``{extern→repo}``-Map leer → no-op → LLM-Text behielte
+        # externe URLs.
         try:
             from app.services.card_pipeline import (
                 annotate_cards_with_link as _v2_attach_link,
@@ -2955,6 +2973,9 @@ async def _chat_impl(
     wraps both into the SSE event queue. Default ``None`` for both keeps
     the regular non-streaming POST /api/chat unchanged.
     """
+    # Clear per-request MCP query-meta accumulator so each turn starts fresh.
+    reset_query_metas()
+
     # 1. Load/create session
     session = await get_or_create_session(req.session_id)
     history = await get_messages(req.session_id, limit=20)
@@ -5027,14 +5048,17 @@ async def _chat_impl(
     all_cards_raw = wlo_cards_raw
     cards = _build_cards(all_cards_raw, classification.persona_id)
 
-    # Build pagination info so frontend knows to limit display
+    # Build pagination info so frontend knows to limit display.
+    # All cards are already in the response — has_more=False because
+    # there is nothing more to load from the server (client-side
+    # "Mehr anzeigen" reveals the hidden ones).
     pagination = None
     if len(cards) > PAGE_SIZE:
         pagination = PaginationInfo(
             total_count=len(cards),
             skip_count=0,
             page_size=PAGE_SIZE,
-            has_more=True,
+            has_more=False,
         )
 
     # 7b. Store all shown cards in session for follow-up (learning paths, lesson prep)
@@ -5365,6 +5389,28 @@ async def _chat_impl(
         has_cards=bool(cards),
     )
 
+    # Collect all MCP query metadata accumulated during this turn.
+    from app.models.schemas import QueryMetaEntry
+    _raw_metas = get_query_metas()
+    _query_meta_entries = []
+    for _rm in _raw_metas:
+        try:
+            _query_meta_entries.append(QueryMetaEntry(
+                tool_name=_rm.get("toolName", ""),
+                query_type=_rm.get("queryType", ""),
+                search_term=_rm.get("searchTerm", ""),
+                criteria=_rm.get("criteria", []),
+                pagination=_rm.get("pagination", {}),
+                repository_url=_rm.get("repositoryUrl", ""),
+                search_url=_rm.get("searchUrl", ""),
+            ))
+        except Exception:
+            pass
+    if _query_meta_entries:
+        tracer.record("query_meta", "MCP search queries", {
+            "queries": [m.model_dump() for m in _query_meta_entries],
+        })
+
     return ChatResponse(
         session_id=req.session_id,
         content=response_text,
@@ -5374,6 +5420,7 @@ async def _chat_impl(
         debug=debug,
         page_action=page_action,
         pagination=pagination,
+        query_metas=_query_meta_entries,
     )
 
 

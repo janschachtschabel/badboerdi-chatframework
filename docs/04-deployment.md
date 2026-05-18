@@ -328,16 +328,49 @@ Das Widget wird in einen festen Container auf der Seite eingebettet, ohne schweb
 | `api-url` | String | `/api` | Backend-URL (aus Browser-Sicht erreichbar!) |
 | `position` | Enum | `bottom-right` | `bottom-right`, `bottom-left`, `top-right`, `top-left` |
 | `initial-state` | Enum | `collapsed` | `collapsed` (nur Button) oder `expanded` (Panel offen) |
-| `primary-color` | Hex-Farbe | `#1c4587` | Akzentfarbe (Header, Button) |
+| `primary-color` | Hex-Farbe | `#1c4587` | Akzentfarbe (Header, Button). Alternativ per CSS-Variable: `boerdi-chat { --boerdi-primary: red; }` |
 | `greeting` | String | BOERDi-Standard | Begruessung beim ersten Oeffnen |
 | `persist-session` | Boolean | `true` | Session-ID in localStorage speichern (Cross-Page) |
 | `session-key` | String | `boerdi_session_id` | localStorage-Key fuer Session |
+| `session-cookie-domain` | String | `""` | Cookie-Domain fuer Cross-Subdomain-Session-Sharing (z.B. `.openeduhub.net`) |
+| `session-cookie-max-age` | Integer | `2592000` | Cookie-Lifetime in Sekunden (30 Tage). Greift nur mit `session-cookie-domain`. |
+| `trusted-domains` | String | `""` | Komma-separierte Hostnamen fuer Cross-TLD-Session-Handoff (`?bsid=`). Additiv zur Backend-Allow-Liste. |
 | `page-context` | JSON-String | `""` | Zusaetzlicher Kontext (z.B. `'{"thema":"eiszeit"}'`) |
 | `auto-context` | Boolean | `true` | Automatisch URL, Titel, Referrer erfassen |
+| `cards-enabled` | Boolean | `true` | Kachel-Anzeige. `false` rendert Treffer als dezente Inline-Markdown-Links im Bot-Text. |
 | `canvas-enabled` | Boolean | `true` | Canvas-Pane (Material-Erstellung, Lernpfad-Anzeige). `false` rendert Material direkt im Chat. |
 | `ai-content-enabled` | Boolean | `true` | KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix). `false` lehnt Erstell-Anfragen freundlich ab. |
-| `cards-enabled` | Boolean | `true` | Kachel-Anzeige. `false` rendert Treffer als dezente Inline-Markdown-Links im Bot-Text. |
 | `quick-replies-enabled` | Boolean | `true` | Gespraechsvorschlaege-Pillen. `false` blendet alle QR-Buttons aus; Lotsen-Hinweise werden inline eingebaut. |
+| `show-debug-button` | Boolean | `true` | Debug-Toggle im Header. `false` fuer Produktiv-Embeddings. |
+| `show-language-buttons` | Boolean | `true` | TTS- und STT-Buttons. `false` = keine Sprach-Features. |
+| `show-guide-button` | Boolean | `true` | Lotsen-Toggle im Header. `false` blendet Button aus, Modus bleibt per `guide-mode-default` steuerbar. |
+| `guide-mode-default` | Tristate | `auto` | Lotsen-Modus-Initial: `true`/`false`/`auto` (URL `?bgm` → localStorage → Backend-Default). |
+| `emit-guide-suggestion` | Boolean | `false` | Passive Top-Result-Emission als `badboerdi:guide-suggestion`-CustomEvent. |
+| `emit-routing-debug` | Boolean | `false` | Routing-Telemetrie-Emission als `badboerdi:routing-debug`-CustomEvent. |
+| `intercept-edu-sharing-links` | Boolean | `false` | edu-sharing-Links im Bot-Text abfangen statt navigieren → `(linkClicked)`-Output. |
+
+### Events (CustomEvents auf `window`)
+
+| Event | Opt-in? | Payload |
+|-------|---------|---------|
+| `badboerdi:page-action` | immer aktiv | `{ action, payload }` — navigate, show_results, canvas_open, canvas_update, canvas_show_cards, canvas_close |
+| `badboerdi:guide-suggestion` | `emit-guide-suggestion="true"` | `{ url, title, node_id, node_type, query, alternatives[] }` |
+| `badboerdi:routing-debug` | `emit-routing-debug="true"` | `{ pattern, intent, state, persona, tools_called[], sources[], modifier{} }` |
+| `badboerdi:query-meta` | immer aktiv | `{ queries[] }` — MCP-Suchanfragen (tool_name, search_term, criteria[], search_url) |
+
+Angular-Outputs: `(pageAction)`, `(guideSuggestion)`, `(routingDebug)`, `(queryMeta)`, `(linkClicked)`.
+
+### Public JavaScript-API
+
+```js
+const el = document.querySelector('boerdi-chat');
+el.openChatbot();      // Panel oeffnen
+el.closeChatbot();     // Panel schliessen
+el.toggleChatbot();    // Toggle
+el.isChatbotOpen();    // → boolean
+```
+
+Vollstaendige Payload-Schemas und Embed-Beispiele → [docs/05-widget-javascript-api.md](./05-widget-javascript-api.md)
 
 ### Widget-Embed-Modi (kompakte Embed-Varianten)
 

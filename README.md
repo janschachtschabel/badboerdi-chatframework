@@ -528,14 +528,18 @@ Live-Demos: `/widget/` (Default mit Kacheln + Canvas), `/widget/inline` (kompakt
 Das Widget hat darüber hinaus eine **umfangreiche Embed-API**: HTML-
 Attribute zum Steuern der Display-Modi (`cards-enabled`,
 `canvas-enabled`, `ai-content-enabled`, `quick-replies-enabled`), des
-Lotsen-Modus (`guide-mode`, `emit-guide-suggestion`) und der Link-
-Interception (`intercept-edu-sharing-links`) — plus zwei globale
-CustomEvents (`badboerdi:page-action`, `badboerdi:guide-suggestion`)
-und die korrespondierenden Angular-Outputs.
+Lotsen-Modus (`guide-mode-default`, `emit-guide-suggestion`,
+`emit-routing-debug`) und der Link-Interception
+(`intercept-edu-sharing-links`) — plus vier globale CustomEvents
+(`badboerdi:page-action`, `badboerdi:guide-suggestion`,
+`badboerdi:routing-debug`, `badboerdi:query-meta`) und die
+korrespondierenden Angular-Outputs (`(pageAction)`,
+`(guideSuggestion)`, `(routingDebug)`, `(queryMeta)`, `(linkClicked)`).
 
 Vollständige Referenz inkl. Payload-Schemas, Trigger-Bedingungen und
-fünf Embed-Beispielen (Default / Themenseiten-Modus / Edu-Sharing-
-Sidebar / WordPress-iframe-Routing / Minimal-Bubble):
+sieben Embed-Beispielen (Default / Themenseiten / Edu-Sharing-Sidebar /
+WordPress-iframe-Routing / Minimal-Bubble / Vollausstattung mit
+Telemetrie / Cross-Domain-Session-Sharing):
 
 → **[docs/05-widget-javascript-api.md](./docs/05-widget-javascript-api.md)**
 

@@ -43,6 +43,11 @@ services:
       # ── Security / Ops ─────────────────────────────────────────
       - STUDIO_API_KEY=${STUDIO_API_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # Guide-Mode Cross-TLD-Allow-Liste. Leer = YAML-Default aus
+      # chatbots/wlo/v1/01-base/guide-mode.yaml (trusted_domains).
+      # Gesetzt = überschreibt die YAML-Liste komplett (Komma- oder
+      # Whitespace-separiert, ohne Protokoll/Trailing-Slash).
+      - GUIDE_TRUSTED_DOMAINS=${GUIDE_TRUSTED_DOMAINS:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DATABASE_PATH=/data/badboerdi.db
     volumes:

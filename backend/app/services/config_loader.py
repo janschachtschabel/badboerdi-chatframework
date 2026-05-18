@@ -813,6 +813,7 @@ def load_guide_mode_config() -> dict[str, Any]:
         "max_guide_targets_per_turn": max_targets,
         "max_guide_quick_replies": max_guide_qrs,
         "trusted_domains": trusted_domains,
+        "repo_base_url": get_repo_base_url(),
     }
 
 

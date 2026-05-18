@@ -152,8 +152,9 @@ _EVENT_INSPECTOR_HTML = """\
     <div id="bei-body" style="padding: 12px 14px; max-height: 540px; overflow-y: auto;">
       <p style="margin: 0 0 8px; color: #6b7280; font-size: 11.5px;">
         Lauscht auf <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">badboerdi:guide-suggestion</code>,
-        <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">badboerdi:page-action</code>
-        und <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">badboerdi:routing-debug</code>.
+        <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">badboerdi:page-action</code>,
+        <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">badboerdi:routing-debug</code>
+        und <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">badboerdi:query-meta</code>.
         Aktivierung: <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">emit-guide-suggestion="true"</code>
         +
         <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">emit-routing-debug="true"</code>
@@ -175,6 +176,11 @@ _EVENT_INSPECTOR_HTML = """\
         keine empfangen
       </div>
 
+      <h4 style="margin: 14px 0 6px; color: #1c4587; font-size: 12.5px;">🔎 MCP-Suchanfragen (letzter Turn)</h4>
+      <div id="bei-querymeta" style="background:#1e293b;border-radius:6px;padding:10px 12px;color:#94a3b8;font-style:italic;font-size:11px;font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;line-height:1.5;max-height:260px;overflow-y:auto;">
+        Noch keine Suchanfragen empfangen.
+      </div>
+
       <details style="margin-top: 12px;">
         <summary style="cursor: pointer; color: #6b7280; font-size: 11px;">Code-Snippets zum Konsumieren</summary>
         <pre style="font-size: 10.5px; background: #1f2937; color: #e5e7eb; padding: 8px; border-radius: 4px; margin: 6px 0; overflow-x: auto; line-height: 1.4;">// Lotsen Top-1
@@ -188,9 +194,16 @@ window.addEventListener('badboerdi:routing-debug', (e) =&gt; {
   const d = e.detail;
   console.log('Pattern:', d.pattern, '| Intent:', d.intent);
   console.log('Tools:', d.tools_called, '| Modifier:', d.modifier);
+});
+
+// MCP-Suchanfragen
+window.addEventListener('badboerdi:query-meta', (e) =&gt; {
+  for (const q of e.detail.queries) {
+    console.log(q.tool_name, q.search_term, q.search_url);
+  }
 });</pre>
         <p style="font-size: 11px; color: #6b7280; margin: 4px 0 0;">
-          Vollständige API-Doku → <a href="https://github.com/yourrepo/badboerdi/blob/main/docs/05-widget-javascript-api.md"
+          Vollständige API-Doku → <a href="https://github.com/janschachtschabel/badboerdi-chatframework/blob/main/docs/05-widget-javascript-api.md"
              style="color:#1c4587;">docs/05-widget-javascript-api.md</a>
         </p>
       </details>
@@ -206,6 +219,7 @@ window.addEventListener('badboerdi:routing-debug', (e) =&gt; {
       var sugEl = document.getElementById('bei-suggestion');
       var actEl = document.getElementById('bei-actions');
       var routEl = document.getElementById('bei-routing');
+      var qmEl  = document.getElementById('bei-querymeta');
       var pulseEl = document.getElementById('bei-pulse');
       var actions = [];  // Ring-Buffer der letzten Page-Actions
       var MAX_ACTIONS = 5;
@@ -293,6 +307,76 @@ window.addEventListener('badboerdi:routing-debug', (e) =&gt; {
         }).join('');
       }
 
+      function renderQueryMeta(queries) {
+        if (!queries || !queries.length) return;
+        qmEl.style.fontStyle = 'normal';
+        // Deduplicate: same tool_name + search_term + query_type → merge
+        var seen = {};
+        var deduped = [];
+        queries.forEach(function (q) {
+          var key = (q.tool_name || '') + '|' + (q.search_term || '') + '|' + (q.query_type || '');
+          if (seen[key]) {
+            var prev = seen[key];
+            var pOld = prev.pagination || {};
+            var pNew = q.pagination || {};
+            prev.pagination = {
+              totalResults: Math.max(pOld.totalResults || 0, pNew.totalResults || 0),
+              maxItems: Math.max(pOld.maxItems || 0, pNew.maxItems || 0)
+            };
+            prev._count = (prev._count || 1) + 1;
+          } else {
+            var copy = JSON.parse(JSON.stringify(q));
+            copy._count = 1;
+            seen[key] = copy;
+            deduped.push(copy);
+          }
+        });
+        qmEl.innerHTML = deduped.map(function (q) {
+          var pg = q.pagination || {};
+          var hits = pg.totalResults || 0;
+          var max = pg.maxItems || '?';
+          var searchLink = q.search_url
+            ? ' <a href="' + esc(q.search_url) + '" target="_blank" style="color:#4ade80;text-decoration:none;font-size:10px;">Suche öffnen ↗</a>'
+            : '';
+          var countBadge = q._count > 1
+            ? ' <span style="color:#fbbf24;font-size:9px;">×' + q._count + '</span>'
+            : '';
+          var criteria = q.criteria || [];
+          var lines = [];
+          lines.push('  <span style="color:#7dd3fc;">"tool"</span>: <span style="color:#fbbf24;">"' + esc(q.tool_name) + '"</span>,');
+          lines.push('  <span style="color:#7dd3fc;">"type"</span>: <span style="color:#c4b5fd;">"' + esc(q.query_type) + '"</span>,');
+          if (q.search_term) {
+            lines.push('  <span style="color:#7dd3fc;">"query"</span>: <span style="color:#fbbf24;">"' + esc(q.search_term) + '"</span>,');
+          }
+          if (criteria.length) {
+            var filterLines = criteria.map(function (c) {
+              var prop = esc(c.property || '');
+              var displayVal;
+              if (c.label) {
+                displayVal = '<span style="color:#fbbf24;">"' + esc(c.label) + '"</span>';
+              } else {
+                var vals = (c.values || []).map(function (v) {
+                  var s = String(v);
+                  if (s.length > 40) s = '…' + s.slice(-35);
+                  return '"' + esc(s) + '"';
+                }).join(', ');
+                displayVal = '<span style="color:#c4b5fd;">[' + vals + ']</span>';
+              }
+              return '    <span style="color:#7dd3fc;">"' + prop + '"</span>: ' + displayVal;
+            });
+            lines.push('  <span style="color:#7dd3fc;">"filter"</span>: {');
+            lines.push(filterLines.join(',<br>'));
+            lines.push('  },');
+          }
+          lines.push('  <span style="color:#7dd3fc;">"hits"</span>: <span style="color:#34d399;">' + hits + '</span> <span style="color:#64748b;">(max ' + esc(String(max)) + ')</span>');
+          return '<div style="border-bottom:1px solid #334155;padding:5px 0;">' +
+            '<span style="color:#64748b;">{</span>' + searchLink + countBadge + '<br>' +
+            lines.join('<br>') + '<br>' +
+            '<span style="color:#64748b;">}</span>' +
+          '</div>';
+        }).join('');
+      }
+
       window.addEventListener('badboerdi:guide-suggestion', function (e) {
         if (e && e.detail) { renderSuggestion(e.detail); pulse(); }
       });
@@ -308,6 +392,10 @@ window.addEventListener('badboerdi:routing-debug', (e) =&gt; {
         if (actions.length > MAX_ACTIONS) actions.shift();
         renderActions();
         pulse();
+      });
+
+      window.addEventListener('badboerdi:query-meta', function (e) {
+        if (e && e.detail && e.detail.queries) { renderQueryMeta(e.detail.queries); pulse(); }
       });
     })();
   </script>
@@ -572,6 +660,12 @@ _DEMO_HTML = """<!doctype html>
         <td>🧭-Lotsen-Toggle-Button im Header. <code>false</code> blendet den Button aus — der Lotsen-Modus selbst bleibt nutzbar (per <code>guide-mode-default</code> oder Backend-Default + Cross-TLD-<code>?bgm=…</code>-Handoff). Nützlich, wenn der Host das Lotsen-Toggling per eigener UI-Komponente steuert.</td></tr>
     <tr><td><code>guide-mode-default</code></td><td>tristate</td><td><code>auto</code></td>
         <td>Initial-State des Lotsen-Modus. <code>true</code>/<code>false</code> = explizit ein/aus; <code>auto</code> = bisheriges Verhalten (URL <code>?bgm</code> → localStorage → Backend-Default aus <code>guide-mode.yaml</code>). Wirkt nur beim allerersten Boot; späteres User-Toggle hat Vorrang.</td></tr>
+    <tr><td><code>emit-guide-suggestion</code></td><td>boolean</td><td><code>false</code></td>
+        <td>Passive Top-Result-Emission. <code>true</code>: bei jedem Bot-Turn mit Lotsen-eligible Cards wird ein <code>badboerdi:guide-suggestion</code>-CustomEvent auf <code>window</code> gefeuert (Payload: Top-1-Treffer + Alternativen). Angular-Output: <code>(guideSuggestion)</code>.</td></tr>
+    <tr><td><code>emit-routing-debug</code></td><td>boolean</td><td><code>false</code></td>
+        <td>Routing-Telemetrie-Emission. <code>true</code>: nach jedem Bot-Turn wird ein <code>badboerdi:routing-debug</code>-CustomEvent gefeuert (Payload: Pattern, Intent, State, Persona, Tools, RAG-Sources, Modifier). Angular-Output: <code>(routingDebug)</code>.</td></tr>
+    <tr><td><code>intercept-edu-sharing-links</code></td><td>boolean</td><td><code>false</code></td>
+        <td>Klicks auf edu-sharing-Links im Bot-Text abfangen statt navigieren. <code>true</code>: unterdrückt Navigation, feuert <code>(linkClicked)</code>-Output mit <code>pathname + search</code>. Host kann eigenes iframe-Routing machen.</td></tr>
   </table>
 
   <h3>Public JavaScript-API (Chat-Bubble von außen steuern)</h3>
@@ -622,6 +716,35 @@ el.setAttribute('initial-state', 'collapsed');  // entspricht closeChatbot()</pr
   ai-content-enabled="false"
   quick-replies-enabled="false"&gt;
 &lt;/boerdi-chat&gt;</pre>
+
+  <h2>Events (CustomEvents auf <code>window</code>)</h2>
+  <p>Das Widget feuert vier CustomEvents, die einbettende Hosts konsumieren können.
+     Alle Events sind auch als Angular-<code>(output)</code>-Bindings verfügbar.</p>
+  <table>
+    <tr><th>Event</th><th>Opt-in?</th><th>Payload</th></tr>
+    <tr><td><code>badboerdi:page-action</code></td><td>immer aktiv</td>
+        <td><code>{ action, payload }</code> — Backend-page_action (navigate, show_results, canvas_open, canvas_update, canvas_show_cards, canvas_close)</td></tr>
+    <tr><td><code>badboerdi:guide-suggestion</code></td><td><code>emit-guide-suggestion="true"</code></td>
+        <td><code>{ url, title, node_id, node_type, query, alternatives[] }</code> — Top-1-Treffer + Alternativen bei jedem Bot-Turn mit Lotsen-eligible Cards</td></tr>
+    <tr><td><code>badboerdi:routing-debug</code></td><td><code>emit-routing-debug="true"</code></td>
+        <td><code>{ pattern, intent, state, persona, tools_called[], rag_areas[], sources[], signals[], modifier{} }</code> — Routing-Telemetrie</td></tr>
+    <tr><td><code>badboerdi:query-meta</code></td><td>immer aktiv</td>
+        <td><code>{ queries[] }</code> — MCP-Suchanfragen-Metadaten (tool_name, search_term, criteria[], pagination, search_url)</td></tr>
+  </table>
+  <pre>// Beispiel: alle Events loggen
+window.addEventListener('badboerdi:page-action', (e) =&gt; {
+  console.log('Action:', e.detail.action, e.detail.payload);
+});
+window.addEventListener('badboerdi:query-meta', (e) =&gt; {
+  for (const q of e.detail.queries) {
+    console.log(q.tool_name, q.search_term, '→', q.pagination.totalResults, 'Treffer');
+  }
+});
+window.addEventListener('badboerdi:routing-debug', (e) =&gt; {
+  console.log('Pattern:', e.detail.pattern, 'Intent:', e.detail.intent);
+});</pre>
+  <p>Vollständige Payload-Schemas und Beispiele →
+     <a href="https://github.com/janschachtschabel/badboerdi-chatframework/blob/main/docs/05-widget-javascript-api.md" style="color:#1c4587;">docs/05-widget-javascript-api.md</a></p>
 
   <div class="note">
     <strong>Lotsen-Modus (🧭) — Steuerung im Überblick:</strong>
@@ -771,6 +894,8 @@ _DEMO_INLINE_HTML = """<!doctype html>
       <span class="pill pill-on">guide-mode-default="true"</span>
       <span class="pill pill-on">quick-replies-enabled="true"</span>
       <span class="pill pill-on">ai-content-enabled="true"</span>
+      <span class="pill pill-on">emit-guide-suggestion="true"</span>
+      <span class="pill pill-on">emit-routing-debug="true"</span>
       <span class="pill" style="background:#8b0000;color:#fff">primary-color="#8b0000"</span>
     </p>
     <p>
@@ -796,6 +921,8 @@ _DEMO_INLINE_HTML = """<!doctype html>
   show-debug-button="false"
   show-guide-button="false"
   guide-mode-default="true"
+  emit-guide-suggestion="true"
+  emit-routing-debug="true"
   position="bottom-right"
   primary-color="#8b0000"&gt;
 &lt;/boerdi-chat&gt;</pre>
@@ -863,16 +990,43 @@ el.toggleChatbot();  // Toggle</pre>
     </div>
   </div>
 
-  <!-- Live-Demo: Same-Origin (kein hardcoded Host) — kompakter Embed-Modus.
-       Konfiguration: keine Kacheln, kein Canvas, keine Sprach-/Debug-/Lotsen-
-       Buttons im Header — der Lotsen-Modus startet aber per Default aktiv,
-       damit die Inline-Treffer als Repo-/WLO-Links erscheinen.
-       primary-color absichtlich dunkelrot, damit man die Akzentfarben-
-       Kaskade einmal mit einer Nicht-Default-Farbe live sieht — FAB-Bubble,
-       Panel-Header, Send-Button, Mic-Border, Quick-Reply-Pillen und der
-       Input-Focus-Ring müssen alle denselben Rot-Ton zeigen. -->
+  <h2>Events (CustomEvents auf <code>window</code>)</h2>
+  <p>Das Widget feuert vier CustomEvents. In dieser Demo sind alle aktiv
+     (<code>emit-guide-suggestion</code> und <code>emit-routing-debug</code>
+     explizit, die anderen immer). Der Event-Inspector links unten zeigt
+     die Events live.</p>
+  <table>
+    <tr><th>Event</th><th>Opt-in?</th><th>Inhalt</th></tr>
+    <tr><td><code>badboerdi:page-action</code></td><td>immer aktiv</td>
+        <td>Backend-page_actions (navigate, show_results, canvas_*)</td></tr>
+    <tr><td><code>badboerdi:guide-suggestion</code></td><td><code>emit-guide-suggestion="true"</code></td>
+        <td>Top-Treffer + Alternativen (url, title, node_type)</td></tr>
+    <tr><td><code>badboerdi:routing-debug</code></td><td><code>emit-routing-debug="true"</code></td>
+        <td>Routing-Telemetrie (Pattern, Intent, Tools, RAG-Sources)</td></tr>
+    <tr><td><code>badboerdi:query-meta</code></td><td>immer aktiv</td>
+        <td>MCP-Suchanfragen (tool_name, search_term, criteria, search_url)</td></tr>
+  </table>
+  <pre>// Beispiel: MCP-Suchanfragen konsumieren
+window.addEventListener('badboerdi:query-meta', (e) =&gt; {
+  for (const q of e.detail.queries) {
+    console.log(q.tool_name, q.search_term, q.search_url);
+  }
+});</pre>
+  <p>Vollständige Payload-Schemas →
+     <a href="https://github.com/janschachtschabel/badboerdi-chatframework/blob/main/docs/05-widget-javascript-api.md" style="color:#1c4587;">docs/05-widget-javascript-api.md</a></p>
+
+  <!-- Live-Demo: Same-Origin (kein hardcoded Host) — kompakter Embed-Modus. -->
   <!-- {{EVENT_INSPECTOR}} -->
 
+  <script>
+    // guide-mode-default="true" + show-guide-button="false": der User kann
+    // den Lotsen-Modus auf dieser Seite nicht toggeln. Ohne dieses Script
+    // wuerde ein localStorage-Wert '0' von der Haupt-Demo (gleiche Origin)
+    // das HTML-Attribut ueberstimmen — Priority 2 > Priority 3 in der
+    // Widget-Init-Kette. Wir forcen hier '1', damit die Demo immer mit
+    // aktivem Lotsen-Modus startet.
+    try { localStorage.setItem('boerdi.guide_mode', '1'); } catch(e) {}
+  </script>
   <script src="/widget/boerdi-widget.js" defer></script>
   <boerdi-chat
     cards-enabled="false"

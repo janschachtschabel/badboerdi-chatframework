@@ -160,6 +160,16 @@ export interface PaginationInfo {
   collection_title: string;
 }
 
+export interface QueryMetaEntry {
+  tool_name: string;
+  query_type: string;
+  search_term: string;
+  criteria: Array<{ property: string; values: string[]; label?: string }>;
+  pagination: { maxItems: number; skipCount: number; totalResults: number };
+  repository_url: string;
+  search_url: string;
+}
+
 export interface ChatResponse {
   session_id: string;
   content: string;
@@ -169,6 +179,7 @@ export interface ChatResponse {
   debug: DebugInfo;
   page_action: { action: string; payload: any } | null;
   pagination: PaginationInfo | null;
+  query_metas?: QueryMetaEntry[];
 }
 
 /**
@@ -204,6 +215,7 @@ export interface ChatMessage {
   loadingPhase?: string;
   pagination?: PaginationInfo | null;
   visibleCardCount?: number;  // how many cards to show (for client-side paging)
+  queryMetas?: QueryMetaEntry[];
   timestamp: Date;
 }
 

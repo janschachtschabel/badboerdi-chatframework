@@ -475,10 +475,17 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
 
       // Remove loading, add real response
       this.removeMessage(loadingId);
-      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination);
+      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, resp.query_metas);
       this.scrollTargetId = botMsgId;
 
       this.latestDebug = resp.debug;
+
+      // Emit query metadata as custom event for the hosting page / widget
+      if (resp.query_metas?.length) {
+        window.dispatchEvent(new CustomEvent('badboerdi:query-meta', {
+          detail: { queries: resp.query_metas },
+        }));
+      }
 
       // Handle page action (share with host page / widget parent)
       this.dispatchPageAction(resp.page_action);
@@ -1025,8 +1032,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
         ...types,
         c.license,
       ].filter(Boolean).map(x => `<span class="chip">${esc(x!)}</span>`).join('');
-      // Card-Pipeline v2: ``link`` bevorzugen, sonst alter Fallback.
-      const href = c.link || c.url || c.wlo_url || '#';
+      const href = c.link || c.guide_url || c.wlo_url || c.url || '#';
       const desc = c.description
         ? `<div class="desc">${esc(c.description.slice(0, 220))}${c.description.length > 220 ? '…' : ''}</div>`
         : '';
@@ -1300,12 +1306,8 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
 
   // ── Cards ────────────────────────────────────────────────
   openCard(card: WloCard) {
-    // Card-Pipeline v2: ``link`` ist die Single Source of Truth, vom Backend
-    // via build_card_link befüllt. Wenn vorhanden, nutzen wir es; sonst
-    // fallback auf die alte Auswahl-Reihenfolge (Phase 10 zieht diesen
-    // Fallback dann ganz raus).
-    const url = card.link || card.wlo_url || card.url;
-    if (url) window.open(url, '_blank');
+    const url = getCardPrimaryUrl(card);
+    if (url && url !== '#') window.open(url, '_blank');
   }
 
   /**
@@ -1765,13 +1767,14 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
         { collection_id: p.collection_id, title: p.collection_title, skip_count: newSkip },
       );
 
-      // Append new cards to existing message
+      // Append new cards to existing message and reveal them immediately
       this.messages.update(all => all.map(m => {
         if (m.id !== msgId) return m;
         const merged: WloCard[] = [...(m.cards || []), ...(resp.cards || [])];
         return {
           ...m,
           cards: merged,
+          visibleCardCount: merged.length,
           pagination: resp.pagination || undefined,
           content: resp.content,
         };
@@ -1846,6 +1849,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       'policy': 'Prüfe Datenschutz-Policy …',
       'pattern': 'Wähle Antwort-Pattern …',
       'response': 'Formuliere Antwort …',
+      'query_meta': 'Suchergebnisse zusammengestellt',
     };
     return map[step] || null;
   }
@@ -1861,6 +1865,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     content: string, isLoading = false,
     cards?: WloCard[], quickReplies?: string[], debug?: DebugInfo,
     pagination?: PaginationInfo | null,
+    queryMetas?: import('../services/api.service').QueryMetaEntry[],
   ): string {
     const id = this.uid();
     const pageSize = pagination?.page_size || 5;
@@ -1868,6 +1873,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       id, sender: 'bot', content, isLoading, cards, quickReplies, debug,
       pagination: pagination || undefined,
       visibleCardCount: pageSize,
+      queryMetas: queryMetas || undefined,
       timestamp: new Date(),
     };
     this.messages.update(msgs => [...msgs, msg]);

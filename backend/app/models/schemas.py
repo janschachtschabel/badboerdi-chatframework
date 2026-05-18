@@ -251,6 +251,18 @@ class DebugInfo(BaseModel):
     token_usage: dict[str, Any] = Field(default_factory=dict)
 
 
+class QueryMetaEntry(BaseModel):
+    """Metadata about a single MCP search query — forwarded from MCP server
+    through backend to the frontend so the widget can display what was queried."""
+    tool_name: str = ""
+    query_type: str = ""
+    search_term: str = ""
+    criteria: list[dict[str, Any]] = Field(default_factory=list)
+    pagination: dict[str, Any] = Field(default_factory=dict)
+    repository_url: str = ""
+    search_url: str = ""
+
+
 class PaginationInfo(BaseModel):
     """Pagination metadata for card results."""
     total_count: int = 0         # Total items available (0 = unknown)
@@ -270,6 +282,7 @@ class ChatResponse(BaseModel):
     debug: DebugInfo = Field(default_factory=DebugInfo)
     page_action: dict[str, Any] | None = None
     pagination: PaginationInfo | None = None
+    query_metas: list[QueryMetaEntry] = Field(default_factory=list)
 
 
 # ── Session / Memory ──────────────────────────────────────────────

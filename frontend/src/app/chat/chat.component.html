@@ -227,7 +227,7 @@
 
         <!-- Action buttons for bot messages: TTS + Lernpfad drucken -->
         <div *ngIf="msg.sender === 'bot' && !msg.isLoading && msg.content" class="msg-actions">
-          <button class="btn-speak" (click)="speakText(msg.content)" [title]="isSpeaking ? 'Stop' : 'Vorlesen'">
+          <button *ngIf="languageButtonsVisible" class="btn-speak" (click)="speakText(msg.content)" [title]="isSpeaking ? 'Stop' : 'Vorlesen'">
             <span class="bb-icon" [innerHTML]="(isSpeaking ? ICONS.stop_circle : ICONS.volume_up) | safeSvg"></span>
           </button>
           <button *ngIf="isLearningPath(msg)" class="btn-speak btn-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
