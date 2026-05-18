@@ -196,7 +196,11 @@ interface CanvasSnapshot {
               [canvasEnabled]="canvasEnabled"
               [aiContentEnabled]="aiContentEnabled"
               [quickRepliesEnabled]="quickRepliesEnabled"
-              (pageAction)="handlePageAction($event)">
+              [emitGuideSuggestion]="emitGuideSuggestion"
+              [emitRoutingDebug]="emitRoutingDebug"
+              (pageAction)="handlePageAction($event)"
+              (guideSuggestion)="guideSuggestion.emit($event)"
+              (routingDebug)="routingDebug.emit($event)">
             </badboerdi-chat>
           </div>
         </div>
@@ -739,6 +743,28 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   @Input() interceptEduSharingLinks: boolean | string = false;
   /** Emitted (instead of navigating) when `interceptEduSharingLinks` is true. */
   @Output() linkClicked = new EventEmitter<string>();
+
+  /** Lotsen-Modus: passive Top-Result-Emission. Bei ``true`` feuert das
+   *  Widget bei jedem Bot-Turn, der Lotsen-Treffer enthält, ein
+   *  ``badboerdi:guide-suggestion``-CustomEvent auf ``window`` + ein
+   *  ``(guideSuggestion)``-Output. Default ``false`` — Hosts ohne
+   *  Listener sehen keinen Unterschied. Siehe ``docs/javascript-api.md``
+   *  für Payload-Schema und Embed-Beispiele. */
+  @Input() emitGuideSuggestion: boolean | string = false;
+  /** Mirrors the ``badboerdi:guide-suggestion`` CustomEvent for Angular
+   *  consumers. Same payload as the global event. Gated by
+   *  ``emitGuideSuggestion``. */
+  @Output() guideSuggestion = new EventEmitter<any>();
+  /** Welle C.4 (2026-05): Wenn ``true``, feuert das Widget bei jedem
+   *  Bot-Turn ein ``badboerdi:routing-debug``-CustomEvent auf ``window``
+   *  + ``(routingDebug)``-Output mit Pattern/Intent/State/Tools/Persona/
+   *  Modifier. Default ``false`` — keine zusätzlichen Events ohne Opt-In.
+   *  Siehe ``docs/05-widget-javascript-api.md`` für Payload-Schema. */
+  @Input() emitRoutingDebug: boolean | string = false;
+  /** Mirrors the ``badboerdi:routing-debug`` CustomEvent for Angular
+   *  consumers. Same payload as the global event. Gated by
+   *  ``emitRoutingDebug``. */
+  @Output() routingDebug = new EventEmitter<any>();
 
   // ── Lotsen-Modus-Inputs ─────────────────────────────────────────
   /** Sichtbarkeit des 🧭-Toggle-Buttons im Header. Default `true`.
@@ -1528,7 +1554,12 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
         break;
       }
       case 'open':
-        window.open(c.url || c.wlo_url || '#', '_blank', 'noopener');
+        // Card-Pipeline v2: ``c.link`` ist die Single Source of Truth vom
+        // Backend — enthält bereits den Lotsen-Modus-aware Link (Repo-Render
+        // bei guide_mode=true für Content, collections?id= für Sammlungen).
+        // Fallback auf die alte Auswahl-Reihenfolge nur, wenn das Backend
+        // ``link`` aus irgendeinem Grund nicht gesetzt hat.
+        window.open(c.link || c.url || c.wlo_url || '#', '_blank', 'noopener');
         return;
     }
     this.mobileTab.set('chat');

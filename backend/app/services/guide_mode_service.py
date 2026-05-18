@@ -96,15 +96,23 @@ _ES_RENDER_RE = _re_es.compile(
 )
 
 
-def _is_pure_collection_card(card: dict[str, Any]) -> bool:
-    """True, wenn die Card eine reine Sammlung ist (keine Themenseite).
-    Themenseiten-Cards haben ``topic_pages`` befüllt — für die wollen wir
-    den Render-URL NICHT umschreiben (die Themenseiten-URL wurde ohnehin
-    schon via ``topic_page_url`` priorisiert)."""
-    if card.get("node_type") != "collection":
-        return False
-    tp = card.get("topic_pages")
-    return not (isinstance(tp, list) and tp)
+def _is_collection_card(card: dict[str, Any]) -> bool:
+    """True, wenn die Card eine Sammlung ist (``node_type == "collection"``).
+
+    Greift sowohl für reine Sammlungen als auch für Themenseiten-Cards
+    (Sammlungen mit ``topic_pages`` befüllt). Für letztere ist der Rewrite
+    trotzdem safe: der ``_ES_RENDER_RE``-Regex matched ausschließlich
+    edu-sharing-Render-URLs (``/edu-sharing/components/render/<uuid>``);
+    externe Themenseiten-URLs (z.B. ``wirlernenonline.de/themenseite/…``)
+    bleiben unverändert.
+
+    Vorher gab's ein ``_is_pure_collection_card`` mit zusätzlicher Pflicht
+    ``topic_pages`` leer — das führte dazu, dass Themenseiten-Cards, deren
+    ``topic_page_url`` nicht allow-listed war oder fehlte, auf die Render-
+    URL zurückfielen und KEIN Rewrite bekamen. Resultat: Inline-Klick
+    landete auf der Sammlungs-Detailseite statt im Inhaltsbereich.
+    """
+    return card.get("node_type") == "collection"
 
 
 def _rewrite_collection_render_to_browse(url: str) -> str:
@@ -185,7 +193,12 @@ def pick_guide_url(card: dict[str, Any] | Any) -> str | None:
     # Sammlungs-Cards: Render-URL → Browse-Ansicht umschreiben (siehe
     # oben). Greift host-agnostisch, dadurch funktionieren beliebige
     # edu-sharing-Instanzen (Staging, Production, eigene Hosts).
-    if _is_pure_collection_card(card):
+    # Auch Themenseiten-Cards profitieren: wenn ihre topic_page_url nicht
+    # allow-listed war und der Fallback auf wlo_url (= render) griff,
+    # wird die Render-URL ebenfalls zur Browse-Ansicht. Externe Themenseiten-
+    # URLs (wirlernenonline.de/themenseite/…) bleiben unverändert, weil der
+    # Rewrite-Regex nur auf edu-sharing-render-URLs matched.
+    if _is_collection_card(card):
         picked = _rewrite_collection_render_to_browse(picked)
 
     return picked

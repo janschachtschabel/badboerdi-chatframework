@@ -270,15 +270,115 @@ _DEFAULT_RULE_PATH = (
 )
 
 
+def _expand_lookup_group(group: dict, group_index: int) -> list[RuleDef]:
+    """Welle C.1 (2026-05): Expand a single ``lookups``-block into many
+    one-shot RuleDefs (one per ``items`` entry).
+
+    The expansion happens at YAML-load time — the RuleEngine itself never
+    sees the lookup-group, only the resulting single rules. This keeps
+    the engine free of new effect-types while letting the YAML stay short
+    and Studio-editable as a table.
+
+    Expected schema for a lookup group::
+
+        lookups:
+          - id_prefix: lookup_persona_self_id   # prefix for generated rule IDs
+            description: "..."                  # applied to all generated rules
+            priority: 70
+            live: true
+            when_path: message                  # which context field to match
+            when_op: regex                      # regex|eq|in|contains|non_empty
+            then_field: persona_override        # which then-key to set
+            when_extra: { intent: { not_in: ["INT-W-12"] } }   # optional extra when (AND-combined)
+            then_extra: { ... }                 # optional extra then fields (constant across items)
+            items:
+              - { key: lk,   match: "ich bin lehrer", value: "P-W-LK" }
+              - { key: sl,   match: "ich bin schüler", value: "P-W-SL" }
+              ...
+
+    Result for each item::
+
+        RuleDef(
+          id="<id_prefix>__<item.key>",
+          when={**when_extra, when_path: {when_op: item.match}},
+          then={**then_extra, then_field: item.value},
+          ...
+        )
+    """
+    if not isinstance(group, dict):
+        raise ValueError(f"lookup #{group_index}: not a mapping")
+    prefix = group.get("id_prefix")
+    if not isinstance(prefix, str) or not prefix:
+        raise ValueError(f"lookup #{group_index}: missing or empty 'id_prefix'")
+    items = group.get("items")
+    if not isinstance(items, list) or not items:
+        raise ValueError(f"lookup '{prefix}': 'items' must be a non-empty list")
+
+    when_path = group.get("when_path")
+    when_op = group.get("when_op", "regex")
+    then_field = group.get("then_field")
+    if not when_path or not then_field:
+        raise ValueError(f"lookup '{prefix}': 'when_path' + 'then_field' are required")
+
+    when_extra = dict(group.get("when_extra") or {})
+    then_extra = dict(group.get("then_extra") or {})
+    description = group.get("description", "")
+    priority = int(group.get("priority", 0))
+    live = bool(group.get("live", False))
+
+    out: list[RuleDef] = []
+    for j, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"lookup '{prefix}' item #{j}: not a mapping")
+        key = item.get("key") or f"item{j}"
+        match = item.get("match")
+        value = item.get("value")
+        if match is None or value is None:
+            raise ValueError(
+                f"lookup '{prefix}' item '{key}': 'match' + 'value' required"
+            )
+
+        # Build when-clause: {when_path: {when_op: match}} merged with when_extra.
+        # If when_extra also has the same path, AND them via the 'all' operator.
+        match_clause = {when_path: {when_op: match}}
+        if when_extra:
+            when = {"all": [when_extra, match_clause]}
+        else:
+            when = match_clause
+
+        then = {**then_extra, then_field: value}
+
+        out.append(RuleDef(
+            id=f"{prefix}__{key}",
+            description=description,
+            priority=priority,
+            when=when,
+            then=then,
+            live=live,
+        ))
+    return out
+
+
 def parse_rules(raw: dict) -> list[RuleDef]:
     """Parse the top-level YAML dict into RuleDef instances. Raises
     ValueError on malformed structure (missing ``id``, missing ``when``,
     etc.) so boot fails loudly rather than silently producing a broken
     engine.
+
+    Welle C.1: In addition to the manual ``rules:`` list, the YAML may
+    also define ``lookups:`` — groups of generated rules that share a
+    common pattern (e.g. persona-self-id regexes). Lookup groups are
+    expanded into normal rules at load-time so the engine itself doesn't
+    need a new effect type. See ``_expand_lookup_group`` for the schema.
     """
-    rules_raw = raw.get("rules") if isinstance(raw, dict) else None
+    if not isinstance(raw, dict):
+        raise ValueError("routing-rules.yaml must be a mapping")
+    rules_raw = raw.get("rules")
+    lookups_raw = raw.get("lookups") or []
     if not isinstance(rules_raw, list):
         raise ValueError("routing-rules.yaml must have a top-level 'rules' list")
+    if not isinstance(lookups_raw, list):
+        raise ValueError("routing-rules.yaml 'lookups' must be a list when present")
 
     out: list[RuleDef] = []
     seen_ids: set[str] = set()
@@ -303,6 +403,17 @@ def parse_rules(raw: dict) -> list[RuleDef]:
             then=then,
             live=bool(r.get("live", False)),
         ))
+
+    # Expand lookup groups into single rules and append.
+    for g_idx, group in enumerate(lookups_raw):
+        for rd in _expand_lookup_group(group, g_idx):
+            if rd.id in seen_ids:
+                raise ValueError(
+                    f"lookup expansion produced duplicate rule id: {rd.id}"
+                )
+            seen_ids.add(rd.id)
+            out.append(rd)
+
     return out
 
 
@@ -313,6 +424,22 @@ def load_rules_from_file(path: Path | str | None = None) -> list[RuleDef]:
         return []
     raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     return parse_rules(raw)
+
+
+def load_lookup_groups_from_file(path: Path | str | None = None) -> list[dict]:
+    """Welle C.1 (2026-05): Return the raw lookup-groups (table form) from
+    the YAML, not the expanded RuleDefs. Used by the Studio UI to render
+    the lookup tables as editable grids instead of N×expanded individual
+    rules. Returns ``[]`` when the YAML has no ``lookups:`` section.
+    """
+    p = Path(path) if path else _DEFAULT_RULE_PATH
+    if not p.exists():
+        return []
+    raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        return []
+    lookups = raw.get("lookups") or []
+    return lookups if isinstance(lookups, list) else []
 
 
 def get_rule_engine(force_reload: bool = False) -> RuleEngine:

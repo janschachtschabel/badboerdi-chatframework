@@ -22,6 +22,7 @@ from app.models.schemas import (
     LookupVocabularyArgs, SubjectPortalsArgs, CollectionTreeArgs,
     HealthCheckArgs, NodesDetailsArgs,
 )
+from app.services.config_loader import get_repo_base_url, rewrite_repo_host
 
 logger = logging.getLogger(__name__)
 
@@ -1176,11 +1177,30 @@ def parse_wlo_topic_page_cards(mcp_text: str) -> list[dict]:
             "topic_pages":          topic_pages,
             "educational_contexts": r.get("educationalContexts") or [],
             "wlo_url": (
-                f"https://redaktion.openeduhub.net/edu-sharing/"
+                f"{get_repo_base_url()}/edu-sharing/"
                 f"components/render/{cid}"
             ),
             "topic_page_url": r.get("topicPageUrl") or "",
         })
+    return _normalize_card_repo_hosts(cards)
+
+
+def _normalize_card_repo_hosts(cards: list[dict]) -> list[dict]:
+    """URL-Felder aller Cards durch ``rewrite_repo_host`` schicken.
+
+    Notwendig, weil der MCP-Server ``previewUrl``/``contentUrl``/``url``-
+    Felder serverseitig auf den Production-Repo-Host bakt — auch wenn der
+    MCP-Server selbst Staging ist. Ohne Rewrite würden Staging-Node-IDs
+    auf Production-Hostnamen landen und 404 liefern.
+    """
+    _fields = ("url", "content_url", "preview_url", "download_url")
+    for c in cards:
+        if not isinstance(c, dict):
+            continue
+        for f in _fields:
+            v = c.get(f)
+            if v:
+                c[f] = rewrite_repo_host(v)
     return cards
 
 
@@ -1245,12 +1265,12 @@ def _cards_from_json_envelope(data: dict) -> list[dict] | None:
             "publisher": r.get("publisher") or "",
             "node_type": node_type,
             "wlo_url": (
-                f"https://redaktion.openeduhub.net/edu-sharing/components/"
+                f"{get_repo_base_url()}/edu-sharing/components/"
                 f"render/{nid}"
             ),
             "topic_page_url": r.get("topicPageUrl") or "",
         })
-    return cards
+    return _normalize_card_repo_hosts(cards)
 
 
 def parse_wlo_cards(mcp_text: str) -> list[dict]:

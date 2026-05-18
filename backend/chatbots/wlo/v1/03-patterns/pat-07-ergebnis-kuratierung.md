@@ -3,7 +3,7 @@ id: PAT-07
 label: Ergebnis-Kuratierung
 short_purpose: "WANN: Suche hat viele Treffer (>5), User braucht Kurations-Hilfe. WOFÜR: Top-3 nach Relevanz + Diversitäts-Kriterium auswählen, jedes mit kurzer Begründung warum."
 priority: 410
-gate_personas: ["P-W-LK", "P-W-SL", "P-BER"]
+gate_personas: ["P-W-LK", "P-W-SL", "P-BER", "P-AND", "P-ELT", "P-VER"]
 gate_states: ["state-6"]
 gate_intents: ["*"]
 signal_high_fit: ["orientierungssuchend", "neugierig", "delegierend"]
@@ -34,6 +34,45 @@ Sammlungen als Kacheln. 1 Satz Einleitung + Liste + Gespraechsfortsetzung.
 ## Verhalten
 - Ergebnisse kuratiert darstellen mit kurzer Einleitung
 - Kachel-Ansicht fuer Sammlungen/Materialien
+
+### Slot-Anforderung VOR der Suche (Welle C Sprint 6)
+Wenn die User-Nachricht eine Such-Anfrage ist, aber das ``thema`` UND das
+``fach`` leer sind (= keinerlei inhaltlicher Anker), darf der Bot NICHT
+blind ein generisches Suchergebnis liefern. Stattdessen erst klären —
+in der GLEICHEN Antwort-Bubble, nicht erst im nächsten Pattern:
+
+> „Damit ich dir gezielt etwas raussuche, brauche ich noch ein Thema
+> oder Fach. Was suchst du konkret?"
+
+Quick-Replies: ein paar plausible Themen (z.B. „Mathematik", „Biologie",
+„Klimawandel") oder „Anderes Thema eingeben".
+
+Sobald MINDESTENS ein Thema ODER ein Fach gefüllt ist → kuratierte
+Ergebnis-Anzeige wie unten beschrieben. Das verhindert „leere"
+Such-Antworten, in denen 100+ Sammlungen ungefiltert zurückkommen.
+
+### Folge-Filter respektieren (Welle C Sprint 6)
+Wenn der User in einem Folge-Turn einen Medientyp-Filter eingrenzt
+(„nur Videos", „nur Arbeitsblätter", „nur Audio") und ``entities.medientyp``
+gesetzt ist → in der Ergebnis-Liste nur Cards des passenden Typs zeigen.
+Sammlungen/Themenseiten ohne ``medientyp`` werden ausgeblendet, bis der
+User den Filter zurücknimmt („alle Treffer", „auch Sammlungen").
+
+### Download-Sub-Modus (Welle C Sprint 4 — ehemals PAT-24)
+Wenn die User-Nachricht explizit Download-Anker enthält
+("runterladen", "als PDF", "Download-Link", "schicken", "wo finde
+ich das"), zeige die Kachel-Karte mit einem klaren Sprach-Hinweis,
+dass der Download auf der Original-Quellseite passiert:
+
+> „Hier ist *{Card-Titel}* — über die Karte unten kommst du zur
+> Original-Seite, dort steht der Download-Button (und die Lizenz)."
+
+Wichtig: Der Bot hat KEINE eigene File-Download-Funktion — Downloads
+laufen IMMER über die Repo-Seite. Falls das gesuchte Material nicht
+in WLO existiert (Pressekit, Wahlkreis-Bericht, amtliche Daten), folge
+der 3-Stufen-Eskalations-Strategie aus domain-rules.md (ehrlich +
+Adjacent + Kontaktweg).
+
 - Nach den Ergebnissen IMMER eine passende Fortsetzung anbieten (1 Satz):
   - Bei Sammlungen: "Soll ich aus einer davon einen Lernpfad zusammenstellen?"
   - Bei vielen Treffern: "Ich kann das noch eingrenzen — z.B. nach Medientyp oder Klassenstufe."

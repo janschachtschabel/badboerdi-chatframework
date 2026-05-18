@@ -1,0 +1,65 @@
+INFO:     Started server process [23104]
+INFO:     Waiting for application startup.
+20:56:41 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+20:56:41 INFO app.services.database: DB not empty (rag=906 sessions=0 messages=0) — factory skipped
+20:56:41 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+20:56:41 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
+20:56:41 INFO startup: Config warmup done in 51ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+20:56:41 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
+20:56:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+20:56:41 INFO startup: LLM warmup done in 448ms
+C:\Users\jan\miniconda3\Lib\site-packages\torch\cuda\__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+INFO:     127.0.0.1:59065 - "GET /health HTTP/1.1" 200 OK
+20:56:46 INFO app.services.rule_engine: RuleEngine loaded with 47 rules (mtime=1778871279.9495213)
+INFO:     127.0.0.1:59067 - "GET /api/routing-rules HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59069 - "GET /api/routing-rules/lookups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59071 - "DELETE /api/routing-rules/stats HTTP/1.1" 200 OK
+20:56:47 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+20:56:49 INFO app.services.rag_service: Reranker warmup done in 8614ms
+21:00:06 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+21:00:06 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+21:00:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/mcp-servers HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/mcp-servers HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=03-patterns%2Fpat-03-transparenz-beweis.md HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/rag/areas HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/rag/areas HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs/eval-149097aa1e53 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/canvas/material-types HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/canvas/material-types HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/rag/areas HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=05-knowledge%2Frag-config.yaml HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/mcp-servers HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=05-knowledge%2Frag-config.yaml HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/rag/areas HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/mcp-servers HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/lookups HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/stats?days=7 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/lookups HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/stats?days=7 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/sessions HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/sessions HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/logs?limit=200&scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/tight-races?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/empty-entities?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/low-confidence?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/stats?scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/degradations?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/logs?limit=200&scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/low-confidence?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/degradations?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/stats?scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/empty-entities?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/tight-races?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs/eval-faccf0a7a8b0 HTTP/1.1" 200 OK

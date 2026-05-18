@@ -5,6 +5,12 @@ id: P-VER
 layer: 4
 priority: 500
 version: "1.0.0"
+# ── Tonalitäts-Modifier (Welle B.3 / C.5, 2026-05) ──────────────
+tone: formell
+length_bias: 0.1
+formality: siezen
+card_text_mode: minimal
+override: true
 ---
 
 # Verwaltung [P-VER]

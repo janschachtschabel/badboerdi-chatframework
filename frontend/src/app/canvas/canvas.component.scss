@@ -935,20 +935,25 @@ $canvas-text-muted: #64748B;
   align-items: center;
   gap: 4px;
 
-  // Alle Button-Varianten in einheitlichem Hellblau-Ton.
-  // Ursprünglich hatten primary/secondary/tertiary/remix unterschiedliche
-  // Farben (blau/grün/gelb/lila) — sah zu bunt aus. Jetzt nur ein Stil.
+  // Alle Button-Varianten in einheitlichem Theme-Ton aus ``--boerdi-primary``.
+  // Vorher hartcodiert hellblau (#e0f2fe / #0369a1) — passte aber nicht zur
+  // dynamisch gesetzten Embedder-Farbe (z.B. dunkelblau, grün, lila bei
+  // White-Label-Deployments). color-mix() erzeugt eine 10%-Tönung als
+  // Hintergrund + die volle Primary-Farbe als Text — funktioniert auch ohne
+  // gesetzte CSS-Var (Fallback ``#1c4587``).
   &--primary,
   &--secondary,
   &--tertiary,
   &--remix {
-    background: #e0f2fe;
-    color: #0369a1;
+    background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 12%, #ffffff);
+    color: var(--boerdi-primary, #1c4587);
   }
   &--primary:hover,
   &--secondary:hover,
   &--tertiary:hover,
-  &--remix:hover { background: #bae6fd; }
+  &--remix:hover {
+    background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 22%, #ffffff);
+  }
 
   // Lotsen-Modus: dunkelblau (Header-Akzentfarbe), damit der Button
   // sich klar als "primäre" Aktion vom hellblauen Standardton abhebt,

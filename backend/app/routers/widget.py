@@ -114,6 +114,206 @@ async def widget_asset(asset_name: str):
     return _cors(resp)
 
 
+# ── Live Event-Inspector — wiederverwendbarer HTML/JS-Snippet ────────────
+#
+# Wird in beide Demo-Seiten (``/widget/`` und ``/widget/inline``) eingebaut.
+# Empfängt:
+#   * ``badboerdi:guide-suggestion`` (Lotsen-Top-Treffer; nur wenn das
+#     Widget mit ``emit-guide-suggestion="true"`` läuft).
+#   * ``badboerdi:page-action`` (navigate, show_results, canvas_*, …).
+#
+# Pflegt sich selbst in einer IIFE — keine globalen Variablen, kein
+# Bibliotheks-Bedarf, läuft ohne defer/async. Display fixiert links unten.
+_EVENT_INSPECTOR_HTML = """\
+  <!-- ── Live Event-Inspector — zeigt, was das Widget nach außen gibt ───
+       Sichtbar links unten als zusammenklappbares Panel. Empfängt:
+        * ``badboerdi:guide-suggestion``-CustomEvents (Top-Treffer im
+          Lotsen-Modus, nur wenn das Widget mit
+          ``emit-guide-suggestion="true"`` läuft — was hier der Fall ist).
+        * ``badboerdi:page-action``-CustomEvents (navigate, show_results,
+          canvas_*, …) — alle Backend-page-actions, die das Widget feuert.
+       Gedacht als Demo + Integrations-Hilfe: Embed-Hosts können hier
+       live nachvollziehen, welche Events sie konsumieren können. -->
+  <div id="boerdi-event-inspector" style="
+       position: fixed; left: 20px; bottom: 20px; max-width: 360px;
+       z-index: 99998; background: #ffffff; border: 1px solid #d1d5db;
+       border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+       font-size: 12.5px; line-height: 1.45; color: #1f2937; overflow: hidden;
+       transition: max-height 0.2s;">
+    <div onclick="document.getElementById('bei-body').classList.toggle('bei-collapsed');" style="
+         background: #1c4587; color: #fff; padding: 8px 14px; font-weight: 600;
+         cursor: pointer; display: flex; align-items: center; justify-content: space-between;">
+      <span>📡 Event-Inspector</span>
+      <span id="bei-pulse" style="
+           display:inline-block;width:8px;height:8px;border-radius:50%;
+           background:#94a3b8;transition:background 0.3s;"></span>
+    </div>
+    <div id="bei-body" style="padding: 12px 14px; max-height: 540px; overflow-y: auto;">
+      <p style="margin: 0 0 8px; color: #6b7280; font-size: 11.5px;">
+        Lauscht auf <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">badboerdi:guide-suggestion</code>,
+        <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">badboerdi:page-action</code>
+        und <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">badboerdi:routing-debug</code>.
+        Aktivierung: <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">emit-guide-suggestion="true"</code>
+        +
+        <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">emit-routing-debug="true"</code>
+        am Widget (hier bereits gesetzt).
+      </p>
+
+      <h4 style="margin: 12px 0 6px; color: #1c4587; font-size: 12.5px;">🎯 Aktuelle Lotsen-Empfehlung</h4>
+      <div id="bei-suggestion" style="background:#f0f9ff;border-left:3px solid #1c4587;padding:8px 10px;border-radius:4px;color:#6b7280;font-style:italic;">
+        Noch kein Event empfangen — stelle eine Frage im Lotsen-Modus.
+      </div>
+
+      <h4 style="margin: 14px 0 6px; color: #1c4587; font-size: 12.5px;">🧭 Routing-Debug (letzter Turn)</h4>
+      <div id="bei-routing" style="background:#fef3c7;border-left:3px solid #d97706;padding:8px 10px;border-radius:4px;color:#6b7280;font-style:italic;font-size:11px;">
+        Noch kein Routing-Event empfangen.
+      </div>
+
+      <h4 style="margin: 14px 0 6px; color: #1c4587; font-size: 12.5px;">📨 Letzte Page-Actions</h4>
+      <div id="bei-actions" style="font-size: 11.5px; color: #6b7280; font-style: italic;">
+        keine empfangen
+      </div>
+
+      <details style="margin-top: 12px;">
+        <summary style="cursor: pointer; color: #6b7280; font-size: 11px;">Code-Snippets zum Konsumieren</summary>
+        <pre style="font-size: 10.5px; background: #1f2937; color: #e5e7eb; padding: 8px; border-radius: 4px; margin: 6px 0; overflow-x: auto; line-height: 1.4;">// Lotsen Top-1
+window.addEventListener('badboerdi:guide-suggestion', (e) =&gt; {
+  const s = e.detail;
+  console.log('Top:', s.title, s.url);
+});
+
+// Routing-Telemetrie
+window.addEventListener('badboerdi:routing-debug', (e) =&gt; {
+  const d = e.detail;
+  console.log('Pattern:', d.pattern, '| Intent:', d.intent);
+  console.log('Tools:', d.tools_called, '| Modifier:', d.modifier);
+});</pre>
+        <p style="font-size: 11px; color: #6b7280; margin: 4px 0 0;">
+          Vollständige API-Doku → <a href="https://github.com/yourrepo/badboerdi/blob/main/docs/05-widget-javascript-api.md"
+             style="color:#1c4587;">docs/05-widget-javascript-api.md</a>
+        </p>
+      </details>
+    </div>
+  </div>
+
+  <style>
+    #bei-body.bei-collapsed { display: none; }
+  </style>
+
+  <script>
+    (function () {
+      var sugEl = document.getElementById('bei-suggestion');
+      var actEl = document.getElementById('bei-actions');
+      var routEl = document.getElementById('bei-routing');
+      var pulseEl = document.getElementById('bei-pulse');
+      var actions = [];  // Ring-Buffer der letzten Page-Actions
+      var MAX_ACTIONS = 5;
+
+      function pulse() {
+        pulseEl.style.background = '#10b981';
+        setTimeout(function () { pulseEl.style.background = '#94a3b8'; }, 400);
+      }
+
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+          return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+        });
+      }
+
+      function tag(label, value, color) {
+        if (!value) return '';
+        color = color || '#3730a3';
+        return '<span style="display:inline-block;background:' + color + '22;color:' + color +
+               ';padding:1px 6px;border-radius:8px;font-size:10.5px;margin:1px 3px 1px 0;">' +
+               esc(label) + ' ' + esc(value) + '</span>';
+      }
+
+      function renderRouting(d) {
+        if (!d) return;
+        routEl.style.fontStyle = 'normal';
+        routEl.style.color = '#1f2937';
+        var mod = d.modifier || {};
+        var toolsList = (d.tools_called || []).map(function (t) {
+          return '<span style="background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px;font-size:10px;margin:1px;display:inline-block;font-family:monospace;">' + esc(t) + '</span>';
+        }).join('');
+        var sigList = (d.signals || []).slice(0, 4).map(function (s) {
+          return '<span style="background:#fce7f3;color:#9d174d;padding:1px 5px;border-radius:3px;font-size:10px;margin:1px;display:inline-block;">' + esc(s) + '</span>';
+        }).join('');
+        var srcs = (d.sources || []).join(', ');
+        routEl.innerHTML =
+          '<div style="margin-bottom:4px;font-size:10.5px;">' +
+            tag('🎨', d.pattern, '#0369a1') +
+            tag('🎯', d.intent, '#15803d') +
+            tag('📍', d.state, '#7c3aed') +
+            tag('👤', d.persona, '#b45309') +
+          '</div>' +
+          (toolsList ? '<div style="margin:4px 0 2px;"><span style="font-size:10px;color:#6b7280;">Tools:</span> ' + toolsList + '</div>' : '') +
+          '<div style="margin:4px 0 2px;font-size:10.5px;color:#6b7280;">' +
+            'Sources: <code style="background:#f3f4f6;padding:0 4px;border-radius:2px;">' + esc(srcs || '—') + '</code>' +
+            ' · Tone: <code style="background:#f3f4f6;padding:0 4px;border-radius:2px;">' + esc(mod.tone || '—') + '</code>' +
+            ' · Anrede: <code style="background:#f3f4f6;padding:0 4px;border-radius:2px;">' + esc(mod.formality || '—') + '</code>' +
+            (mod.override ? ' <span style="color:#b45309;font-weight:600;">(Modifier-Override)</span>' : '') +
+          '</div>' +
+          (sigList ? '<div style="margin-top:3px;font-size:10px;">Signale: ' + sigList + '</div>' : '') +
+          '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:10.5px;color:#6b7280;">Vollständiger Payload</summary>' +
+            '<pre style="font-size:9.5px;background:#1f2937;color:#e5e7eb;padding:6px;border-radius:3px;margin:3px 0;overflow-x:auto;line-height:1.3;">' +
+            esc(JSON.stringify(d, null, 2)) + '</pre></details>';
+      }
+
+      function renderSuggestion(s) {
+        var alts = (s.alternatives || []).slice(0, 4).map(function (a) {
+          return '<li style="margin:2px 0;"><a href="' + esc(a.url) + '" target="_blank" style="color:#1c4587;text-decoration:underline;">' +
+                 esc(a.title) + '</a> <span style="color:#9ca3af;">· ' + esc(a.node_type) + '</span></li>';
+        }).join('');
+        sugEl.innerHTML =
+          '<div style="font-weight:600;color:#0f172a;margin-bottom:2px;">' + esc(s.title) + '</div>' +
+          '<div style="margin-bottom:4px;"><a href="' + esc(s.url) + '" target="_blank" style="color:#1c4587;text-decoration:underline;font-size:11.5px;word-break:break-all;">' +
+          esc(s.url) + '</a></div>' +
+          '<div style="font-size:11px;color:#6b7280;">' +
+            '<span style="background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:8px;margin-right:4px;">' + esc(s.node_type) + '</span>' +
+            '<span>Query: „' + esc(s.query) + '"</span>' +
+          '</div>' +
+          (alts ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:#6b7280;">+ ' + (s.alternatives.length) + ' Alternativen</summary><ul style="margin:4px 0 0 16px;padding:0;font-size:11px;">' + alts + '</ul></details>' : '');
+      }
+
+      function renderActions() {
+        if (actions.length === 0) { actEl.innerHTML = 'keine empfangen'; actEl.style.fontStyle = 'italic'; return; }
+        actEl.style.fontStyle = 'normal';
+        actEl.innerHTML = actions.slice().reverse().map(function (a) {
+          var time = a.t.toLocaleTimeString();
+          var pl = '';
+          try { pl = JSON.stringify(a.payload || {}).slice(0, 90); }
+          catch (e) { pl = String(a.payload); }
+          return '<div style="border-bottom:1px solid #f3f4f6;padding:4px 0;">' +
+                   '<code style="background:#e0e7ff;color:#3730a3;padding:1px 5px;border-radius:3px;font-size:10.5px;">' + esc(a.action) + '</code>' +
+                   ' <span style="color:#9ca3af;font-size:10px;">' + time + '</span>' +
+                   '<div style="color:#6b7280;font-size:10.5px;margin-top:2px;font-family:monospace;">' + esc(pl) + (pl.length >= 90 ? '…' : '') + '</div>' +
+                 '</div>';
+        }).join('');
+      }
+
+      window.addEventListener('badboerdi:guide-suggestion', function (e) {
+        if (e && e.detail) { renderSuggestion(e.detail); pulse(); }
+      });
+
+      window.addEventListener('badboerdi:routing-debug', function (e) {
+        if (e && e.detail) { renderRouting(e.detail); pulse(); }
+      });
+
+      window.addEventListener('badboerdi:page-action', function (e) {
+        if (!e || !e.detail) return;
+        var d = e.detail;
+        actions.push({ action: d.action || '?', payload: d.payload, t: new Date() });
+        if (actions.length > MAX_ACTIONS) actions.shift();
+        renderActions();
+        pulse();
+      });
+    })();
+  </script>
+"""
+
+
 _DEMO_HTML = """<!doctype html>
 <html lang="de">
 <head>
@@ -476,8 +676,8 @@ el.setAttribute('initial-state', 'collapsed');  // entspricht closeChatbot()</pr
 
   <h2>Personas, Intents, Patterns</h2>
   <p>Das Backend klassifiziert jeden Turn auf 9 Personas (Lehrkraft, Schüler:in, Eltern,
-     Anonym, Verwaltung, Politik, Berater, Presse, Redaktion) und 14 Intents
-     (Suche/Canvas-Create/Canvas-Edit/Feedback/…). 27 Patterns entscheiden, wie geantwortet
+     Anonym, Verwaltung, Politik, Berater, Presse, Redaktion) und 13 Intents
+     (Suche/Canvas-Create/Canvas-Edit/Feedback/…). 23 Patterns entscheiden, wie geantwortet
      wird; eine YAML-Routing-Rules-Engine kann Patterns vor und nach der Selektion
      überschreiben — alles konfigurierbar im BadBoerdi Studio (im Default-Setup auf
      <code>:3001</code> bzw. <code>studio.&lt;ip&gt;.nip.io</code>).</p>
@@ -490,12 +690,19 @@ el.setAttribute('initial-state', 'collapsed');  // entspricht closeChatbot()</pr
     eingebettete Hilfe-Bubbles und CMS-Integrationen mit eigenem Layout.
   </div>
 
+  <!-- {{EVENT_INSPECTOR}} -->
+
   <!-- Live-Demo: Same-Origin (kein hardcoded Host) — funktioniert auf localhost,
-       nip.io, Custom-Domains und überall sonst, wo dieses HTML serviert wird. -->
+       nip.io, Custom-Domains und überall sonst, wo dieses HTML serviert wird.
+       ``emit-guide-suggestion="true"`` aktiviert die passive Top-Result-Anzeige
+       für den Event-Inspector oben links. Vollständige API-Doku in
+       ``docs/05-widget-javascript-api.md``. -->
   <script src="/widget/boerdi-widget.js" defer></script>
   <boerdi-chat
     position="bottom-right"
-    primary-color="#1c4587">
+    primary-color="#1c4587"
+    emit-guide-suggestion="true"
+    emit-routing-debug="true">
   </boerdi-chat>
 </body>
 </html>
@@ -664,6 +871,8 @@ el.toggleChatbot();  // Toggle</pre>
        Kaskade einmal mit einer Nicht-Default-Farbe live sieht — FAB-Bubble,
        Panel-Header, Send-Button, Mic-Border, Quick-Reply-Pillen und der
        Input-Focus-Ring müssen alle denselben Rot-Ton zeigen. -->
+  <!-- {{EVENT_INSPECTOR}} -->
+
   <script src="/widget/boerdi-widget.js" defer></script>
   <boerdi-chat
     cards-enabled="false"
@@ -672,9 +881,18 @@ el.toggleChatbot();  // Toggle</pre>
     show-debug-button="false"
     show-guide-button="false"
     guide-mode-default="true"
+    emit-guide-suggestion="true"
+    emit-routing-debug="true"
     position="bottom-right"
     primary-color="#8b0000">
   </boerdi-chat>
 </body>
 </html>
 """
+
+
+# Inspector-Snippet in beide Demo-Templates injizieren. Ein einzelner
+# Wartungspunkt — Änderungen am Inspector greifen automatisch in beiden
+# Demos.
+_DEMO_HTML = _DEMO_HTML.replace("<!-- {{EVENT_INSPECTOR}} -->", _EVENT_INSPECTOR_HTML)
+_DEMO_INLINE_HTML = _DEMO_INLINE_HTML.replace("<!-- {{EVENT_INSPECTOR}} -->", _EVENT_INSPECTOR_HTML)

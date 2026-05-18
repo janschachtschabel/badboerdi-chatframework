@@ -16,6 +16,7 @@ from app.services.config_loader import (
     load_persona_prompt, load_domain_rules, load_base_persona, load_guardrails,
     load_intents, load_states, load_entities, load_signal_modulations,
     load_device_config, load_persona_definitions, load_pattern_definitions,
+    get_state_directive,
 )
 from app.services.llm_provider import get_client, get_chat_model, build_chat_kwargs
 
@@ -24,6 +25,20 @@ _logger = _log.getLogger(__name__)
 
 client = get_client()
 MODEL = get_chat_model()
+
+
+# ── State-Conversation-Flow helpers (Welle C Sprint 6) ────────────────
+# Pattern wählt WAS antworten + welche Tools — State sagt in welcher
+# Verlaufs-Phase die Antwort einzahlt. Diese Helper laden die
+# Phase-Direktive aus 04-states/states.yaml und fallen leise zurück,
+# wenn ein State-id unbekannt ist (z.B. veraltete Session-Daten nach
+# state-10-Löschung).
+def _get_state_meta_safe(state_id: str) -> dict[str, Any]:
+    try:
+        return get_state_directive(state_id) or {}
+    except Exception as exc:  # noqa: BLE001
+        _logger.warning("state-directive lookup failed for %s: %s", state_id, exc)
+        return {}
 
 
 # ── Dynamic classification tool (built from config files) ────
@@ -44,16 +59,18 @@ def _build_classify_tool() -> dict[str, Any]:
     # Load intents
     intents = load_intents()
     intent_ids = [i["id"] for i in intents] or [
-        "INT-W-01", "INT-W-02", "INT-W-03a", "INT-W-03b", "INT-W-03c",
-        "INT-W-04", "INT-W-05", "INT-W-06", "INT-W-07", "INT-W-08",
+        "INT-W-01", "INT-W-02", "INT-W-03",
+        "INT-W-04", "INT-W-05", "INT-W-06", "INT-W-08",
         "INT-W-09", "INT-W-10",
     ]
 
-    # Load states
+    # Load states. Fallback list mirrors the live states.yaml after Welle C
+    # Sprint 6 — state-10 (Redaktions-Recherche) was removed (redundant to
+    # persona P-W-RED, not a distinct conversation phase).
     states = load_states()
     state_ids = [s["id"] for s in states] or [
         "state-1", "state-2", "state-3", "state-4", "state-5",
-        "state-6", "state-7", "state-8", "state-9", "state-10", "state-11",
+        "state-6", "state-7", "state-8", "state-9", "state-11", "state-12",
     ]
 
     # Load entities
@@ -493,7 +510,9 @@ INTENT-REGELN:
   ist ein anderer Intent richtig:
 
     * "runterladen", "herunterladen", "zur Verfügung stellen",
-      "bereitstellen", "liefern", "geben", "bekommen" → INT-W-07 (Download)
+      "bereitstellen", "liefern", "geben", "bekommen" → INT-W-03 (der Bot
+      sucht im Repo, gibt dir den Original-Link — kein eigener File-
+      Stream-Download. Welle C Sprint 4: INT-W-07 entfernt.)
     * "bewerten", "überprüfen", "prüfen", "wie gut ist", "ist X geeignet"
       → INT-W-08 (Inhalte evaluieren)
     * "Statistiken", "Zahlen", "Übersicht zu ... Daten", "wie viele",
@@ -534,12 +553,14 @@ INTENT-REGELN:
     Materialien aus dem Bestand). "Erstelle ein Arbeitsblatt zu X" → INT-W-11
     (ein neues Dokument).
 
-- ABGRENZUNG INT-W-11 vs. INT-W-03b (Unterrichtsmaterial suchen):
-  - INT-W-03b = Nutzer:in SUCHT bestehende Materialien im WLO-Bestand.
-    Trigger: "Zeig mir", "Suche", "Finde", "Gibt es", "Hast du", "Welche ... gibt es".
+- ABGRENZUNG INT-W-11 vs. INT-W-03 (Inhalte abrufen):
+  - INT-W-03 = Nutzer:in SUCHT/BROWST bestehende Materialien im WLO-Bestand
+    (egal welcher Typ: Themenseite/Sammlung/Einzelinhalt). Trigger:
+    "Zeig mir", "Suche", "Finde", "Gibt es", "Hast du", "Welche ... gibt es",
+    "Themenseite/Sammlung zu X", "Material/Arbeitsblatt/Video zu Y".
   - INT-W-11 = Nutzer:in will ein NEUES Material ERSTELLEN lassen.
-    Trigger: siehe oben (aktive Verben).
-  - Faustregel: "Zeig mir Arbeitsblaetter zu X" → INT-W-03b;
+    Trigger: aktive Verben (erstelle, generiere, mach mir, schreib mir, baue).
+  - Faustregel: "Zeig mir Arbeitsblaetter zu X" → INT-W-03;
     "Erstelle ein Arbeitsblatt zu X" → INT-W-11.
 
 - KRITISCHE NEGATIV-ABGRENZUNG für INT-W-11 (setze NICHT INT-W-11 wenn):
@@ -550,7 +571,9 @@ INTENT-REGELN:
   * Wenn Downloaden / Herunterladen / Bereitstellen:
     "Kann ich X runterladen?", "Stellen Sie mir X zum Download bereit",
     "Wo finde ich X zum Download?", "Können Sie mir X liefern?"
-    → INT-W-07 (Material herunterladen), NICHT INT-W-11.
+    → INT-W-03 (Inhalte abrufen), NICHT INT-W-11. Der Bot sucht im
+    Repo und gibt den Original-Link — Download passiert beim User
+    auf der Repo-Seite.
 
   * Wenn Bewertung / Qualitätsprüfung / Review:
     "Wie gut ist dieses X?", "Kannst du die Qualität von X bewerten?",
@@ -583,18 +606,23 @@ INTENT-REGELN:
   "runterladen", "bereitstellen", "liefern", "bekommen", "zur Verfügung"):
   NICHT INT-W-11.
 
-- SAMMLUNGEN vs. THEMENSEITEN vs. EINZELINHALTE — richtiges INT-W-03?:
-  - Wenn der User explizit "Sammlung(en)", "Kollektion" oder "Themenseite(n)",
-    "Fachportal", "Portal" erwaehnt → INT-W-03a (Themenseite/Sammlung
-    entdecken), NICHT INT-W-03b.
-  - Wenn der User einen Material-Typ erwaehnt ("Arbeitsblatt", "Video",
-    "Quiz", "Uebung", "Unterrichtsbaustein") → INT-W-03b (Material suchen).
-  - Wenn der User offen formuliert ("zeig mir was zu X", "etwas ueber X",
-    "Material zu X" ohne spezifischen Typ) und Schueler:in/Eltern
-    ist → INT-W-03c (Lerninhalt suchen).
-  - Wenn offen formuliert und Lehrkraft ist → INT-W-03a, weil Lehrkraefte
-    zuerst von kuratierten Sammlungen/Themenseiten profitieren.
-  - Faustregel: "Zeig mir Sammlungen zu Optik" → INT-W-03a mit thema=Optik.
+- INHALTE ABRUFEN — alle drei Inhaltsschichten in EINEM Intent (INT-W-03):
+  Welle C Sprint 4 (2026-05-15) hat die früheren INT-W-03a/b/c in INT-W-03
+  zusammengefasst, weil sie semantisch alle "WLO-Inhalte abrufen" sind. Die
+  Sub-Typ-Wahl (Themenseite vs Sammlung vs Einzelinhalt) entscheiden jetzt
+  Pattern-Engine + Anker-Rules nach folgendem Schema:
+    - "Themenseite/Hauptseite/Fachseite/Sammlung zu KONKRETEM Thema/Fach" →
+      Pattern PAT-28 (search_wlo_topic_pages) wird automatisch gewählt.
+    - Schüler:in/Eltern + Selbst-Lern-Anker ("verstehe nicht / Schritt für
+      Schritt / mein Kind / für meine Hausaufgaben") →
+      Pattern PAT-14 (Lerner-Empfehlung).
+    - Profi-Personas (P-W-RED/PRESSE/POL/BER) + Thema →
+      Pattern PAT-09 (Recherche).
+    - Lehrkraft + Thema, kein Lernpfad-Wunsch →
+      Pattern PAT-07 (Ergebnis-Kuratierung) oder PAT-05 (Profi-Filter).
+    - Vage Anfrage ohne thema/fach →
+      Pattern PAT-20 (Orientierung).
+  Du musst dich NICHT festlegen, welcher Sub-Typ — wähle einfach INT-W-03.
 
 ## Signale
 {signal_lines}
@@ -1173,7 +1201,7 @@ async def classify_input(
     #   * R-6b — persona_confidence < 0.40 → P-AND fallback
     #   * R-3                — INT-W-11 + Materialzusammenstellung → INT-W-10
     #   * rule_intent_w11_to_w05 — INT-W-11 + Redaktion-Trigger → INT-W-05
-    #   * rule_intent_w11_to_w07 — INT-W-11 + Download-Trigger    → INT-W-07
+    #   * rule_intent_w11_to_w07 — gelöscht (W-07 → W-03, Welle C Sprint 4)
     #   * rule_intent_w11_to_w08 — INT-W-11 + Eval-Trigger        → INT-W-08
     #   * rule_intent_w11_to_w09 — INT-W-11 + Statistik-Trigger   → INT-W-09
     #   * rule_intent_w11_to_w06 — INT-W-11 + Faktenfrage-Trigger → INT-W-06
@@ -1232,6 +1260,17 @@ async def generate_response(
     persona_prompt = load_persona_prompt(persona_id)
     domain_rules = load_domain_rules()
 
+    # Welle C Sprint 6 — State als Verlaufs-Phase. Pattern wählt WAS antworten
+    # + welche Tools, State sagt WIE in der aktuellen Verlaufs-Phase
+    # einzuzahlen ist (z.B. "stelle EINE Frage" in state-2 Slot-Erfassung,
+    # "frage nach Pass" in state-6 Ergebnis-Kuratierung).
+    _resp_state_id = classification.get('next_state', 'state-1')
+    _resp_state_meta = _get_state_meta_safe(_resp_state_id)
+    _resp_state_directive = (
+        _resp_state_meta.get('bot_directive')
+        or '— keine spezifische Direktive für diese Phase, folge dem Pattern.'
+    )
+
     # Build system prompt following 5-Layer LPA architecture
     system_parts = [
         # Layer 1: Identity (base persona from config)
@@ -1265,12 +1304,16 @@ REGELN:
 4. Wenn du KEINEN passenden Link aus dem RAG-Kontext kennst, lass den Markdown-Link weg — erfinde nichts.
 Detail: {pattern_output.get('detail_level', 'standard')}
 Max. Ergebnisse: {pattern_output.get('max_items', 5)}""",
-        # Layer 5: Conversation context
+        # Layer 5: Conversation context + State-Verlaufs-Phase (Welle C Sprint 6)
         f"""## Kontext
 Seite: {environment.get('page', '/')}
 Entities: {json.dumps({k: v for k, v in (classification.get('entities') or {}).items() if not k.startswith('_')})}
 Signale: {', '.join(classification.get('signals', []))}
-State: {classification.get('next_state', 'state-1')}""",
+Gesprächs-Phase: {_resp_state_id} ({_resp_state_meta.get('label', '?')})
+Rolle in dieser Phase: {_resp_state_meta.get('role', '—')}
+
+## Phase-Direktive (befolge, ergänzend zum Pattern-Verhalten)
+{_resp_state_directive}""",
     ]
 
     # Semantic page-context block (resolved theme-page metadata). Cached on
@@ -1340,6 +1383,25 @@ im Text kurz hervorheben und begruenden, warum sie besonders passen.
 - RICHTIG: "Besonders empfehlenswert ist [Fotosynthese verstehen](https://wirlernenonline.de/...), weil es anschaulich erklaert."
 - FALSCH: "1. *Fotosynthese verstehen* — Video, CC BY... 2. *Arbeitsblatt Fotosynthese* — PDF..."
 - Dein Text liefert die Empfehlung, die Kacheln liefern den Ueberblick.""")
+
+    # Re-Rank-Hinweis im Kachel-Mode (Card-Pipeline v2):
+    # Das ``select_top_cards``-Tool ist auch im Kachel-Modus verfügbar und
+    # dient als Re-Rank-Hint für die deterministische Backend-Auswahl. Wenn
+    # das LLM eine sinnvolle Reihenfolge angibt, übernimmt sie das Backend.
+    # Sonst greift Relevance-Score-Sortierung. Dieser Hinweis kommt
+    # **zusätzlich** zu den minimal/reference/highlight-Anweisungen.
+    if not _cards_inline_mode:
+        system_parts.append("""
+## Optionaler Re-Rank über select_top_cards
+Wenn die Search-Tools mehrere Treffer geliefert haben und du eine klare
+Reihenfolge bevorzugst (z.B. weil eine bestimmte Sammlung perfekt zum
+User-Thema passt und vorne stehen soll), rufe ``select_top_cards`` mit
+den 1-5 node_ids in deiner Wunsch-Reihenfolge auf. Das Backend ordnet
+die Kacheln dann genau so an.
+
+Wenn du keine starke Präferenz hast, kannst du den Call weglassen — das
+Backend wählt dann deterministisch nach Relevance-Match (Title/Keywords/
+Disciplines). Bei Klärungs-Turn / leeren Tool-Results: NICHT aufrufen.""")
 
     # Inline-Link-Mode (Host hat cards-enabled="false" gesetzt) — Override:
     # Die Treffer werden NICHT als Kacheln angezeigt, sondern vom Backend
@@ -1796,78 +1858,96 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         }
         active_tools = [knowledge_tool] + active_tools  # Knowledge first!
 
-    # ── Inline-Mode-Curation-Tool: select_top_cards ───────────────────
-    # In Inline-Mode (cards-enabled=false) übergibt das LLM die finale
-    # Treffer-Auswahl explizit per Tool-Call. Backend filtert dann die
-    # Card-Liste auf genau diese IDs (in dieser Reihenfolge) und rendert
-    # sie als Inline-Markdown. Ohne diesen Call würde das Backend
-    # algorithmisch sortieren — der Tool-Call gibt dem LLM die Chance,
-    # nach Klassenstufe / Material-Mix / Typ-Priorität semantisch
-    # auszuwählen statt nur nach MCP-Relevanz.
+    # ── Curation-Tool: select_top_cards (immer verfügbar) ─────────────
+    # Im Inline-Mode ist der Tool-Call obligatorisch — sonst weiß das
+    # Backend nicht, welche IDs als Inline-Links gerendert werden sollen.
+    # Im Kachel-Mode ist der Call optional, dient aber als Re-Rank-Hint
+    # für Card-Pipeline v2: wenn das LLM eine thematisch sinnvolle
+    # Reihenfolge der 5 besten Treffer angibt, übernimmt v2 die.
+    # Wird das Tool nicht aufgerufen, wählt v2 deterministisch nach
+    # Relevance-Score (Title/Keywords/Disciplines/Description-Match).
     if _cards_inline_mode:
-        select_cards_tool = {
-            "type": "function",
-            "function": {
-                "name": "select_top_cards",
-                "description": (
-                    "FINAL-SELECTION für Inline-Modus. RUFE DIESES TOOL NACH "
-                    "DEN SEARCH-TOOLS AUF. Wähle aus den eben gefundenen "
-                    "Treffern 1-5 IDs aus, in der Reihenfolge in der sie dem "
-                    "User gezeigt werden sollen. Wenn du gar nichts gefunden "
-                    "hast, RUFE DIESES TOOL NICHT — antworte stattdessen mit "
-                    "einer Klärungsfrage.\n\n"
-                    "**Wenn etwas gefunden wurde, ist dieser Tool-Call "
-                    "obligatorisch.** Ohne diesen Call sieht der User keinen "
-                    "Link — nur deinen Text.\n\n"
-                    "AUSWAHL-REGELN:\n"
-                    "1. **ZIEL: bis zu 5 IDs** — wenn die Tools genug geliefert "
-                    "haben. Aber auch 1, 2 oder 3 sind OK, wenn wirklich nicht "
-                    "mehr Passendes da ist. Lieber wenige gute als gar keine.\n"
-                    "2. **Typ-Priorität (DEFAULT)**: Themenseiten zuerst "
-                    "(geben Überblick), dann Sammlungen, dann Einzelinhalte. "
-                    "Themenseiten erkennst du an Tool-Result-Einträgen mit "
-                    "node_type='collection' UND nicht-leerem topic_pages-Array.\n"
-                    "3. **MIX**: Wenn nur 1 Themenseite oder 1 Sammlung "
-                    "perfekt passt, fülle die freien Slots mit passenden "
-                    "Einzelinhalten auf (z.B. 1 Sammlung + 3 Einzelinhalte). "
-                    "1 Sammlung + Mix von Einzelinhalten ist meist besser als "
-                    "nur 1 Sammlung alleine.\n"
-                    "4. AUSNAHME (Typ-Fokus): Wenn der User explizit nach "
-                    "Material-Typ fragt (Video, Arbeitsblatt, Übung, Quiz, "
-                    "Audio, Präsentation, Interaktiv, Kurs) → bis zu 5 "
-                    "Einzelinhalte dieses Typs, KEINE Themenseiten/Sammlungen "
-                    "dazwischen.\n"
-                    "5. Klar Unpassendes (falsches Fach, falsche Klassenstufe) "
-                    "weglassen. Thematisch verwandte Treffer sind erlaubt.\n\n"
-                    "Die IDs sind die ``node_id``-Werte aus den search-Tool-"
-                    "Ergebnissen — exakt im UUID-Format wie geliefert."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "card_ids": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": (
-                                "1-5 node_ids in Anzeige-Reihenfolge. Erste ID "
-                                "wird oben angezeigt."
-                            ),
-                            "minItems": 1,
-                            "maxItems": 5,
-                        },
-                        "reasoning": {
-                            "type": "string",
-                            "description": (
-                                "1 Satz: warum diese Auswahl in dieser "
-                                "Reihenfolge — landet im Debug-Log."
-                            ),
-                        },
+        _select_description_lead = (
+            "FINAL-SELECTION für Inline-Modus. RUFE DIESES TOOL NACH "
+            "DEN SEARCH-TOOLS AUF. Wähle aus den eben gefundenen "
+            "Treffern 1-5 IDs aus, in der Reihenfolge in der sie dem "
+            "User gezeigt werden sollen. Wenn du gar nichts gefunden "
+            "hast, RUFE DIESES TOOL NICHT — antworte stattdessen mit "
+            "einer Klärungsfrage.\n\n"
+            "**Wenn etwas gefunden wurde, ist dieser Tool-Call "
+            "obligatorisch.** Ohne diesen Call sieht der User keinen "
+            "Link — nur deinen Text."
+        )
+    else:
+        _select_description_lead = (
+            "RE-RANK-HINT für Kachel-Modus. Optional aufrufbar, NACHDEM "
+            "die Search-Tools Treffer geliefert haben. Wenn du eine "
+            "thematisch sinnvolle Reihenfolge der 5 passendsten Treffer "
+            "hast (z.B. Sammlung zum Thema zuerst, dann passende Einzel-"
+            "inhalte), übergib sie hier — das Backend ordnet die Kacheln "
+            "dann genau in dieser Reihenfolge an. Wenn du keine Präferenz "
+            "hast oder die Treffer ohnehin schon thematisch matchen, "
+            "kannst du den Call weglassen — das Backend wählt dann "
+            "deterministisch nach Relevance-Score (Title/Keywords/"
+            "Disciplines-Match).\n\n"
+            "**Nur sinnvoll, wenn echte Treffer da sind.** Bei "
+            "Klärungs-Turn / leeren Tool-Results: nicht aufrufen."
+        )
+    select_cards_tool = {
+        "type": "function",
+        "function": {
+            "name": "select_top_cards",
+            "description": (
+                _select_description_lead + "\n\n"
+                "AUSWAHL-REGELN:\n"
+                "1. **ZIEL: bis zu 5 IDs** — wenn die Tools genug geliefert "
+                "haben. Aber auch 1, 2 oder 3 sind OK, wenn wirklich nicht "
+                "mehr Passendes da ist. Lieber wenige gute als gar keine.\n"
+                "2. **Typ-Priorität (DEFAULT)**: Themenseiten zuerst "
+                "(geben Überblick), dann Sammlungen, dann Einzelinhalte. "
+                "Themenseiten erkennst du an Tool-Result-Einträgen mit "
+                "node_type='collection' UND nicht-leerem topic_pages-Array.\n"
+                "3. **MIX**: Wenn nur 1 Themenseite oder 1 Sammlung "
+                "perfekt passt, fülle die freien Slots mit passenden "
+                "Einzelinhalten auf (z.B. 1 Sammlung + 3 Einzelinhalte). "
+                "1 Sammlung + Mix von Einzelinhalten ist meist besser als "
+                "nur 1 Sammlung alleine.\n"
+                "4. AUSNAHME (Typ-Fokus): Wenn der User explizit nach "
+                "Material-Typ fragt (Video, Arbeitsblatt, Übung, Quiz, "
+                "Audio, Präsentation, Interaktiv, Kurs) → bis zu 5 "
+                "Einzelinhalte dieses Typs, KEINE Themenseiten/Sammlungen "
+                "dazwischen.\n"
+                "5. Klar Unpassendes (falsches Fach, falsche Klassenstufe) "
+                "weglassen. Thematisch verwandte Treffer sind erlaubt.\n\n"
+                "Die IDs sind die ``node_id``-Werte aus den search-Tool-"
+                "Ergebnissen — exakt im UUID-Format wie geliefert."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "card_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "1-5 node_ids in Anzeige-Reihenfolge. Erste ID "
+                            "wird oben angezeigt."
+                        ),
+                        "minItems": 1,
+                        "maxItems": 5,
                     },
-                    "required": ["card_ids"],
+                    "reasoning": {
+                        "type": "string",
+                        "description": (
+                            "1 Satz: warum diese Auswahl in dieser "
+                            "Reihenfolge — landet im Debug-Log."
+                        ),
+                    },
                 },
+                "required": ["card_ids"],
             },
-        }
-        active_tools.append(select_cards_tool)
+        },
+    }
+    active_tools.append(select_cards_tool)
 
     # Combined-output tool (opt-in) — see env CHAT_INLINE_QUICK_REPLIES.
     # When enabled, the model is instructed to call ``respond_to_user`` for
@@ -2772,6 +2852,13 @@ async def generate_quick_replies(
         "P-W-LK", "P-ELT", "P-VER", "P-W-POL", "P-BER", "P-W-PRESSE", "P-W-RED",
     } else "du"
 
+    # Welle C Sprint 6: State-spezifische QR-Direktive ergänzen.
+    # bot_directive aus 04-states/states.yaml — der LLM-QR-Generator
+    # liest sie als "Was als nächster Verlaufs-Schritt anzubieten ist".
+    _qr_state_meta = _get_state_meta_safe(state_id)
+    _qr_state_label = _qr_state_meta.get("label", "")
+    _qr_state_directive = _qr_state_meta.get("bot_directive", "")
+
     system = f"""Du generierst genau 4 kurze Antwortvorschlaege fuer einen Chatbot-Nutzer.
 Der Nutzer interagiert gerade mit BOERDi, dem Chatbot der Bildungsplattform
 WirLernenOnline (WLO).
@@ -2779,8 +2866,13 @@ WirLernenOnline (WLO).
 ## Kontext
 - Persona: {persona_id} (Anrede: {persona_salute})
 - Intent: {intent_id}
-- State: {state_id}{" (Canvas-Arbeit aktiv)" if in_canvas else ""}
+- Gesprächs-Phase: {state_id} ({_qr_state_label}){" — Canvas-Arbeit aktiv" if in_canvas else ""}
 - Erkannte Entities: {json.dumps(public_entities, ensure_ascii=False)}{_page_line}
+
+## Phase-Direktive für die Quick-Reply-Auswahl
+{_qr_state_directive or '— keine spezifische Direktive für diese Phase, biete generische Folgeschritte an.'}
+Die 4 Vorschläge müssen zu dieser Phase passen — z.B. in der Ergebnis-Kuratierung Refinement-Optionen,
+in der Bewertung & Feedback eine Probing-Frage, in der Slot-Erfassung wahrscheinliche Slot-Werte.
 
 ## Was BOERDi kann (die Vorschlaege MUESSEN sich daraus bedienen)
 1. **Inhalte suchen** — einzelne Materialien (Video, Arbeitsblatt, Audio, interaktive

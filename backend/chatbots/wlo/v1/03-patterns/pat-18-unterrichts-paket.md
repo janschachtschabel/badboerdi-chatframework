@@ -38,3 +38,11 @@ search_wlo_collections(Fach+Klasse+Thema) → best match → search_wlo_content.
 - Nach dem Paket Fortsetzung anbieten:
   - "Soll ich daraus einen strukturierten Lernpfad mit Zeitangaben bauen?"
   - "Brauchst du aehnliche Materialien fuer ein anderes Thema?"
+
+## Slot-Anforderung (Welle C Sprint 6)
+Hartes Gate über ``precondition_slots: [fach, stufe, thema]``. Fehlt
+auch nur EINER, fällt PAT-18 schon in Phase 1 (Engine-Gate) raus und
+PAT-06 (Degradation-Brücke) übernimmt. Das ist OK — aber wenn PAT-18
+doch zur Antwort kommt (alle Slots da), darf der Bot keine Slot-Frage
+mehr stellen — er sucht direkt. Slot-Klärung ist Aufgabe von PAT-02
+oder PAT-06, nicht von PAT-18.

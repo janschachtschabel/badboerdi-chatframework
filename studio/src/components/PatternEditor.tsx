@@ -302,6 +302,22 @@ function RagAreaInput({ selected, onChange }: {
   );
 }
 
+// ── Tab definition ───────────────────────────────────────────────────
+// 5 tabs grouped by the 3-Phasen-Engine + Output/Tools + Anweisungen.
+// Keeping the form modal-free: a tab is just a render-filter, the
+// underlying editData state is shared. Save button is global (top
+// right) so a click commits everything regardless of active tab.
+type TabId = 'identity' | 'gates' | 'scoring' | 'output' | 'tools' | 'instructions';
+
+const TAB_DEFINITIONS: { id: TabId; label: string; icon: string }[] = [
+  { id: 'identity',     label: 'Identität',     icon: '\u{1F9E9}' }, // 🧩
+  { id: 'gates',        label: 'Phase 1 — Gates',     icon: '\u{1F6AA}' }, // 🚪
+  { id: 'scoring',      label: 'Phase 2 — Scoring',   icon: '\u{1F4E1}' }, // 📡
+  { id: 'output',       label: 'Phase 3 — Output',    icon: '\u{1F3A8}' }, // 🎨
+  { id: 'tools',        label: 'Tools & Wissen',      icon: '\u{1F527}' }, // 🔧
+  { id: 'instructions', label: 'Anweisungen',         icon: '\u{1F4DD}' }, // 📝
+];
+
 // ── Main Component ───────────────────────────────────────────────────
 export default function PatternEditor({ elements, loadFile, saveFile, onReload, createFile }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -312,6 +328,7 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newPatternId, setNewPatternId] = useState('');
   const [newPatternLabel, setNewPatternLabel] = useState('');
+  const [activeTab, setActiveTab] = useState<TabId>('identity');
 
   // Dynamically load available MCP tools from backend
   const [mcpTools, setMcpTools] = useState<string[]>(FALLBACK_MCP_TOOLS);
@@ -488,7 +505,51 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                 </div>
               </div>
 
-              {/* Basic fields */}
+              {/* Tab bar — Block 2 Studio-UI Refactor (Sprint 6).
+                  Splits the long pattern form into 6 logical tabs matching
+                  the 3-Phasen-Engine. Underlying state stays a single
+                  editData object so Save commits everything. */}
+              <div
+                className="pattern-tab-bar"
+                style={{
+                  display: 'flex',
+                  gap: 4,
+                  borderBottom: '2px solid #E5E7EB',
+                  marginBottom: 20,
+                  flexWrap: 'wrap',
+                }}
+                role="tablist"
+              >
+                {TAB_DEFINITIONS.map(t => {
+                  const active = activeTab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setActiveTab(t.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '10px 14px',
+                        cursor: 'pointer',
+                        borderBottom: active ? '3px solid #3B82F6' : '3px solid transparent',
+                        marginBottom: -2,
+                        fontWeight: active ? 600 : 500,
+                        color: active ? '#1E3A8A' : '#4B5563',
+                        fontSize: '.92rem',
+                        transition: 'all .15s ease',
+                      }}
+                    >
+                      <span style={{ marginRight: 6 }}>{t.icon}</span>
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Identity tab */}
+              {activeTab === 'identity' && (
               <div className="section">
                 <div className="section-title"><span className="section-icon">&#x2699;&#xFE0F;</span> Grundeinstellungen</div>
                 <div className="form-row-3">
@@ -509,9 +570,16 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                     </select>
                   </div>
                 </div>
+                <div className="form-hint" style={{ marginTop: 12, fontSize: '.85rem' }}>
+                  Die Identität entscheidet, wo das Pattern in der Priority-Hierarchie steht und
+                  ob es als Antwort, Frage oder Vorschlag rendert. Gates und Scoring stehen in
+                  den nächsten Tabs.
+                </div>
               </div>
+              )}
 
               {/* Phase 1: Gates */}
+              {activeTab === 'gates' && (
               <div className="section">
                 <div className="section-title"><span className="section-icon">&#x1F6AA;</span> Phase 1: Gates (Filterung)</div>
                 <div className="gate-grid">
@@ -542,9 +610,16 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                     />
                   </div>
                 </div>
+                <div className="form-hint" style={{ marginTop: 12, fontSize: '.85rem' }}>
+                  Wenn keine Persona/State/Intent passt, wird das Pattern eliminiert.
+                  <strong> Stern (*) bedeutet „alle erlaubt"</strong>. Hard-Gates auf
+                  precondition_slots stehen im Scoring-Tab.
+                </div>
               </div>
+              )}
 
               {/* Phase 2: Signals */}
+              {activeTab === 'scoring' && (
               <div className="section">
                 <div className="section-title"><span className="section-icon">&#x1F4E1;</span> Phase 2: Signal-Scoring</div>
                 <div className="form-group">
@@ -582,10 +657,17 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                     onChange={v => update('precondition_slots', v.filter(x => x !== '*'))}
                     colorClass="tag-purple"
                   />
+                  <div className="form-hint" style={{ marginTop: 6, fontSize: '.85rem' }}>
+                    Hard-Gate: Wenn auch nur EIN Slot leer ist, wird das Pattern eliminiert
+                    — egal wie hoch der Score wäre. Lass die Liste leer, wenn keine Slots
+                    erforderlich sind.
+                  </div>
                 </div>
               </div>
+              )}
 
               {/* Phase 3: Output defaults */}
+              {activeTab === 'output' && (
               <div className="section">
                 <div className="section-title"><span className="section-icon">&#x1F3A8;</span> Phase 3: Ausgabe-Defaults</div>
                 <div className="form-row-4">
@@ -634,9 +716,17 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                     </select>
                   </div>
                 </div>
+              </div>
+              )}
+
+              {/* Tools & Wissen tab: sources + RAG areas + MCP tools */}
+              {activeTab === 'tools' && (
+              <>
+              <div className="section">
+                <div className="section-title"><span className="section-icon">&#x1F4E6;</span> Quellen</div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">Quellen</label>
+                    <label className="form-label">Erlaubte Wissensquellen</label>
                     <div className="checkbox-group">
                       {SOURCE_OPTIONS.map(s => (
                         <label key={s} className={`checkbox-item ${(editData.sources ?? []).includes(s) ? 'checked' : ''}`}
@@ -648,12 +738,16 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                         </label>
                       ))}
                     </div>
+                    <div className="form-hint" style={{ marginTop: 6, fontSize: '.85rem' }}>
+                      <code>mcp</code> = Tool-Aufrufe (Live-Daten), <code>rag</code> = Wissensbereiche
+                      (statisches Wissen), <code>llm</code> = nur Sprachmodell ohne Tools. Mehrfach-Auswahl
+                      möglich.
+                    </div>
                   </div>
                 </div>
-
               </div>
 
-              {/* RAG Knowledge Areas - own section, only when "rag" source is active */}
+              {/* RAG Knowledge Areas — only when "rag" source is active */}
               {(editData.sources ?? []).includes('rag') && (
                 <div className="section" style={{ background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 8, padding: 16 }}>
                   <div className="section-title">
@@ -670,7 +764,7 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                 </div>
               )}
 
-              {/* Tools */}
+              {/* MCP Tools */}
               <div className="section">
                 <div className="section-title"><span className="section-icon">&#x1F527;</span> MCP Tools</div>
                 <div className="checkbox-group">
@@ -685,9 +779,15 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                     </label>
                   ))}
                 </div>
+                <div className="form-hint" style={{ marginTop: 6, fontSize: '.85rem' }}>
+                  Nur ausgewählte Tools darf das Pattern aufrufen. Leere Liste = keine Tools.
+                </div>
               </div>
+              </>
+              )}
 
-              {/* Core rule */}
+              {/* Anweisungen tab: core_rule + markdown body */}
+              {activeTab === 'instructions' && (
               <div className="section">
                 <div className="section-title"><span className="section-icon">&#x1F4DD;</span> Kernregel & Anweisungen</div>
                 <div className="form-group">
@@ -695,6 +795,9 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                   <input className="form-input" value={editData.core_rule ?? ''}
                     onChange={e => update('core_rule', e.target.value)}
                     placeholder="z.B. Maximal 2 Sätze, keine Einleitung." />
+                  <div className="form-hint" style={{ marginTop: 6, fontSize: '.85rem' }}>
+                    Wird als kompakte Hauptanweisung in den Prompt eingefügt. Ein Satz.
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Zusätzliche Anweisungen (Markdown-Body)</label>
@@ -704,9 +807,15 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                     onChange={e => setBody(e.target.value)}
                     placeholder="Weitere Pattern-Anweisungen im Markdown-Format..."
                     spellCheck={false}
+                    style={{ minHeight: 320, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: '.9rem' }}
                   />
+                  <div className="form-hint" style={{ marginTop: 6, fontSize: '.85rem' }}>
+                    Freier Markdown-Text. Wird unverändert in den Prompt eingefügt. Persona-spezifische
+                    Beispiele, Anti-Patterns und Quick-Reply-Templates landen hier.
+                  </div>
                 </div>
               </div>
+              )}
             </div>
           )}
         </div>

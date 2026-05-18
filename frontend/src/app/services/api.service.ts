@@ -43,8 +43,19 @@ export interface WloCard {
   topic_pages: { url: string; target_group: string; label: string; variant_id: string }[];
   /** Set by the backend when guide-mode is on AND the card points to an
    *  allow-listed host. Empty string means "no guide target" — the
-   *  frontend hides the "Bring mich hin"-button in that case. */
+   *  frontend hides the "Bring mich hin"-button in that case.
+   *  @deprecated Phase 10 — wird durch `link` ersetzt. */
   guide_url?: string;
+  /** Card-Pipeline v2 — Single Source of Truth für den UI-Klick-Link.
+   *  Vom Backend via `build_card_link` befüllt:
+   *   - Themenseiten: `topic_page_url` (extern, kuratiert)
+   *   - Sammlungen:  `{repo}/edu-sharing/components/collections?id=…&q=…`
+   *   - Einzelinhalte: `url` (extern) im Normal-Modus, sonst Repo-Render.
+   *
+   *  Phase 4b: wenn vorhanden, bevorzugen wir es gegenüber der alten
+   *  URL-Logik. Phase 10 macht es zum Pflichtfeld und entfernt die Alt-
+   *  Auswahl-Logik (`guide_url`, `wlo_url`-Fallbacks). */
+  link?: string;
 }
 
 export interface ToolOutcome {
@@ -127,6 +138,17 @@ export interface DebugInfo {
     models?: Record<string, { prompt: number; completion: number; cached: number; calls: number; hit_rate?: number }>;
     per_phase?: Record<string, { prompt: number; completion: number; cached: number; calls: number; hit_rate?: number }>;
   };
+  // Welle C Sprint 6 — Conversation-State-Plausibilität.
+  // plausible=false zeigt einen vom Classifier gewählten Übergang, der
+  // nicht in der next_likely-Liste des prev-States stand. Telemetrie-only,
+  // State wird nicht automatisch korrigiert.
+  state_transition?: {
+    prev: string;
+    next: string;
+    plausible: boolean | null;
+    reason: string;
+    expected_next_likely: string[];
+  } | null;
 }
 
 export interface PaginationInfo {

@@ -5,6 +5,12 @@ id: P-W-LK
 layer: 4
 priority: 500
 version: "1.0.0"
+# ── Tonalitäts-Modifier (Welle B.3 / C.5, 2026-05) ──────────────
+tone: kollegial
+length_bias: 0.0
+formality: wie_user
+card_text_mode: minimal
+override: false
 ---
 
 # Lehrkraft [P-W-LK]
@@ -41,9 +47,8 @@ Kollegial, praktisch, lösungsorientiert. Siezen (Standard) oder Duzen je nach E
 - Didaktische Hinweise und Lernpfade
 
 ## Typische Intents
-- INT-W-03b (Unterrichtsmaterial suchen)
+- INT-W-03 (Inhalte abrufen)
 - INT-W-10 (Unterrichtsplanung / Lernpfad)
-- INT-W-07 (Material herunterladen)
 
 ## Regeln
 - Max. 1 Rückfrage pro Turn

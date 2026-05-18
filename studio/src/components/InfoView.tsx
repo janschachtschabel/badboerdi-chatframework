@@ -188,8 +188,8 @@ export default function InfoView() {
             </tr>
             <tr>
               <td style={tdStyle}><strong>Intent</strong></td>
-              <td style={tdStyle}>14</td>
-              <td style={tdStyle}>Was will der Nutzer? (Material suchen, Fakten, Inhalt erstellen, Canvas-Edit, Feedback…)</td>
+              <td style={tdStyle}>13</td>
+              <td style={tdStyle}>Was will der Nutzer? (Inhalte abrufen, Fakten, Inhalt erstellen, Canvas-Edit, Feedback…)</td>
               <td style={tdStyle}>Pattern-Gate, MCP-Tool-Präferenz, spekulative Vorab-Abfragen, Canvas-Routing</td>
             </tr>
             <tr>
@@ -223,7 +223,7 @@ export default function InfoView() {
       {/* ═══════════════ PATTERN ENGINE ═══════════════ */}
       <Section title="Pattern-Engine (3 Phasen)" icon="🧩">
         <p style={pStyle}>
-          Die Pattern-Engine wählt aus 26 Gesprächsmustern <strong>genau eines</strong> aus. Nur das Gewinner-Pattern wird in den Prompt eingefügt.
+          Die Pattern-Engine wählt aus 23 Gesprächsmustern <strong>genau eines</strong> aus. Nur das Gewinner-Pattern wird in den Prompt eingefügt.
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
@@ -232,7 +232,7 @@ export default function InfoView() {
             <p style={pStyle}>
               <strong>Eliminierung</strong> — Patterns werden entfernt, wenn Persona, Intent oder State nicht zu den <code style={codeStyle}>gate_*</code>-Listen passen. Hard Gate: fehlende <code style={codeStyle}>precondition_slots</code> eliminieren ebenfalls.
             </p>
-            <p style={mutedStyle}>Ergebnis: Kandidatenliste (oft 10-16 von 26)</p>
+            <p style={mutedStyle}>Ergebnis: Kandidatenliste (oft 10-16 von 23)</p>
           </div>
           <div className="card" style={{ borderTop: '3px solid #f59e0b' }}>
             <div style={h3Style}>Phase 2: Score</div>
@@ -316,8 +316,9 @@ export default function InfoView() {
           </li>
           <li>
             <strong>Post-Route</strong> — nach der Pattern-Auswahl: kann Tiebreaker bei knappen
-            Score-Differenzen anwenden oder intent-spezifische Patterns (PAT-22/23/24)
-            durchsetzen, die sonst von Universal-Patterns überstimmt würden.
+            Score-Differenzen anwenden oder intent-spezifische Patterns (PAT-22 Feedback,
+            PAT-23 Redaktions-Routing) durchsetzen, die sonst von Universal-Patterns
+            überstimmt würden.
           </li>
         </ol>
         <p style={pStyle}>
@@ -371,31 +372,75 @@ export default function InfoView() {
               <td style={tdStyle}><strong>Persona-Gate</strong></td>
               <td style={tdStyle}><code style={codeStyle}>gate_personas</code></td>
               <td style={tdStyle}><code style={codeStyle}>["*"]</code> = alle erlaubt, oder explizite Liste</td>
-              <td style={tdStyle}>PAT-09 nur für <code style={codeStyle}>["P-W-RED"]</code> (Redaktion)</td>
+              <td style={tdStyle}>PAT-09 nur für <code style={codeStyle}>["P-W-RED","P-W-PRESSE","P-W-POL","P-BER"]</code> (Recherche-Personas); PAT-14 nur für <code style={codeStyle}>["P-ELT","P-W-SL"]</code> (Lerner-Empfehlung)</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>Intent-Gate</strong></td>
               <td style={tdStyle}><code style={codeStyle}>gate_intents</code></td>
               <td style={tdStyle}><code style={codeStyle}>["*"]</code> = alle, oder explizite Liste</td>
-              <td style={tdStyle}>PAT-21 nur für <code style={codeStyle}>["INT-W-11"]</code> (Canvas-Create); PAT-15 für <code style={codeStyle}>["INT-W-01","INT-W-06","INT-W-09"]</code> (Analyse)</td>
+              <td style={tdStyle}>PAT-21 nur für <code style={codeStyle}>["INT-W-11"]</code> (Canvas-Create); PAT-10 für <code style={codeStyle}>["INT-W-01","INT-W-06","INT-W-09"]</code> (Fakten-Bulletin)</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>State-Gate</strong></td>
               <td style={tdStyle}><code style={codeStyle}>gate_states</code></td>
               <td style={tdStyle}><code style={codeStyle}>["*"]</code> = alle, oder explizite Liste</td>
-              <td style={tdStyle}>PAT-07 nur in <code style={codeStyle}>["state-5", "state-6"]</code></td>
+              <td style={tdStyle}>PAT-07 nur in <code style={codeStyle}>["state-5", "state-6"]</code> (Suche/Ergebnis-Kuratierung)</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>Slot-Gate (Hard)</strong></td>
               <td style={tdStyle}><code style={codeStyle}>precondition_slots</code></td>
               <td style={tdStyle}>Alle Slots müssen gefüllt sein, sonst eliminiert</td>
-              <td style={tdStyle}>PAT-19 braucht <code style={codeStyle}>["fach", "stufe", "thema"]</code></td>
+              <td style={tdStyle}>PAT-19 braucht <code style={codeStyle}>["thema"]</code> (Welle B: gelockert von <code>fach+stufe+thema</code> → nur <code>thema</code>, weil Lehrkraft Fach/Stufe aus dem Thema ableiten kann)</td>
             </tr>
           </tbody>
         </table>
         <p style={{ ...pStyle, marginTop: 12 }}>
           <strong>Wichtig:</strong> Gates eliminieren — sie reduzieren nicht den Score. Ein Pattern, das am Gate scheitert, kann nicht gewinnen, egal wie gut die Signale passen.
         </p>
+
+        <div style={{ ...h3Style, marginTop: 20 }}>So wirkt Persona heute — 4 Ebenen</div>
+        <p style={pStyle}>
+          Mit Welle B/C wurde der Persona-Einfluss bewusst <strong>aus den Intent-Gates rausgezogen</strong> und auf
+          mehrere deterministische Stellen verteilt. INT-W-03 ist jetzt universell („Inhalte abrufen") —
+          welches Pattern gewinnt, entscheidet die Kombination aus Persona + Anker-Wörtern + State.
+        </p>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Ebene</th>
+              <th style={thStyle}>Wo</th>
+              <th style={thStyle}>Wirkung</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style={tdStyle}><strong>1. Eliminierung</strong></td>
+              <td style={tdStyle}><code style={codeStyle}>gate_personas</code> im Pattern</td>
+              <td style={tdStyle}>Hartes „nicht für diese Persona". Beispiel: PAT-09 (Redaktions-Recherche) ist für Schüler:innen unsichtbar — egal welche Frage.</td>
+            </tr>
+            <tr>
+              <td style={tdStyle}><strong>2. Disambiguierung</strong></td>
+              <td style={tdStyle}>Routing-Rules (<code style={codeStyle}>06-rules/routing-rules.yaml</code>)</td>
+              <td style={tdStyle}>Persona + Intent + Anker-Wort enforced ein bestimmtes Pattern. Beispiel: <code>rule_recherche_personas_force_pat09</code> setzt PAT-09 wenn Persona ∈ {`{RED, PRESSE, POL, BER}`} + INT-W-03 + thema gefüllt.</td>
+            </tr>
+            <tr>
+              <td style={tdStyle}><strong>3. Scoring-Boost</strong></td>
+              <td style={tdStyle}>Pattern-Engine Phase 2</td>
+              <td style={tdStyle}>Persona-Signale (z.B. „erfahren", „proaktiv") boosten passende Patterns: P-W-LK + erfahren → PAT-05 (Profi-Filter) gewinnt knappes Rennen gegen PAT-07.</td>
+            </tr>
+            <tr>
+              <td style={tdStyle}><strong>4. Tonalitäts-Modulation</strong></td>
+              <td style={tdStyle}>Persona-Frontmatter (<code style={codeStyle}>tone</code>, <code>length_bias</code>, <code>formality</code>, <code>card_text_mode</code>)</td>
+              <td style={tdStyle}>Nach gewähltem Pattern moduliert die Persona den Output: P-W-VER bekommt formell + sachlich + max. 5 Karten, P-W-SL bekommt locker + niedrigschwellig + max. 3 Karten — selbes Pattern, anderer Ton. Editor unter Personas-Tab.</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style={{ ...mutedStyle, marginTop: 8 }}>
+          Faustregel: <strong>Welche Persona-Beispiele</strong> stehen im Pattern-Markdown-Body? Steht
+          P-W-LK explizit drin, sagt das Pattern „so antworte ich Lehrkräften". Das ergänzt das harte
+          <code style={codeStyle}>gate_personas</code> um weiche Persona-Spezifik im Text — der LLM
+          liest das mit.
+        </div>
       </Section>
 
       {/* ═══════════════ 6 LAYERS ═══════════════ */}
@@ -528,9 +573,9 @@ export default function InfoView() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {[
             { step: 'Safety', result: 'risk = low, keine Blockaden', color: '#ef4444' },
-            { step: 'Klassifikation', result: 'Persona: P-W-LK (Lehrkraft) · Intent: INT-W-03b (Material suchen) · Entities: fach=Mathe, stufe=Kl.7, medientyp=Video · Signals: zielgerichtet, erfahren · State: state-5', color: '#3b82f6' },
+            { step: 'Klassifikation', result: 'Persona: P-W-LK (Lehrkraft) · Intent: INT-W-03 (Inhalte abrufen) · Entities: fach=Mathe, stufe=Kl.7, medientyp=Video · Signals: zielgerichtet, erfahren · State: state-5', color: '#3b82f6' },
             { step: 'Policy', result: 'Keine Blockaden für Lehrkraft + Material-Suche', color: '#f59e0b' },
-            { step: 'Pattern-Engine', result: 'Gate: 12 von 20 passieren · Score: PAT-05 (Profi-Filter) gewinnt — erfahren + zielgerichtet in signal_high_fit · Modulate: tone=sachlich, length=kurz, skip_intro=true', color: '#8b5cf6' },
+            { step: 'Pattern-Engine', result: 'Gate: 14 von 23 passieren · Score: PAT-05 (Profi-Filter) gewinnt — erfahren + zielgerichtet in signal_high_fit · Modulate: tone=kollegial (aus Persona-Frontmatter), length=kurz, skip_intro=true', color: '#8b5cf6' },
             { step: 'Prompt', result: 'base-persona + domain-rules + LK-Persona + PAT-05 + Signal-Overrides + guardrails', color: '#2B6CB0' },
             { step: 'LLM + MCP', result: 'search_wlo_content(query="Mathematik", stufe="Klasse 7", medientyp="Video") → 8 Treffer', color: '#10b981' },
             { step: 'Antwort', result: 'Knappe, sachliche Auflistung von Mathe-Videos — keine Einleitung, Quellenkarten', color: '#6b7280' },
@@ -697,46 +742,90 @@ export default function InfoView() {
 <!-- Minimal-Einbindung (alle Defaults) -->
 <boerdi-chat api-url="https://api.example.de"></boerdi-chat>
 
-<!-- Für Embedding ohne Debug- und Sprachbuttons -->
+<!-- Themenseiten-Embed: nur Chat + Inline-Links, kein Canvas -->
 <boerdi-chat
   api-url="https://api.example.de"
-  position="bottom-right"
-  primary-color="#1c4587"
-  show-debug-button="false"
-  show-language-buttons="false">
+  cards-enabled="false"
+  canvas-enabled="false"
+  show-debug-button="false">
+</boerdi-chat>
+
+<!-- Edu-Sharing-Embed: keine KI-Erzeugung, eigenes Routing für Links -->
+<boerdi-chat
+  api-url="https://api.example.de"
+  ai-content-enabled="false"
+  intercept-edu-sharing-links="true"
+  emit-routing-debug="true">
 </boerdi-chat>`}
         </pre>
         <div style={{ ...h3Style, marginTop: 16 }}>Verfügbare Attribute</div>
+        <p style={{ ...mutedStyle, marginBottom: 8 }}>
+          Alle Boolean-Attribute akzeptieren die Strings <code style={codeStyle}>"true"</code> /
+          <code style={codeStyle}>"false"</code> (Custom-Element-Attribute sind immer Strings).
+        </p>
         <table style={tableStyle}>
           <thead>
             <tr>
+              <th style={thStyle}>Gruppe</th>
               <th style={thStyle}>Attribut</th>
               <th style={thStyle}>Default</th>
               <th style={thStyle}>Beschreibung</th>
             </tr>
           </thead>
           <tbody>
-            {[
-              ['api-url', '—', 'Backend-Basis-URL (Pflicht)'],
-              ['position', 'bottom-right', 'Position des FABs: bottom-right | bottom-left | top-right | top-left'],
-              ['initial-state', 'collapsed', 'Anfangszustand: collapsed | expanded'],
-              ['primary-color', '#1c4587', 'Hauptfarbe (CSS-Hex)'],
-              ['greeting', '—', 'Eigene Begrüßungsnachricht'],
-              ['persist-session', 'true', 'Session in localStorage halten (true/false)'],
-              ['session-key', 'boerdi_session_id', 'localStorage-Schlüssel'],
-              ['auto-context', 'true', 'Seitenkontext automatisch erfassen'],
-              ['page-context', '—', 'JSON-Objekt mit zusätzlichem Kontext'],
-              ['show-debug-button', 'true', '🔍 Debug-Toggle in Header anzeigen (false zum Ausblenden)'],
-              ['show-language-buttons', 'true', '🔊 TTS und 🎤 Mic-Buttons anzeigen (false = ohne Sprachfunktion)'],
-            ].map(([attr, def, desc]) => (
-              <tr key={attr}>
-                <td style={tdStyle}><code style={codeStyle}>{attr}</code></td>
-                <td style={tdStyle}><code style={codeStyle}>{def}</code></td>
-                <td style={tdStyle}>{desc}</td>
-              </tr>
-            ))}
+            {([
+              ['Basis', 'api-url', '—', 'Backend-Basis-URL (Pflicht)'],
+              ['Basis', 'position', 'bottom-right', 'Position des FABs: bottom-right | bottom-left | top-right | top-left'],
+              ['Basis', 'initial-state', 'collapsed', 'Anfangszustand: collapsed | expanded'],
+              ['Basis', 'primary-color', '#1c4587', 'Hauptfarbe (CSS-Hex)'],
+              ['Basis', 'greeting', '—', 'Eigene Begrüßungsnachricht'],
+              ['Session', 'persist-session', 'true', 'Session in localStorage/Cookie halten'],
+              ['Session', 'session-key', 'boerdi_session_id', 'localStorage-Schlüssel'],
+              ['Session', 'session-cookie-domain', '—', 'Wenn gesetzt, Session in Cookie statt localStorage (Cross-Subdomain)'],
+              ['Session', 'session-cookie-max-age', '2592000', 'Cookie-Lebensdauer in Sekunden (Default 30 Tage)'],
+              ['Session', 'trusted-domains', '—', 'Komma-Liste von vertrauenswürdigen iframe-Origins für postMessage'],
+              ['Kontext', 'auto-context', 'true', 'Seitenkontext automatisch erfassen'],
+              ['Kontext', 'page-context', '—', 'JSON-Objekt mit zusätzlichem Kontext'],
+              ['Header-UI', 'show-debug-button', 'true', '🔍 Debug-Toggle in Header anzeigen'],
+              ['Header-UI', 'show-language-buttons', 'true', '🔊 TTS und 🎤 Mic-Buttons anzeigen'],
+              ['Header-UI', 'show-guide-button', 'true', '🧭 Lotsen-Toggle in Header anzeigen (Default-Steuerung bleibt aktiv)'],
+              ['Embed-Modi', 'cards-enabled', 'true', 'Bei "false": Treffer als Inline-Markdown-Links statt Kacheln (max. N aus widget-modes.yaml)'],
+              ['Embed-Modi', 'canvas-enabled', 'true', 'Bei "false": Canvas-Pane wird nicht geöffnet; Material/Lernpfad rendert im Chat-Verlauf'],
+              ['Embed-Modi', 'ai-content-enabled', 'true', 'Bei "false": Erstell-Anfragen (PAT-19/21) werden mit Alt-Response aus widget-modes.yaml abgelehnt'],
+              ['Embed-Modi', 'quick-replies-enabled', 'true', 'Bei "false": Quick-Reply-Pillen ausgeblendet; Lotsen-QRs werden inline angehängt'],
+              ['Lotsen', 'guide-mode-default', 'auto', 'Initial-State: "true" | "false" | "auto" (URL-Param → localStorage → Backend)'],
+              ['Integration', 'intercept-edu-sharing-links', 'false', 'Bei "true": Link-Klicks emitten (linkClicked)-Event statt zu navigieren'],
+              ['Integration', 'emit-guide-suggestion', 'false', 'Bei "true": Bot-Turns mit Lotsen-Treffer feuern badboerdi:guide-suggestion CustomEvent'],
+              ['Integration', 'emit-routing-debug', 'false', 'Bei "true": Pro Bot-Turn ein badboerdi:routing-debug CustomEvent mit Pattern/Intent/State/Tools'],
+            ] as [string, string, string, string][]).map(([group, attr, def, desc], idx, arr) => {
+              const groupStart = idx === 0 || arr[idx - 1][0] !== group;
+              return (
+                <tr key={attr} style={groupStart ? { borderTop: '2px solid #E5E7EB' } : undefined}>
+                  <td style={{ ...tdStyle, fontWeight: groupStart ? 600 : 400, color: groupStart ? '#374151' : 'transparent', fontSize: 11 }}>
+                    {groupStart ? group : ''}
+                  </td>
+                  <td style={tdStyle}><code style={codeStyle}>{attr}</code></td>
+                  <td style={tdStyle}><code style={codeStyle}>{def}</code></td>
+                  <td style={tdStyle}>{desc}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
+        <div style={{ ...h3Style, marginTop: 16 }}>Events (Outputs)</div>
+        <p style={{ ...pStyle, marginBottom: 8 }}>
+          Das Widget feuert CustomEvents auf <code style={codeStyle}>window</code> und Angular-Outputs
+          (bei programmatischer Nutzung), die Host-Seiten z.B. für SPA-Navigation oder Analytics
+          verwenden können:
+        </p>
+        <ul style={{ fontSize: 12, lineHeight: 1.8, marginLeft: 16, marginBottom: 0 }}>
+          <li><code style={codeStyle}>badboerdi:link-clicked</code> — feuert bei interceptierten Edu-Sharing-Links (nur wenn <code>intercept-edu-sharing-links="true"</code>). Payload: Pfad + Query.</li>
+          <li><code style={codeStyle}>badboerdi:guide-suggestion</code> — feuert pro Bot-Turn mit Lotsen-Treffer (nur wenn <code>emit-guide-suggestion="true"</code>). Payload: <code>guide_url</code>, <code>label</code>, Score, Quelle.</li>
+          <li><code style={codeStyle}>badboerdi:routing-debug</code> — feuert pro Bot-Turn mit Klassifikations- und Pattern-Daten (nur wenn <code>emit-routing-debug="true"</code>). Payload: <code>{`{pattern, intent, state, persona, tools, modifier}`}</code>.</li>
+        </ul>
+        <div style={{ ...mutedStyle, marginTop: 8 }}>
+          Detailliertes Payload-Schema: <code style={codeStyle}>docs/05-widget-javascript-api.md</code>.
+        </div>
       </Section>
 
       {/* ═══════════════ Canvas & Privacy (operational additions) ═══════════════ */}

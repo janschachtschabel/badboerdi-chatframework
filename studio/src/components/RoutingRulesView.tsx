@@ -3,12 +3,16 @@
 /**
  * RoutingRulesView — Studio page for the generic routing rule engine.
  *
- * Three sub-tabs:
+ * Five sub-tabs:
  *   1. Rules — list with priority, when/then, live/shadow status, fire counts
- *   2. Test-Bench — dry-run engine against a hand-crafted context
- *   3. Stats — agreement rates and disagreement samples (last N days)
+ *   2. Lookup-Tabellen — Welle C.1 lookup groups (compact persona/intent tables)
+ *   3. Test-Bench — dry-run engine against a hand-crafted context
+ *   4. Stats — agreement rates and disagreement samples (last N days)
+ *   5. YAML-Editor — Block 2 (Sprint 6): inline edit of routing-rules.yaml
+ *      with hot-reload of the rule engine. Save writes via PUT /api/config/file.
  *
- * Read-only. Editing rules goes through Git/YAML.
+ * Read-only history: Rules/Lookups/Stats remain read-only views of the live
+ * state — for editing, go through the YAML-Editor tab.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -58,11 +62,30 @@ interface RuleStats {
   };
 }
 
-type Tab = 'rules' | 'test' | 'stats';
+type Tab = 'rules' | 'lookups' | 'test' | 'stats' | 'yaml';
+
+const ROUTING_RULES_PATH = '06-rules/routing-rules.yaml';
+
+/** Welle C.1 (2026-05): Lookup-Gruppe aus routing-rules.yaml.
+ *  Eine Lookup-Gruppe wird zur Lade-Zeit zu N einzelnen Rules expandiert
+ *  (eine pro ``items``-Eintrag) und im Studio als Tabelle gerendert. */
+interface LookupGroup {
+  id_prefix: string;
+  description?: string;
+  priority: number;
+  live: boolean;
+  when_path: string;
+  when_op: string;
+  then_field: string;
+  when_extra?: Record<string, unknown>;
+  then_extra?: Record<string, unknown>;
+  items: { key: string; match: string; value: string }[];
+}
 
 export default function RoutingRulesView() {
   const [tab, setTab] = useState<Tab>('rules');
   const [rules, setRules] = useState<RuleDef[]>([]);
+  const [lookups, setLookups] = useState<LookupGroup[]>([]);
   const [stats, setStats] = useState<Record<string, RuleStats>>({});
   const [statsTotalTurns, setStatsTotalTurns] = useState(0);
   const [statsDays, setStatsDays] = useState(7);
@@ -95,8 +118,20 @@ export default function RoutingRulesView() {
     } catch {}
   };
 
+  /** Welle C.1: Lädt die Lookup-Gruppen separat (raw YAML-Form,
+   *  nicht expandiert). Wird vom 'Lookup-Tabellen'-Tab gerendert. */
+  const loadLookups = async () => {
+    try {
+      const r = await fetch('/api/routing-rules/lookups');
+      if (!r.ok) return;
+      const data = await r.json();
+      setLookups(data.lookups || []);
+    } catch {}
+  };
+
   useEffect(() => {
     loadRules();
+    loadLookups();
   }, []);
 
   useEffect(() => {
@@ -204,8 +239,10 @@ export default function RoutingRulesView() {
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #E5E7EB', marginBottom: 16 }}>
         {([
           { id: 'rules', label: 'Regeln' },
+          { id: 'lookups', label: `Lookup-Tabellen${lookups.length ? ` (${lookups.length})` : ''}` },
           { id: 'test', label: 'Test-Bench' },
           { id: 'stats', label: 'Statistiken' },
+          { id: 'yaml', label: '📝 YAML-Editor' },
         ] as { id: Tab; label: string }[]).map((t) => (
           <button
             key={t.id}
@@ -237,6 +274,7 @@ export default function RoutingRulesView() {
           loading={loading}
         />
       )}
+      {tab === 'lookups' && <LookupTablesView lookups={lookups} />}
       {tab === 'test' && <TestBench />}
       {tab === 'stats' && (
         <StatsView
@@ -247,6 +285,323 @@ export default function RoutingRulesView() {
           onReload={loadStats}
         />
       )}
+      {tab === 'yaml' && (
+        <YamlEditor
+          onAfterSave={async () => {
+            // After saving + backend reload, refresh the rules list so the
+            // Studio's other tabs reflect the new YAML state immediately.
+            await fetch('/api/routing-rules/reload', { method: 'POST' });
+            await loadRules();
+            await loadLookups();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── YAML editor sub-component (Block 2 — Sprint 6) ─────────────────
+ * Originally the rules editor was read-only by design ("Edits go through
+ * Git/YAML"). With this editor the Studio user can now edit the entire
+ * routing-rules.yaml in-browser. Saves go via PUT /api/config/file —
+ * the same persistence path PatternEditor uses — and then the backend
+ * routing-rules engine is reloaded so the changes take effect immediately.
+ *
+ * No client-side YAML validation: the backend will surface YAML-parse
+ * errors on save. Dirty-flag is tracked so accidental tab-switches
+ * don't lose unsaved edits.
+ */
+function YamlEditor({ onAfterSave }: { onAfterSave: () => Promise<void> }) {
+  const [content, setContent] = useState('');
+  const [originalContent, setOriginalContent] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+
+  const dirty = content !== originalContent;
+
+  const load = async () => {
+    setLoading(true);
+    setErrorDetail(null);
+    try {
+      const r = await fetch(`/api/config/file?path=${encodeURIComponent(ROUTING_RULES_PATH)}`);
+      if (!r.ok) {
+        setErrorDetail(`Konnte Datei nicht laden: HTTP ${r.status}`);
+        return;
+      }
+      const data = await r.json();
+      setContent(data.content || '');
+      setOriginalContent(data.content || '');
+    } catch (e: unknown) {
+      setErrorDetail(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setErrorDetail(null);
+    setStatus('idle');
+    try {
+      const r = await fetch('/api/config/file', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: ROUTING_RULES_PATH, content, file_type: 'yaml' }),
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        setErrorDetail(`Speichern fehlgeschlagen: HTTP ${r.status} — ${txt.slice(0, 200)}`);
+        setStatus('error');
+        return;
+      }
+      setOriginalContent(content);
+      setStatus('saved');
+      await onAfterSave();
+      setTimeout(() => setStatus('idle'), 2500);
+    } catch (e: unknown) {
+      setErrorDetail(e instanceof Error ? e.message : String(e));
+      setStatus('error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const revert = () => {
+    if (!dirty) return;
+    if (!confirm('Lokale Änderungen verwerfen und vom Backend neu laden?')) return;
+    setContent(originalContent);
+    setStatus('idle');
+  };
+
+  const lines = content.split('\n').length;
+
+  return (
+    <div>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 12, gap: 12, flexWrap: 'wrap',
+      }}>
+        <div style={{ fontSize: 13, color: '#6B7280' }}>
+          Datei: <code style={{ background: '#F3F4F6', padding: '2px 6px', borderRadius: 4 }}>{ROUTING_RULES_PATH}</code>
+          <span style={{ marginLeft: 12 }}>{lines} Zeilen · {content.length.toLocaleString('de-DE')} Zeichen</span>
+          {dirty && <span style={{ marginLeft: 12, color: '#D97706', fontWeight: 600 }}>● ungesicherte Änderungen</span>}
+          {status === 'saved' && <span style={{ marginLeft: 12, color: '#059669', fontWeight: 600 }}>✓ gespeichert + Rules neu geladen</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={revert}
+            disabled={!dirty || saving}
+            style={{
+              padding: '8px 14px',
+              background: '#fff',
+              color: '#6B7280',
+              border: '1px solid #D1D5DB',
+              borderRadius: 6,
+              cursor: dirty && !saving ? 'pointer' : 'not-allowed',
+              fontSize: 13,
+              opacity: dirty ? 1 : 0.5,
+            }}
+            title="Lokale Änderungen verwerfen"
+          >
+            ↺ Verwerfen
+          </button>
+          <button
+            onClick={save}
+            disabled={!dirty || saving}
+            style={{
+              padding: '8px 14px',
+              background: dirty ? '#3B82F6' : '#E5E7EB',
+              color: dirty ? '#fff' : '#6B7280',
+              border: 'none',
+              borderRadius: 6,
+              cursor: dirty && !saving ? 'pointer' : 'not-allowed',
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+            title="YAML speichern und Routing-Rules-Engine neu laden"
+          >
+            {saving ? 'Speichert …' : '💾 Speichern & Reload'}
+          </button>
+        </div>
+      </div>
+
+      {errorDetail && (
+        <div style={{
+          background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5',
+          padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 13,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        }}>
+          ⚠️ {errorDetail}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ padding: 20, color: '#6B7280' }}>Lädt YAML …</div>
+      ) : (
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          spellCheck={false}
+          style={{
+            width: '100%',
+            minHeight: 580,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+            fontSize: 12.5,
+            lineHeight: 1.55,
+            padding: 12,
+            border: '1px solid #D1D5DB',
+            borderRadius: 6,
+            tabSize: 2,
+            whiteSpace: 'pre',
+            resize: 'vertical',
+          }}
+          onKeyDown={(e) => {
+            // Tab inserts 2 spaces (consistent with YAML convention)
+            if (e.key === 'Tab' && !e.shiftKey) {
+              e.preventDefault();
+              const t = e.currentTarget;
+              const s = t.selectionStart, en = t.selectionEnd;
+              const next = content.slice(0, s) + '  ' + content.slice(en);
+              setContent(next);
+              // restore caret one tick later (after state flush)
+              requestAnimationFrame(() => {
+                t.selectionStart = t.selectionEnd = s + 2;
+              });
+            }
+          }}
+        />
+      )}
+
+      <div style={{ marginTop: 10, fontSize: 11, color: '#6B7280', lineHeight: 1.55 }}>
+        <strong>Hinweis:</strong> Speichern schreibt direkt nach <code>{ROUTING_RULES_PATH}</code> und lädt die
+        Routing-Rules-Engine neu — Live-Wirkung. YAML-Syntaxfehler werden vom Backend beim Reload abgefangen
+        und in einem Banner angezeigt. Tab-Taste fügt 2 Leerzeichen ein. Größere Strukturänderungen
+        bitte vorher per Snapshot sichern.
+      </div>
+    </div>
+  );
+}
+
+/** Welle C.1 (2026-05): Lookup-Tabellen-View.
+ *  Zeigt die ``lookups:``-Blöcke aus routing-rules.yaml als pflegbare
+ *  Tabellen — eine pro Lookup-Group, mit Spalten key | match | value.
+ *  Das ersetzt die alte Anzeige von 8-fach fast-identischen Rules
+ *  (R-PSI-1…8 etc.) durch eine kompakte Tabellen-Form.
+ *
+ *  Aktuell read-only (Editor folgt in Welle C.5b — Form-UI für Add/
+ *  Update/Delete von Items + persistente Speicherung via PUT).
+ */
+function LookupTablesView({ lookups }: { lookups: LookupGroup[] }) {
+  if (!lookups || lookups.length === 0) {
+    return (
+      <div style={{ padding: 20, color: '#6B7280', fontStyle: 'italic' }}>
+        Keine Lookup-Tabellen in routing-rules.yaml definiert.
+        Eine Lookup-Tabelle fasst strukturell identische Rules
+        (z.B. Persona-Self-ID-Regexe) zu einer pflegbaren Tabelle zusammen.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{
+        background: '#FEF3C7', border: '1px solid #FCD34D',
+        borderRadius: 6, padding: '10px 14px', fontSize: 13, color: '#78350F',
+      }}>
+        <strong>Hinweis:</strong> Lookup-Tabellen werden beim YAML-Laden
+        zu N einzelnen Routing-Rules expandiert (eine pro Item-Zeile).
+        Sie verhalten sich semantisch identisch zu manuell geschriebenen
+        Rules. Aktuell read-only — Editing folgt in einer späteren Welle.
+      </div>
+      {lookups.map((g) => (
+        <div key={g.id_prefix} style={{
+          border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden',
+        }}>
+          <div style={{
+            background: '#F9FAFB', padding: '10px 16px',
+            borderBottom: '1px solid #E5E7EB',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <code style={{
+                background: '#E0E7FF', color: '#3730A3',
+                padding: '2px 8px', borderRadius: 4, fontSize: 13,
+              }}>
+                {g.id_prefix}
+              </code>
+              <span style={{
+                background: g.live ? '#D1FAE5' : '#FEE2E2',
+                color: g.live ? '#065F46' : '#7F1D1D',
+                padding: '2px 8px', borderRadius: 4, fontSize: 11,
+              }}>
+                {g.live ? 'LIVE' : 'SHADOW'}
+              </span>
+              <span style={{ color: '#6B7280', fontSize: 12 }}>
+                Priorität {g.priority} · {g.items.length} Items
+              </span>
+            </div>
+            {g.description && (
+              <p style={{ margin: '6px 0 0', fontSize: 13, color: '#4B5563' }}>
+                {g.description}
+              </p>
+            )}
+            <div style={{ marginTop: 6, fontSize: 11, color: '#6B7280' }}>
+              <code style={{ background: '#F3F4F6', padding: '0 4px', borderRadius: 2 }}>
+                {g.when_path}
+              </code>
+              {' '}
+              <code style={{ background: '#F3F4F6', padding: '0 4px', borderRadius: 2 }}>
+                {g.when_op}
+              </code>
+              {' → '}
+              <code style={{ background: '#F3F4F6', padding: '0 4px', borderRadius: 2 }}>
+                {g.then_field}
+              </code>
+              {g.when_extra && Object.keys(g.when_extra).length > 0 && (
+                <span style={{ marginLeft: 8 }}>
+                  +Bedingung:
+                  {' '}
+                  <code style={{ background: '#F3F4F6', padding: '0 4px', borderRadius: 2 }}>
+                    {JSON.stringify(g.when_extra)}
+                  </code>
+                </span>
+              )}
+            </div>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#F9FAFB', color: '#6B7280' }}>
+                <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid #E5E7EB', width: '15%' }}>Key</th>
+                <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid #E5E7EB', width: '60%' }}>Match ({g.when_op})</th>
+                <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid #E5E7EB', width: '25%' }}>{g.then_field}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {g.items.map((item, idx) => (
+                <tr key={item.key || idx} style={{
+                  background: idx % 2 ? '#FAFAFA' : '#fff',
+                }}>
+                  <td style={{ padding: '8px 12px', borderBottom: '1px solid #F3F4F6' }}>
+                    <code style={{ background: '#F3F4F6', padding: '1px 6px', borderRadius: 3, fontSize: 12 }}>
+                      {item.key}
+                    </code>
+                  </td>
+                  <td style={{ padding: '8px 12px', borderBottom: '1px solid #F3F4F6', fontFamily: 'monospace', fontSize: 11.5, color: '#4B5563', wordBreak: 'break-all' }}>
+                    {item.match}
+                  </td>
+                  <td style={{ padding: '8px 12px', borderBottom: '1px solid #F3F4F6' }}>
+                    <code style={{ background: '#DBEAFE', color: '#1E40AF', padding: '1px 6px', borderRadius: 3, fontSize: 12 }}>
+                      {item.value}
+                    </code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
     </div>
   );
 }
@@ -418,7 +773,7 @@ function RulesList({
 }
 
 function TestBench() {
-  const [intent, setIntent] = useState('INT-W-03b');
+  const [intent, setIntent] = useState('INT-W-03');
   const [state, setState] = useState('state-5');
   const [persona, setPersona] = useState('P-W-LK');
   const [thema, setThema] = useState('');

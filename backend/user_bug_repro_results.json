@@ -1,0 +1,331 @@
+{
+  "test_a": [
+    {
+      "turn": 1,
+      "user": "Ich suche etwas zu einem Thema.",
+      "pattern": "PAT-20",
+      "intent": "INT-W-02",
+      "state": "state-1",
+      "persona": "P-AND",
+      "llm_hint": "PAT-20",
+      "llm_match": true,
+      "turn_type": "initial",
+      "signals": [
+        "orientierungssuchend",
+        "vage Anfrage",
+        "keine klare Rolle erkennbar"
+      ],
+      "entities": {},
+      "tools": [
+        "query_knowledge (prefetch)"
+      ],
+      "cards_total": 0,
+      "node_dist": {
+        "collection": 0,
+        "content": 0,
+        "topic_page": 0,
+        "other": 0
+      },
+      "content_types": [],
+      "md_links": 0,
+      "qrs": [
+        "Klima und Klimawandel",
+        "Bruchrechnung in Mathe",
+        "Photosynthese in Biologie",
+        "Was ist eine Themenseite?"
+      ],
+      "content": "Klar — ich kann dir **Material zu einem Thema** suchen, dir **Themenseiten** zeigen oder dir kurz erklären, **wie WLO funktioniert**.  \nWas ist dein Thema?"
+    },
+    {
+      "turn": 2,
+      "user": "Bruchrechnung",
+      "pattern": "PAT-06",
+      "intent": "INT-W-03",
+      "state": "state-5",
+      "persona": "P-AND",
+      "llm_hint": "PAT-28",
+      "llm_match": false,
+      "turn_type": "follow_up",
+      "signals": [
+        "orientierungssuchend",
+        "themenanfrage",
+        "kurze sachliche Eingabe"
+      ],
+      "entities": {
+        "thema": "Bruchrechnung"
+      },
+      "tools": [
+        "query_knowledge (prefetch)",
+        "search_wlo_topic_pages (prefetch)",
+        "search_wlo_collections (prefetch-extra)",
+        "search_wlo_content (prefetch-extra)",
+        "search_wlo_content (prefetch-extra)",
+        "respond_to_user"
+      ],
+      "cards_total": 10,
+      "node_dist": {
+        "collection": 4,
+        "content": 6,
+        "topic_page": 0,
+        "other": 0
+      },
+      "content_types": [
+        "video"
+      ],
+      "md_links": 0,
+      "qrs": [
+        "Mehr Videos zeigen",
+        "Arbeitsblätter dazu suchen",
+        "Einfacher anfangen",
+        "Anderes Mathethema wählen"
+      ],
+      "content": "Hier sind passende Materialien zur **Bruchrechnung** — ich habe dir erst die redaktionell sortierten Sammlungen und dann ein paar einzelne Treffer dazu rausgezogen. Wenn du magst, grabe ich dir danach noch gezielt **Videos**, **Arbeitsblätter** oder **leichte Einstiege** aus dem Regal."
+    },
+    {
+      "turn": 3,
+      "user": "nur Videos anzeigen",
+      "pattern": "PAT-07",
+      "intent": "INT-W-03",
+      "state": "state-6",
+      "persona": "P-AND",
+      "llm_hint": "PAT-28",
+      "llm_match": false,
+      "turn_type": "follow_up",
+      "signals": [
+        "filtering",
+        "medientyp request",
+        "topic already known",
+        "concise follow-up"
+      ],
+      "entities": {
+        "thema": "Bruchrechnung",
+        "medientyp": "Video"
+      },
+      "tools": [
+        "query_knowledge (prefetch)",
+        "search_wlo_topic_pages (prefetch)",
+        "search_wlo_collections (prefetch-extra)",
+        "search_wlo_collections (prefetch-extra)",
+        "lookup_wlo_vocabulary",
+        "search_wlo_content",
+        "select_top_cards",
+        "respond_to_user"
+      ],
+      "cards_total": 5,
+      "node_dist": {
+        "collection": 0,
+        "content": 5,
+        "topic_page": 0,
+        "other": 0
+      },
+      "content_types": [
+        "video"
+      ],
+      "md_links": 0,
+      "qrs": [
+        "Noch mehr Videos zeigen",
+        "Einfachere Videos suchen",
+        "Teilthema eingrenzen",
+        "Hat das geholfen?"
+      ],
+      "content": "Hier ist ein Video zu **Bruchrechnung** für dich. Wenn du willst, suche ich dir als Nächstes noch **einfachere Erklärvideos** oder **Videos zu einem Teilthema** raus."
+    },
+    {
+      "turn": 4,
+      "user": "anderes Thema",
+      "pattern": "PAT-02",
+      "intent": "INT-W-03",
+      "state": "state-5",
+      "persona": "P-AND",
+      "llm_hint": "PAT-28",
+      "llm_match": false,
+      "turn_type": "topic_switch",
+      "signals": [
+        "topic_switch",
+        "orientierungssuchend",
+        "implizite Themenänderung"
+      ],
+      "entities": {},
+      "tools": [
+        "query_knowledge (prefetch)"
+      ],
+      "cards_total": 0,
+      "node_dist": {
+        "collection": 0,
+        "content": 0,
+        "topic_page": 0,
+        "other": 0
+      },
+      "content_types": [],
+      "md_links": 0,
+      "qrs": [
+        "Mathe für Klasse 6",
+        "Deutsch für Klasse 8",
+        "Sachunterricht zum Wasser",
+        "Biologie zur Ernährung"
+      ],
+      "content": "Klar, wir können das Thema wechseln.  \nSag mir einfach, **worum es gehen soll** — ich schau dann sofort ins Regal."
+    }
+  ],
+  "test_b": [
+    {
+      "turn": 1,
+      "user": "Ich suche etwas zu einem Thema.",
+      "pattern": "PAT-20",
+      "intent": "INT-W-02",
+      "state": "state-1",
+      "persona": "P-AND",
+      "llm_hint": "PAT-20",
+      "llm_match": true,
+      "turn_type": "initial",
+      "signals": [
+        "orientierungssuchend",
+        "vage Anfrage",
+        "keine klare Rolle erkennbar"
+      ],
+      "entities": {},
+      "tools": [
+        "query_knowledge (prefetch)"
+      ],
+      "cards_total": 0,
+      "node_dist": {
+        "collection": 0,
+        "content": 0,
+        "topic_page": 0,
+        "other": 0
+      },
+      "content_types": [],
+      "md_links": 0,
+      "qrs": [
+        "Ich suche Material zu Mathe.",
+        "Ich suche etwas für Deutsch in Klasse 6."
+      ],
+      "content": "Klar — ich kann dir beim **Thema finden**, beim **Stöbern** oder beim **Verstehen von WLO** helfen.  \nWas ist dein Thema, oder willst du erst mal schauen, was es hier alles gibt?"
+    },
+    {
+      "turn": 2,
+      "user": "Bruchrechnung",
+      "pattern": "PAT-06",
+      "intent": "INT-W-03",
+      "state": "state-5",
+      "persona": "P-AND",
+      "llm_hint": "PAT-28",
+      "llm_match": false,
+      "turn_type": "follow_up",
+      "signals": [
+        "orientierungssuchend",
+        "themenanfrage",
+        "konkretes thema genannt"
+      ],
+      "entities": {
+        "thema": "Bruchrechnung"
+      },
+      "tools": [
+        "query_knowledge (prefetch)",
+        "search_wlo_topic_pages (prefetch)",
+        "search_wlo_collections (prefetch-extra)",
+        "search_wlo_content (prefetch-extra)",
+        "search_wlo_content (prefetch-extra)",
+        "select_top_cards",
+        "respond_to_user"
+      ],
+      "cards_total": 5,
+      "node_dist": {
+        "collection": 2,
+        "content": 3,
+        "topic_page": 0,
+        "other": 0
+      },
+      "content_types": [
+        "video"
+      ],
+      "md_links": 5,
+      "qrs": [
+        "Mehr Materialien zeigen",
+        "Nur Videos anzeigen"
+      ],
+      "content": "Hier sind passende Treffer zur Bruchrechnung. Ich habe dir erst die kuratierten Sammlungen rausgelegt und dazu zwei anschauliche Videos ergänzt, damit du direkt loslegen kannst.\n\n- [@@ICON:auto_stories@@Grundlagen der Bruchrechnung](https://redaktion.openeduhub.net/edu-sharing/components/collections?id=ac18e9bf-3209-4606-a598-e8e290c9b999&q=Bruchrechnung)\n- [@@ICON:auto_stories@@Bruchrechnung](https://redaktion.openeduhub.net/edu-sharing/components/collections?id=d6c88b81-b639-4b89-94d7-c0507a3e90be&q=Bruchrechnung)\n- [@@ICON:play_circle@@Bruchrechnung - eine ganz einfache Einführung! | Lehrerschmidt…](https://redaktion.openeduhub.net/edu-sharing/components/render/ff9dfa94-dfc9-4114-b201-3d37a290211b)\n- [@@ICON:play_circle@@Bruchrechnung Übersicht, Zähler, Nenner, echt, unecht, gemischt…](https://redaktion.openeduhub.net/edu-sharing/components/render/748f8cd4-4767-4cd6-bbe7-4e180db2430a)\n- [@@ICON:play_circle@@Brüche dividieren mit ganzen Zahlen – Bruchrechnung](https://redaktion.openeduhub.net/edu-sharing/components/render/070e2c94-e4d5-4cf5-9498-f90349ccdc57)"
+    },
+    {
+      "turn": 3,
+      "user": "nur Videos anzeigen",
+      "pattern": "PAT-07",
+      "intent": "INT-W-03",
+      "state": "state-6",
+      "persona": "P-AND",
+      "llm_hint": "PAT-28",
+      "llm_match": false,
+      "turn_type": "follow_up",
+      "signals": [
+        "filterwunsch",
+        "medientyp genannt",
+        "kontextbezogene verfeinerung"
+      ],
+      "entities": {
+        "thema": "Bruchrechnung",
+        "medientyp": "Video"
+      },
+      "tools": [
+        "query_knowledge (prefetch)",
+        "search_wlo_topic_pages (prefetch)",
+        "search_wlo_collections (prefetch-extra)",
+        "search_wlo_collections (prefetch-extra)",
+        "search_wlo_content",
+        "select_top_cards",
+        "respond_to_user"
+      ],
+      "cards_total": 5,
+      "node_dist": {
+        "collection": 0,
+        "content": 5,
+        "topic_page": 0,
+        "other": 0
+      },
+      "content_types": [
+        "video"
+      ],
+      "md_links": 5,
+      "qrs": [
+        "Mehr Videos zeigen",
+        "Hat das geholfen?"
+      ],
+      "content": "Hier sind nur Videos zur Bruchrechnung. Ich habe dir ein konkretes Erklärvideo und eine passende Playlist-Übersicht rausgelegt, damit du direkt loslegen kannst.\n\n- [@@ICON:play_circle@@Bruchrechnung, fehlende Werte berechnen, Rechnen mit Brüchen | Mathe…](https://redaktion.openeduhub.net/edu-sharing/components/render/bf2a7870-46b4-40b9-ac79-d127f48e4dd1)\n- [@@ICON:play_circle@@Bruchrechnung Playlist Übersicht | Mathe by Daniel Jung](https://redaktion.openeduhub.net/edu-sharing/components/render/7671a36c-4e22-4408-aeb7-c9f448421fbb)\n- [@@ICON:play_circle@@Bruchrechnung Grundlagen Kuchenmodell | Mathe by Daniel Jung](https://redaktion.openeduhub.net/edu-sharing/components/render/c99eb949-f339-4e3d-bbf4-ce9212fdb7a1)\n- [@@ICON:play_circle@@Brüche addieren, Intuitiv, Bruchrechnung | Mathe by Daniel Jung](https://redaktion.openeduhub.net/edu-sharing/components/render/d85ebdc6-8bee-4cb7-be1d-5a68b925ef78)\n- [@@ICON:play_circle@@Brüche, Bruchrechnung, Beispiele | Mathe by Daniel Jung](https://redaktion.openeduhub.net/edu-sharing/components/render/2e27208e-e515-488b-94fb-2279eadda51f)"
+    },
+    {
+      "turn": 4,
+      "user": "anderes Thema",
+      "pattern": "PAT-02",
+      "intent": "INT-W-03",
+      "state": "state-5",
+      "persona": "P-AND",
+      "llm_hint": "PAT-20",
+      "llm_match": false,
+      "turn_type": "topic_switch",
+      "signals": [
+        "topic_switch",
+        "vague_request",
+        "follow_up",
+        "orientierungssuchend"
+      ],
+      "entities": {},
+      "tools": [
+        "query_knowledge (prefetch)",
+        "respond_to_user"
+      ],
+      "cards_total": 0,
+      "node_dist": {
+        "collection": 0,
+        "content": 0,
+        "topic_page": 0,
+        "other": 0
+      },
+      "content_types": [],
+      "md_links": 0,
+      "qrs": [
+        "Neues Thema nennen",
+        "Erst mal stöbern"
+      ],
+      "content": "Klar — dann sag mir einfach dein neues Thema, und ich lege los."
+    }
+  ]
+}

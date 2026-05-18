@@ -10,7 +10,14 @@ signal_high_fit: ["neugierig", "orientierungssuchend", "delegierend"]
 signal_medium_fit: []
 signal_low_fit: []
 page_bonus: []
-precondition_slots: []
+# Welle C Eval-Fix (2026-05-15): precondition_slots: ["thema"] schärft
+# die Abgrenzung zu PAT-20. PAT-04 zeigt 2-3 inspirierende Kacheln und
+# braucht dafür einen Themen-Anker (User nennt Mathe/Klimawandel/...).
+# Ohne Thema gewinnt PAT-20 sauber, das ist die richtige "Was kann ich
+# hier"-Antwort ohne Material-Bombardement. Im Eval-Run 2026-05-15 hat
+# PAT-04 vs PAT-20 3× knapp kollidiert (gap 0.0070) — diese Race ist
+# durch den precondition-Slot deterministisch aufgelöst.
+precondition_slots: ["thema"]
 default_tone: spielerisch
 default_length: mittel
 default_detail: standard

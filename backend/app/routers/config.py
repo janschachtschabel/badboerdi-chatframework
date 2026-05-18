@@ -102,6 +102,136 @@ async def get_privacy_config():
     return PrivacyConfig(**load_privacy_config())
 
 
+# ── Tone-Modifier (Welle B.3 / C.5) ──────────────────────────────
+#
+# Persona-Tonalitäts-Modifier werden im Persona-Editor unter dem
+# Markdown-Bereich als Form-UI angezeigt (siehe ElementEditor.tsx).
+# Diese Endpoints liefern + speichern die strukturierten Modifier-
+# Werte separat von der Persona-MD-Datei, damit der Studio nicht
+# auf YAML-Round-Trip-Logik im Frontend angewiesen ist.
+
+class ToneModifier(BaseModel):
+    tone: str = "locker"
+    length_bias: float = 0.0  # [-0.3 .. +0.3]
+    formality: str = "wie_user"  # duzen | siezen | wie_user
+    card_text_mode: str = "minimal"  # minimal | kurz | explanation | ausfuehrlich
+    override: bool = False
+
+
+class ToneModifiersPayload(BaseModel):
+    modifiers: dict[str, ToneModifier]
+    default_modifier: ToneModifier
+
+
+_TONE_MODIFIERS_PATH = "01-base/tone-modifiers.yaml"
+_TONE_MODIFIERS_HEADER = (
+    "# Tonalitäts-Modifier pro Persona — verwaltet im Studio (Persona-Editor)\n"
+    "# ----------------------------------------------------------------------\n"
+    "# Persona ist KEIN Pattern-Selektor — sie modifiziert nur tone/length/\n"
+    "# formality/card_text_mode der Bot-Antwort. Pattern bleibt unabhängig.\n"
+    "#\n"
+    "# Schema pro Persona:\n"
+    "#   tone           : sachlich | warm | locker | professionell | formell\n"
+    "#                    | kollegial | ermutigend | sachorientiert | …\n"
+    "#   length_bias    : float in [-0.3 .. +0.3]. -0.2 = ca. 20% kürzer.\n"
+    "#                    Wird auf Pattern.default_length angerechnet.\n"
+    "#   formality      : duzen | siezen | wie_user\n"
+    "#                    'wie_user' = Bot spiegelt User-Anrede.\n"
+    "#   card_text_mode : minimal | kurz | explanation | ausfuehrlich\n"
+    "#   override       : true  = Modifier überschreibt Pattern-Defaults\n"
+    "#                    false = Modifier ist nur Hinweis (Pattern wins)\n"
+    "#\n"
+    "# Editing: Persona-Studio (Element-Browser → Personas → Persona auswählen).\n"
+    "# Änderungen wirken live (mtime-Cache-Invalidation).\n"
+)
+
+
+def _serialize_tone_modifier(m: ToneModifier) -> str:
+    return (
+        f"    tone: {m.tone}\n"
+        f"    length_bias: {m.length_bias}\n"
+        f"    formality: {m.formality}\n"
+        f"    card_text_mode: {m.card_text_mode}\n"
+        f"    override: {str(m.override).lower()}\n"
+    )
+
+
+@router.get("/tone-modifiers", response_model=ToneModifiersPayload)
+async def get_tone_modifiers_route():
+    """Return all persona tone-modifiers + default fallback.
+
+    Schema mirror of ``01-base/tone-modifiers.yaml`` — used by the
+    Persona-Editor's tonality form. Reads via the live mtime-cache, so
+    edits to the YAML on disk show up here without restart.
+    """
+    from app.services.config_loader import load_tone_modifiers_config
+    cfg = load_tone_modifiers_config()
+    return ToneModifiersPayload(
+        modifiers={k: ToneModifier(**v) for k, v in cfg["modifiers"].items()},
+        default_modifier=ToneModifier(**cfg["default"]),
+    )
+
+
+@router.put("/tone-modifiers", response_model=ToneModifiersPayload)
+async def put_tone_modifiers_route(payload: ToneModifiersPayload):
+    """Persist tone-modifiers — Single-Source aus Persona-MD-Frontmatter.
+
+    Welle C.5 (2026-05): Schreibt die Modifier pro Persona DIREKT in das
+    Frontmatter der jeweiligen ``04-personas/<persona>.md``-Datei. Das
+    ersetzt die historische ``01-base/tone-modifiers.yaml`` und vermeidet
+    Doppelung mit dem ``## Tonalität``-Markdown-Block der Persona-Datei.
+
+    Der ``default_modifier`` bleibt in ``01-base/tone-modifiers.yaml`` —
+    das ist nicht Persona-spezifisch, sondern der Fallback für unbekannte
+    Personas (z.B. ein Custom-Persona-ID, das aus der LLM-Klassifikation
+    kommt aber kein Eintrag in 04-personas/ hat).
+
+    Die Studio-API bleibt identisch: PUT mit Bulk-Map. Der Helper im
+    Loader (``update_persona_modifier_in_frontmatter``) erledigt den
+    Round-Trip pro Persona.
+    """
+    from app.services.config_loader import (
+        load_tone_modifiers_config,
+        update_persona_modifier_in_frontmatter,
+    )
+
+    # Update persona modifiers in their respective MD files.
+    failed: list[str] = []
+    for pid, mod in payload.modifiers.items():
+        ok = update_persona_modifier_in_frontmatter(pid, mod.model_dump())
+        if not ok:
+            failed.append(pid)
+    if failed:
+        # Nicht hart abbrechen — andere Personas wurden schon geschrieben.
+        # Studio sieht es im Response (geänderte Werte fehlen für diese IDs).
+        # Frontend kann darauf reagieren, Backend bleibt konsistent.
+        pass
+
+    # Default-Modifier bleibt in der historischen YAML (nicht Persona-
+    # spezifisch). Wir schreiben sie minimal — nur default_modifier.
+    default_yaml = (
+        "# Default-Modifier für unbekannte Personas — wird genutzt, wenn der\n"
+        "# Classifier eine Persona liefert, für die keine 04-personas/*.md\n"
+        "# existiert. Persona-spezifische Modifier leben im Frontmatter der\n"
+        "# jeweiligen Persona-Datei (siehe ``04-personas/<id>.md``).\n"
+        "\n"
+        "default_modifier:\n"
+        f"    tone: {payload.default_modifier.tone}\n"
+        f"    length_bias: {payload.default_modifier.length_bias}\n"
+        f"    formality: {payload.default_modifier.formality}\n"
+        f"    card_text_mode: {payload.default_modifier.card_text_mode}\n"
+        f"    override: {str(payload.default_modifier.override).lower()}\n"
+    )
+    write_config_file(_TONE_MODIFIERS_PATH, default_yaml)
+
+    # Re-read so the response reflects what is now on disk.
+    cfg = load_tone_modifiers_config()
+    return ToneModifiersPayload(
+        modifiers={k: ToneModifier(**v) for k, v in cfg["modifiers"].items()},
+        default_modifier=ToneModifier(**cfg["default"]),
+    )
+
+
 @public_router.get("/guide-mode")
 async def get_guide_mode_config_route():
     """Public Webseiten-Guide-Modus configuration consumed by the widget.

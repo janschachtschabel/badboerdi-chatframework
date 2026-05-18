@@ -138,9 +138,9 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
 
   // ── Live counts (fallback to sensible hard-coded numbers if backend
   //     hasn't responded yet — keeps the home view readable on first load). ──
-  const patternCount = elements?.patterns?.length ?? 26;
+  const patternCount = elements?.patterns?.length ?? 23;
   const personaCount = elements?.personas?.length ?? 9;
-  const intentCount = elements?.intents?.length ?? 14;
+  const intentCount = elements?.intents?.length ?? 13;
   const stateCount = elements?.states?.length ?? 12;
   const entityCount = elements?.entities?.length ?? 5;
   const signalCount = elements?.signals?.length ?? 17;
@@ -170,7 +170,7 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
       label: 'Patterns',
       headline: '3-Phasen-Engine: Gate → Score → Modulate.',
       primaryCount: `${patternCount} Patterns`,
-      tags: ['Kern-Patterns', 'Canvas-Create', 'Feedback-Echo', 'Safety-Pattern'],
+      tags: ['Inhalte abrufen', 'Canvas-Create', 'Recherche', 'Safety-Pattern'],
       color: '#7C3AED',
     },
     {
@@ -183,7 +183,8 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
         `${stateCount} States`,
         `${entityCount} Entities`,
         `${signalCount} Signale`,
-        '5 Kontexte',
+        'Turn-Count',
+        'Tonalitäts-Modifier',
       ],
       color: '#059669',
     },
@@ -457,7 +458,7 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
             </li>
             <li>
               <strong>Modulate:</strong> Ton, Länge, Format werden anhand aktiver Signale
-              deterministisch nachjustiert.
+              und der Persona-Tonalität (Frontmatter) deterministisch nachjustiert.
             </li>
           </ol>
         </div>
@@ -469,19 +470,45 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
               über Gates und Scoring-Regeln — editierbar unter Schicht 3.
             </li>
             <li>
-              <strong>Signale</strong> modulieren Ton, Länge und Detail unabhängig vom
-              gewählten Pattern.
+              <strong>Tonalitäts-Modifier</strong> stecken im Frontmatter jeder Persona
+              (tone / length_bias / formality / card_text_mode) — Persona steuert nur
+              Tonalität, nicht die Pattern-Wahl.
             </li>
             <li>
               <strong>Canvas-Formate</strong> greifen nur bei den Intents INT-W-11
               (Create) und INT-W-12 (Edit).
             </li>
             <li>
-              <strong>Themenseiten-Resolver</strong> löst <code>node_id</code> und
-              <code>topic_page_slug</code> aus <code>page_context</code> beim ersten
-              Turn über MCP zu Metadaten auf.
+              <strong>Inhalte abrufen (INT-W-03)</strong> ist universell für Themenseiten,
+              Sammlungen und Einzelinhalte — Pattern-Wahl (PAT-28 / PAT-07 / PAT-14 /
+              PAT-09) erfolgt deterministisch über Anker-Wörter + Persona.
             </li>
           </ul>
+        </div>
+      </div>
+
+      {/* ═══ Neue Mechaniken (Welle B + C, Sprint 1-5) ═══ */}
+      <div className="home-info-row">
+        <div className="card home-info-card">
+          <div className="home-info-title">🎚️ Tonalitäts-Modifier</div>
+          <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5 }}>
+            Jede Persona hat im Frontmatter (siehe Schicht 4 → Personas)
+            die fünf Felder <code>tone</code>, <code>length_bias</code>,
+            <code>formality</code>, <code>card_text_mode</code>,
+            <code>override</code>. Die Pattern-Engine wendet sie in Phase 3
+            an — Tonalität liegt damit zentral pro Persona, nicht in
+            jedem Pattern doppelt.
+          </p>
+        </div>
+        <div className="card home-info-card">
+          <div className="home-info-title">🪜 3-Stufen-Eskalation</div>
+          <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5 }}>
+            In <code>02-domain/domain-rules.md</code> verankert: bei
+            Anfragen außerhalb WLO (Pressekit, amtliche Daten, Wahlkreis-
+            Bericht) folgt der Bot dem Schema <strong>Direkter Treffer →
+            Adjacent (query_knowledge) → Ehrliche Degradation mit
+            Kontaktweg</strong>. Few-Shot-Beispiele im Prompt.
+          </p>
         </div>
       </div>
     </div>

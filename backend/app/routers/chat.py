@@ -101,7 +101,11 @@ from app.services.mcp_client import (
 )
 from app.services.pattern_engine import select_pattern, get_patterns
 from app.services.rag_service import get_rag_context, get_always_on_rag_context
-from app.services.config_loader import get_on_demand_rag_areas
+from app.services.config_loader import (
+    card_pipeline_v2_enabled,
+    get_on_demand_rag_areas,
+    get_repo_base_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +334,24 @@ def _inline_card_url(card: Any, guide_mode: bool) -> str:
     return _g("wlo_url") or _g("url") or _g("content_url")
 
 
+# Mapping von User-Stichworten zu kanonischen Substrings, die in den
+# Card-Feldern ``learning_resource_types`` matchen sollten. WLO emittiert
+# diese Labels mit Capitalisation (z.B. ``['Video']``, ``['Arbeitsblatt']``),
+# Match läuft case-insensitive via ``substring in lower(blob)``.
+_CONTENT_TYPE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "video":          ("video", "videos"),
+    "arbeitsblatt":   ("arbeitsblatt", "arbeitsblätter", "arbeitsblaetter"),
+    "übung":          ("übung", "uebung", "übungen", "uebungen"),
+    "quiz":           ("quiz", "test", "tests"),
+    "audio":          ("audio", "podcast", "podcasts", "hörspiel", "hoerspiel"),
+    "präsentation":   ("präsentation", "praesentation", "präsentationen", "praesentationen"),
+    "interaktiv":     ("interaktiv", "interaktive"),
+    "kurs":           ("kurs", "kurse", "tutorial", "tutorials"),
+    "spiel":          ("lernspiel", "lernspiele", "spiel"),
+    "grafik":         ("infografik", "grafik"),
+}
+
+
 def _user_wants_specific_content_type(message: str) -> bool:
     """Heuristik: fragt der User nach einem konkreten Material-Format?
 
@@ -339,19 +361,88 @@ def _user_wants_specific_content_type(message: str) -> bool:
     um (Einzel zuerst statt Themenseite zuerst).
     """
     msg = (message or "").lower()
-    keywords = (
-        "video", "videos",
-        "arbeitsblatt", "arbeitsblätter", "arbeitsblaetter",
-        "übung", "uebung", "übungen", "uebungen",
-        "quiz", "test", "tests",
-        "audio", "podcast", "podcasts", "hörspiel", "hoerspiel",
-        "präsentation", "praesentation", "präsentationen", "praesentationen",
-        "interaktiv", "interaktive",
-        "kurs", "kurse", "tutorial", "tutorials",
-        "lernspiel", "lernspiele", "spiel",
-        "infografik", "grafik",
-    )
-    return any(kw in msg for kw in keywords)
+    for keywords in _CONTENT_TYPE_KEYWORDS.values():
+        if any(kw in msg for kw in keywords):
+            return True
+    return False
+
+
+def _extract_wanted_content_types(message: str) -> set[str]:
+    """Welche konkreten Material-Typen hat der User in der Nachricht
+    erwähnt? Returns lower-case substrings, die in
+    ``card.learning_resource_types`` matchen sollten — z.B. ``{"video"}``
+    bei „Hast du Videos zur …?" oder ``{"arbeitsblatt"}`` bei
+    „Such mir Arbeitsblätter zu …".
+
+    Returns leere Menge, wenn der User keinen Typ-Fokus ausgedrückt hat.
+    """
+    msg = (message or "").lower()
+    wanted: set[str] = set()
+    for canonical, keywords in _CONTENT_TYPE_KEYWORDS.items():
+        if any(kw in msg for kw in keywords):
+            wanted.add(canonical)
+    return wanted
+
+
+def _resolve_wanted_content_types(
+    message: str,
+    session_entities: dict | None = None,
+    classification_entities: dict | None = None,
+) -> set[str]:
+    """Welle C Sprint 6 Hotfix — Vollständiger Type-Filter aus 3 Quellen.
+
+    Zieht den Material-Typ-Wunsch aus:
+      1. Aktueller User-Nachricht ("nur videos zeigen" → {"video"})
+      2. ``classification.entities.medientyp`` (frisch vom Classifier)
+      3. ``session_state.entities.medientyp`` (aus vorherigem Turn akkumuliert)
+
+    Damit überlebt der Filter ein Follow-up wie „nur Videos zeigen"
+    auch wenn der Classifier den medientyp nicht erneut extrahiert hat
+    (weil das alte session-Wissen bereits präsent ist).
+
+    User-Bug-Report Sprint 6: Ohne diesen Resolver landete der Bot bei
+    „nur Videos zeigen" auf PAT-06 und zeigte trotzdem Sammlungen
+    statt nur Videos.
+    """
+    wanted = _extract_wanted_content_types(message)
+
+    for src in (classification_entities, session_entities):
+        if not isinstance(src, dict):
+            continue
+        mt = src.get("medientyp") or src.get("material_typ") or ""
+        if not isinstance(mt, str) or not mt.strip():
+            continue
+        # Map auf canonical key — wenn der Wert direkt einem Keyword
+        # entspricht (z.B. "Video"), nutze ihn als Filter-String.
+        mt_lower = mt.strip().lower()
+        # Bevorzuge canonical-Match wenn möglich
+        matched = False
+        for canonical, keywords in _CONTENT_TYPE_KEYWORDS.items():
+            if mt_lower == canonical or any(kw in mt_lower for kw in keywords):
+                wanted.add(canonical)
+                matched = True
+                break
+        if not matched and mt_lower:
+            # Fallback: das raw-Wort als Substring nutzen
+            wanted.add(mt_lower)
+
+    return wanted
+
+
+def _card_matches_wanted_types(card: Any, wanted: set[str]) -> bool:
+    """True, wenn die ``learning_resource_types`` der Card einen der vom
+    User gewünschten Typen enthalten. Wenn ``wanted`` leer ist (kein Typ-
+    Fokus), gibt's keine Einschränkung → True. Substring-Match auf der
+    lowercase-konkatenierten Type-Liste.
+    """
+    if not wanted:
+        return True
+    lrt = (card.get("learning_resource_types") if isinstance(card, dict)
+           else getattr(card, "learning_resource_types", None))
+    if not lrt:
+        return False
+    blob = " ".join(str(t).lower() for t in lrt if t)
+    return any(w in blob for w in wanted)
 
 
 def _apply_llm_card_selection(
@@ -495,10 +586,11 @@ def _build_inline_card_links(
     das um — Einzelinhalte stehen oben, damit der Treffer-Typ den die
     User-Frage anvisiert hat, zuerst sichtbar ist.
 
-    URL fallback chain: guide_url (only when guide_mode on) → wlo_url →
-    url → content_url. If even that is empty, the entry is skipped (no
-    naked-text dangling). If a card has no title, the URL stands in as
-    the visible label.
+    URL fallback chain: card.link (Card-Pipeline v2, Single Source of
+    Truth) → guide_url (only when guide_mode on) → wlo_url → url →
+    content_url. If even that is empty, the entry is skipped (no naked-
+    text dangling). If a card has no title, the URL stands in as the
+    visible label.
     """
     if not cards:
         return ""
@@ -508,7 +600,14 @@ def _build_inline_card_links(
     for c in ordered:
         if len(lines) >= limit:
             break
-        url = _inline_card_url(c, guide_mode)
+        # Phase 4a: card.link bevorzugen (build_card_link Single Source of
+        # Truth — collections?id= für Sammlungen, render/ für Inhalte im
+        # Lotsen-Modus, externe URL im Normal-Modus). Wenn nicht gesetzt,
+        # fällt der alte _inline_card_url-Pfad ein.
+        url = (c.get("link") if isinstance(c, dict)
+               else getattr(c, "link", "")) or ""
+        if not url:
+            url = _inline_card_url(c, guide_mode)
         if not url or url in seen_urls:
             continue
         seen_urls.add(url)
@@ -553,6 +652,17 @@ def _apply_widget_modes_postprocess(
        wegfallen lassen.
     """
     from app.services.config_loader import load_widget_modes_config as _lwm
+
+    # ── Welle C Sprint 6 Hotfix: Lotsen-URL-Konsistenz ───────────────
+    # Bevor der Inline-Card-Append oder andere Text-Mutationen laufen,
+    # rewrite externe URLs (``card.url`` = z.B. youtube.com) im LLM-
+    # generierten Bot-Text auf die jeweilige Repo-Render-URL (``card.link``
+    # / ``card.wlo_url``). Greift nur wenn Lotsen-Modus aktiv ist —
+    # im Normal-Modus bleiben externe Links unverändert (der User
+    # springt absichtlich raus).
+    response_text = _rewrite_external_urls_to_repo(
+        response_text, cards or [], guide_mode_on,
+    )
 
     # Vor jeder Transformation festhalten, ob die Antwort eine "echte"
     # Information anbietet (Cards oder Canvas-Material). Lotsen-Inline-
@@ -743,10 +853,18 @@ def _apply_widget_modes_postprocess(
             # Mit Leerzeile vom Bot-Text trennen, damit Markdown-Renderer
             # die Liste sauber abgrenzt.
             response_text = (response_text.rstrip() + "\n\n" + inline_md).strip()
-        cards = []  # nichts mehr durchreichen — die Inline-Variante hat alles
+        # Cards-Liste BEHALTEN, auch im Inline-Mode — das Frontend zeigt
+        # sie nicht als Kacheln (gated durch ``cardsEnabledBool=false``),
+        # aber JS-Listener / Embed-Hosts (Event-Inspector, externe Systeme
+        # mit ``emit-guide-suggestion="true"``) brauchen sie, um den Top-1-
+        # Treffer als ``badboerdi:guide-suggestion``-Event zu konsumieren.
+        # Vorher: ``cards = []`` — Inspector im Inline-Modus blieb stumm.
+        cards = cards_for_display
         # Falls die page_action noch Cards hält (z.B. show_results auf
         # /suche), ebenfalls leeren — wir wollen konsistent "keine
-        # Kacheln, nur Inline-Links".
+        # Kacheln, nur Inline-Links". Das page_action-Cards-Feld ist
+        # für die Canvas-Komponente; im Inline-Mode ist Canvas eh
+        # ausgeschaltet, also ist Leeren hier sinnvoll.
         if page_action and isinstance(page_action, dict):
             payload = page_action.get("payload") or {}
             if isinstance(payload, dict) and "cards" in payload:
@@ -841,6 +959,99 @@ def _strip_guide_qrs(quick_replies: list[str]) -> list[str]:
     return [q for q in quick_replies if not (
         isinstance(q, str) and q.startswith("__guide__|")
     )]
+
+
+# Welle C Sprint 6 Hotfix — Guide-Marker-Cleaner für Bot-Antwort-Text.
+# Markdown frisst die doppelten Unterstriche zu Bold-Markup, übrig bleibt
+# ``guide|Label|URL`` als sichtbarer Text. Das Marker-Format gehört
+# ausschließlich in ``quick_replies``.
+import re as _re_guide_markers
+
+# Match-Variants: mit und ohne führende ``__``, weil Markdown sie u.U.
+# bereits weggefressen hat. Greedy bis zur nächsten Whitespace-Grenze
+# nach der URL (so dass „<…> Wahnsinnig" am Zeilenende sauber stehen
+# bleibt).
+_GUIDE_MARKER_RE = _re_guide_markers.compile(
+    r"(?:__)?guide(?:__)?\|[^|]+\|https?://\S+",
+    flags=_re_guide_markers.IGNORECASE,
+)
+
+
+def _rewrite_external_urls_to_repo(
+    text: str, cards: list[Any], guide_mode: bool,
+) -> str:
+    """Welle C Sprint 6 Hotfix — Lotsen-URL-Konsistenz im Bot-Text.
+
+    Bug-Report (Inline-Widget + Lotsen): „einzelinhalte dürfen im
+    lotsenmodus nicht auf die wwwurl verlinkt sein". Trotz korrekt
+    annotierter ``card.link`` baute der LLM im Antwort-Text Markdown-
+    Links auf ``card.url`` (externer Anbieter, z.B. ``youtube.com/...``).
+    Sammlungen waren OK, weil sie keine externe URL haben — Einzel-
+    inhalte aber schon.
+
+    Fix: nach Antwort-Generierung scanne alle Markdown-Links und
+    ersetze externe URLs durch die jeweilige Repo-Render-URL der
+    zugehörigen Card. ``card.url`` (extern) → ``card.link`` /
+    ``card.wlo_url`` (Repo). No-op wenn Lotsen aus oder keine Card-
+    URL-Map verfügbar.
+    """
+    if not guide_mode or not text or not cards:
+        return text or ""
+    url_map: dict[str, str] = {}
+    for c in cards:
+        if isinstance(c, dict):
+            ext = (c.get("url") or "").strip()
+            repo = (c.get("link") or c.get("wlo_url")
+                    or c.get("guide_url") or "").strip()
+        else:
+            ext = (getattr(c, "url", "") or "").strip()
+            repo = (getattr(c, "link", "")
+                    or getattr(c, "wlo_url", "")
+                    or getattr(c, "guide_url", "")
+                    or "").strip()
+        if ext and repo and ext != repo:
+            url_map[ext] = repo
+    if not url_map:
+        return text
+    rewritten = text
+    n_replaced = 0
+    for ext, repo in url_map.items():
+        if ext in rewritten:
+            rewritten = rewritten.replace(ext, repo)
+            n_replaced += 1
+    if n_replaced:
+        logger.info(
+            "lotsen-mode URL-rewrite: %d external→repo replacements in response_text",
+            n_replaced,
+        )
+    return rewritten
+
+
+def _strip_guide_markers_from_text(text: str) -> str:
+    """Remove stray ``__guide__|Label|URL`` (and Markdown-stripped
+    ``guide|Label|URL``) markers from the bot response text.
+
+    The marker is only legitimate inside ``quick_replies`` entries.
+    When the LLM leaks it into the answer body, it shows up as
+    raw text after Markdown normalisation — visually broken.
+
+    Idempotent: safe to call multiple times. Whitespace cleanup
+    afterwards collapses double-spaces that can remain after stripping
+    a marker from a line.
+    """
+    if not text:
+        return ""
+    # Fast-path: skip regex if no marker-candidate substring is present.
+    # Markdown can eat the surrounding underscores, so we check both
+    # ``guide|`` (Markdown-cleaned) and ``guide__|`` (raw, surviving).
+    low = text.lower()
+    if "guide|" not in low and "guide__|" not in low:
+        return text
+    cleaned = _GUIDE_MARKER_RE.sub("", text)
+    # Collapse multiple consecutive blanks and stranded line-ends
+    cleaned = _re_guide_markers.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = _re_guide_markers.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def _attach_guide_urls(
@@ -1172,7 +1383,7 @@ async def _handle_browse_collection(
             response_text=response_text,
             classification={
                 "persona_id": session_state.get("persona_id", "P-AND"),
-                "intent_id": "INT-W-03a",
+                "intent_id": "INT-W-03",
                 "next_state": "state-6",
                 "entities": session_state.get("entities", {}),
             },
@@ -1185,7 +1396,7 @@ async def _handle_browse_collection(
 
     debug = DebugInfo(
         persona=session_state.get("persona_id", ""),
-        intent="INT-W-03a",
+        intent="INT-W-03",
         state="state-6",
         pattern="ACTION: browse_collection",
         tools_called=tools_called,
@@ -2024,12 +2235,35 @@ def _looks_like_search_query(message: str) -> bool:
     if len(msg) < 5:
         return False
     low = msg.lower()
-    # Generic meta/clarification phrases that aren't real searches
-    no_search_phrases = (
-        "was kannst du", "was ist wlo", "wie kann ich", "hilfe", "help",
+    # Generic meta/clarification phrases that aren't real searches.
+    # Diese matchen unabhängig von der Länge: "Was ist WirLernenOnline?"
+    # (24 chars) und "Was ist WLO?" (12 chars) sind beide reine
+    # Definition-Fragen, kein Suchanker. Welle C Sprint 6 Hotfix:
+    # vorher hatte die Liste nur kurze Phrasen + 25-Zeichen-Limit, was
+    # "Was ist WirLernenOnline?" als Suche durchwischen liess —
+    # Safety-Net Fallback-Search hat dann eine MCP-Suche darüber
+    # ausgelöst und Cards in eine RAG-Antwort geschmuggelt.
+    no_search_phrases_exact = (
+        "was ist wlo",
+        "was ist wirlernenonline",
+        "was ist wir lernen online",
+        "wer steckt hinter wlo",
+        "wer steckt hinter wirlernenonline",
+        "was ist oer",
+        "was ist edu-sharing",
+        "was ist eine themenseite",
+        "was ist eine sammlung",
+        "was bedeutet oer",
+    )
+    if any(p in low for p in no_search_phrases_exact):
+        return False
+    # Kurze Meta-/Greeting-Phrasen (mit Längenlimit, sonst false-positive
+    # bei Sätzen wie "Hi, kannst du mir helfen mit Mathe?")
+    no_search_phrases_short = (
+        "was kannst du", "wie kann ich", "hilfe", "help",
         "hallo", "hi ", "moin", "guten tag",
     )
-    if any(p in low for p in no_search_phrases) and len(low) < 25:
+    if any(p in low for p in no_search_phrases_short) and len(low) < 25:
         return False
     return True
 
@@ -2117,18 +2351,69 @@ async def _postprocess_response_for_widget_modes(
 
         cards_for_postprocess: list[Any] = list(resp.cards or [])
 
-        # Safety-Net Trigger 1: bei Inline-Mode + Liefer-Aussage + Suchanfrage,
-        # aber KEINE Cards in der Response. Klassischer LLM-Bug: Modell
-        # behauptet etwas geliefert zu haben ohne Tools gerufen zu haben.
-        # Trigger 2: Cards waren da, aber select_top_cards filterte sie auf
-        # 0 — z.B. weil das LLM hallzinierte IDs gewählt hat. Auch hier
-        # Fallback-Search, damit der User die versprochenen Treffer sieht.
+        # ── Universal Medientyp-Filter (Welle C Sprint 6 Hotfix) ──────
+        #
+        # Bei expliziter medientyp-Vorgabe ("nur Videos", "nur Audio",
+        # ``entities.medientyp=Video`` aus dem Classifier oder aus vorigen
+        # Turns) raus mit Sammlungen + Themenseiten + Cards anderen
+        # Typs — modus-agnostisch (also auch im Kacheln-Mode mit
+        # ``cards_enabled=true``, nicht nur Inline).
+        #
+        # WICHTIG: ``session_state`` und ``classification`` sind im Scope
+        # dieser Funktion NICHT verfügbar (nur ``req`` + ``resp`` werden
+        # übergeben — Wrapper-Pattern für die Postprocess). Wir lesen die
+        # finalen entities deshalb aus ``resp.debug.entities`` ab; die
+        # Engine hat sie dort hingelegt, inkl. session-akkumulierter Slots.
+        _debug_entities: dict[str, Any] = {}
+        try:
+            _dbg_obj = resp.debug
+            if _dbg_obj is not None:
+                _dbg_ents = getattr(_dbg_obj, "entities", None)
+                if isinstance(_dbg_ents, dict):
+                    _debug_entities = {
+                        k: v for k, v in _dbg_ents.items()
+                        if not str(k).startswith("_")
+                    }
+        except Exception:
+            _debug_entities = {}
+        _universal_wanted = _resolve_wanted_content_types(
+            req.message or "",
+            session_entities=_debug_entities,
+            classification_entities=classification_entities,
+        )
+        if _universal_wanted and cards_for_postprocess:
+            _before = len(cards_for_postprocess)
+            cards_for_postprocess = [
+                c for c in cards_for_postprocess
+                if (
+                    (c.get("node_type") if isinstance(c, dict)
+                     else getattr(c, "node_type", None)) == "content"
+                    and _card_matches_wanted_types(c, _universal_wanted)
+                )
+            ]
+            if _before != len(cards_for_postprocess):
+                logger.info(
+                    "universal type-filter: %d → %d cards (medientyp=%s)",
+                    _before, len(cards_for_postprocess), sorted(_universal_wanted),
+                )
+
+        # Safety-Net: bei Liefer-Aussage + Suchanfrage, aber KEINE Cards in
+        # der Response (oder LLM-IDs matchen 0 Cards = Selection-Collapse).
+        # Klassischer LLM-Bug: Modell behauptet etwas geliefert zu haben
+        # ohne Tools gerufen zu haben (oder mit falschen IDs).
+        #
+        # Greift MODUS-AGNOSTISCH — vorher war's auf ``cards_enabled=false``
+        # (Inline-Modus) beschränkt, dann war der Kacheln-/Canvas-Modus
+        # ungeschützt: bei Liefer-Behauptung ohne Tools sah der User „habe
+        # dir was gezogen" aber leere Kacheln-Lane. Lotsen-Modus verstärkte
+        # das, weil dort die Lotsen-Inline-Links als Ersatz-Anker greifen.
+        # Selection-Collapse bleibt Inline-spezifisch (im Kacheln-Modus
+        # filtert das Frontend nicht nach IDs, alle Cards werden gezeigt).
         _claim = _LLM_DELIVERY_CLAIM_RE.search(resp.content or "")
         _query_like = _looks_like_search_query(req.message or "")
-        # Trigger 2 wird ausgewertet nach dem ersten Filterversuch — aber
-        # wir können die Bedingung "Auswahl wäre leer" hier vorab prüfen.
         _selection_collapses = (
-            bool(selected_card_ids)
+            (not modes["cards_enabled"])  # nur im Inline-Pfad relevant
+            and bool(selected_card_ids)
             and bool(cards_for_postprocess)
             and not any(
                 (c.get("node_id") if isinstance(c, dict) else getattr(c, "node_id", None))
@@ -2136,14 +2421,51 @@ async def _postprocess_response_for_widget_modes(
                 for c in cards_for_postprocess
             )
         )
+        # Welle C Sprint 6 Hotfix — Pattern-Gate gegen RAG-only Patterns.
+        # Wenn das aktive Pattern explizit ``tools=[]`` oder eine reine
+        # RAG-Source-Konfig hat (PAT-20 Orientierungs-Guide, PAT-10
+        # Fakten-Bulletin in Pure-RAG-Mode), darf das Safety-Net KEINE
+        # MCP-Fallback-Search auslösen. User-Bug: "Was ist WirLernenOnline?"
+        # → PAT-20 (RAG-only) → LLM-Antwort enthält "zeig ich dir direkt"
+        # → Delivery-Claim matched → Fallback-Search wirft 5 Content-Cards
+        # in eine Definition-Antwort, die gar keine Cards haben sollte.
+        _is_rag_only_pattern = False
+        try:
+            _dbg_obj = resp.debug
+            if _dbg_obj is not None:
+                _p3 = getattr(_dbg_obj, "phase3_modulations", None) or {}
+                _src = _p3.get("sources") or []
+                _tools = _p3.get("tools") or []
+                # Reine RAG: sources enthält 'rag' UND keine MCP-Tools
+                # Pure no-tools: explizit leere Tool-Liste (PAT-20)
+                if isinstance(_tools, list) and len(_tools) == 0:
+                    _is_rag_only_pattern = True
+                elif (
+                    isinstance(_src, list)
+                    and "rag" in _src
+                    and "mcp" not in _src
+                ):
+                    _is_rag_only_pattern = True
+        except Exception:
+            _is_rag_only_pattern = False
+        if _is_rag_only_pattern and not cards_for_postprocess:
+            # Bewusster Skip — RAG-Pattern liefert per Definition keine
+            # Cards. Wenn der LLM "zeig ich dir direkt" o.ä. sagt, ist das
+            # ein Conversation-Hook, kein Liefer-Statement.
+            logger.info(
+                "safety-net skipped: RAG-only pattern (tools=%s, sources=%s) for msg=%r",
+                _tools, _src, (req.message or "")[:60],
+            )
+            _claim = None  # Safety-Net unten greift damit nicht
         if (
-            not modes["cards_enabled"]
-            and _claim
+            _claim
             and _query_like
             and (not cards_for_postprocess or _selection_collapses)
         ):
+            _mode_label = "inline" if not modes["cards_enabled"] else "kacheln"
             logger.info(
-                "inline-mode safety-net: %s — Fallback-Search auf '%s'",
+                "safety-net (%s): %s — Fallback-Search auf '%s'",
+                _mode_label,
                 "leere Cards" if not cards_for_postprocess else "LLM-IDs matchen 0 Cards",
                 (req.message or "")[:60],
             )
@@ -2152,7 +2474,8 @@ async def _postprocess_response_for_widget_modes(
                 classification_entities or {},
             )
             if fb_cards:
-                logger.info("inline-mode safety-net: %d Cards aus Fallback", len(fb_cards))
+                logger.info("safety-net (%s): %d Cards aus Fallback",
+                            _mode_label, len(fb_cards))
                 cards_for_postprocess = fb_cards
                 # Fallback-Cards haben frische IDs, die LLM-Auswahl ist
                 # ungültig dafür — sonst würde der Filter wieder auf 0
@@ -2176,33 +2499,70 @@ async def _postprocess_response_for_widget_modes(
             and cards_for_postprocess
             and not _selection_collapses  # nur wenn die LLM-Auswahl gültig ist
         ):
+            _user_msg = req.message or ""
+            # session_state nicht im Scope — debug.entities ist der Snapshot.
+            _wanted_types = _resolve_wanted_content_types(
+                _user_msg,
+                session_entities=_debug_entities,
+                classification_entities=classification_entities,
+            )
+            _wants_specific_type = bool(_wanted_types)
+
+            # Type-Fokus-Strict-Filter: bei „Nur Videos zu X" wählt der LLM
+            # trotz Prompt-Hinweis regelmäßig auch Sammlungen oder andere
+            # Typen mit (`reasoning: Zwei Videos zuerst, danach zwei Samm-
+            # lungen`). Backend-seitig hier hart filtern — nur Cards mit
+            # matching ``learning_resource_types`` bleiben in der Auswahl.
+            # Augmentation füllt danach mit weiteren matching-Cards auf.
+            if _wants_specific_type:
+                _strict_ids = set()
+                for _i in selected_card_ids:
+                    _c = next(
+                        (c for c in cards_for_postprocess
+                         if (c.get("node_id") if isinstance(c, dict)
+                             else getattr(c, "node_id", None)) == _i),
+                        None,
+                    )
+                    if _c is not None and _card_matches_wanted_types(_c, _wanted_types):
+                        _strict_ids.add(_i)
+                if _strict_ids:
+                    _before = len(selected_card_ids)
+                    selected_card_ids = [i for i in selected_card_ids if i in _strict_ids]
+                    if _before != len(selected_card_ids):
+                        logger.info(
+                            "inline-mode type-strict filter: %d → %d IDs "
+                            "(Typ: %s)",
+                            _before, len(selected_card_ids),
+                            sorted(_wanted_types),
+                        )
+
             _selected_set = set(selected_card_ids)
             _picked = [
                 c for c in cards_for_postprocess
                 if (c.get("node_id") if isinstance(c, dict)
                     else getattr(c, "node_id", None)) in _selected_set
             ]
-            _user_msg = req.message or ""
-            _wants_specific_type = _user_wants_specific_content_type(_user_msg)
-            # Augmentations-Bedingung: LLM hat weniger als 5 gepickt, der
-            # In-Memory-Pool enthält noch ungenutzte Einzelinhalte, und der
-            # User hat nicht explizit nach einem Material-Typ gefragt
-            # (bei Typ-Fokus respektiert man die LLM-Auswahl strikt).
-            # Vorher war "alle gepickten sind Sammlung" Pflicht — aber bei
-            # einer 1+1-Mischauswahl (Sammlung + 1 Einzelinhalt) wollen wir
-            # auch auffüllen, sonst sieht der User nur 2 Treffer statt 5.
+            # Augmentations-Bedingung: LLM hat weniger als 5 gepickt UND
+            # der In-Memory-Pool enthält noch ungenutzte Einzelinhalte.
+            #
+            # Vorher: bei Typ-Fokus ("nur Videos") wurde Augmentation komplett
+            # übersprungen — das führte zu 1-Treffer-Antworten, obwohl 5+
+            # Videos im Pool waren. Jetzt: bei Typ-Fokus läuft Augmentation,
+            # filtert aber strikt auf die gewünschten ``learning_resource_types``,
+            # damit nur Cards des angefragten Typs angehängt werden (kein
+            # Audio zwischen Videos).
             _has_extra_content_in_pool = any(
                 (c.get("node_type") if isinstance(c, dict)
                  else getattr(c, "node_type", None)) != "collection"
                 and (c.get("node_id") if isinstance(c, dict)
                      else getattr(c, "node_id", None)) not in _selected_set
+                and _card_matches_wanted_types(c, _wanted_types)
                 for c in cards_for_postprocess
             )
             if (
                 _picked
                 and len(_picked) < 5
                 and _has_extra_content_in_pool
-                and not _wants_specific_type
             ):
                 _needed = 5 - len(_picked)
                 logger.info(
@@ -2230,13 +2590,18 @@ async def _postprocess_response_for_widget_modes(
                               else getattr(_c, "node_type", None))
                     if not _nid or _nid in _existing_ids or _ntype == "collection":
                         continue
+                    # Bei Typ-Fokus ("nur Videos") nur Cards des gewünschten
+                    # Typs anhängen — sonst landet ein Audio zwischen Videos.
+                    if not _card_matches_wanted_types(_c, _wanted_types):
+                        continue
                     selected_card_ids.append(_nid)
                     _existing_ids.add(_nid)
                     _added += 1
                 logger.info(
                     "inline-mode auto-augment: %d Einzelinhalte aus "
-                    "vorhandenen Cards ergänzt",
+                    "vorhandenen Cards ergänzt%s",
                     _added,
+                    f" (Typ-Filter: {sorted(_wanted_types)})" if _wanted_types else "",
                 )
                 # SCHRITT 2: Reicht der In-Memory-Pool noch nicht? Fallback
                 # auf frischen search_wlo_content-Call.
@@ -2257,6 +2622,8 @@ async def _postprocess_response_for_widget_modes(
                                   else getattr(_c, "node_type", None))
                         if not _nid or _nid in _existing_ids or _ntype == "collection":
                             continue
+                        if not _card_matches_wanted_types(_c, _wanted_types):
+                            continue
                         cards_for_postprocess.append(_c)
                         selected_card_ids.append(_nid)
                         _existing_ids.add(_nid)
@@ -2267,6 +2634,234 @@ async def _postprocess_response_for_widget_modes(
                             "%d Einzelinhalte ergänzt",
                             _added,
                         )
+
+        # ── Option C v2 — Curation-Layer auf v1-Cards ────────────────
+        # Wenn ``CARD_PIPELINE_V2=1`` aktiv UND keine direct-action UND
+        # v1 hat Cards beschafft: v2 läuft als reine Curation-Schicht auf
+        # v1's Pool — keine eigenen MCP-Calls. Das spart Latenz, vermeidet
+        # Pool-Divergenz und greift LLM-Re-Rank konsistent.
+        #
+        # Aktivierungsbedingungen (alle müssen erfüllt sein):
+        #   1. ``CARD_PIPELINE_V2`` aktiv
+        #   2. Keine direct-action (LP, Canvas, browse-collection bauen
+        #      Cards selbst und kuratieren nicht)
+        #   3. v1 hat Cards beschafft (sonst ist's ein Klärungs-Turn —
+        #      v2 darf da keine Cards reinhalluzinieren)
+        #
+        # Was v2 macht:
+        #   * normalize_cards: Host-Rewrite + node_type + Dedup
+        #   * select_final_cards: Mix + Relevance-Filter + LLM-Re-Rank
+        #   * annotate_cards_with_link: link-Feld setzen
+        #
+        # Phase 10 wird v2 zur Default-Beschaffung machen — bis dahin ist
+        # v1's Pool die Eingabe für v2 (gleiche Pool-Größe, gleiche IDs).
+        _is_direct_action = bool((getattr(req, "action", "") or "").strip())
+        if (
+            card_pipeline_v2_enabled()
+            and not _is_direct_action
+            and cards_for_postprocess  # v1 hat Cards → v2 läuft als Curation
+        ):
+            try:
+                from app.services.card_pipeline import (
+                    run_pipeline_v2 as _v2_run,
+                    summarize_pipeline_result as _v2_summary,
+                )
+                # Welle C Sprint 6 Hotfix — Filter-Persistenz via Resolver.
+                # Vorher: ``_wanted_types`` wurde NUR aus der aktuellen
+                # User-Nachricht ermittelt. Folge: "nur Videos" als
+                # Folge-Turn ohne nochmaliges Thema → wanted=set() (kein
+                # Match) → Sammlungen/Themenseiten blieben drin, obwohl
+                # User klar Einzelinhalte wollte.
+                _wanted_types = _resolve_wanted_content_types(
+                    req.message or "",
+                    session_entities=_debug_entities,
+                    classification_entities=classification_entities,
+                )
+                _page_ctx = (
+                    getattr(req.environment, "page_context", None) or {}
+                )
+                _coll_id = (
+                    str(_page_ctx.get("collection_id") or "").strip()
+                    if isinstance(_page_ctx, dict) else ""
+                ) or None
+                _v2 = await _v2_run(
+                    user_message=req.message or "",
+                    guide_mode=guide_mode_on,
+                    wanted_content_types=_wanted_types or None,
+                    collection_id=_coll_id,
+                    selected_node_ids=selected_card_ids or None,
+                    prefetched_pool=cards_for_postprocess,  # ← v1-Pool curieren
+                )
+                # A/B-Log: erst v1-IDs, dann v2-Output — leicht diff-bar.
+                _v1_ids = [
+                    (c.get("node_id") if isinstance(c, dict)
+                     else getattr(c, "node_id", ""))
+                    for c in cards_for_postprocess
+                ]
+                logger.info(
+                    "[v1] cards=%d ids=%s", len(_v1_ids), _v1_ids,
+                )
+                logger.info(_v2_summary(_v2))
+                # Cards austauschen — v2 ist jetzt Quelle der Wahrheit.
+                # selected_card_ids spiegelt die v2-Reihenfolge wider, damit
+                # der Inline-Sort in _apply_widget_modes_postprocess sie
+                # nicht umstellt.
+                #
+                # Type-Fokus ist STRICT: auch leeres v2-Ergebnis wird
+                # durchgereicht — der User hat einen konkreten Inhaltstyp
+                # verlangt (z.B. Arbeitsblätter), und Sammlungen/Themenseiten
+                # in der Antwort wären verwirrend. Lieber "keine Treffer"
+                # als falsche Mix-Cards. Bei "general" / "collection-contents"
+                # gilt der alte Sicherheitsfallback (v1 bleibt, wenn v2 0
+                # liefert), weil dort der Relevance-Filter manchmal zu strikt
+                # ist.
+                v2_intent = _v2.get("intent_kind", "")
+                v2_cards = _v2.get("cards") or []
+                if v2_intent == "type-focus":
+                    # Strict: v2 entscheidet final.
+                    cards_for_postprocess = v2_cards
+                    selected_card_ids = [
+                        str(c.get("node_id") or "") for c in v2_cards
+                        if isinstance(c, dict) and c.get("node_id")
+                    ]
+                    _selection_collapses = False
+                    if not v2_cards:
+                        logger.info(
+                            "v2 type-focus lieferte 0 Cards — leere Card-Liste "
+                            "wird durchgereicht (User-Anfrage forderte "
+                            "spezifischen Inhaltstyp, keine Mix-Cards).",
+                        )
+                elif v2_cards:
+                    cards_for_postprocess = v2_cards
+                    selected_card_ids = [
+                        str(c.get("node_id") or "") for c in v2_cards
+                        if isinstance(c, dict) and c.get("node_id")
+                    ]
+                    _selection_collapses = False
+                else:
+                    # general/collection-contents mit 0 v2-Cards: vermutlich
+                    # Relevance-Filter zu strikt → v1's Cards behalten als
+                    # Fallback.
+                    logger.warning(
+                        "v2 curation (intent=%s) lieferte 0 Cards, "
+                        "behalte v1's %d Cards als Fallback.",
+                        v2_intent, len(cards_for_postprocess),
+                    )
+            except Exception as _v2_err:
+                logger.warning(
+                    "v2 Curation-Layer fehlgeschlagen, bleibe bei v1: %s",
+                    _v2_err,
+                )
+
+        # ── Re-Annotation der ``guide_url``-Felder für den Lotsen-Pfad ──
+        # _chat_impl macht ``_attach_guide_urls`` einmal vor Response-Return.
+        # Default-Limit dort ist ``max_guide_targets_per_turn`` (=5) — damit
+        # bekommen Cards an Position 6+ KEIN ``guide_url``.
+        #
+        # Greift sowohl im Inline-Modus (cards-enabled=false) als auch im
+        # Kacheln-Modus (cards-enabled=true), weil Safety-Net und Auto-
+        # Augmentation in BEIDEN Modi Cards nachreichen können, die
+        # zwischen _chat_impl-Run und _apply_widget_modes_postprocess
+        # entstanden sind. Diese frischen Cards haben sonst keine
+        # ``guide_url``, womit der Lotsen-Button („Bring mich hin") im
+        # Frontend fehlt — auch bei Kacheln. Idempotent, weil
+        # ``pick_guide_url`` deterministisch ist.
+        if guide_mode_on and cards_for_postprocess:
+            try:
+                _host = (getattr(req.environment, "host", "") or "").strip()
+                if _host:
+                    from app.services.guide_mode_service import (
+                        annotate_cards_with_guide_url as _annotate,
+                        host_is_allowed as _host_ok,
+                    )
+                    if _host_ok(_host):
+                        _annotate(
+                            cards_for_postprocess, enabled=True, host=_host,
+                            max_targets=20,
+                        )
+            except Exception as _ann_err:
+                logger.warning("inline-mode re-annotate guide_url failed: %s", _ann_err)
+
+        # ── Phase 4a: Card-Pipeline v2 — card.link VOR Postprocess ─
+        # Erst die Link-Annotation, dann widget_modes_postprocess. Damit
+        # kann ``_build_inline_card_links`` direkt auf ``card.link``
+        # zugreifen (Single Source of Truth für Sammlungs-Browse-URLs,
+        # Lotsen-Render-URLs, externe Content-Links).
+        #
+        # Idempotent + deterministisch (kein MCP-Call). Sicher auch bei
+        # leerer cards_for_postprocess-Liste.
+        # Welle C Sprint 6 Hotfix — Reihenfolge wichtig:
+        #
+        # ZUERST den ``response_text``-Markdown-Rewrite (externe URLs →
+        # Repo-Render-URLs), SOLANGE ``card.url`` noch die externe
+        # Provider-URL enthält (= der LLM hat genau diese URL gesehen und
+        # in den Markdown-Antwort-Text eingebaut). Sonst baut der
+        # Rewriter eine ``{repo→repo}``-Map (no-op) und der LLM-Text
+        # bleibt mit externen URLs durchsetzt.
+        #
+        # DANN ``annotate_cards_with_link`` aufrufen — der überschreibt
+        # ``card.url`` mit dem Repo-Link, sodass ALLE Frontend-Pfade
+        # (Event-Inspector, Canvas-Card-Buttons, ``c.url || c.wlo_url``-
+        # Fallbacks) im Lotsen-Modus auch aufs Repo zeigen.
+        if guide_mode_on and resp.content:
+            try:
+                _rewritten_text = _rewrite_external_urls_to_repo(
+                    resp.content, cards_for_postprocess or [], guide_mode_on,
+                )
+                if _rewritten_text != resp.content:
+                    resp = resp.model_copy(update={"content": _rewritten_text})
+            except Exception as _rw_err:
+                logger.debug("response_text URL rewrite skipped: %s", _rw_err)
+
+        try:
+            from app.services.card_pipeline import (
+                annotate_cards_with_link as _v2_attach_link,
+            )
+            _v2_attach_link(
+                cards_for_postprocess or [],
+                guide_mode=guide_mode_on,
+                search_query=req.message or "",
+                require_allowed=guide_mode_on,
+            )
+        except Exception as _link_err:  # pragma: no cover — additiv, darf nicht crashen
+            logger.debug("card.link annotation skipped: %s", _link_err)
+
+        # ── Canvas-Sync: page_action.payload.cards auf v2-gecurated angleichen ──
+        # Hintergrund: ``_chat_impl`` baut die ``page_action`` mit Cards
+        # BEVOR der v2-Curation-Layer läuft. Wenn v2 die Card-Liste
+        # filtert/umordnet (z.B. type-focus wirft Sammlungen raus), würde
+        # die Canvas-Komponente noch die alte v1-Liste sehen, die Chat-Cards
+        # aber die neue v2-Liste. → Inkonsistenz: User sieht im Chat die
+        # Videos, im Canvas weiterhin Sammlungen.
+        # Fix: nach v2-Curation + Link-Annotation die page_action-Cards
+        # mit cards_for_postprocess synchronisieren.
+        try:
+            _pa = resp.page_action
+            _pa_dict = (_pa if isinstance(_pa, dict)
+                        else (_pa.model_dump() if _pa else None))
+            if (
+                _pa_dict
+                and _pa_dict.get("action") in ("show_results", "canvas_show_cards")
+                and isinstance(_pa_dict.get("payload"), dict)
+                and "cards" in _pa_dict["payload"]
+            ):
+                _synced_cards = []
+                for _c in (cards_for_postprocess or []):
+                    if isinstance(_c, dict):
+                        _synced_cards.append(_c)
+                    elif hasattr(_c, "model_dump"):
+                        try:
+                            _synced_cards.append(_c.model_dump())
+                        except Exception:
+                            pass
+                _pa_dict["payload"]["cards"] = _synced_cards
+                resp = resp.model_copy(update={"page_action": _pa_dict})
+                logger.debug(
+                    "page_action.payload.cards synced with v2-curated cards (%d)",
+                    len(_synced_cards),
+                )
+        except Exception as _sync_err:  # pragma: no cover — Defensiv
+            logger.debug("page_action cards-sync skipped: %s", _sync_err)
 
         qrs, cards_out, pa, txt = _apply_widget_modes_postprocess(
             modes=modes,
@@ -2279,6 +2874,7 @@ async def _postprocess_response_for_widget_modes(
             user_message=req.message or "",
             selected_card_ids=selected_card_ids,
         )
+
         # ChatResponse rekonstruieren — Pydantic-Modell aufgrund von
         # Validierungsregeln kopieren wir per model_copy(update=...).
         return resp.model_copy(update={
@@ -2410,6 +3006,12 @@ async def _chat_impl(
             content=_rl["blocked_message"],
             quick_replies=[],
         )
+
+    # NB: Card-Pipeline v2 wird NICHT mehr hier per fire-and-forget
+    # geloggt — der Hauptpfad-Switch sitzt jetzt in
+    # ``_postprocess_response_for_widget_modes`` (Option C). Damit hat der
+    # v2-Pfad Zugriff auf die LLM-Auswahl (selected_card_ids) und kann sie
+    # als Re-Rank-Hint nutzen. Der A/B-Log entsteht dort ebenfalls.
 
     # ── Handle direct actions (bypass classification) ─────────
     # IMPORTANT: direct actions skip the pattern engine but MUST still go
@@ -2589,183 +3191,23 @@ async def _chat_impl(
             "next_state": classification.next_state,
         })
 
-    # ── Speculative MCP prefetch ──────────────────────────────────────
-    # For search-style intents we already know the query → start the MCP
-    # call in the background while pattern selection / policy / context
-    # build run. By the time generate_response() needs it, the cards are
-    # usually already there and the LLM does NOT need a tool round-trip.
-    _spec_search_intents = {"INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-10"}
+    # ── Speculative MCP prefetch — Variablen-Stubs ────────────────────
+    # Welle-A.3 (2026-05): Der eigentliche Spec-Start wurde HINTER die
+    # Pre-Route-Engine verschoben. Begründung: Pre-Route kann den Intent
+    # umrouten (R-17 Themenseite → INT-W-03/PAT-28, R-15 Fachportal →
+    # INT-W-13/PAT-26, R-19 Lerninhalt-Doppel-Trigger → INT-W-03). Wenn
+    # der Spec-Call vorher startet, vergiftet er bei einer falschen
+    # initialen Intent-Klassifikation den MCP-Session-State (z.B. läuft
+    # search_wlo_collections, was den topic_pages-Index verbiegt — der
+    # eigentlich gewollte search_wlo_topic_pages-Call findet dann keine
+    # Treffer mehr).
+    # Welle C Sprint 4 (2026-05-15): INT-W-03 sind in INT-W-03 gemergt.
+    _spec_search_intents = {"INT-W-03", "INT-W-10"}
     spec_task: asyncio.Task | None = None
     spec_tool_name: str | None = None
     spec_tool_args: dict[str, Any] | None = None
-
-    def _spec_query_from_classification() -> str:
-        ents = classification.entities or {}
-        for k in ("thema", "fach", "topic", "query", "schlagwort"):
-            v = ents.get(k)
-            if v:
-                return str(v)[:120]
-        # Fall back to the raw user message stripped of obvious noise
-        return req.message[:120]
-
-    def _spec_has_enough_signal() -> bool:
-        """Gate speculative prefetch on having any usable search anchor.
-
-        Anchors (in priority order): explicit ``thema`` / ``topic`` /
-        ``schlagwort`` / ``query`` slot, or — as a softer fallback —
-        ``fach`` (Subject). With ``fach`` alone we still get a useful
-        broad search (Themenseiten/Sammlungen zum Fach), which is what
-        the user expects when they ask "Material zum Fach Mathematik".
-
-        Without ANY anchor we skip the prefetch — PAT-02 (Geführte
-        Klärung) takes over and asks for at least a Fach.
-        """
-        ents = classification.entities or {}
-        thema = (ents.get("thema") or ents.get("topic")
-                 or ents.get("query") or ents.get("schlagwort") or "")
-        if str(thema).strip():
-            return True
-        fach = ents.get("fach")
-        if fach and str(fach).strip():
-            return True
-        return False
-
-    # Extra speculative tasks that run in parallel next to the primary one.
-    # Their results are merged into the cards list after the main response
-    # is generated — this lets us return e.g. collections + content + topic
-    # pages side-by-side when the user asks generically ("etwas zu Optik").
+    spec_query: str = ""
     extra_spec_tasks: list[tuple[str, asyncio.Task]] = []
-
-    if (
-        safety.risk_level != "high"
-        and classification.intent_id in _spec_search_intents
-        and _spec_has_enough_signal()
-    ):
-        try:
-            spec_query = _spec_query_from_classification()
-            _ents_for_spec = classification.entities or {}
-            _medientyp = _ents_for_spec.get("medientyp")
-            _fach = _ents_for_spec.get("fach")
-            _stufe = _ents_for_spec.get("stufe")
-            _msg_low = (req.message or "").lower()
-            _wants_topic = any(k in _msg_low for k in (
-                "themenseite", "themenseiten", "fachportal", "portalseite",
-            ))
-            _wants_samml = any(k in _msg_low for k in (
-                "sammlung", "sammlungen", "kollektion",
-            ))
-            # _wants_content_only: True nur wenn explizit ein Medientyp
-            # (Video / Arbeitsblatt / interaktive Übung / …) genannt ist.
-            # Frühere Variante "or INT-W-03b" hat bei jeder Material-Suche
-            # die Sammlungen + Themenseiten weggeworfen — der User wollte
-            # aber gestaffelt: Themenseiten → Sammlungen → Inhalte. Daher
-            # bei INT-W-03b OHNE medientyp lieber als generische Suche
-            # behandeln (alle drei Tool-Calls parallel).
-            _wants_content_only = bool(_medientyp)
-
-            if spec_query:
-                # 1. Primary tool — always a tool whose output parse_wlo_cards
-                #    understands (topic_pages has its own format and is handled
-                #    as an extra below to enrich collection cards with their
-                #    topic-page URLs).
-                if _wants_content_only:
-                    spec_tool_name = "search_wlo_content"
-                else:
-                    # Generic / topic / collection / learning-path intent →
-                    # start with collections (rich cards with preview/desc/chips)
-                    spec_tool_name = "search_wlo_collections"
-
-                # Primary collections requests get capped at maxResults=5
-                # whenever a topic_pages-search is also expected: the WLO MCP
-                # server's session-state index for ``search_wlo_topic_pages``
-                # is determined by the LAST collections call, and only sticks
-                # for small result sets. With maxResults=10 the topic-pages
-                # call returns "Keine Themenseiten gefunden" even for queries
-                # that DO have matching topic pages. Loss is marginal — the
-                # canvas paginates at 5 cards per page anyway.
-                _primary_max = 10
-                if spec_tool_name == "search_wlo_collections" and (
-                    _wants_topic
-                    or classification.intent_id in (
-                        "INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-10",
-                    )
-                ):
-                    _primary_max = 5
-                spec_tool_args: dict[str, Any] = {
-                    "query": spec_query, "maxResults": _primary_max,
-                }
-                if _medientyp and spec_tool_name == "search_wlo_content":
-                    spec_tool_args["learningResourceType"] = _medientyp
-                if _fach:
-                    spec_tool_args["discipline"] = _fach
-                if _stufe:
-                    spec_tool_args["educationalContext"] = _stufe
-                spec_task = asyncio.create_task(
-                    call_mcp_tool(spec_tool_name, spec_tool_args)
-                )
-                logger.info("speculative primary=%s for intent=%s args=%s",
-                            spec_tool_name, classification.intent_id, spec_tool_args)
-
-                # 2. Extra tools — fire in parallel to enrich the response.
-                #    Rules:
-                #      - topic-pages query → also run collections
-                #      - generic search (no explicit type preference) → also run
-                #        the complementary search so user sees both types
-                #      - explicit content-search with generic intent → also collections
-                _extras: list[str] = []
-                # Search-Intents profitieren immer von der gestaffelten
-                # Suche Themenseiten → Sammlungen → Inhalte. Wir feuern
-                # alle fehlenden Tools parallel zur primary, damit der
-                # User die volle Bandbreite der Treffer sieht.
-                _all_search_intents = (
-                    "INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-10",
-                )
-                if _wants_topic:
-                    # Explizit nach Themenseiten gefragt → topic_pages
-                    # Listing wird ohnehin gezogen und auf die passenden
-                    # Sammlungs-Cards gemerged.
-                    _extras.append("search_wlo_topic_pages")
-                elif classification.intent_id in _all_search_intents:
-                    # Generische Suche → Themenseiten als zusätzliche
-                    # Card-Quelle (top of staircase) anbieten.
-                    _extras.append("search_wlo_topic_pages")
-
-                if classification.intent_id in _all_search_intents:
-                    # Sicherstellen dass alle drei Tool-Klassen gelaufen
-                    # sind: primary deckt eine Klasse ab, _extras die
-                    # fehlenden zwei. Doppelungen filtert das spätere
-                    # Dedup unten anhand des Tool-Namens.
-                    if not _wants_content_only:
-                        _extras.append("search_wlo_content")
-                    if _wants_content_only or _wants_samml:
-                        _extras.append("search_wlo_collections")
-
-                for extra_name in _extras:
-                    if extra_name == spec_tool_name:
-                        continue
-                    extra_args: dict[str, Any] = {"query": spec_query, "maxResults": 5}
-                    if _fach: extra_args["discipline"] = _fach
-                    if _stufe: extra_args["educationalContext"] = _stufe
-
-                    # Fix A — search_wlo_topic_pages is session-stateful on
-                    # the WLO MCP server. Empirically only a collections call
-                    # with maxResults=5 (no discipline filter) primes the
-                    # topic-page index reliably; the primary collections
-                    # task uses maxResults=10 and might also include a
-                    # discipline filter, which leaves topic_pages cold.
-                    # Run a dedicated warmup before the topic_pages call.
-                    if extra_name == "search_wlo_topic_pages":
-                        t = asyncio.create_task(
-                            _topic_pages_with_warmup(spec_query, extra_args),
-                        )
-                    else:
-                        t = asyncio.create_task(call_mcp_tool(extra_name, extra_args))
-
-                    extra_spec_tasks.append((extra_name, t))
-                    logger.info("speculative extra=%s args=%s", extra_name, extra_args)
-        except Exception as _e:
-            logger.warning("speculative tool spawn failed: %s", _e)
-            spec_task = None
 
     # Log every safety decision (filtered by config: log_all_turns)
     try:
@@ -2787,16 +3229,34 @@ async def _chat_impl(
     # dann sauber degradieren ("nenn mir dein konkretes Thema") statt mit
     # Müll-Treffern ("Wortschatz" / "Startseite Mathematik" für Query="Thema")
     # die Karten-Liste zu fluten.
-    _PLACEHOLDER_TOPICS = {
-        "thema", "themen", "ein thema", "einem thema", "irgendwas",
-        "etwas", "was", "irgendetwas", "irgendein thema", "sonstiges",
-        "material", "materialien", "ein material", "ein paar materialien",
-        "sachen", "dinge", "stuff", "topic", "etwas thema",
-        "inhalt", "inhalte", "content",
-    }
+    #
+    # Wortliste + min_length aus 01-base/placeholder-topics.yaml (Studio-
+    # pflegbar). Defaults sind dieselben wie die alte Hardcode-Liste.
+    try:
+        from app.services.config_loader import load_placeholder_topics_config
+        _ph_cfg = load_placeholder_topics_config()
+        _PLACEHOLDER_TOPICS = _ph_cfg["topics"]
+        _PLACEHOLDER_MIN_LEN = _ph_cfg["min_length"]
+    except Exception as _ph_err:
+        logger.debug("placeholder-topics config load failed: %s", _ph_err)
+        _PLACEHOLDER_TOPICS = {
+            "thema", "themen", "ein thema", "einem thema", "irgendwas",
+            "etwas", "was", "irgendetwas", "irgendein thema", "sonstiges",
+            "material", "materialien", "ein material", "ein paar materialien",
+            "sachen", "dinge", "stuff", "topic", "etwas thema",
+            "inhalt", "inhalte", "content",
+        }
+        _PLACEHOLDER_MIN_LEN = 3
+
     def _is_placeholder_topic(value: str | None) -> bool:
         s = (value or "").strip().lower()
-        return bool(s) and s in _PLACEHOLDER_TOPICS
+        if not s:
+            return False
+        # Längen-Check: zu kurze Themen sind quasi immer Tippfehler oder
+        # nicht-extrahierbarer Rest. "OER"/"DSGVO" (3-4) bleiben gültig.
+        if _PLACEHOLDER_MIN_LEN > 0 and len(s) < _PLACEHOLDER_MIN_LEN:
+            return True
+        return s in _PLACEHOLDER_TOPICS
 
     if classification.entities and _is_placeholder_topic(
         classification.entities.get("thema")
@@ -2821,7 +3281,87 @@ async def _chat_impl(
     new_entities = classification.entities
 
     if turn_type == "topic_switch":
-        session_state["entities"] = {}
+        # Welle C Sprint 6 — Topic-Switch v3 mit Carry-over-Filter VOR der
+        # Rule-Engine.
+        #
+        # ``shadow_router.build_context()`` liest ``classification.entities``
+        # (nicht session_state.entities) für die Routing-Rules. Wenn der
+        # LLM-Classifier den alten Slot als Carry-over zurückgibt (z.B.
+        # ``thema="Bruchrechnung"`` nach "anderes Thema"), feuert
+        # ``rule_topic_switch_needs_clarification`` nicht, weil
+        # ``entity.thema`` non-empty ist. Pattern landet bei PAT-28/PAT-06
+        # statt PAT-02-Klärung.
+        #
+        # Fix: Carry-over-Slots aus ``classification.entities`` POPPEN —
+        # das macht den context für die Rule-Engine sauber.
+        _prev_slots_pre = {
+            k: v for k, v in (session_state.get("entities") or {}).items()
+            if not str(k).startswith("_") and v
+        }
+        if classification.entities:
+            _dropped_carry = []
+            for k in list(classification.entities.keys()):
+                if str(k).startswith("_"):
+                    continue
+                v = classification.entities.get(k)
+                if v and _prev_slots_pre.get(k) == v:
+                    classification.entities.pop(k)
+                    _dropped_carry.append(k)
+            if _dropped_carry:
+                logger.info(
+                    "topic_switch carry-over filter: popped %s from classification.entities (matched prev=%s)",
+                    _dropped_carry, _prev_slots_pre,
+                )
+            # new_entities nach dem Reset neu binden, damit die Merge-
+            # Schleife unten den gereinigten Stand sieht.
+            new_entities = classification.entities
+        #
+        # Iterations-Historie:
+        #   v1: nur ``session_state["entities"] = {}``. Bug: classification.
+        #       entities mit alten Werten wurde danach gleich rein-gemerged.
+        #   v2: classification.entities auch leeren. Bug: wenn User ein
+        #       NEUES Thema nennt ("Goethe Faust"), wurde es mit gelöscht.
+        #   v3 (aktuell): Carry-over erkennen — wenn der Classifier einen
+        #       Slot mit DEM SELBEN Wert zurückgibt wie der vorige Turn,
+        #       ist das mit hoher Wahrscheinlichkeit Carry-over (kein
+        #       echter neuer Wert) → ignorieren. Nur Slots, die WIRKLICH
+        #       neu/anders sind, überleben den Reset.
+        #
+        # Beispiele:
+        #   "anderes Thema" + classification.thema="Bruchrechnung" (alt) →
+        #       Carry-over erkannt → thema verworfen → Klärung
+        #   "Goethe Faust" + classification.thema="Goethe Faust" (neu) →
+        #       kein Match mit prev → übernommen
+        #
+        # Private Marker (_canvas_*, _lp_*) bleiben erhalten — sie sind
+        # interner Canvas/Lernpfad-State, kein Such-Slot.
+        _prev_slots = {
+            k: v for k, v in (session_state.get("entities") or {}).items()
+            if not str(k).startswith("_") and v
+        }
+        _preserved = {
+            k: v for k, v in (session_state.get("entities") or {}).items()
+            if str(k).startswith("_")
+        }
+        session_state["entities"] = _preserved
+        _accepted: dict[str, Any] = {}
+        _carry_over_dropped: dict[str, Any] = {}
+        for k, v in (new_entities or {}).items():
+            if not v:
+                continue
+            # Carry-over: Classifier liefert exakt den alten Wert zurück
+            # bei einem topic_switch — höchst unwahrscheinlich, dass der
+            # User genau das alte Thema neu genannt hat. Verwerfen.
+            if _prev_slots.get(k) == v:
+                _carry_over_dropped[k] = v
+                continue
+            session_state["entities"][k] = v
+            _accepted[k] = v
+        logger.info(
+            "topic_switch: kept markers=%s, accepted_new=%s, carry_over_dropped=%s, "
+            "prev_slots=%s",
+            list(_preserved.keys()), _accepted, _carry_over_dropped, _prev_slots,
+        )
     elif turn_type == "correction":
         for k, v in new_entities.items():
             if v:
@@ -2908,6 +3448,188 @@ async def _chat_impl(
     except Exception as _pre_err:  # pragma: no cover — never block request
         logger.debug("pre-route engine failed: %s", _pre_err)
 
+    # ── Speculative MCP prefetch — Tool-Start (post-Pre-Route) ────────
+    # Für Such-Style-Intents starten wir die MCP-Suche im Hintergrund,
+    # während Pattern-Selection / Policy / Context laufen. Wenn
+    # generate_response() das Ergebnis braucht, sind die Cards meist
+    # schon da → kein zweiter LLM-Tool-Round-Trip nötig.
+    #
+    # Wichtig: Dieser Block läuft NACH der Pre-Route, damit Intent- und
+    # Pattern-Overrides aus R-15..R-19 berücksichtigt werden (besonders
+    # R-17 Themenseiten-Suche → PAT-28). Ohne die neue Reihenfolge wurde
+    # bei "Themenseite zu Photosynthese" zuerst search_wlo_collections
+    # gefeuert, das den MCP-Session-State für search_wlo_topic_pages
+    # vergiftet hat.
+    def _spec_query_from_classification() -> str:
+        ents = classification.entities or {}
+        for k in ("thema", "fach", "topic", "query", "schlagwort"):
+            v = ents.get(k)
+            if v:
+                return str(v)[:120]
+        # Fall back to the raw user message stripped of obvious noise
+        return req.message[:120]
+
+    def _spec_has_enough_signal() -> bool:
+        """Gate speculative prefetch on having any usable search anchor.
+
+        Anchors (in priority order): explicit ``thema`` / ``topic`` /
+        ``schlagwort`` / ``query`` slot, or — as a softer fallback —
+        ``fach`` (Subject). With ``fach`` alone we still get a useful
+        broad search (Themenseiten/Sammlungen zum Fach), which is what
+        the user expects when they ask "Material zum Fach Mathematik".
+
+        Without ANY anchor we skip the prefetch — PAT-02 (Geführte
+        Klärung) takes over and asks for at least a Fach.
+        """
+        ents = classification.entities or {}
+        thema = (ents.get("thema") or ents.get("topic")
+                 or ents.get("query") or ents.get("schlagwort") or "")
+        if str(thema).strip():
+            return True
+        fach = ents.get("fach")
+        if fach and str(fach).strip():
+            return True
+        return False
+
+    if (
+        safety.risk_level != "high"
+        and classification.intent_id in _spec_search_intents
+        and _spec_has_enough_signal()
+    ):
+        try:
+            spec_query = _spec_query_from_classification()
+            _ents_for_spec = classification.entities or {}
+            _medientyp = _ents_for_spec.get("medientyp")
+            _fach = _ents_for_spec.get("fach")
+            _stufe = _ents_for_spec.get("stufe")
+            _msg_low = (req.message or "").lower()
+            _wants_topic = any(k in _msg_low for k in (
+                "themenseite", "themenseiten", "fachportal", "portalseite",
+            ))
+            _wants_samml = any(k in _msg_low for k in (
+                "sammlung", "sammlungen", "kollektion",
+            ))
+            # _wants_content_only: True nur wenn explizit ein Medientyp
+            # (Video / Arbeitsblatt / interaktive Übung / …) genannt ist.
+            _wants_content_only = bool(_medientyp)
+
+            # Welle-A.3: Themenseiten-Primary-Switch. Wenn die Pre-Route
+            # bereits PAT-28 (Themenseiten-Suche) erzwungen hat ODER
+            # INT-W-03 vorliegt, soll der Primary-Call direkt
+            # search_wlo_topic_pages sein — nicht erst Collections als
+            # Primary, was den Topic-Pages-Index auf dem MCP-Server
+            # verbiegt.
+            _topic_first = (
+                _pre_enforced_pattern == "PAT-28"
+                or classification.intent_id == "INT-W-03"
+                or _wants_topic
+            )
+
+            if spec_query:
+                # 1. Primary tool — Themenseiten-Suche dominiert
+                #    Collections, sobald die Pre-Route oder der User
+                #    explizit "Themenseite" signalisiert hat.
+                if _topic_first:
+                    spec_tool_name = "search_wlo_topic_pages"
+                elif _wants_content_only:
+                    spec_tool_name = "search_wlo_content"
+                else:
+                    # Generic / collection / learning-path intent →
+                    # start with collections (rich cards with preview/desc/chips)
+                    spec_tool_name = "search_wlo_collections"
+
+                # Primary collections requests get capped at maxResults=5
+                # whenever a topic_pages-search is also expected: the WLO MCP
+                # server's session-state index for ``search_wlo_topic_pages``
+                # is determined by the LAST collections call, and only sticks
+                # for small result sets.
+                _primary_max = 10
+                if spec_tool_name == "search_wlo_collections" and (
+                    _wants_topic
+                    or classification.intent_id in (
+                        "INT-W-03", "INT-W-10",
+                    )
+                ):
+                    _primary_max = 5
+                spec_tool_args = {
+                    "query": spec_query, "maxResults": _primary_max,
+                }
+                if _medientyp and spec_tool_name == "search_wlo_content":
+                    spec_tool_args["learningResourceType"] = _medientyp
+                if _fach:
+                    spec_tool_args["discipline"] = _fach
+                if _stufe:
+                    spec_tool_args["educationalContext"] = _stufe
+
+                # Primary launch — bei Topic-Pages mit Warmup, sonst direkt.
+                if spec_tool_name == "search_wlo_topic_pages":
+                    spec_task = asyncio.create_task(
+                        _topic_pages_with_warmup(spec_query, spec_tool_args),
+                    )
+                else:
+                    spec_task = asyncio.create_task(
+                        call_mcp_tool(spec_tool_name, spec_tool_args)
+                    )
+                logger.info(
+                    "speculative primary=%s for intent=%s pre_pattern=%s args=%s",
+                    spec_tool_name, classification.intent_id,
+                    _pre_enforced_pattern, spec_tool_args,
+                )
+
+                # 2. Extra tools — fire in parallel to enrich the response.
+                _extras: list[str] = []
+                _all_search_intents = (
+                    "INT-W-03", "INT-W-10",
+                )
+                if _topic_first:
+                    # Primary war schon topic_pages → ergänze Collections
+                    # + Content für die "staircase" (Themenseiten →
+                    # Sammlungen → Inhalte).
+                    _extras.append("search_wlo_collections")
+                    if not _wants_content_only:
+                        _extras.append("search_wlo_content")
+                elif _wants_topic:
+                    # Frontend hat "themenseite" im Text — primary war
+                    # collections (R-17 hat nicht gegriffen), wir holen
+                    # topic_pages dazu.
+                    _extras.append("search_wlo_topic_pages")
+                elif classification.intent_id in _all_search_intents:
+                    # Generische Suche → Themenseiten als zusätzliche
+                    # Card-Quelle (top of staircase) anbieten.
+                    _extras.append("search_wlo_topic_pages")
+
+                if classification.intent_id in _all_search_intents:
+                    # Sicherstellen dass alle drei Tool-Klassen gelaufen
+                    # sind. Doppelungen filtert das spätere Dedup anhand
+                    # des Tool-Namens.
+                    if not _wants_content_only:
+                        _extras.append("search_wlo_content")
+                    if _wants_content_only or _wants_samml:
+                        _extras.append("search_wlo_collections")
+
+                for extra_name in _extras:
+                    if extra_name == spec_tool_name:
+                        continue
+                    extra_args: dict[str, Any] = {"query": spec_query, "maxResults": 5}
+                    if _fach: extra_args["discipline"] = _fach
+                    if _stufe: extra_args["educationalContext"] = _stufe
+
+                    # search_wlo_topic_pages is session-stateful on the
+                    # WLO MCP server. Run a dedicated warmup before the
+                    # topic_pages call (unless we already are the primary).
+                    if extra_name == "search_wlo_topic_pages":
+                        t = asyncio.create_task(
+                            _topic_pages_with_warmup(spec_query, extra_args),
+                        )
+                    else:
+                        t = asyncio.create_task(call_mcp_tool(extra_name, extra_args))
+
+                    extra_spec_tasks.append((extra_name, t))
+                    logger.info("speculative extra=%s args=%s", extra_name, extra_args)
+        except Exception as _e:
+            logger.warning("speculative tool spawn failed: %s", _e)
+            spec_task = None
+
     # Update persona — R-06: persist once detected, overwrite on correction or explicit change
     detected_persona = classification.persona_id
     if not session_state["persona_id"]:
@@ -2925,13 +3647,34 @@ async def _chat_impl(
     # Update state
     new_state = classification.next_state
 
+    # Welle C Sprint 6 — Conversation-State-Plausibilität prüfen.
+    # Validator ist Telemetrie-only (auto_correct=False). Implausible
+    # Übergänge werden geloggt + in debug.state_transition_warning
+    # ausgegeben, aber NICHT korrigiert — die Routing-Rules-Engine
+    # (rule_state12_guard etc.) macht weiterhin die harten Korrekturen.
+    try:
+        from app.services.state_machine import validate_transition as _validate_trans
+        _trans_check = _validate_trans(
+            prev=session_state.get("state_id") or "",
+            next_=new_state,
+            intent=classification.intent_id,
+            auto_correct=False,
+        )
+    except Exception as _exc:  # pragma: no cover — never fail the turn
+        _trans_check = {
+            "validated_state": new_state,
+            "plausible": True,
+            "reason": f"validator error: {_exc}",
+            "prev_next_likely": [],
+        }
+
     # ── Intent-Override: Create-Trigger (robust gegen Classifier-Drift) ──
     # Wenn der User klar ein Erstell-Verb ("Erstelle", "Mach mir ein", ...)
     # verwendet UND ein Material-Typ erkennbar ist (oder er bereits im
     # Canvas-State state-12 ist), overriden wir den Intent auf INT-W-11.
     # Das schuetzt den Canvas-Flow davor, dass der LLM-Classifier
     # "Erstelle mir ein Arbeitsblatt" faelschlich als INT-W-10
-    # (Unterrichtsplanung) oder INT-W-03b (Suchen) bucht.
+    # (Unterrichtsplanung) oder INT-W-03 (Inhalte abrufen) bucht.
     _wants_create = looks_like_create_intent(req.message)
     _detected_mt = extract_material_type_from_message(req.message)
     _in_canvas_state = session_state.get("state_id") == "state-12"
@@ -3290,10 +4033,12 @@ async def _chat_impl(
     _msg_lower = req.message.lower()
     # LP-Fast-Path darf NICHT feuern wenn der Classifier einen non-create
     # Intent gewählt hat. Der User will dann z.B. einen bestehenden Lernpfad
-    # bearbeiten (INT-W-12), herunterladen (INT-W-07), bewerten (INT-W-08)
-    # oder Feedback geben (INT-W-04) — nicht einen neuen erstellen.
+    # bearbeiten (INT-W-12), bewerten (INT-W-08) oder Feedback geben
+    # (INT-W-04) — nicht einen neuen erstellen.
+    # Welle C Sprint 4: INT-W-07 ist in INT-W-03 gemerged (Download =
+    # Repo-Link-Output von Search-Pattern, kein Backend-File-Stream).
     _lp_blocking_intents = {
-        "INT-W-04", "INT-W-05", "INT-W-07", "INT-W-08", "INT-W-09", "INT-W-12",
+        "INT-W-04", "INT-W-05", "INT-W-08", "INT-W-09", "INT-W-12",
     }
     # Persona-Block: bestimmte Personas profitieren NICHT von einem
     # didaktisch strukturierten Lernpfad. P-W-PRESSE/P-W-POL erwarten
@@ -3601,11 +4346,17 @@ async def _chat_impl(
                     )
                     session_state.setdefault("entities", {})["_lp_used_node_ids"] = "[]"
                 _add_used_lp_ids(session_state, _lp_new_ids)
-                # Only expose the cards the LLM actually referenced in the
-                # path as tiles — the rest were candidates the LLM discarded.
-                wlo_cards_raw = _filter_cards_used_in_text(
-                    _lp_cards_collected, response_text or ""
-                )
+                # Welle B.5 (2026-05): Filter on cards mentioned in text is
+                # now Pattern-driven (`card_text_link_required` flag). PAT-19
+                # has it set to true so the existing LP-tile behaviour is
+                # preserved. Other Patterns that might one day route through
+                # this LP code path can opt out and keep the full card pool.
+                if pattern_output.get("card_text_link_required", False):
+                    wlo_cards_raw = _filter_cards_used_in_text(
+                        _lp_cards_collected, response_text or ""
+                    )
+                else:
+                    wlo_cards_raw = _lp_cards_collected
                 _lp_routed = True
 
                 # Also hand the learning-path text to the canvas so the user
@@ -3988,36 +4739,22 @@ async def _chat_impl(
             and "thema" in pattern_output.get("missing_slots", [])
         )
 
-        # Override: bei eindeutiger Search-Intent + Anker (thema/fach)
-        # reichen wir den Speculative-Prefetch durch, auch wenn das
-        # gewählte Pattern eigentlich tool-frei ist (typischer Fall:
-        # alle Search-Patterns wegen `precondition_slots: thema`
-        # eliminiert → PAT-20 gewinnt → ohne diesen Override sähe der
-        # User trotz klarer Suchanfrage keine Cards). Sicher, weil der
-        # spec_query immer aus den klassifizierten Entities stammt.
-        _is_search_intent = classification.intent_id in (
-            "INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-10",
-        )
-        _spec_override_pattern_block = (
-            _is_search_intent
-            and (_pat_wants_no_tools or _pat_forbids_mcp)
-            and not (_lp_routed or _canvas_routed or _degradation_blocks)
-        )
-
+        # Welle-A.1 (2026-05): Der frühere Override-Block
+        # ``_spec_override_pattern_block`` hat Pattern.sources umgangen,
+        # sobald der Classifier einen Such-Intent + Anker vermutet hat.
+        # Folge: PAT-10 (Fakten-Antwort) mit sources=[rag] feuerte trotzdem
+        # MCP-Tools und produzierte z.B. bei "Was ist WirLernenOnline?"
+        # halluzinierte Material-Cards. Jetzt strikt: Pattern bestimmt die
+        # Quellen. Speculative wird verworfen, wenn das Pattern MCP nicht
+        # explizit erlaubt oder ein leeres tools-Set hat.
         spec_blocked = (
             spec_tool_name in (safety.blocked_tools or [])
-            or (_pat_forbids_mcp and not _spec_override_pattern_block)
-            or (_pat_wants_no_tools and not _spec_override_pattern_block)
-            or _lp_routed  # LP path ran its own MCP logic, discard spec
-            or _canvas_routed  # Canvas-create doesn't need search results
-            or _degradation_blocks  # Missing thema → ask first, don't search
+            or _pat_forbids_mcp           # pattern.sources whitelist verbietet MCP
+            or _pat_wants_no_tools        # pattern.tools = [] + sources kein MCP
+            or _lp_routed                 # LP path ran its own MCP logic, discard spec
+            or _canvas_routed             # Canvas-create doesn't need search results
+            or _degradation_blocks        # Missing thema → ask first, don't search
         )
-        if _spec_override_pattern_block:
-            logger.info(
-                "speculative %s kept despite pattern tools=[] "
-                "(search-intent %s + anchor entities)",
-                spec_tool_name, classification.intent_id,
-            )
         if spec_blocked:
             spec_task.cancel()
             try:
@@ -4266,9 +5003,11 @@ async def _chat_impl(
                 logger.warning("extra-spec %s failed: %s", _name, _e)
 
     # 6d. Synthesize a preview_url for any card that still lacks one.
-    #     The edu-sharing preview endpoint accepts just the nodeId.
+    #     The edu-sharing preview endpoint accepts just the nodeId. Host
+    #     wird zur Laufzeit aus ``REPO_BASE_URL`` aufgelöst, damit Staging-
+    #     Nodes auf Staging-Previews zeigen (sonst 404).
     _PREVIEW_BASE = (
-        "https://redaktion.openeduhub.net/edu-sharing/preview"
+        f"{get_repo_base_url()}/edu-sharing/preview"
         "?nodeId={nid}&storeProtocol=workspace&storeId=SpacesStore"
     )
     for c in wlo_cards_raw:
@@ -4383,6 +5122,21 @@ async def _chat_impl(
     # UND noch kein Guide-QR vom LLM dabei ist. Greift nur, wenn der User
     # Guide-Mode aktiv hat — sonst No-op.
     quick_replies = _attach_guide_qr(req, quick_replies, session_state, response_text=response_text)
+
+    # Welle C Sprint 6 Hotfix — Lotsen-Marker aus Bot-Text strippen.
+    #
+    # Bug-Report: Bei Lotsen-Modus AUS erschien im Chat-Text ein
+    # roher ``guide|Label|URL``-String (Markdown frisst ``__`` davor zu
+    # Bold-Markup, übrig bleibt ``guide|...``). Das Marker-Format gehört
+    # AUSSCHLIESSLICH in ``quick_replies``, niemals in den Antwort-Text.
+    # Das LLM schmuggelt es trotzdem hin und wieder rein, weil das Tool-
+    # Schema den Marker als Beispiel referenziert.
+    #
+    # Defensiv: bei jeder Antwort die Marker aus dem Response-Text
+    # entfernen — sicher, weil das Marker-Format nie legitim im Bot-Text
+    # auftaucht (Lotsen-Buttons werden ausschließlich über quick_replies
+    # gerendert).
+    response_text = _strip_guide_markers_from_text(response_text)
 
     # Collection-Relevanz: wenn nur Sammlungen geliefert wurden und keine
     # davon das Topic im Titel traegt, biete prominent den Wechsel zu
@@ -4509,6 +5263,18 @@ async def _chat_impl(
             # Winner überstimmt hat. None = nicht ausgelöst (Hint == Engine
             # oder Tie-Breaker disabled).
             "tie_breaker": pattern_output.get("tie_breaker"),
+            # Welle C Sprint 6 — Conversation-State-Plausibilität.
+            # plausible=False heißt: Classifier hat einen Übergang
+            # gewählt, der nicht in next_likely steht. Telemetrie-only,
+            # State wird NICHT automatisch korrigiert (Routing-Rules
+            # bleiben die harte Eskalation).
+            "state_transition": {
+                "prev": session_state.get("state_id") or "",
+                "next": new_state,
+                "plausible": _trans_check.get("plausible"),
+                "reason": _trans_check.get("reason", ""),
+                "expected_next_likely": _trans_check.get("prev_next_likely", []),
+            },
             # Inline-Mode-Curation (siehe llm_service.py:select_top_cards-Tool):
             # vom LLM gewählte Card-IDs in Anzeige-Reihenfolge. Wird vom
             # ``_apply_widget_modes_postprocess`` als Quelle der Wahrheit
@@ -4588,6 +5354,17 @@ async def _chat_impl(
     # für direct-action-Returns (Canvas-Create, Lernpfad-Action) ohne
     # dass jeder Handler-Pfad einzeln angefasst werden muss.
 
+    # Welle C Sprint 6 — Auto-Followup-Trigger pro Verlaufs-Phase.
+    # In state-6 (Ergebnis-Kuratierung) hängt der Bot deterministisch
+    # eine "Hat das geholfen?"-QR an (statt sich darauf zu verlassen,
+    # dass der LLM-QR-Generator es trifft). Nur wenn cards präsentiert
+    # wurden und keine vergleichbare Refinement-QR schon dabei ist.
+    quick_replies = _apply_state_auto_followup(
+        state_id=new_state,
+        quick_replies=quick_replies,
+        has_cards=bool(cards),
+    )
+
     return ChatResponse(
         session_id=req.session_id,
         content=response_text,
@@ -4598,6 +5375,45 @@ async def _chat_impl(
         page_action=page_action,
         pagination=pagination,
     )
+
+
+def _apply_state_auto_followup(
+    *,
+    state_id: str,
+    quick_replies: list[str],
+    has_cards: bool,
+) -> list[str]:
+    """Append phase-specific Auto-Followups deterministically (Welle C Sprint 6).
+
+    Nur state-6 (Ergebnis-Kuratierung) hat aktuell einen harten Trigger —
+    nach Ergebnis-Lieferung soll der Bot proaktiv nach Pass-Quality fragen.
+    Andere Phasen verlassen sich auf den LLM-Quick-Reply-Generator
+    (der über die bot_directive aus states.yaml gesteuert wird).
+
+    Idempotent: wenn die LLM-generierten QRs schon eine "Hat das geholfen?"-
+    artige Frage enthalten, wird nichts dazugepackt.
+    """
+    if state_id != "state-6" or not has_cards:
+        return quick_replies
+
+    qrs = list(quick_replies) if quick_replies else []
+    # Doublette-Schutz: hat der LLM schon eine Pass-Quality-Frage?
+    pass_quality_keywords = (
+        "geholfen", "gepasst", "passt", "passend", "richtig",
+        "stimmt", "weiterhilft",
+    )
+    for q in qrs:
+        q_lower = (q or "").lower()
+        if any(kw in q_lower for kw in pass_quality_keywords):
+            return qrs  # schon eine Pass-QR drin, nichts tun
+
+    # Nicht überfüllen — wenn der LLM schon 4 QRs hatte, ersetze die letzte.
+    auto_qr = "Hat das geholfen?"
+    if len(qrs) >= 4:
+        qrs[-1] = auto_qr
+    else:
+        qrs.append(auto_qr)
+    return qrs
 
 
 @router.post("/stream")

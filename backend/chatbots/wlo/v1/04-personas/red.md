@@ -5,6 +5,12 @@ id: P-W-RED
 layer: 4
 priority: 500
 version: "1.0.0"
+# ── Tonalitäts-Modifier (Welle B.3 / C.5, 2026-05) ──────────────
+tone: professionell
+length_bias: 0.1
+formality: wie_user
+card_text_mode: minimal
+override: false
 ---
 
 # Autor:in / Redakteur:in [P-W-RED]

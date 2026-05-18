@@ -14,6 +14,48 @@ interface Props {
   appendToYaml: (path: string, yamlSnippet: string) => Promise<boolean>;
 }
 
+// ── Tone-Modifier schema (Welle B.3 / C.5 — 2026-05) ────────────────
+//
+// Mirror der ToneModifier-Pydantic-Klasse im Backend. Wird vom
+// Persona-Detail-View als Form-UI gerendert und über die
+// /api/config/tone-modifiers REST-Endpoints persistiert.
+interface ToneModifier {
+  tone: string;
+  length_bias: number;
+  formality: string;  // 'duzen' | 'siezen' | 'wie_user'
+  card_text_mode: string;  // 'minimal' | 'kurz' | 'explanation' | 'ausfuehrlich'
+  override: boolean;
+}
+
+interface ToneModifiersPayload {
+  modifiers: Record<string, ToneModifier>;
+  default_modifier: ToneModifier;
+}
+
+const _DEFAULT_TONE_MOD: ToneModifier = {
+  tone: 'locker',
+  length_bias: 0.0,
+  formality: 'wie_user',
+  card_text_mode: 'minimal',
+  override: false,
+};
+
+const _TONE_OPTIONS = [
+  'locker', 'kollegial', 'ermutigend', 'warm', 'sachlich',
+  'professionell', 'formell', 'spielerisch', 'einladend',
+];
+const _FORMALITY_OPTIONS = [
+  { v: 'duzen', l: 'duzen' },
+  { v: 'siezen', l: 'siezen' },
+  { v: 'wie_user', l: 'wie der User schreibt' },
+];
+const _CARD_MODE_OPTIONS = [
+  { v: 'minimal', l: 'minimal — nur Titel' },
+  { v: 'kurz', l: 'kurz — Titel + 1 Satz' },
+  { v: 'explanation', l: 'explanation — mehr Kontext' },
+  { v: 'ausfuehrlich', l: 'ausfuehrlich — volle Karten' },
+];
+
 // ── Persona detail editor ────────────────────────────────────────────
 function PersonaDetail({ persona, loadFile, saveFile }: {
   persona: PersonaData;
@@ -24,6 +66,11 @@ function PersonaDetail({ persona, loadFile, saveFile }: {
   const [original, setOriginal] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
+  // Welle C.5: Modifier-State — separat von Markdown-Content, eigener Save-Flow.
+  const [modifiers, setModifiers] = useState<ToneModifiersPayload | null>(null);
+  const [modOrig, setModOrig] = useState<string>('');  // JSON-Stringified compare
+  const [modStatus, setModStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
   useEffect(() => {
     if (!persona.file) return;
     (async () => {
@@ -33,6 +80,55 @@ function PersonaDetail({ persona, loadFile, saveFile }: {
       setStatus('idle');
     })();
   }, [persona.file, loadFile]);
+
+  // Lade alle Modifier einmal (kleine Map mit 9 Einträgen). Wird beim
+  // Speichern komplett zurückgeschrieben — der State bleibt konsistent
+  // zwischen Persona-Wechseln.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/config/tone-modifiers');
+        if (!r.ok) return;
+        const data = await r.json() as ToneModifiersPayload;
+        setModifiers(data);
+        setModOrig(JSON.stringify(data));
+      } catch { /* nicht-blockierend */ }
+    })();
+  }, []);
+
+  const personaMod: ToneModifier = (modifiers?.modifiers?.[persona.id]) ?? _DEFAULT_TONE_MOD;
+
+  const updateModField = <K extends keyof ToneModifier>(field: K, value: ToneModifier[K]) => {
+    if (!modifiers) return;
+    const current = modifiers.modifiers[persona.id] ?? _DEFAULT_TONE_MOD;
+    const updated: ToneModifiersPayload = {
+      ...modifiers,
+      modifiers: { ...modifiers.modifiers, [persona.id]: { ...current, [field]: value } },
+    };
+    setModifiers(updated);
+  };
+
+  const modDirty = modifiers !== null && JSON.stringify(modifiers) !== modOrig;
+
+  const handleSaveModifier = async () => {
+    if (!modifiers) return;
+    setModStatus('saving');
+    try {
+      const r = await fetch('/api/config/tone-modifiers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(modifiers),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json() as ToneModifiersPayload;
+      setModifiers(data);
+      setModOrig(JSON.stringify(data));
+      setModStatus('saved');
+      setTimeout(() => setModStatus('idle'), 2000);
+    } catch {
+      setModStatus('error');
+    }
+  };
 
   const isDirty = content !== original;
 
@@ -56,7 +152,7 @@ function PersonaDetail({ persona, loadFile, saveFile }: {
           {status === 'saved' && <span className="save-status saved">Gespeichert</span>}
           {status === 'error' && <span className="save-status error">Fehler</span>}
           <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={!isDirty || status === 'saving'}>
-            {status === 'saving' ? 'Speichert...' : 'Speichern'}
+            {status === 'saving' ? 'Speichert...' : 'Markdown speichern'}
           </button>
         </div>
       </div>
@@ -68,15 +164,131 @@ function PersonaDetail({ persona, loadFile, saveFile }: {
           </div>
         </div>
       )}
-      <div className="form-group">
-        <label className="form-label">Formality</label>
-        <span className="tag tag-gray">{
-          'Sie/du (aus Persona-Datei)'
-        }</span>
+
+      {/* ── Welle C.5: Tonalitäts-Modifier (aus 01-base/tone-modifiers.yaml) ── */}
+      <div style={{
+        background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 8,
+        padding: 14, marginBottom: 16,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#1F2937' }}>
+              Tonalitäts-Modifier
+            </h4>
+            <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+              Wie soll BOERDi mit dieser Persona klingen? Diese Werte überschreiben Pattern-Defaults für tone/length/formality/card_text_mode.
+              {' '}
+              Quelle:{' '}
+              <code style={{ background: '#F3F4F6', padding: '0 4px', borderRadius: 2 }}>
+                01-base/tone-modifiers.yaml
+              </code>
+            </div>
+          </div>
+          <div className="btn-group">
+            {modStatus === 'saved' && <span className="save-status saved">Gespeichert</span>}
+            {modStatus === 'error' && <span className="save-status error">Fehler</span>}
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleSaveModifier}
+              disabled={!modDirty || modStatus === 'saving' || !modifiers}
+              style={{ minWidth: 140 }}
+            >
+              {modStatus === 'saving' ? 'Speichert...' : 'Modifier speichern'}
+            </button>
+          </div>
+        </div>
+
+        {!modifiers && (
+          <div style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>
+            Lade Tonalitäts-Daten …
+          </div>
+        )}
+
+        {modifiers && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+            <div>
+              <label className="form-label" style={{ fontSize: 12 }}>Tone</label>
+              <select
+                className="form-input"
+                value={personaMod.tone}
+                onChange={e => updateModField('tone', e.target.value)}
+                style={{ width: '100%', fontSize: 13 }}
+              >
+                {_TONE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                {/* Auch einen aktuellen freien Wert weiter anbieten, falls
+                    die YAML einen Custom-Eintrag enthält. */}
+                {!_TONE_OPTIONS.includes(personaMod.tone) && (
+                  <option value={personaMod.tone}>{personaMod.tone} (custom)</option>
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="form-label" style={{ fontSize: 12 }}>
+                Length-Bias: {personaMod.length_bias > 0 ? '+' : ''}{personaMod.length_bias.toFixed(2)}
+                {' '}
+                <span style={{ color: '#6B7280', fontWeight: 400 }}>
+                  ({personaMod.length_bias > 0.15 ? 'eine Stufe länger' :
+                    personaMod.length_bias < -0.15 ? 'eine Stufe kürzer' : 'unverändert'})
+                </span>
+              </label>
+              <input
+                type="range"
+                min={-0.3} max={0.3} step={0.05}
+                value={personaMod.length_bias}
+                onChange={e => updateModField('length_bias', parseFloat(e.target.value))}
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            <div>
+              <label className="form-label" style={{ fontSize: 12 }}>Anrede (Formality)</label>
+              <select
+                className="form-input"
+                value={personaMod.formality}
+                onChange={e => updateModField('formality', e.target.value)}
+                style={{ width: '100%', fontSize: 13 }}
+              >
+                {_FORMALITY_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="form-label" style={{ fontSize: 12 }}>Card-Text-Mode</label>
+              <select
+                className="form-input"
+                value={personaMod.card_text_mode}
+                onChange={e => updateModField('card_text_mode', e.target.value)}
+                style={{ width: '100%', fontSize: 13 }}
+              >
+                {_CARD_MODE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+            </div>
+
+            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                id={`override-${persona.id}`}
+                checked={personaMod.override}
+                onChange={e => updateModField('override', e.target.checked)}
+              />
+              <label htmlFor={`override-${persona.id}`} style={{ fontSize: 12, cursor: 'pointer' }}>
+                <strong>Override aktiv</strong> — Modifier überschreibt Pattern-Defaults.
+                <span style={{ color: '#6B7280', marginLeft: 4 }}>
+                  (z.B. P-W-SL Duzen-Regel siegt über Pattern-Tonalität.)
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
       </div>
+
+      <label className="form-label" style={{ marginTop: 4 }}>
+        Persona-Markdown ({persona.file})
+      </label>
       <textarea
         className="form-textarea form-textarea-lg"
-        style={{ minHeight: 'calc(100vh - 380px)' }}
+        style={{ minHeight: 'calc(100vh - 560px)' }}
         value={content}
         onChange={e => setContent(e.target.value)}
         onKeyDown={e => {
@@ -689,9 +901,33 @@ export default function ElementEditor({ elements, loadFile, saveFile, onReload, 
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div className="page-title">Dimensionen</div>
-          <div className="page-subtitle">Schicht 4: Die 5 Klassifikations-Dimensionen, die jeden Nutzer-Input einordnen.</div>
+          <div className="page-subtitle">Schicht 4: Klassifikations-Dimensionen, die jeden Nutzer-Input einordnen.</div>
         </div>
         <button className="btn btn-primary" onClick={() => setShowCreateDialog(true)}>+ Neu</button>
+      </div>
+
+      {/* Dimensionen-Übersicht — listet alle 7 Dimensionen,
+          inkl. der nicht-editierbaren (Turn-Count / Tonalitäts-Modifier),
+          damit Studio-User wissen WAS pro Turn klassifiziert wird. */}
+      <div className="card" style={{ marginBottom: 16, background: '#F9FAFB', padding: '12px 16px' }}>
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
+          Pro Nutzer-Turn produziert der Classifier (<code>llm_service.classify_input</code>)
+          folgende Dimensionen — die fünf bearbeitbaren als Tabs unten, die zwei restlichen
+          sind Laufzeit-Werte bzw. an Personas gekoppelt:
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8, fontSize: 12 }}>
+          <div><strong style={{ color: '#1F2937' }}>👤 Personas ({personas.length})</strong> — WER fragt</div>
+          <div><strong style={{ color: '#1F2937' }}>🎯 Intents ({intents.length})</strong> — WAS will der/die User:in</div>
+          <div><strong style={{ color: '#1F2937' }}>🌀 States ({states.length})</strong> — wo im Gespräch sind wir</div>
+          <div><strong style={{ color: '#1F2937' }}>🏷 Entities ({entities.length})</strong> — Slots: Fach/Stufe/Thema/Medientyp/Material-Typ</div>
+          <div><strong style={{ color: '#1F2937' }}>📡 Signale ({signals.length})</strong> — Stimmung/Erfahrung/Eile/Skepsis</div>
+          <div style={{ color: '#6B7280' }}>
+            <strong style={{ color: '#374151' }}>🔁 Turn-Count</strong> — laufende Turn-Nummer (1, 2, 3…) der Session, kein Konfig-Element. Wird in <code>quality_logs.turn_count</code> persistiert und steuert State-Eskalation (state-1 → state-5 → state-6) sowie Soft-Probing-Cooldowns.
+          </div>
+          <div style={{ color: '#6B7280' }}>
+            <strong style={{ color: '#374151' }}>🎚️ Tonalitäts-Modifier</strong> — pro Persona im Frontmatter (<code>tone</code>, <code>length_bias</code>, <code>formality</code>, <code>card_text_mode</code>, <code>override</code>). Editor unter dem Personas-Tab → Detailansicht.
+          </div>
+        </div>
       </div>
 
       {/* Create Dialog */}

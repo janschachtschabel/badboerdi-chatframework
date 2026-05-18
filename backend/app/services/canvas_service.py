@@ -531,7 +531,7 @@ def looks_like_create_intent(msg: str) -> bool:
     """Return True if the message opens with a clear 'create new material' verb.
 
     Used as a safeguard override for the LLM classifier, which sometimes
-    picks INT-W-10 (Unterrichtsplanung) or INT-W-03b (Suchen) even when the
+    picks INT-W-10 (Unterrichtsplanung) or INT-W-03 (Inhalte abrufen) even when the
     user explicitly says 'Erstelle mir ein Arbeitsblatt'.
     """
     if not msg:

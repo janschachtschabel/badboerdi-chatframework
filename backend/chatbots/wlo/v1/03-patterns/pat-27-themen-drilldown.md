@@ -97,11 +97,11 @@ NICHT auf das vom User gewuenschte Fach.
   dann die Karten.
 - Quick-Replies: 2–3 spannendste Sub-Sammlungen als Vertiefungs-Vorschläge
   ("Algebra genauer anschauen", "Geometrie vertiefen") plus
-  "Materialien aus Mathematik direkt zeigen" als Fallback zu INT-W-03b.
+  "Materialien aus Mathematik direkt zeigen" als Fallback zu INT-W-03.
 
 ## Folge-Aktion
 Wenn User eine Sub-Sammlung wählt → kann erneut INT-W-14 (tieferer
-Drilldown) oder INT-W-03b (Files zeigen) sein. Klassifikator entscheidet
+Drilldown) oder INT-W-03 (Files zeigen) sein. Klassifikator entscheidet
 basierend auf der User-Antwort.
 
 ## Nicht tun

@@ -8,7 +8,7 @@
 
 ### 1.1 Datengrundlage
 
-Token-Verbrauch wurde aus 5 automatisierten Persona-Eval-Runs der letzten Wochen ermittelt (`debug.token_usage` pro Turn). Das ist ein realistischer Worst-Case-Mix: 9 Personas × 16 Intents × 1 Turn, alle Such-/Erstell-/Faktenfragen-Pfade. **Real-User-Sessions sind eher kürzer** (typisch 3–5 Folge-Fragen statt komplette Persona-Drilldowns).
+Token-Verbrauch wurde aus 5 automatisierten Persona-Eval-Runs der letzten Wochen ermittelt (`debug.token_usage` pro Turn). Das ist ein realistischer Worst-Case-Mix: 9 Personas × 13 Intents × 1 Turn, alle Such-/Erstell-/Faktenfragen-Pfade. **Real-User-Sessions sind eher kürzer** (typisch 3–5 Folge-Fragen statt komplette Persona-Drilldowns).
 
 Die Selbstevaluation misst zusätzlich die **Treffgenauigkeit auf Persona, Pattern, Intent etc.** mittels „LLM-as-Judge" — daraus ergibt sich der Quality-Score je Modell (siehe § 2.1).
 

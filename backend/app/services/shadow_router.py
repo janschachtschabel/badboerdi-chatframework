@@ -83,6 +83,8 @@ def build_context(
     cls_signals = getattr(classification, "signals", None) or []
     cls_intent_conf = getattr(classification, "intent_confidence", None)
     cls_persona_conf = getattr(classification, "persona_confidence", None)
+    # Welle C Sprint 6 — turn_type für Topic-Switch-Klärungs-Rule.
+    cls_turn_type = getattr(classification, "turn_type", None)
 
     safety_dict: dict = {}
     if safety is not None:
@@ -98,6 +100,7 @@ def build_context(
         "persona": cls_persona,
         "entities": dict(cls_entities) if isinstance(cls_entities, dict) else {},
         "signals": list(cls_signals) if isinstance(cls_signals, list) else [],
+        "turn_type": cls_turn_type,
         "session_state": session_state or {},
         "canvas_state": canvas_state or {},
         "safety": safety_dict,

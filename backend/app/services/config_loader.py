@@ -178,6 +178,33 @@ def load_states() -> list[dict[str, Any]]:
     return data.get("states", [])
 
 
+def get_state_directive(state_id: str) -> dict[str, Any]:
+    """Return Conversation-Flow metadata for a given state.
+
+    Welle C Sprint 6: States carry a ``role`` (Bot-Rolle in dieser Phase),
+    ``bot_directive`` (Handlungs-Anweisung für den Response-Prompt) und
+    ``next_likely`` (plausible Übergangs-States für den Plausibilitäts-
+    Validator). Callers use this in three places:
+
+    1. Response-Prompt (llm_service.generate_response) — directive an LLM.
+    2. Quick-Reply-Generator — phase-spezifische QR-Vorschläge.
+    3. Plausibilitäts-Validator (validate_transition) — next_likely-Check.
+
+    Empty dict if state-id unknown — callers should treat this as
+    "no directive" (Bot fällt auf Pattern-Default zurück).
+    """
+    for s in load_states():
+        if s.get("id") == state_id:
+            return {
+                "id": s.get("id", ""),
+                "label": s.get("label", ""),
+                "role": s.get("role", ""),
+                "bot_directive": s.get("bot_directive", "").strip(),
+                "next_likely": s.get("next_likely", []),
+            }
+    return {}
+
+
 def load_entities() -> list[dict[str, Any]]:
     """Load entity/slot definitions from config."""
     data = _load_yaml("04-entities/entities.yaml")
@@ -307,7 +334,19 @@ def load_persona_definitions() -> list[dict[str, str]]:
                 # sub-headings ("**Vokabeln:**"), and prose all welcome.
                 for phrase in re.findall(r'"([^"]+)"', line):
                     hints.append(phrase)
-        results.append({"id": pid, "label": label, "description": desc, "hints": hints})
+        entry = {"id": pid, "label": label, "description": desc, "hints": hints}
+        # Welle C.5 (2026-05): Tonalitäts-Modifier aus Frontmatter
+        # durchreichen, damit ``load_tone_modifiers_config()`` sie
+        # ohne separate YAML-Datei lesen kann. Felder sind optional —
+        # wenn nicht im Frontmatter, fallen Defaults im Coerce.
+        for k in ("tone", "length_bias", "formality",
+                  "card_text_mode", "override"):
+            if k in meta:
+                entry[k] = meta[k]
+        # Auch _source_file durchreichen, damit der PUT-Endpoint
+        # weiß, welche Datei er beim Modifier-Update editieren muss.
+        entry["_source_file"] = str(path.relative_to(CHATBOT_DIR)).replace("\\", "/")
+        results.append(entry)
     return results
 
 
@@ -361,6 +400,179 @@ def _resolve_primary_mcp_url() -> str:
     import os as _os
     raw = (_os.getenv(_PRIMARY_MCP_URL_ENV) or "").strip().rstrip("/")
     return raw or _PRIMARY_MCP_URL_DEFAULT
+
+
+# Base-URL des edu-sharing-Repos. Muss zum MCP-Server (oben) passen, weil
+# Node-IDs aus dem MCP-Repo stammen und die abgeleiteten ``wlo_url``-/
+# ``preview_url``-Links genau auf dieses Repo zeigen müssen — sonst zeigen
+# Produktion-Links auf Staging-Nodes (oder umgekehrt) und führen ins Leere.
+#
+# Production:  REPO_BASE_URL=https://redaktion.openeduhub.net
+# Staging:     REPO_BASE_URL=https://repository.staging.openeduhub.net
+#
+# Default bleibt Production, damit Bestandsinstallationen unverändert
+# funktionieren. Wer den Staging-MCP nutzt (MCP_SERVER_URL=...staging...),
+# sollte REPO_BASE_URL gleichzeitig auf den Staging-Host umstellen.
+_REPO_BASE_URL_ENV = "REPO_BASE_URL"
+_REPO_BASE_URL_DEFAULT = "https://redaktion.openeduhub.net"
+
+
+def get_repo_base_url() -> str:
+    """Base-URL des edu-sharing-Repos für ``wlo_url``/``preview_url``-Bau.
+
+    Env-Var ``REPO_BASE_URL`` hat Vorrang, sonst Production-Default.
+    Trailing-Slash wird entfernt, damit aufrufender Code unbesorgt
+    ``{base}/edu-sharing/...`` konkatenieren kann.
+    """
+    import os as _os
+    raw = (_os.getenv(_REPO_BASE_URL_ENV) or "").strip().rstrip("/")
+    return raw or _REPO_BASE_URL_DEFAULT
+
+
+def rewrite_repo_host(url: str) -> str:
+    """Schreibt URLs, die auf den Production-Repo-Default-Host zeigen, auf
+    den konfigurierten ``REPO_BASE_URL`` um — nötig wenn der MCP-Server
+    auf Staging zeigt, aber die ``previewUrl``/``contentUrl``-Felder
+    serverseitig immer mit dem Production-Host gebaut werden. Ohne Rewrite
+    landen Staging-Node-IDs auf Production-Hostnamen und liefern 404.
+
+    Greift NUR, wenn:
+      * Die URL nicht-leer ist und
+      * Ein abweichender ``REPO_BASE_URL`` konfiguriert ist (sonst No-Op) und
+      * Die URL exakt mit dem Production-Default-Host beginnt.
+
+    Externe URLs (Wikipedia, YouTube, Verlage, andere Hosts im
+    ``*.openeduhub.net``-Allow-List) bleiben unberührt.
+    """
+    if not isinstance(url, str) or not url:
+        return url
+    base = get_repo_base_url()
+    if base == _REPO_BASE_URL_DEFAULT:
+        return url  # Kein Rewrite nötig — Production-Konfiguration.
+    if url.startswith(_REPO_BASE_URL_DEFAULT + "/") or url == _REPO_BASE_URL_DEFAULT:
+        return base + url[len(_REPO_BASE_URL_DEFAULT):]
+    return url
+
+
+def rewrite_repo_host_v2(url: str, target_repo_base: str | None = None) -> str:
+    """Card-Pipeline v2 Variante des Host-Rewrites: bidirektional und
+    konfigurierbar über ``known_repo_hosts`` in card-pipeline.yaml.
+
+    Im Gegensatz zu :func:`rewrite_repo_host` (das nur den hartcodierten
+    Production-Default umschreibt) schreibt diese Funktion jeden bekannten
+    Repo-Host auf den Target-Base um — egal ob die MCP-Antwort Production-
+    auf-Staging oder Staging-auf-Production gemappt werden muss.
+
+    Args:
+        url: Eine URL aus einer Card (kann auch leer / extern sein).
+        target_repo_base: Ziel-Repo-URL (Default: ``get_repo_base_url()``).
+
+    Returns:
+        Umgeschriebene URL, wenn der Host in ``known_repo_hosts`` steht
+        und nicht bereits dem Target entspricht. Sonst die Original-URL.
+    """
+    if not isinstance(url, str) or not url:
+        return url
+    target = (target_repo_base or get_repo_base_url()).rstrip("/")
+    if not target:
+        return url
+    # Wenn die URL bereits auf den Target-Host zeigt, nichts zu tun.
+    if url == target or url.startswith(target + "/"):
+        return url
+    # Bekannte Repo-Hosts aus YAML (mit Production-Fallback, falls die
+    # YAML noch nicht existiert oder leer ist).
+    known = _load_card_pipeline_raw().get("known_repo_hosts") or [
+        _REPO_BASE_URL_DEFAULT,
+        "https://repository.staging.openeduhub.net",
+        "https://repository.openeduhub.net",
+    ]
+    for host in known:
+        h = str(host or "").rstrip("/")
+        if not h or h == target:
+            continue
+        if url == h:
+            return target
+        if url.startswith(h + "/"):
+            return target + url[len(h):]
+    return url
+
+
+def _load_card_pipeline_raw() -> dict[str, Any]:
+    """Roh-Lesefunktion für card-pipeline.yaml — wird intern auch von
+    :func:`rewrite_repo_host_v2` genutzt, damit dort der gleiche YAML-Cache
+    greift wie für die anderen Card-Pipeline-Settings.
+    """
+    data = _load_yaml("01-base/card-pipeline.yaml") or {}
+    return data.get("card_pipeline") or {}
+
+
+def load_card_pipeline_config() -> dict[str, Any]:
+    """Lädt die Card-Pipeline v2 Konfiguration aus 01-base/card-pipeline.yaml.
+
+    Returns ein Dict mit clamped/typisierten Werten:
+      - ``pool_size`` (5..50, default 20)
+      - ``llm_curation_pool`` (1..pool_size, default min(15, pool_size))
+      - ``final_selection_size`` (1..10, default 5)
+      - ``enable_llm_curation`` (bool, default True)
+      - ``min_displayed_cards`` (0..final_selection_size, default 5)
+      - ``known_repo_hosts`` (list[str], default Production + Staging)
+
+    Wenn die Datei fehlt oder die Werte fehlerhaft sind, fallen wir auf
+    sichere Defaults zurück — die Pipeline läuft auch dann.
+    """
+    cfg = _load_card_pipeline_raw()
+
+    def _int_clamp(key: str, default: int, lo: int, hi: int) -> int:
+        raw = cfg.get(key)
+        if raw is None:
+            return default
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            return default
+        return max(lo, min(hi, v))
+
+    pool_size = _int_clamp("pool_size", 20, 5, 50)
+    llm_pool = _int_clamp("llm_curation_pool", min(15, pool_size), 1, pool_size)
+    final_size = _int_clamp("final_selection_size", 5, 1, 10)
+    min_displayed = _int_clamp("min_displayed_cards", 5, 0, final_size)
+
+    raw_enable = cfg.get("enable_llm_curation")
+    enable_llm = True if raw_enable is None else bool(raw_enable)
+
+    raw_hosts = cfg.get("known_repo_hosts") or []
+    known_hosts: list[str] = []
+    for h in raw_hosts:
+        s = str(h or "").strip().rstrip("/")
+        if s and s not in known_hosts:
+            known_hosts.append(s)
+    if not known_hosts:
+        known_hosts = [
+            _REPO_BASE_URL_DEFAULT,
+            "https://repository.staging.openeduhub.net",
+            "https://repository.openeduhub.net",
+        ]
+
+    return {
+        "pool_size": pool_size,
+        "llm_curation_pool": llm_pool,
+        "final_selection_size": final_size,
+        "enable_llm_curation": enable_llm,
+        "min_displayed_cards": min_displayed,
+        "known_repo_hosts": known_hosts,
+    }
+
+
+def card_pipeline_v2_enabled() -> bool:
+    """True, wenn der Env-Flag ``CARD_PIPELINE_V2`` auf einen truthy Wert
+    gesetzt ist (1/true/yes/on, case-insensitive).
+
+    Solange False, läuft die alte Logik. Wir nutzen das, um die neue
+    Pipeline schrittweise einzuführen und A/B-Vergleiche zu fahren.
+    """
+    import os as _os
+    val = (_os.getenv("CARD_PIPELINE_V2") or "").strip().lower()
+    return val in ("1", "true", "yes", "on")
 
 
 # Default-Skeleton für den Primary-Eintrag — wird genutzt, wenn der Save-
@@ -651,6 +863,246 @@ def load_widget_modes_config() -> dict[str, Any]:
             "quick_replies": alt_qrs,
         },
     }
+
+
+# Default-Wortliste für den Placeholder-Filter. Wird nur als Fallback
+# verwendet, wenn 01-base/placeholder-topics.yaml fehlt oder keine
+# Liste enthält. Synchron halten mit der YAML-Datei.
+_PLACEHOLDER_TOPICS_DEFAULT: tuple[str, ...] = (
+    "thema", "themen", "ein thema", "einem thema", "irgendwas",
+    "etwas", "was", "irgendetwas", "irgendein thema", "sonstiges",
+    "material", "materialien", "ein material", "ein paar materialien",
+    "sachen", "dinge", "stuff", "topic", "etwas thema",
+    "inhalt", "inhalte", "content",
+)
+
+
+def load_placeholder_topics_config() -> dict[str, Any]:
+    """Lade die Placeholder-Topics-Konfiguration aus
+    01-base/placeholder-topics.yaml.
+
+    Gibt zurück:
+      - ``topics`` : set[str]  -- Begriffe (lowercase, getrimmt), die als
+        Platzhalter behandelt werden. Der Backend-Filter setzt
+        ``classification.entities['thema']`` auf "" wenn der Wert in
+        dieser Menge enthalten ist.
+      - ``min_length`` : int  -- Werte mit weniger Zeichen (nach strip)
+        gelten ebenfalls als Platzhalter. Default 3 (lässt "OER",
+        "DSGVO" als gültige Topics durch, fängt aber Tippfehler ab).
+
+    Fehlt die Datei oder enthält sie keine Liste, fallen wir auf die
+    historische Default-Liste (``_PLACEHOLDER_TOPICS_DEFAULT``) zurück,
+    damit Bestandsinstallationen wie heute funktionieren.
+    """
+    data = _load_yaml("01-base/placeholder-topics.yaml") or {}
+    raw_list = data.get("placeholder_topics")
+
+    topics: set[str] = set()
+    if isinstance(raw_list, list) and raw_list:
+        for item in raw_list:
+            s = str(item or "").strip().lower()
+            if s:
+                topics.add(s)
+    if not topics:
+        topics = {t for t in _PLACEHOLDER_TOPICS_DEFAULT}
+
+    raw_min = data.get("min_topic_length")
+    try:
+        min_length = int(raw_min) if raw_min is not None else 3
+    except (TypeError, ValueError):
+        min_length = 3
+    # Defensive Clamp: 0..10. 0 deaktiviert den Length-Check effektiv,
+    # >10 wäre absurd kurz/lang für ein Topic.
+    min_length = max(0, min(10, min_length))
+
+    return {"topics": topics, "min_length": min_length}
+
+
+_VALID_FORMALITIES = {"duzen", "siezen", "wie_user"}
+_VALID_CARD_TEXT_MODES = {"minimal", "kurz", "explanation", "ausfuehrlich"}
+
+
+def _coerce_tone_modifier(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize a raw tone-modifier dict (Frontmatter or YAML) to the
+    canonical schema. Used by ``load_tone_modifiers_config``.
+    """
+    if not isinstance(raw, dict):
+        raw = {}
+    tone = str(raw.get("tone") or "locker").strip() or "locker"
+    try:
+        length_bias = float(raw.get("length_bias", 0.0))
+    except (TypeError, ValueError):
+        length_bias = 0.0
+    length_bias = max(-0.3, min(0.3, length_bias))
+    formality = str(raw.get("formality") or "wie_user").strip()
+    if formality not in _VALID_FORMALITIES:
+        formality = "wie_user"
+    card_text_mode = str(raw.get("card_text_mode") or "minimal").strip()
+    if card_text_mode not in _VALID_CARD_TEXT_MODES:
+        card_text_mode = "minimal"
+    return {
+        "tone": tone,
+        "length_bias": length_bias,
+        "formality": formality,
+        "card_text_mode": card_text_mode,
+        "override": bool(raw.get("override", False)),
+    }
+
+
+def load_tone_modifiers_config() -> dict[str, Any]:
+    """Load Persona-Tonalitäts-Modifier — Single-Source aus Persona-MD-Frontmatter.
+
+    Welle C.5 (2026-05): Modifier-Daten leben jetzt direkt im Frontmatter
+    der jeweiligen Persona-Datei (``04-personas/<persona>.md``). Das
+    ersetzt die separate ``01-base/tone-modifiers.yaml`` und vermeidet
+    Doppelung zwischen Persona-Tonalitäts-Beschreibung (Markdown) und
+    strukturierten Modifier-Werten (vorher YAML, jetzt Frontmatter).
+
+    Returns:
+        dict mit zwei Top-Level-Keys:
+          - ``modifiers`` : dict[persona_id, dict] mit Pro-Persona-Modifiern.
+          - ``default``   : dict mit Fallback-Modifier für unbekannte Personas.
+
+    Fallback-Kaskade:
+      1. Frontmatter pro Persona-MD (Single-Source).
+      2. Falls Persona-Datei keine Modifier-Felder hat: Default
+         (BOERDi-Locker-Duzen).
+      3. Falls die historische ``01-base/tone-modifiers.yaml`` noch
+         existiert (Migrations-Backup), wird sie als ZWEITE Fallback-
+         Ebene gelesen, damit Rollback möglich bleibt.
+    """
+    # Primary source: Persona-Frontmatter
+    modifiers: dict[str, dict[str, Any]] = {}
+    try:
+        for p in load_persona_definitions():
+            pid = p.get("id")
+            if not pid:
+                continue
+            # Check if any modifier field is set in frontmatter
+            if any(k in p for k in ("tone", "length_bias", "formality",
+                                     "card_text_mode", "override")):
+                modifiers[str(pid)] = _coerce_tone_modifier(p)
+    except Exception:
+        modifiers = {}
+
+    # Secondary source: historisches YAML (nur wenn Frontmatter leer)
+    if not modifiers:
+        data = _load_yaml("01-base/tone-modifiers.yaml") or {}
+        raw_modifiers = data.get("modifiers") or {}
+        for pid, raw in raw_modifiers.items():
+            if not pid:
+                continue
+            modifiers[str(pid)] = _coerce_tone_modifier(raw)
+
+    # Default-Modifier — stets aus tone-modifiers.yaml (falls existent),
+    # sonst aus statischem Code-Default. Das default_modifier ist nicht
+    # Persona-spezifisch, gehört also nicht ins Persona-Frontmatter.
+    default_data = _load_yaml("01-base/tone-modifiers.yaml") or {}
+    default = _coerce_tone_modifier(default_data.get("default_modifier") or {})
+
+    return {"modifiers": modifiers, "default": default}
+
+
+_PERSONA_SLUG_MAP: dict[str, str] = {
+    "P-W-LK": "lk", "P-W-SL": "sl", "P-W-POL": "pol", "P-W-PRESSE": "presse",
+    "P-W-RED": "red", "P-BER": "ber", "P-VER": "ver", "P-ELT": "elt", "P-AND": "and",
+}
+
+
+def _persona_slug(persona_id: str) -> str:
+    """Map persona-id (``P-W-LK``) to filename slug (``lk``)."""
+    return _PERSONA_SLUG_MAP.get(persona_id, persona_id.lower().replace("p-", ""))
+
+
+# Header-Block für das Modifier-Frontmatter — wird beim Persona-Update
+# eingefügt, falls eine Persona-Datei noch keine Modifier-Felder hat.
+_PERSONA_MODIFIER_HEADER = (
+    "# ── Tonalitäts-Modifier (Welle B.3 / C.5, 2026-05) ──────────────\n"
+)
+
+_MODIFIER_KEYS = ("tone", "length_bias", "formality", "card_text_mode", "override")
+
+
+def update_persona_modifier_in_frontmatter(
+    persona_id: str,
+    modifier: dict[str, Any],
+) -> bool:
+    """Update the 5 modifier fields in a persona's MD frontmatter.
+
+    Welle C.5 (2026-05): Schreibt die normalisierten Modifier-Felder
+    direkt in das YAML-Frontmatter der jeweiligen Persona-MD-Datei. Das
+    ist die Single-Source — kein separater YAML-Round-Trip mehr.
+
+    Implementation: Liest die existierende Datei, ersetzt nur die
+    Modifier-Zeilen (oder fügt sie am Ende des Frontmatters ein), schreibt
+    zurück. Lässt allen anderen Frontmatter-Content + den gesamten
+    Markdown-Body unverändert.
+
+    Returns True bei Erfolg, False wenn die Persona-Datei nicht gefunden
+    wurde oder keine Frontmatter hat.
+    """
+    slug = _persona_slug(persona_id)
+    rel_path = f"04-personas/{slug}.md"
+    full = CHATBOT_DIR / rel_path
+    if not full.exists():
+        return False
+
+    text = full.read_text(encoding="utf-8")
+    m = re.match(r"^(---\s*\n)(.*?)(\n---\s*\n)(.*)$", text, re.DOTALL)
+    if not m:
+        return False
+    prefix, fm_body, sep, body = m.groups()
+
+    # Normalize the modifier (clamp / defaults) so we don't write garbage.
+    canonical = _coerce_tone_modifier(modifier)
+
+    # Strip existing modifier lines (preserve comment-line above them so
+    # repeated updates don't re-duplicate the header).
+    fm_lines = fm_body.split("\n")
+    new_lines: list[str] = []
+    skip_next_blank_after_header = False
+    for ln in fm_lines:
+        stripped = ln.strip()
+        # Match keys at top-level: "key: value" with up to 2 leading spaces
+        is_modifier_line = False
+        for k in _MODIFIER_KEYS:
+            if re.match(rf"^\s*{re.escape(k)}\s*:", ln):
+                is_modifier_line = True
+                break
+        # Drop our header-comment too (we'll re-add it below)
+        is_header_comment = "Tonalitäts-Modifier" in ln and ln.lstrip().startswith("#")
+        if is_modifier_line or is_header_comment:
+            continue
+        new_lines.append(ln)
+
+    # Trim trailing blank lines so we get a clean append point.
+    while new_lines and new_lines[-1].strip() == "":
+        new_lines.pop()
+
+    # Append the canonical modifier block (with header comment).
+    new_lines.append(_PERSONA_MODIFIER_HEADER.rstrip("\n"))
+    new_lines.append(f"tone: {canonical['tone']}")
+    new_lines.append(f"length_bias: {canonical['length_bias']}")
+    new_lines.append(f"formality: {canonical['formality']}")
+    new_lines.append(f"card_text_mode: {canonical['card_text_mode']}")
+    new_lines.append(f"override: {str(canonical['override']).lower()}")
+
+    new_fm = "\n".join(new_lines)
+    new_text = f"{prefix}{new_fm}{sep}{body}"
+    full.write_text(new_text, encoding="utf-8")
+    return True
+
+
+def get_tone_modifier_for_persona(persona_id: str | None) -> dict[str, Any]:
+    """Lookup-Helper: Modifier für eine konkrete Persona-ID liefern.
+
+    Falls die Persona nicht in der YAML steht oder die ID leer ist,
+    wird der ``default_modifier`` zurückgegeben.
+    """
+    cfg = load_tone_modifiers_config()
+    if not persona_id:
+        return cfg["default"]
+    return cfg["modifiers"].get(str(persona_id)) or cfg["default"]
 
 
 def load_tie_breaker_config() -> dict[str, Any]:

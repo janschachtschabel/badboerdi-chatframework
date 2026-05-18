@@ -5,6 +5,14 @@ id: P-AND
 layer: 4
 priority: 500
 version: "1.0.0"
+# ── Tonalitäts-Modifier (Welle B.3 / C.5, 2026-05) ──────────────
+# Studio-pflegbar im Persona-Editor. Wirkt auf tone/length/formality/
+# card_text_mode der Bot-Antwort, unabhängig vom Pattern.
+tone: locker
+length_bias: 0.0
+formality: duzen
+card_text_mode: minimal
+override: false
 ---
 
 # Andere / Unbekannt [P-AND]
@@ -41,7 +49,7 @@ voreilig P-W-SL zu unterstellen.
 - Heterogene Gruppe, Ziel noch unklar
 
 ## Typische Intents
-- INT-W-03a (Themenseite entdecken)
+- INT-W-03 (Inhalte abrufen)
 - INT-W-02 (Soft Probing)
 
 ## Regeln

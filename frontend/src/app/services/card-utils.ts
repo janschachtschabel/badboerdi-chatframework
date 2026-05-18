@@ -37,12 +37,37 @@ export function isContent(c: WloCard | null | undefined): boolean {
 
 /**
  * Primary external URL for a card.
+ *
+ * Card-Pipeline v2: wenn das Backend ``c.link`` gesetzt hat (via
+ * ``build_card_link``), ist das **die** Quelle der Wahrheit. Vorteile:
+ *   - Repo-Host stimmt mit ``REPO_BASE_URL`` (Staging/Production)
+ *   - Sammlungs-Links bekommen ``&q=<search-query>`` für besseren Browse
+ *   - Lotsen-Modus-Logik (extern vs. Repo-Render) ist schon angewendet
+ *
+ * Fallback auf die alte Logik nur, wenn ``c.link`` leer ist — z.B. von
+ * einem älteren Backend ohne Card-Pipeline v2. Phase 10 entfernt den
+ * Fallback komplett (``link`` wird dann Pflichtfeld).
+ *
+ * Alt-Pfad:
  * - Topic page → topic_pages[0].url (server-supplied) OR /topic-pages?collectionId=…
  * - Collection (not a topic page) → /collections?id=…&scope=TYPE_EDITORIAL
  * - Content → external www url (c.url) preferred, otherwise the render detail page
  */
 export function getCardPrimaryUrl(c: WloCard | null | undefined): string {
   if (!c) return '#';
+
+  // Card-Pipeline v2: Single Source of Truth
+  if (c.link) return c.link;
+
+  // Defensiver Lotsen-Fallback: falls Backend kein ``link`` gesetzt hat
+  // (z.B. direct-action-Pfad ohne v2-Curation oder ein älteres Backend),
+  // dann nutze ``guide_url`` als sekundäre Wahrheit. Im Lotsen-Modus ist
+  // ``guide_url`` für Content auf den Repo-Render-Link gesetzt — also genau
+  // das was wir wollen, statt einer externen wwwurl. Im Normal-Modus ist
+  // ``guide_url`` leer und der Fallback fällt durch zum Alt-Pfad.
+  if (c.guide_url) return c.guide_url;
+
+  // ── Alt-Pfad (Backward-Compat für Backends ohne Phase 4a) ──────
 
   // Topic page: use the server-supplied URL when present (it already
   // encodes the right scope/params), otherwise synthesize one.

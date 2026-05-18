@@ -100,6 +100,35 @@ interface LowConfidence {
   max_confidence: number;
 }
 
+interface RoutingMatrixCell {
+  persona_id: string;
+  intent_id: string;
+  top_pattern: string;
+  top_pattern_count: number;
+  total_count: number;
+  share: number;
+  alternatives: { pattern_id: string; count: number }[];
+}
+interface RoutingMatrix {
+  scope: string;
+  total_turns: number;
+  cells: RoutingMatrixCell[];
+}
+
+interface StateTransition {
+  prev: string;
+  next: string;
+  count: number;
+}
+interface StateTransitionsPayload {
+  scope: string;
+  days: number;
+  total_turns: number;
+  total_transitions: number;
+  state_distribution: Record<string, number>;
+  transitions: StateTransition[];
+}
+
 /* ── Helpers ───────────────────────────────────────────────────────── */
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 const num = (v: number, d = 2) => v?.toFixed(d) ?? '–';
@@ -123,6 +152,372 @@ function BarChart({ data, color = 'var(--primary)' }: { data: Record<string, num
   );
 }
 
+/* ── Conversation-Flow sub-component (Welle C Sprint 6) ────────────────
+ * Visualisiert die State-Übergänge der letzten N Tage als sortierte
+ * Tabelle "prev → next: count" plus eine State-Häufigkeits-Verteilung.
+ * Bewusst keine Sankey-Library als Dependency — eine HTML-Tabelle mit
+ * proportionalen Balken erfüllt den gleichen Zweck ohne Build-Bloat.
+ *
+ * Lese-Werte:
+ * - State-Distribution: wie oft welcher State im Zeitraum aktiv war
+ * - Top-Übergänge: häufigste (prev → next) Paare, sortiert nach count
+ * - Self-Loops (prev == next) sind farblich abgegrenzt — typisch in
+ *   state-2 (mehrere Slot-Runden) und state-12 (mehrere Canvas-Edits)
+ */
+function ConversationFlowView({
+  flow, loading, days, setDays, minCount, setMinCount, onReload,
+}: {
+  flow: StateTransitionsPayload | null;
+  loading: boolean;
+  days: number;
+  setDays: (n: number) => void;
+  minCount: number;
+  setMinCount: (n: number) => void;
+  onReload: () => void;
+}) {
+  const dist = flow?.state_distribution ?? {};
+  const transitions = flow?.transitions ?? [];
+  const distMax = Math.max(...Object.values(dist), 1);
+  const transMax = Math.max(...transitions.map(t => t.count), 1);
+
+  // Self-loops zuerst absondern (state-X → state-X)
+  const selfLoops = transitions.filter(t => t.prev === t.next);
+  const properTrans = transitions.filter(t => t.prev !== t.next);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          {flow
+            ? <>
+                <strong>{flow.total_turns}</strong> Turns mit State, <strong>{flow.total_transitions}</strong> Übergänge ({flow.scope}, letzte {flow.days} Tage).
+              </>
+            : 'Lade Conversation-Flow …'}
+        </div>
+        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          Zeitraum (Tage):
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={days}
+            onChange={e => setDays(Math.max(1, parseInt(e.target.value) || 30))}
+            style={{ width: 56, padding: '2px 6px', border: '1px solid #D1D5DB', borderRadius: 4 }}
+          />
+        </label>
+        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          Min-Count:
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={minCount}
+            onChange={e => setMinCount(Math.max(1, parseInt(e.target.value) || 1))}
+            style={{ width: 56, padding: '2px 6px', border: '1px solid #D1D5DB', borderRadius: 4 }}
+          />
+        </label>
+        <button className="btn btn-sm" onClick={onReload} disabled={loading}>
+          {loading ? '…' : '↻ Neu laden'}
+        </button>
+      </div>
+
+      {loading && (
+        <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+          Lade Conversation-Flow …
+        </div>
+      )}
+
+      {!loading && flow && flow.total_turns === 0 && (
+        <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+          Keine State-Daten im Zeitraum. Starte einen Chat, um Übergänge zu sammeln.
+        </div>
+      )}
+
+      {!loading && flow && flow.total_turns > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* Linke Spalte: State-Häufigkeits-Verteilung */}
+          <div className="card" style={{ padding: 14 }}>
+            <h4 style={{ marginTop: 0, marginBottom: 8, fontSize: 14 }}>📊 State-Häufigkeit</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {Object.entries(dist)
+                .sort((a, b) => b[1] - a[1])
+                .map(([state, count]) => (
+                  <div key={state} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                    <span style={{ width: 200, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 11, color: '#1F2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {state}
+                    </span>
+                    <div style={{ flex: 1, background: '#f3f4f6', borderRadius: 4, height: 16, position: 'relative' }}>
+                      <div style={{
+                        width: `${(count / distMax) * 100}%`,
+                        background: '#3B82F6',
+                        borderRadius: 4,
+                        height: '100%',
+                        minWidth: 2,
+                      }} />
+                    </div>
+                    <span style={{ width: 36, textAlign: 'right', fontWeight: 600, fontSize: 11 }}>{count}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          {/* Rechte Spalte: Top-Übergänge */}
+          <div className="card" style={{ padding: 14 }}>
+            <h4 style={{ marginTop: 0, marginBottom: 8, fontSize: 14 }}>🔀 Top-Übergänge (prev → next)</h4>
+            {properTrans.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                Keine Mehrturn-Übergänge im Zeitraum.
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {properTrans.slice(0, 20).map((t, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                  <span style={{
+                    flex: 1, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                    fontSize: 11, color: '#1F2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {t.prev} <span style={{ color: '#6B7280' }}>→</span> {t.next}
+                  </span>
+                  <div style={{ width: 80, background: '#f3f4f6', borderRadius: 4, height: 14, position: 'relative' }}>
+                    <div style={{
+                      width: `${(t.count / transMax) * 100}%`,
+                      background: '#059669',
+                      borderRadius: 4,
+                      height: '100%',
+                      minWidth: 2,
+                    }} />
+                  </div>
+                  <span style={{ width: 28, textAlign: 'right', fontWeight: 600, fontSize: 11 }}>{t.count}</span>
+                </div>
+              ))}
+            </div>
+
+            {selfLoops.length > 0 && (
+              <>
+                <h4 style={{ marginTop: 14, marginBottom: 6, fontSize: 13, color: '#6B7280' }}>
+                  🔁 Self-Loops (innerhalb derselben Phase)
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {selfLoops.map((t, i) => (
+                    <div key={i} style={{ fontSize: 11, color: '#6B7280', display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
+                        {t.prev} ↻
+                      </span>
+                      <span style={{ fontWeight: 600 }}>{t.count}×</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Volle Breite: Erläuterungs-Box */}
+          <div style={{
+            gridColumn: '1 / -1',
+            fontSize: 11,
+            color: '#6B7280',
+            background: '#FAFAFA',
+            border: '1px solid #E5E7EB',
+            borderRadius: 6,
+            padding: 10,
+            lineHeight: 1.5,
+          }}>
+            <strong>Lesart:</strong> States sind Verlaufs-Phasen — der Bot wechselt von einer Phase
+            (z.B. <code style={{ background: '#fff', padding: '0 4px', borderRadius: 3 }}>state-5 Suche</code>)
+            in eine plausible Folge-Phase (z.B. <code style={{ background: '#fff', padding: '0 4px', borderRadius: 3 }}>state-6 Ergebnis-Kuratierung</code>).
+            Häufige Übergänge zeigen den typischen Gesprächs-Flow.
+            Self-Loops (z.B. <code style={{ background: '#fff', padding: '0 4px', borderRadius: 3 }}>state-2 ↻</code>)
+            bedeuten mehrere Iterationen in derselben Phase — meist Slot-Erfassung („Welche Stufe?" → User antwortet → noch ein Slot fehlt).
+            Implausible Übergänge (siehe Debug-Panel im Chat-Widget) werden separat als Warnung markiert.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Routing-Matrix sub-component ──────────────────────────────────────
+ * Renders a Persona × Intent heatmap of the top-winning Pattern per cell.
+ * Color intensity = share (how dominant the top pattern is). Click a cell
+ * to drill into the matching quality logs.
+ *
+ * The matrix is intentionally sparse: only cells with ≥ minCount samples
+ * appear. Empty cells (no traffic) are shown as gray placeholders so
+ * coverage gaps stay visible.
+ */
+function RoutingMatrixView({
+  matrix, loading, minCount, setMinCount, onReload, onCellClick,
+}: {
+  matrix: RoutingMatrix | null;
+  loading: boolean;
+  minCount: number;
+  setMinCount: (n: number) => void;
+  onReload: () => void;
+  onCellClick: (personaId: string, intentId: string) => void;
+}) {
+  const cells = matrix?.cells ?? [];
+
+  // Derive row/col axes from the observed data + a stable sort. Persona
+  // and Intent IDs are already short codes — alphabetical sort is fine.
+  const personas = Array.from(new Set(cells.map(c => c.persona_id))).sort();
+  const intents = Array.from(new Set(cells.map(c => c.intent_id))).sort();
+
+  // Index cells by (persona, intent) for O(1) lookup in the render loop.
+  const cellIndex = new Map<string, RoutingMatrixCell>();
+  for (const c of cells) cellIndex.set(`${c.persona_id}|${c.intent_id}`, c);
+
+  // Stable pastel palette keyed by pattern_id — same color = same pattern
+  // across cells, so the eye can spot "PAT-20 catches everything" trivially.
+  const colorForPattern = (pid: string): string => {
+    // Simple hash → hue
+    let h = 0;
+    for (let i = 0; i < pid.length; i++) h = (h * 31 + pid.charCodeAt(i)) >>> 0;
+    return `hsl(${h % 360}, 55%, 78%)`;
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          {matrix
+            ? <>Aggregiert aus <strong>{matrix.total_turns}</strong> Turns ({matrix.scope}).</>
+            : 'Lade Matrix-Daten …'}
+        </div>
+        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          Min-Samples pro Zelle:
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={minCount}
+            onChange={e => setMinCount(Math.max(1, parseInt(e.target.value) || 1))}
+            style={{ width: 60, padding: '2px 6px', border: '1px solid #D1D5DB', borderRadius: 4 }}
+          />
+        </label>
+        <button className="btn btn-sm" onClick={onReload} disabled={loading}>
+          {loading ? '…' : '↻ Neu laden'}
+        </button>
+      </div>
+
+      {loading && (
+        <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+          Berechne Routing-Matrix …
+        </div>
+      )}
+
+      {!loading && matrix && cells.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+          Keine Treffer für die aktuellen Filter (Scope: {matrix.scope}, Min-Samples: {minCount}).
+          Starte einen Chat oder reduziere die Min-Samples-Schwelle.
+        </div>
+      )}
+
+      {!loading && cells.length > 0 && (
+        <div style={{ overflowX: 'auto', background: '#fff', borderRadius: 8, border: '1px solid #E5E7EB', padding: 8 }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th style={{
+                  position: 'sticky', left: 0, background: '#F9FAFB', zIndex: 2,
+                  padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid #E5E7EB',
+                  color: 'var(--text-muted)', fontWeight: 600, minWidth: 90,
+                }}>
+                  Persona ↓ / Intent →
+                </th>
+                {intents.map(iid => (
+                  <th key={iid} style={{
+                    padding: '8px 6px',
+                    borderBottom: '1px solid #E5E7EB',
+                    fontWeight: 600,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                    color: '#1F2937',
+                    whiteSpace: 'nowrap',
+                    fontSize: 11,
+                  }}>
+                    {iid}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {personas.map(pid => (
+                <tr key={pid}>
+                  <th style={{
+                    position: 'sticky', left: 0, background: '#F9FAFB', zIndex: 1,
+                    padding: '6px 12px', textAlign: 'left',
+                    borderBottom: '1px solid #F3F4F6', borderRight: '1px solid #E5E7EB',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: '#1F2937',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {pid}
+                  </th>
+                  {intents.map(iid => {
+                    const cell = cellIndex.get(`${pid}|${iid}`);
+                    if (!cell) {
+                      return (
+                        <td key={iid} style={{
+                          padding: '6px 6px',
+                          borderBottom: '1px solid #F3F4F6',
+                          background: '#FAFAFA',
+                          color: '#D1D5DB',
+                          textAlign: 'center',
+                          fontSize: 10,
+                          minWidth: 90,
+                        }}>—</td>
+                      );
+                    }
+                    const bg = colorForPattern(cell.top_pattern);
+                    const sharePct = Math.round(cell.share * 100);
+                    const altText = cell.alternatives.length > 0
+                      ? '\nAlternativen: ' + cell.alternatives.map(a => `${a.pattern_id} (${a.count})`).join(', ')
+                      : '';
+                    const title = `${cell.persona_id} × ${cell.intent_id}\n→ ${cell.top_pattern} (${cell.top_pattern_count}/${cell.total_count}, ${sharePct}%)${altText}\nKlicken: Logs anzeigen.`;
+                    return (
+                      <td
+                        key={iid}
+                        title={title}
+                        onClick={() => onCellClick(cell.persona_id, cell.intent_id)}
+                        style={{
+                          padding: '6px 8px',
+                          borderBottom: '1px solid #F3F4F6',
+                          background: bg,
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          minWidth: 90,
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                          fontSize: 11,
+                          // Subtle opacity gradient by share — high share = vivid,
+                          // low share = washed out (signals "ambiguous routing here")
+                          opacity: 0.55 + 0.45 * Math.min(cell.share, 1),
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, color: '#111827' }}>{cell.top_pattern}</div>
+                        <div style={{ color: '#374151', fontSize: 10 }}>
+                          {sharePct}% · {cell.total_count}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            <strong>Legende:</strong> Pro Zelle steht oben das dominanteste Pattern,
+            unten dessen Anteil und die Gesamt-Sample-Zahl.
+            Volle Farbsättigung = klare Pattern-Wahl (≥ 90 %), gedeckt = mehrere Patterns konkurrieren.
+            Hover für Alternativen, Klick öffnet die zugehörigen Logs (Intent-Filter).
+            „—" = keine Samples in dieser Persona-Intent-Kombination.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Component ─────────────────────────────────────────────────────── */
 export default function QualityView() {
   const [logs, setLogs] = useState<QualityLog[]>([]);
@@ -134,7 +529,21 @@ export default function QualityView() {
   const [openDetail, setOpenDetail] = useState<'tight' | 'degradation' | 'entities' | 'confidence' | null>('tight');
   const [selected, setSelected] = useState<QualityLog | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<'overview' | 'logs'>('overview');
+  const [tab, setTab] = useState<'overview' | 'logs' | 'matrix' | 'flow'>('overview');
+  // Routing-Matrix state (Block 2 — Sprint 6).
+  // We fetch the precomputed (persona × intent → pattern) grid from
+  // /api/quality/matrix lazily — only when the tab is opened, so the
+  // overview tab keeps loading fast.
+  const [matrix, setMatrix] = useState<RoutingMatrix | null>(null);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixMinCount, setMatrixMinCount] = useState(1);
+  // Conversation-Flow state (Welle C Sprint 6).
+  // /api/quality/state-transitions liefert (prev → next)-Übergänge und
+  // State-Häufigkeiten für die Flow-View (Sankey-Style-Diagram).
+  const [flow, setFlow] = useState<StateTransitionsPayload | null>(null);
+  const [flowLoading, setFlowLoading] = useState(false);
+  const [flowDays, setFlowDays] = useState(30);
+  const [flowMinCount, setFlowMinCount] = useState(1);
   const [busy, setBusy] = useState<number | 'bulk' | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [scope, setScope] = useState<QualityScope>('all');
@@ -181,6 +590,49 @@ export default function QualityView() {
   }, [filterPattern, filterIntent, filterSession, scope]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Lazy-load the routing matrix the first time the tab is opened or
+  // when scope / min_count changes while the tab is active.
+  const loadMatrix = useCallback(async () => {
+    setMatrixLoading(true);
+    try {
+      const resp = await fetch(
+        `/api/quality/matrix?scope=${scope}&min_count=${matrixMinCount}`,
+      );
+      if (resp.ok) setMatrix(await resp.json());
+      else setMatrix(null);
+    } catch (e) {
+      console.error('Routing-matrix load error', e);
+      setMatrix(null);
+    } finally {
+      setMatrixLoading(false);
+    }
+  }, [scope, matrixMinCount]);
+
+  useEffect(() => {
+    if (tab === 'matrix') loadMatrix();
+  }, [tab, loadMatrix]);
+
+  // Lazy-load the conversation-flow data (Welle C Sprint 6).
+  const loadFlow = useCallback(async () => {
+    setFlowLoading(true);
+    try {
+      const resp = await fetch(
+        `/api/quality/state-transitions?scope=${scope}&days=${flowDays}&min_count=${flowMinCount}`,
+      );
+      if (resp.ok) setFlow(await resp.json());
+      else setFlow(null);
+    } catch (e) {
+      console.error('State-transitions load error', e);
+      setFlow(null);
+    } finally {
+      setFlowLoading(false);
+    }
+  }, [scope, flowDays, flowMinCount]);
+
+  useEffect(() => {
+    if (tab === 'flow') loadFlow();
+  }, [tab, loadFlow]);
 
   const deleteOne = async (logId: number) => {
     if (!confirm(`Quality-Log #${logId} löschen?`)) return;
@@ -267,6 +719,8 @@ export default function QualityView() {
             ))}
           </div>
           <button className={`btn btn-sm ${tab === 'overview' ? 'btn-primary' : ''}`} onClick={() => setTab('overview')}>Übersicht</button>
+          <button className={`btn btn-sm ${tab === 'matrix' ? 'btn-primary' : ''}`} onClick={() => setTab('matrix')}>Routing-Matrix</button>
+          <button className={`btn btn-sm ${tab === 'flow' ? 'btn-primary' : ''}`} onClick={() => setTab('flow')}>Gesprächs-Flow</button>
           <button className={`btn btn-sm ${tab === 'logs' ? 'btn-primary' : ''}`} onClick={() => setTab('logs')}>Logs</button>
           <button className="btn btn-sm" onClick={load} disabled={loading}>
             {loading ? '…' : '↻ Neu laden'}
@@ -573,6 +1027,40 @@ export default function QualityView() {
         <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
           Keine Quality-Daten vorhanden. Starte einen Chat, um Daten zu sammeln.
         </div>
+      )}
+
+      {/* ════════════════════ GESPRÄCHS-FLOW TAB ════════════════════ */}
+      {tab === 'flow' && (
+        <ConversationFlowView
+          flow={flow}
+          loading={flowLoading}
+          days={flowDays}
+          setDays={setFlowDays}
+          minCount={flowMinCount}
+          setMinCount={setFlowMinCount}
+          onReload={loadFlow}
+        />
+      )}
+
+      {/* ════════════════════ ROUTING-MATRIX TAB ════════════════════ */}
+      {tab === 'matrix' && (
+        <RoutingMatrixView
+          matrix={matrix}
+          loading={matrixLoading}
+          minCount={matrixMinCount}
+          setMinCount={setMatrixMinCount}
+          onReload={loadMatrix}
+          onCellClick={(personaId, intentId) => {
+            setFilterPattern('');
+            setFilterIntent(intentId);
+            setFilterSession('');
+            // Persona filter doesn't exist as input → use session-id-free
+            // intent filter and let the user see all matching turns. For
+            // the Persona dimension we rely on the user scanning the
+            // intent-filtered logs (small per-cell volume).
+            setTab('logs');
+          }}
+        />
       )}
 
       {/* ════════════════════ LOGS TAB ════════════════════ */}

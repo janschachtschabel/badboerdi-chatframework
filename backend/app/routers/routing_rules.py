@@ -29,6 +29,7 @@ from app.services.rule_engine import (
     RuleDef,
     RuleEngine,
     get_rule_engine,
+    load_lookup_groups_from_file,
     load_rules_from_file,
 )
 
@@ -55,6 +56,29 @@ async def list_rules() -> dict[str, Any]:
         "total": engine.rule_count,
         "live_count": sum(1 for r in engine._rules if r.live),
         "shadow_count": sum(1 for r in engine._rules if not r.live),
+    }
+
+
+@router.get("/lookups")
+async def list_lookup_groups() -> dict[str, Any]:
+    """Welle C.1 (2026-05): Return the raw lookup-groups (table form)
+    from the YAML, so the Studio UI can render them as editable grids
+    instead of N×expanded individual rules.
+
+    Each group has: ``id_prefix``, ``description``, ``priority``, ``live``,
+    ``when_path``, ``when_op``, ``then_field``, ``when_extra`` (optional),
+    ``then_extra`` (optional), ``items`` (list of {key, match, value}).
+
+    The expansion to single rules happens server-side at load-time
+    (``rule_engine.py:_expand_lookup_group``); the Studio sees both the
+    table form (here) and the expanded form (via ``GET /api/routing-rules``).
+    """
+    groups = load_lookup_groups_from_file()
+    return {
+        "lookups": groups,
+        "total": len(groups),
+        "total_items": sum(len(g.get("items") or []) for g in groups
+                           if isinstance(g, dict)),
     }
 
 

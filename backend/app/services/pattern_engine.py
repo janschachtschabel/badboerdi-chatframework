@@ -52,6 +52,13 @@ class PatternDef(BaseModel):
     # that need a deterministic sequence (e.g. lookup_vocab → search_content)
     # rather than a single-tool answer. Default False = "any one suffices".
     requires_all_tools: bool = False
+    # Welle B.5 (2026-05): When True, the post-LLM cards-list is filtered
+    # to only contain cards whose URL/node_id/title appears in the
+    # response text. Use for patterns where the LLM crafts a narrative
+    # that references specific cards (e.g. PAT-19 Lernpfad). When False
+    # (default), all returned cards are kept — the LLM may reference
+    # only a subset in prose, the rest are shown as additional tiles.
+    card_text_link_required: bool = False
     core_rule: str = ""
     short_purpose: str = ""
 
@@ -226,6 +233,27 @@ def phase2_score(
     return scores
 
 
+_LENGTH_RANK = {"kurz": 0, "mittel": 1, "lang": 2}
+_LENGTH_BY_RANK = {0: "kurz", 1: "mittel", 2: "lang"}
+
+
+def _apply_length_bias(default_length: str, length_bias: float) -> str:
+    """Wendet einen Length-Bias [-0.3..+0.3] auf eine Default-Länge an.
+
+    Bias > +0.15 → shift +1 (kurz→mittel→lang)
+    Bias < -0.15 → shift -1
+    Sonst       → unverändert
+    Clamped auf [0..2].
+    """
+    rank = _LENGTH_RANK.get(default_length, 1)
+    if length_bias > 0.15:
+        rank += 1
+    elif length_bias < -0.15:
+        rank -= 1
+    rank = max(0, min(2, rank))
+    return _LENGTH_BY_RANK[rank]
+
+
 def phase3_modulate(
     pattern: PatternDef,
     signals: list[str],
@@ -233,29 +261,77 @@ def phase3_modulate(
     entities: dict[str, Any],
     persona_id: str = "P-AND",
 ) -> dict[str, Any]:
-    """Phase 3: Deterministic output adjustment. Returns modulated output config."""
+    """Phase 3: Deterministic output adjustment. Returns modulated output config.
+
+    Welle B.3 (2026-05): Persona-bezogene Tonalitäts-Modifier werden hier
+    aus ``01-base/tone-modifiers.yaml`` angewendet. Persona ist nicht mehr
+    First-Class Pattern-Selektor (gate_personas bleibt für hart Persona-
+    spezifische Patterns wie PAT-09 / PAT-14 / PAT-23), sondern primär ein
+    Modifier auf Tone / Length / Formality / card_text_mode.
+    """
+    from app.services.config_loader import get_tone_modifier_for_persona
+
     modulations, reduce_items, device_max, formality = _load_config_tables()
 
+    # Persona-Tonalitäts-Modifier — Quelle: tone-modifiers.yaml
+    tone_mod = get_tone_modifier_for_persona(persona_id)
+    _mod_override = bool(tone_mod.get("override", False))
+    _pattern_tone_is_default = pattern.default_tone in ("sachlich", "neutral", "")
+    _pattern_card_is_default = pattern.card_text_mode in ("minimal", "")
+
+    # Effective tone: Modifier override OR Pattern is at default → Modifier wins
+    effective_tone = (
+        tone_mod["tone"]
+        if (_mod_override or _pattern_tone_is_default)
+        else pattern.default_tone
+    )
+
+    # Effective length: bias auf pattern.default_length anwenden
+    effective_length = _apply_length_bias(pattern.default_length, tone_mod["length_bias"])
+
+    # Effective formality: Modifier siegt (Persona bestimmt Anrede)
+    if tone_mod["formality"] == "wie_user":
+        # Fallback auf device_config-Formality, falls modifier neutral lässt
+        effective_formality = formality.get(persona_id, "neutral")
+    else:
+        effective_formality = tone_mod["formality"]
+
+    # Effective card_text_mode: Modifier siegt nur bei override OR Pattern-Default
+    effective_card_text_mode = (
+        tone_mod["card_text_mode"]
+        if (_mod_override or _pattern_card_is_default)
+        else pattern.card_text_mode
+    )
+
     output = {
-        "tone": pattern.default_tone,
-        "length": pattern.default_length,
+        "tone": effective_tone,
+        "length": effective_length,
         "detail_level": pattern.default_detail,
-        "formality": formality.get(persona_id, "neutral"),
+        "formality": effective_formality,
         "response_type": pattern.response_type,
         "sources": pattern.sources,
         "format_primary": pattern.format_primary,
         "format_follow_up": pattern.format_follow_up,
-        "card_text_mode": pattern.card_text_mode,
+        "card_text_mode": effective_card_text_mode,
         "max_items": device_max.get(device, 6),
         "tools": list(pattern.tools),
         "force_tool_use": pattern.force_tool_use,
         "requires_all_tools": pattern.requires_all_tools,
+        # Welle B.5 (2026-05): Pattern kann verlangen, dass die Cards-Liste
+        # post-LLM auf die im Text referenzierten Cards gefiltert wird
+        # (Lernpfad-Modus). chat.py:_filter_cards_used_in_text liest diesen
+        # Wert. Default False = alle Cards bleiben.
+        "card_text_link_required": pattern.card_text_link_required,
         "core_rule": pattern.core_rule,
         "short_purpose": pattern.short_purpose,
         "rag_areas": list(pattern.rag_areas),
         "skip_intro": False,
         "one_option": False,
         "add_sources": False,
+        # Trace-Felder: Modifier-Anwendung sichtbar machen für Debug + Studio
+        "_tone_modifier_persona": persona_id,
+        "_tone_modifier_override": _mod_override,
+        "_tone_modifier_pattern_default_tone": pattern.default_tone,
     }
 
     # ── Automatic tool-dependency enforcement ──────────────────
@@ -326,8 +402,12 @@ def select_pattern(
     candidates, eliminated = phase1_gate(patterns, persona_id, state_id, intent_id, entities)
 
     if not candidates:
-        # Fallback: use PAT-17 (Sanfter Einstieg)
-        fallback = next((p for p in patterns if p.id == "PAT-17"), patterns[0])
+        # Fallback: use PAT-20 (Orientierungs-Guide).
+        # Welle B.2 (2026-05): PAT-17 (Sanfter Einstieg) wurde in PAT-20
+        # gemergt. PAT-20 deckt jetzt beide Fälle ab (zögerlicher Einstieg
+        # + strukturierter Plattform-Guide). Wenn PAT-20 fehlt, fällt der
+        # Code defensiv auf das erste verfügbare Pattern zurück.
+        fallback = next((p for p in patterns if p.id == "PAT-20"), patterns[0])
         output = phase3_modulate(fallback, signals, device, entities, persona_id)
         return fallback, output, {}, eliminated
 

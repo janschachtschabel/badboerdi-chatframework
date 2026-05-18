@@ -268,24 +268,71 @@
     </div>
   </div>
 
-  <!-- Debug Panel -->
+  <!-- Debug Panel (Welle C Sprint 6 — neu sortiert mit Phasen-Gruppen) -->
   <div *ngIf="showDebug && latestDebug" class="debug-panel">
+
+    <!-- ════ 1. Gesprächs-Phase (Conversation Flow) ════ -->
+    <div class="debug-section-title">🌀 Gesprächs-Phase</div>
+    <div class="debug-row"><span class="debug-label">State:</span> {{ latestDebug.state || '–' }}</div>
+    <div class="debug-row" *ngIf="latestDebug.state_transition">
+      <span class="debug-label">Übergang:</span>
+      <span [class.debug-warn]="latestDebug.state_transition.plausible === false">
+        {{ latestDebug.state_transition.prev || '(start)' }} → {{ latestDebug.state_transition.next }}
+      </span>
+      <span *ngIf="latestDebug.state_transition.plausible === false" class="debug-warn">
+        ⚠ implausibel · erwartet: {{ latestDebug.state_transition.expected_next_likely.join(', ') }}
+      </span>
+      <span *ngIf="latestDebug.state_transition.plausible === true" class="debug-ok">✓ plausibel</span>
+    </div>
+    <div class="debug-row"><span class="debug-label">Turn-Typ:</span> {{ latestDebug.turn_type || '–' }}</div>
+
+    <!-- ════ 2. Klassifikation (Persona + Intent + Slots + Signale) ════ -->
+    <div class="debug-section-title">🎯 Klassifikation</div>
     <div class="debug-row"><span class="debug-label">Persona:</span> {{ latestDebug.persona }}</div>
     <div class="debug-row"><span class="debug-label">Intent:</span> {{ latestDebug.intent }}</div>
-    <div class="debug-row"><span class="debug-label">State:</span> {{ latestDebug.state }}</div>
-    <div class="debug-row"><span class="debug-label">Turn:</span> {{ latestDebug.turn_type || '–' }}</div>
     <div class="debug-row"><span class="debug-label">Signale:</span> {{ latestDebug.signals.join(', ') || '–' }}</div>
-    <div class="debug-row"><span class="debug-label">Pattern:</span> {{ latestDebug.pattern }}</div>
-    <div class="debug-row"><span class="debug-label">Tools:</span> {{ latestDebug.tools_called.join(', ') || '–' }}</div>
     <div class="debug-row"><span class="debug-label">Entities:</span> <code>{{ latestDebug.entities | json }}</code></div>
+    <div class="debug-row" *ngIf="latestDebug.confidence !== undefined">
+      <span class="debug-label">Confidence:</span> {{ (latestDebug.confidence || 0) | number:'1.2-2' }}
+    </div>
+
+    <!-- ════ 3. Pattern-Engine (Auswahl + Pipeline) ════ -->
+    <div class="debug-section-title">🧩 Pattern-Engine</div>
+    <div class="debug-row"><span class="debug-label">Pattern:</span> {{ latestDebug.pattern }}</div>
+    <div class="debug-row" *ngIf="latestDebug.pattern_id_hint">
+      <span class="debug-label">LLM-Hint:</span> {{ latestDebug.pattern_id_hint }}
+      <span *ngIf="latestDebug.llm_engine_match === true" class="debug-ok">✓ stimmt mit Engine überein</span>
+      <span *ngIf="latestDebug.llm_engine_match === false" class="debug-warn">⚠ weicht von Engine ab</span>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.pattern_reasoning">
+      <span class="debug-label">Reasoning:</span> {{ latestDebug.pattern_reasoning | slice:0:160 }}{{ latestDebug.pattern_reasoning.length > 160 ? '…' : '' }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.phase1_eliminated && latestDebug.phase1_eliminated.length">
+      <span class="debug-label">Phase 1 eliminiert:</span> {{ latestDebug.phase1_eliminated.join(', ') }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.phase2_scores">
+      <span class="debug-label">Phase 2 Scores:</span>
+      <span *ngFor="let entry of (latestDebug.phase2_scores | keyvalue)" class="debug-score">
+        {{ entry.key }}={{ entry.value | number:'1.2-2' }}
+      </span>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['degradation']">
+      <span class="debug-label">Degradation:</span>
+      <span class="debug-warn">⚠</span>
+      fehlende Slots={{ latestDebug.phase3_modulations['missing_slots']?.join(', ') || '–' }}
+      <span *ngIf="latestDebug.phase3_modulations['blocked_patterns'] && latestDebug.phase3_modulations['blocked_patterns'].length">
+        · blockiert={{ latestDebug.phase3_modulations['blocked_patterns'].length }} Patterns
+      </span>
+    </div>
+
+    <!-- ════ 4. Modulation (Output-Form) ════ -->
+    <div class="debug-section-title">🎨 Modulation</div>
     <div class="debug-row">
-      <span class="debug-label">Phase 3:</span>
+      <span class="debug-label">Ton/Form:</span>
       Ton={{ latestDebug.phase3_modulations['tone'] }},
       Formalität={{ latestDebug.phase3_modulations['formality'] }},
       Länge={{ latestDebug.phase3_modulations['length'] }},
-      Detail={{ latestDebug.phase3_modulations['detail_level'] }},
-      Max={{ latestDebug.phase3_modulations['max_items'] }},
-      Kacheln={{ latestDebug.phase3_modulations['card_text_mode'] }}
+      Detail={{ latestDebug.phase3_modulations['detail_level'] }}
       <span *ngIf="latestDebug.phase3_modulations['skip_intro']"> · skip_intro</span>
       <span *ngIf="latestDebug.phase3_modulations['one_option']"> · one_option</span>
       <span *ngIf="latestDebug.phase3_modulations['add_sources']"> · add_sources</span>
@@ -295,37 +342,27 @@
       Typ={{ latestDebug.phase3_modulations['response_type'] }},
       Format={{ latestDebug.phase3_modulations['format_primary'] }},
       Follow-up={{ latestDebug.phase3_modulations['format_follow_up'] }},
-      Quellen={{ latestDebug.phase3_modulations['sources']?.join(', ') || '–' }}
+      Kacheln={{ latestDebug.phase3_modulations['card_text_mode'] }},
+      Max={{ latestDebug.phase3_modulations['max_items'] }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['core_rule']">
+      <span class="debug-label">Core-Rule:</span> {{ latestDebug.phase3_modulations['core_rule'] | slice:0:120 }}{{ latestDebug.phase3_modulations['core_rule'].length > 120 ? '…' : '' }}
+    </div>
+
+    <!-- ════ 5. Tools + Wissen ════ -->
+    <div class="debug-section-title">🔧 Tools &amp; Wissen</div>
+    <div class="debug-row"><span class="debug-label">Tools aufgerufen:</span> {{ latestDebug.tools_called.join(', ') || '–' }}</div>
+    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['tools'] && latestDebug.phase3_modulations['tools'].length">
+      <span class="debug-label">Pattern-Tools (erlaubt):</span> {{ latestDebug.phase3_modulations['tools'].join(', ') }}
+    </div>
+    <div class="debug-row">
+      <span class="debug-label">Quellen:</span> {{ latestDebug.phase3_modulations['sources']?.join(', ') || '–' }}
     </div>
     <div class="debug-row" *ngIf="latestDebug.phase3_modulations['rag_areas'] && latestDebug.phase3_modulations['rag_areas'].length">
       <span class="debug-label">RAG-Areas:</span> {{ latestDebug.phase3_modulations['rag_areas'].join(', ') }}
     </div>
-    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['tools'] && latestDebug.phase3_modulations['tools'].length">
-      <span class="debug-label">Pattern-Tools:</span> {{ latestDebug.phase3_modulations['tools'].join(', ') }}
-    </div>
-    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['core_rule']">
-      <span class="debug-label">Core-Rule:</span> {{ latestDebug.phase3_modulations['core_rule'] | slice:0:120 }}{{ latestDebug.phase3_modulations['core_rule'].length > 120 ? '...' : '' }}
-    </div>
-    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['degradation']">
-      <span class="debug-label">Degradation:</span>
-      fehlende Slots={{ latestDebug.phase3_modulations['missing_slots']?.join(', ') || '–' }}
-      <span *ngIf="latestDebug.phase3_modulations['blocked_patterns'] && latestDebug.phase3_modulations['blocked_patterns'].length">
-        · blockiert={{ latestDebug.phase3_modulations['blocked_patterns'].length }} Patterns
-      </span>
-    </div>
-    <div class="debug-row" *ngIf="latestDebug.phase1_eliminated && latestDebug.phase1_eliminated.length">
-      <span class="debug-label">Eliminiert:</span> {{ latestDebug.phase1_eliminated.join(', ') }}
-    </div>
-    <div class="debug-row" *ngIf="latestDebug.phase2_scores">
-      <span class="debug-label">Scores:</span>
-      <span *ngFor="let entry of (latestDebug.phase2_scores | keyvalue)" class="debug-score">
-        {{ entry.key }}={{ entry.value | number:'1.2-2' }}
-      </span>
-    </div>
-    <!-- Triple-Schema v2 -->
-    <div class="debug-row" *ngIf="latestDebug.confidence !== undefined">
-      <span class="debug-label">Confidence:</span> {{ (latestDebug.confidence || 0) | number:'1.2-2' }}
-    </div>
+    <!-- ════ 6. Safety + Policy + Context (Triple-Schema v2) ════ -->
+    <div class="debug-section-title">🛡️ Safety, Policy &amp; Context</div>
     <div class="debug-row" *ngIf="latestDebug.safety">
       <span class="debug-label">Safety:</span>
       Risk={{ latestDebug.safety.risk_level }}

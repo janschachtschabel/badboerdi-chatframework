@@ -99,7 +99,7 @@ nachvollziehbar (siehe Kommentare `# Layer 1: …` bis `# Layer 6: …`).
 |---|---------|----------------|--------------|--------|
 | **1** | **Identität & Schutz** | `chatbots/wlo/v1/01-base/base-persona.md`, `guardrails.md`, `safety-config.yaml`, `quality-log-config.yaml`, `device-config.yaml` | **Immer** — bei jedem Turn als erstes in den Prompt | Wer ist BOERDi, was darf er nie tun (Guardrails als _letzter_ Block, nicht überschreibbar), Sicherheits-Preset (off/basic/standard/strict/paranoid), Quality-Logging, Geräte-Heuristiken |
 | **2** | **Domain & Regeln** | `chatbots/wlo/v1/02-domain/domain-rules.md`, `policy.yaml`, `wlo-plattform-wissen.md` | **Immer** — direkt nach Schicht 1 | Plattform-Wissen (WLO-Sammlungen, Lizenzen, Zielgruppen), Dauerregeln, Policy-Decisions (`policy_service.py`) |
-| **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/pat-*.md` (27 Patterns) | **Nach Bedarf** — nur das _eine_ Pattern, das der Pattern-Engine-Selector gewinnt (`pattern_engine.py → select_pattern()`), ggf. korrigiert durch die Routing-Rules-Engine (siehe 2.4) | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
+| **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/pat-*.md` (23 Patterns nach Welle B/C Konsolidierung) | **Nach Bedarf** — nur das _eine_ Pattern, das der Pattern-Engine-Selector gewinnt (`pattern_engine.py → select_pattern()`), ggf. korrigiert durch die Routing-Rules-Engine (siehe 2.4) | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
 | **4** | **Dimensionen** | Klassifikator-Output aus `llm_service.py → classify_input()` + `04-*/*.yaml` (Personas, Intents, States, Entities, Signals) | **Pro Turn neu** | Persona-ID, Intent-ID + Confidence, Signals, Entities, Slots, next_state — strukturierte Werte für genau diesen Turn |
 | **5** | **Canvas-Formate** | `chatbots/wlo/v1/05-canvas/*.yaml` (material-types, type-aliases, create-triggers, edit-triggers, persona-priorities) | **Nur bei Canvas-Intents (INT-W-11, INT-W-12)** — liefert Struktur-Vorgabe des gewählten Material-Typs | 18 Material-Typen (13 didaktisch + 5 analytisch), Alias-Mapping, Create-/Edit-Trigger-Phrasen, Persona-abhängige Reihenfolge |
 | **6** | **Wissen** | `chatbots/wlo/v1/05-knowledge/rag-config.yaml`, MCP-Tool-Outcomes, RAG-Memory (`rag_service.py`, `mcp_client.py`), Themenseiten-Resolver (`page_context_service.py`) | **Nur bei Bedarf** — wenn Pattern Tools ruft, RAG-Bereich aktiv ist oder `node_id`/`topic_page_slug` über `page_context` aufgelöst werden kann | Tool-Outcomes, RAG-Snippets, gemerkte Materialien aus Session-Memory, semantisch aufgelöste Themenseiten-Metadaten |
@@ -170,7 +170,7 @@ beobachtende Roll-Outs oder **live** (`live: true`) geschaltet werden. Beispiel:
   when:
     all:
       - persona: { in: ["P-W-RED", "P-W-PRESSE", "P-W-POL", "P-BER"] }
-      - intent:  { in: ["INT-W-03b", "INT-W-09"] }
+      - intent:  { in: ["INT-W-03", "INT-W-09"] }
       - entity.thema: { non_empty: true }
       - pattern_winner: { in: ["PAT-06", "PAT-01", "PAT-02", "PAT-10"] }
   then:
@@ -322,8 +322,8 @@ badboerdi/
 │   ├── chatbots/wlo/v1/ # ↳ Konfigurations-Bundle (6 Prompt-Schichten + Routing-Rules)
 │   │   ├── 01-base/     # Layer 1: Persona, Guardrails, Safety, Device, Privacy
 │   │   ├── 02-domain/   # Layer 2: Domain-Wissen, Policy
-│   │   ├── 03-patterns/ # Layer 3: 27 Patterns (PAT-01…PAT-25, PAT-CRISIS, PAT-REFUSE-THREAT)
-│   │   ├── 04-*/        # Layer 4: 9 Personas, 14 Intents, 12 States, 5 Entities, 17 Signals, Contexts
+│   │   ├── 03-patterns/ # Layer 3: 23 Patterns (PAT-01…PAT-28 mit Lücken, PAT-CRISIS, PAT-REFUSE-THREAT)
+│   │   ├── 04-*/        # Layer 4: 9 Personas (mit Tonalitäts-Modifier-Frontmatter), 13 Intents, 12 States, 5 Entities, 17 Signals, Contexts
 │   │   ├── 05-canvas/   # Layer 5: 18 Material-Typen, Aliase, Create-/Edit-Trigger, Persona-Priorität
 │   │   ├── 05-knowledge/# Layer 6: RAG- und MCP-Konfiguration
 │   │   └── 06-rules/    # Routing-Rules-Engine (deklarative Pre/Post-Route-Regeln)
@@ -522,6 +522,22 @@ el.setAttribute('initial-state', 'collapsed');
 In Angular per `[attr.initial-state]="state()"` direkt im Template binden — das Widget
 reagiert via `ngOnChanges` auf jede Änderung.
 Live-Demos: `/widget/` (Default mit Kacheln + Canvas), `/widget/inline` (kompakter Inline-Modus).
+
+#### Embed-Inputs + Outputs/Events
+
+Das Widget hat darüber hinaus eine **umfangreiche Embed-API**: HTML-
+Attribute zum Steuern der Display-Modi (`cards-enabled`,
+`canvas-enabled`, `ai-content-enabled`, `quick-replies-enabled`), des
+Lotsen-Modus (`guide-mode`, `emit-guide-suggestion`) und der Link-
+Interception (`intercept-edu-sharing-links`) — plus zwei globale
+CustomEvents (`badboerdi:page-action`, `badboerdi:guide-suggestion`)
+und die korrespondierenden Angular-Outputs.
+
+Vollständige Referenz inkl. Payload-Schemas, Trigger-Bedingungen und
+fünf Embed-Beispielen (Default / Themenseiten-Modus / Edu-Sharing-
+Sidebar / WordPress-iframe-Routing / Minimal-Bubble):
+
+→ **[docs/05-widget-javascript-api.md](./docs/05-widget-javascript-api.md)**
 
 ---
 
@@ -744,7 +760,7 @@ Alle Endpoints sind Studio-geschützt (Header `X-Studio-Key`, wenn `STUDIO_API_K
 
 ### Skalierung
 
-Ein voller Sweep (alle 9 Personas × 14 Intents × 2 Szenarien) erzeugt 252 Turns und kostet
+Ein voller Sweep (alle 9 Personas × 13 Intents × 2 Szenarien) erzeugt 234 Turns und kostet
 typisch ~$1.30 bei `gpt-4o-mini` als Judge und `gpt-5.4-mini` als Chat-Model. Der volle
 Sweep inkl. 3-Turn-Dialogen (630 Turns) liegt bei ~$4. Laufzeit ~5–15 Minuten, je nach
 Tool-Call- und RAG-Retrieval-Dauer.

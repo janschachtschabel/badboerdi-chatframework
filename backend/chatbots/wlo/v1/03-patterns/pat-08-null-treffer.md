@@ -5,7 +5,7 @@ short_purpose: "WANN: MCP-Suche zu konkretem Thema lieferte 0 oder unbrauchbare 
 priority: 380
 gate_personas: ["*"]
 gate_states: ["*"]
-gate_intents: ["INT-W-03a", "INT-W-03b", "INT-W-03c", "INT-W-10"]
+gate_intents: ["INT-W-03", "INT-W-10"]
 signal_high_fit: []
 signal_medium_fit: []
 signal_low_fit: []
@@ -29,7 +29,7 @@ tools: ["search_wlo_collections", "search_wlo_topic_pages", "search_wlo_content"
 Mehrstufige Suche mit graduell lockeren Filtern — und ueberhaupt nicht aufgeben.
 
 ## Wann aktiv
-- Nur bei Such-Intents (INT-W-03a/b/c, INT-W-10), nicht universell
+- Nur bei Such-Intents (INT-W-03, INT-W-10), nicht universell
 - Wenn die erste MCP-Suche zu einem Thema leer blieb
 - Priority 380 — spezifischer Fallback, nicht Generic-Default
 

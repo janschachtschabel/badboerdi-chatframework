@@ -987,14 +987,14 @@ $accent-orange: #E79800;
   }
 }
 
-// ── Debug Panel ──────────────────────────────────────────────────────────────
+// ── Debug Panel (Welle C Sprint 6 — neu sortiert mit Phasen-Sections) ──
 .debug-panel {
   background: #F8FAFC;
   border-top: 1px solid $border;
   padding: 10px 14px;
   font-size: .72rem;
   font-family: monospace;
-  max-height: 180px;
+  max-height: 320px;
   overflow-y: auto;
   overflow-x: hidden;
   line-height: 1.5;
@@ -1004,6 +1004,28 @@ $accent-orange: #E79800;
 
 .debug-row { margin-bottom: 2px; max-width: 100%; }
 .debug-label { font-weight: 600; color: var(--boerdi-primary, #1c4587); }
+
+// Section-Header zwischen den 6 Debug-Phasen-Gruppen (State / Klassifikation
+// / Pattern / Modulation / Tools / Safety). Erste Section hat keinen Trenner.
+.debug-section-title {
+  font-weight: 700;
+  font-size: .72rem;
+  color: #1F2937;
+  margin: 8px 0 4px;
+  padding-top: 6px;
+  border-top: 1px dashed #D1D5DB;
+  letter-spacing: .02em;
+
+  &:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+}
+
+// State-Übergang: plausibel / implausibel
+.debug-warn { color: #B45309; font-weight: 600; }
+.debug-ok { color: #047857; font-weight: 500; margin-left: 4px; }
 
 // ── Input Footer ─────────────────────────────────────────────────────────────
 .chat-footer {

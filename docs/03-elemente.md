@@ -14,15 +14,21 @@ Das BadBoerdi-Framework arbeitet mit **7 Kernelementen** (aktiv bei jeder Nachri
 
 | ID | Label | Anrede |
 |----|-------|--------|
-| P-W-LK | Lehrkraft | Sie |
-| P-W-SL | Schueler:in | du |
-| P-W-ELT | Eltern | Sie |
-| P-W-POL | Politikvertreter | Sie |
-| P-W-PRESSE | Pressekontakt | Sie |
-| P-W-RED | Redaktion | du |
-| P-W-BER | Berater:in | Sie |
-| P-W-VER | Verwaltung | Sie |
-| P-AND | Sonstige/Unbekannt | neutral |
+| P-W-LK | Lehrkraft | wie_user (Sie Standard) |
+| P-W-SL | Schüler:in | duzen (Override aktiv) |
+| P-ELT | Eltern | wie_user (Sie Standard) |
+| P-W-POL | Politiker:in | siezen (Override aktiv) |
+| P-W-PRESSE | Presse/Journalist:in | siezen (Override aktiv) |
+| P-W-RED | Redaktion | wie_user (Sie Standard) |
+| P-BER | Berater:in | wie_user (Sie Standard) |
+| P-VER | Verwaltung | siezen (Override aktiv) |
+| P-AND | Sonstige/Unbekannt | duzen (BOERDi-Default) |
+
+**Tonalität-Steuerung (Welle B.3):** Jede Persona hat im Frontmatter
+(z.B. `04-personas/lk.md`) fünf Modifier-Felder: `tone`, `length_bias`,
+`formality`, `card_text_mode`, `override`. Diese werden von der
+Pattern-Engine in Phase 3 angewendet. Studio-Pflege im Persona-Editor
+über das Form-UI über dem Markdown-Editor.
 
 **Wirkung:**
 - Bestimmt Anrede (Sie/du/neutral) aus `device-config.yaml`
@@ -34,27 +40,32 @@ Das BadBoerdi-Framework arbeitet mit **7 Kernelementen** (aktiv bei jeder Nachri
 
 ### 2. Intent
 
-**Datei:** `04-intents/intents.yaml` (10 Stueck)
+**Datei:** `04-intents/intents.yaml` (13 Stück, Stand Welle C Sprint 4)
 
 | ID | Label | Typische Aktion |
 |----|-------|-----------------|
 | INT-W-01 | WLO kennenlernen | Plattform-Info aus RAG |
-| INT-W-02 | Soft Probing | Bot fragt nach Bedarf |
-| INT-W-03a | Themenseite entdecken | `search_wlo_collections` + `search_wlo_topic_pages` |
-| INT-W-03b | Unterrichtsmaterial suchen | `search_wlo_content` |
-| INT-W-03c | Lerninhalt suchen | `search_wlo_content` |
+| INT-W-02 | Erst-Orientierung ohne Anliegen | Bot fragt nach Bedarf (PAT-20) |
+| INT-W-03 | Inhalte abrufen | universell für Themenseiten/Sammlungen/Einzelinhalte — Pattern wählt Tool: `search_wlo_topic_pages` / `search_wlo_collections` / `search_wlo_content` |
 | INT-W-04 | Feedback | Kein Tool, Dank/Weiterleitung |
 | INT-W-05 | Routing Redaktion | Weiterleitung an Redaktion |
 | INT-W-06 | Faktenfragen | MCP-Info-Tools (WLO, edu-sharing) |
-| INT-W-07 | Material herunterladen | `get_node_details` |
 | INT-W-08 | Inhalte evaluieren | `get_node_details` + RAG |
 | INT-W-09 | Analyse & Reporting | `search_wlo_collections` + Statistik |
-| INT-W-10 | Unterrichtsplanung | `search_wlo_collections` + `search_wlo_content` |
+| INT-W-10 | Unterrichtsplanung | `search_wlo_collections` + `search_wlo_content` (mehrstufiger Lernpfad) |
+| INT-W-11 | Inhalt erstellen | Canvas-Create (PAT-21) |
+| INT-W-12 | Canvas-Edit | Verfeinerung bestehender Canvas-Inhalte |
+| INT-W-13 | Fachportal-Übersicht | `get_subject_portals` (Plural-Frage) |
+| INT-W-14 | Themen-Drilldown | `browse_collection_tree` (in EINE Sammlung tiefer) |
+
+**Historische Hinweise (Welle C Sprint 4, 2026-05-15):**
+- **INT-W-03a/03b/03c** (Themenseite/Material/Lerninhalt) wurden in **INT-W-03 "Inhalte abrufen"** konsolidiert. Pattern-Wahl (PAT-28 / PAT-07 / PAT-14 / PAT-09) erfolgt deterministisch über Anker-Wörter + Persona.
+- **INT-W-07 "Material herunterladen"** wurde gelöscht: technisch identisch mit INT-W-03 (Bot sucht im Repo, gibt Link — kein eigener File-Download).
 
 **Wirkung:**
 - Bestimmt, welche MCP-Tools der LLM bevorzugt aufruft
 - Filtert Pattern-Gates (`gate_intents`)
-- Loest spekulative Vorab-Abfragen aus (INT-W-03a/b/c und INT-W-10)
+- Löst spekulative Vorab-Abfragen aus (INT-W-03 und INT-W-10)
 - Steuert Entity-Akkumulation (welche Slots werden erwartet?)
 
 ---
@@ -117,32 +128,42 @@ Das BadBoerdi-Framework arbeitet mit **7 Kernelementen** (aktiv bei jeder Nachri
 
 ### 5. State (Gespraechszustand)
 
-**Datei:** `04-states/states.yaml` (11 Zustaende)
+**Datei:** `04-states/states.yaml` (11 Zustaende nach Welle C Sprint 6 — state-10 entfernt)
 
 ```
-state-1  Orientation          → Erster Kontakt
-state-2  Context Building     → Bot sammelt Kontext
-state-3  Information          → Informationslieferung
-state-4  Navigation/Discovery → Themenseiten erkunden
-state-5  Search               → Aktive Materialsuche
-state-6  Result Curation      → Ergebnis-Praesentation
-state-7  Refinement           → Verfeinerung
-state-8  Learning             → Arbeit mit Materialien
-state-9  Evaluation/Feedback  → Feedback-Phase
-state-10 Redaktions-Recherche → Systematische Recherche
-state-11 System/Meta          → Meta-Fragen zum Bot
+state-1  Orientierung          → Erster Kontakt, Bot sondiert offen
+state-2  Slot-Erfassung        → Bot fragt nach fehlendem Slot (1 Frage)
+state-3  Information           → Bot beantwortet Fakten/Konzept-Frage
+state-4  Erkundung             → Themenseiten/Sammlungen browsen
+state-5  Suche                 → Aktive Materialsuche (Tool-Call)
+state-6  Ergebnis-Kuratierung  → Bot bestätigt + fragt nach Pass
+state-7  Verfeinerung          → Bot adjustiert Filter
+state-8  Lernen & Arbeiten     → Bot hilft bei Anwendung
+state-9  Bewertung & Feedback  → Bot paraphrasiert + probt
+state-11 System & Meta         → Bot erklärt sich/Plattform
+state-12 Canvas-Arbeit         → Bot editiert Canvas iterativ
 ```
+
+**Welle C Sprint 6 (2026-05-16) — State als Conversation Flow Machine:**
+
+States modellieren jetzt **Gesprächs-Verlaufs-Phasen** (nicht zweite Klassifikations-Achse zum Intent). Pattern wählt WAS gesagt wird + welche Tools, State sagt in welchem Verlaufs-Schritt das einzahlt.
+
+Jeder State hat:
+- `role` — welche Rolle nimmt der Bot in dieser Phase
+- `bot_directive` — konkrete Handlungs-Anweisung, wird in den Response-Prompt eingebaut
+- `next_likely` — plausible Nachfolge-States (für Plausibilitäts-Validator)
 
 **Wirkung:**
-- Filtert Pattern-Gates (`gate_states`)
-- Wird pro Turn vom LLM-Klassifikator gesetzt (`next_state`)
-- Ermoeglicht zustandsabhaengiges Verhalten (z.B. in state-6 werden Ergebniskarten gezeigt)
+- `bot_directive` steuert die LLM-Antwort-Generierung (was als Verlaufs-Schritt jetzt drankommt)
+- `next_likely` validiert implausible Übergänge (z.B. state-12 → state-3 ohne Reset)
+- Quick-Reply-Generator nutzt State für phase-spezifische QRs
+- Pattern-Gates (`gate_states`) bleiben bestehen, sind aber meist `*` (State ist kein Pattern-Selektor)
 
 ---
 
 ### 6. Pattern (Gespraechsmuster)
 
-**Datei:** `03-patterns/*.md` (26 Patterns)
+**Datei:** `03-patterns/*.md` (23 Patterns)
 
 **Pattern-Engine (3 Phasen):**
 1. **Gate-Pruefung** — Passt Persona, State, Intent? UND: Sind alle `precondition_slots` gefuellt? (`precondition_slots` ist ein **Hard Gate** — fehlt ein geforderter Slot, wird das Pattern eliminiert, nicht nur schlechter bewertet)
@@ -161,22 +182,28 @@ state-11 System/Meta          → Meta-Fragen zum Bot
 | PAT-08 | Null-Treffer | Kein Ergebnis → alternative Vorschlaege |
 | PAT-09 | Redaktions-Recherche | Systematische Fachrecherche (nur RED) |
 | PAT-10 | Fakten-Bulletin | Kurze Faktenantwort |
-| PAT-11 | Nachfrage-Schleife | Iteratives Verfeinern |
-| PAT-12 | Ueberbrueckungs-Hinweis | Uebergang zwischen Themen |
-| PAT-13 | Schritt-fuer-Schritt | Angefuehrte Anleitung |
-| PAT-14 | Eltern-Empfehlung | Speziell fuer Eltern |
-| PAT-15 | Analyse-Ueberblick | Statistiken und Uebersichten |
-| PAT-16 | Themen-Exploration | Breite Themen-Erkundung |
-| PAT-17 | Sanfter Einstieg | Behutsamer Erstkontakt |
-| PAT-18 | Unterrichts-Paket | Materialzusammenstellung (precondition: fach+stufe+thema) |
-| PAT-19 | Unterrichts-Lernpfad | Strukturierter Lernpfad (precondition: fach+stufe+thema) |
-| PAT-20 | Orientierungs-Guide | Reine Text-Orientierung (kein MCP!) |
+| PAT-14 | Lerner-Empfehlung | Speziell für Schüler:innen/Eltern (Welle B.2: Merge aus PAT-13 + PAT-14) |
+| PAT-18 | Unterrichts-Paket | Materialzusammenstellung (precondition: thema) |
+| PAT-19 | Unterrichts-Lernpfad | Strukturierter Lernpfad (precondition: thema) |
+| PAT-20 | Orientierungs-Guide | "Was kann ich hier" mit konkreten Beispielen (kein MCP) |
 | PAT-21 | Canvas-Create | Neues Material KI-generiert im Canvas (precondition: thema+material_typ, INT-W-11) |
-| PAT-22 | Feedback-Echo | Nutzer-Feedback bestaetigen + Folge-Angebot (INT-W-04) |
-| PAT-23 | Redaktions-Routing | Luecken/Fehler an Redaktion weiterleiten (INT-W-05) |
-| PAT-24 | Download-Hinweis | Download-Weg ueber Kachel erklaeren + Lizenz-Hinweis (INT-W-07) |
+| PAT-22 | Feedback-Echo | Nutzer-Feedback bestätigen + Folge-Angebot (INT-W-04) |
+| PAT-23 | Redaktions-Routing | Lücken/Fehler an Redaktion weiterleiten (INT-W-05) |
+| PAT-25 | Canvas-Edit-Dialog | Verfeinerung bestehender Canvas-Inhalte (INT-W-12) |
+| PAT-26 | Fachportale-Übersicht | get_subject_portals — alle Fächer (INT-W-13) |
+| PAT-27 | Themen-Drilldown | browse_collection_tree in EINE Sammlung (INT-W-14) |
+| PAT-28 | Themenseiten-Suche | search_wlo_topic_pages bei "Themenseite zu X" (INT-W-03) |
 | PAT-CRISIS | Crisis-Empathie | Notfall-Pattern: Bei Krisen-Signalen sofort deeskalieren |
 | PAT-REFUSE-THREAT | Refuse-Threat | Abweisung von Bedrohungs-/Policy-Verletzungen |
+
+**Welle B/C Konsolidierungen** (gestrichen oder gemerged):
+- PAT-11 (Nachfrage-Schleife) → gestrichen (tot: state-9-only, nie erreicht)
+- PAT-12 (Überbrückungs-Hinweis) → gestrichen (kein Trigger)
+- PAT-13 (Schritt-für-Schritt) → in PAT-14 gemerged (Lerner-Empfehlung)
+- PAT-15 (Analyse-Überblick) → in PAT-10 gemerged (Fakten-Bulletin)
+- PAT-16 (Themen-Exploration) → in PAT-09 gemerged (Recherche)
+- PAT-17 (Sanfter Einstieg) → in PAT-20 gemerged (Orientierungs-Guide)
+- PAT-24 (Download-Hinweis) → in PAT-07 gemerged (Sub-Modus „Download")
 
 **Wirkung:**
 - Bestimmt Antwortstruktur (Ton, Laenge, Detailgrad)
@@ -326,7 +353,7 @@ Context ──────┬── gibt Bonus → Pattern-Scoring (page_bonus)
 
 1. **Klassifikation:**
    - Persona: `P-W-LK` (Lehrkraft)
-   - Intent: `INT-W-03b` (Unterrichtsmaterial suchen)
+   - Intent: `INT-W-03` (Inhalte abrufen)
    - Entities: fach=Mathematik, stufe=Klasse 7, medientyp=Video
    - Signals: [zielgerichtet, erfahren]
    - State: state-5 (Search)
@@ -334,7 +361,7 @@ Context ──────┬── gibt Bonus → Pattern-Scoring (page_bonus)
 2. **Safety:** risk=low, keine Blockaden
 
 3. **Spekulative Abfrage:**
-   - INT-W-03b ist in `_spec_search_intents` → `search_wlo_content` wird parallel gestartet
+   - INT-W-03 ist in `_spec_search_intents` → `search_wlo_content` wird parallel gestartet
    - Query: "Mathematik" (aus Entity `fach`)
 
 4. **Pattern-Engine:**

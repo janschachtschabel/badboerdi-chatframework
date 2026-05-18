@@ -61,14 +61,20 @@ Chatbot-Prompts werden schnell lang und unstrukturiert. BadBoerdi loest das durc
 
 **Pfad:** `chatbots/wlo/v1/03-patterns/`
 
-**26 Patterns** (PAT-01 bis PAT-24, plus PAT-CRISIS und PAT-REFUSE-THREAT) definieren, *wie* der Bot auf verschiedene Situationen reagiert. Jedes Pattern ist eine Markdown-Datei mit YAML-Frontmatter. Die neu hinzugekommenen Patterns:
+**23 Patterns** (PAT-01 bis PAT-28 mit Lücken nach Konsolidierung Welle B/C, plus PAT-CRISIS und PAT-REFUSE-THREAT) definieren, *wie* der Bot auf verschiedene Situationen reagiert. Jedes Pattern ist eine Markdown-Datei mit YAML-Frontmatter.
+
+**Stand nach Welle B/C Sprint 1-5 (2026-05):**
+- **PAT-07 Ergebnis-Kuratierung** — kartenbasierte Ergebnisliste mit Download-Sub-Modus (ehem. PAT-24)
+- **PAT-09 Recherche** — für Profi-Personas (Redaktion/Presse/Politik/Beratung), Modus A direkt liefern oder Modus B Themen-Exploration
+- **PAT-14 Lerner-Empfehlung** — für Schüler:innen/Eltern (Merge aus PAT-13 + PAT-14)
+- **PAT-20 Orientierungs-Guide** — "Was kann ich hier" mit konkreten Persona-spezifischen Beispielen
 - **PAT-21 Canvas-Create** — neues Material im Canvas-Pane erstellen (INT-W-11)
-- **PAT-22 Feedback-Echo** — Nutzer-Feedback bestaetigen + Folge-Angebot (INT-W-04)
-- **PAT-23 Redaktions-Routing** — Luecken/Fehler an Redaktion weiterleiten (INT-W-05)
-- **PAT-24 Download-Hinweis** — Download-Weg ueber Kachel erklaeren (INT-W-07)
+- **PAT-22 Feedback-Echo** — Nutzer-Feedback bestätigen + konkrete Folge-Angebote (INT-W-04)
+- **PAT-23 Redaktions-Routing** — Lücken/Fehler an Redaktion weiterleiten (INT-W-05)
+- **PAT-28 Themenseiten-Suche** — `search_wlo_topic_pages` bei "Themenseite zu X"
 
 **Auswahl-Mechanismus (Pattern-Engine, 3 Phasen):**
-1. **Gate-Pruefung** — Passt Persona, State, Intent? UND: Sind alle `precondition_slots` gefuellt? (Hard Gate — z.B. PAT-19 braucht fach+stufe+thema; fehlt eines, wird das Pattern eliminiert, nicht nur schlechter bewertet)
+1. **Gate-Prüfung** — Passt Persona, State, Intent? UND: Sind alle `precondition_slots` gefüllt? (Hard Gate — z.B. PAT-19 braucht jetzt nur noch `thema`, Welle B; fehlt eines, wird das Pattern eliminiert, nicht nur schlechter bewertet)
 2. **Scoring** — Signal-Fit-Gewichte + Page-Bonus + Entity-Vollstaendigkeit → gewichteter Score
 3. **Modulation** — Signale ueberschreiben Defaults (Ton, Laenge, skip_intro)
 
@@ -114,7 +120,7 @@ Schicht 4 besteht aus **6 Element-Typen**, die zur Laufzeit dynamisch gefiltert 
 | `04-states/` | States | 12 | Gespraechszustaende (Orientierung → Suche → Kuratierung → Feedback → Canvas-Arbeit) |
 | `04-contexts/` | Kontexte | 5 | Seitenbasierte Situationen (Suchseite, Sammlungsdetail, Mobil, Fachportal, Material-Detail) |
 
-**Im Prompt:** Nur die **erkannte Persona**, der **aktive Intent** und die **detektierten Signale** werden eingefuegt — nicht alle 9 Personas oder 14 Intents.
+**Im Prompt:** Nur die **erkannte Persona**, der **aktive Intent** und die **detektierten Signale** werden eingefuegt — nicht alle 9 Personas oder 13 Intents.
 
 **Prioritaet:** 300-600 — kann teilweise entladen werden.
 

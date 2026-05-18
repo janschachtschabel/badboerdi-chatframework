@@ -187,7 +187,7 @@ class TestEndToEnd:
         self.eng = RuleEngine([
             _rule("vague_search",
                   {"all": [
-                      {"intent": {"in": ["INT-W-03a", "INT-W-03b"]}},
+                      {"intent": {"in": ["INT-W-03"]}},
                       {"entity.thema": {"empty": True}},
                   ]},
                   {"enforced_pattern_id": "PAT-20"},
@@ -203,7 +203,7 @@ class TestEndToEnd:
 
     def test_vague_math_routes_to_orientation(self):
         ctx = {
-            "intent": "INT-W-03b",
+            "intent": "INT-W-03",
             "state": "state-5",
             "persona": "P-W-SL",
             "entities": {"fach": "Mathematik"},
@@ -215,7 +215,7 @@ class TestEndToEnd:
 
     def test_concrete_topic_does_not_route_to_orientation(self):
         ctx = {
-            "intent": "INT-W-03b",
+            "intent": "INT-W-03",
             "state": "state-5",
             "persona": "P-W-SL",
             "entities": {"thema": "Photosynthese"},

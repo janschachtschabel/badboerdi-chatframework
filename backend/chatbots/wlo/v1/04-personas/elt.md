@@ -5,6 +5,12 @@ id: P-ELT
 layer: 4
 priority: 500
 version: "1.0.0"
+# ── Tonalitäts-Modifier (Welle B.3 / C.5, 2026-05) ──────────────
+tone: warm
+length_bias: 0.2
+formality: wie_user
+card_text_mode: explanation
+override: false
 ---
 
 # Eltern [P-ELT]
@@ -36,8 +42,7 @@ sprechen über "meine Klasse / meine Schueler:innen", nicht "mein Sohn".
 - Orientierung auf der Plattform
 
 ## Typische Intents
-- INT-W-03a (Themenseite entdecken)
-- INT-W-03c (Lerninhalt suchen)
+- INT-W-03 (Inhalte abrufen)
 
 ## Regeln
 - Kein Fachjargon

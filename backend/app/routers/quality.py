@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.services.auth import require_studio_key
 from app.services.database import (
     get_quality_logs, get_quality_stats,
+    get_routing_matrix,
+    get_state_transitions,
     get_tight_races_breakdown,
     get_degradation_breakdown,
     get_empty_entities_breakdown,
@@ -89,6 +91,44 @@ async def clear_quality_logs_endpoint(
             "intent_id": intent_id, "scope": scope,
         },
     }
+
+
+@router.get("/state-transitions")
+async def state_transitions(
+    scope: str = Query("all", description="'all' | 'production' | 'eval'"),
+    days: int = Query(30, ge=1, le=365, description="Time window in days"),
+    min_count: int = Query(1, ge=1, le=1000, description="Min count per transition"),
+):
+    """Conversation State-Übergänge für die Studio Flow-View.
+
+    Aggregiert pro Session die zeitliche Sequenz der State-IDs und zählt
+    (prev_state → next_state)-Paare über alle Sessions im Scope-/Zeit-
+    Fenster. Plus eine State-Häufigkeits-Verteilung als Beipack.
+
+    Welle C Sprint 6 — Studio-Conversation-Flow-View nutzt das als
+    Datenquelle für ein Sankey/Graph-Diagram.
+    """
+    return await get_state_transitions(
+        scope=scope, days=days, min_count=min_count,
+    )
+
+
+@router.get("/matrix")
+async def routing_matrix(
+    scope: str = Query("all", description="'all' | 'production' | 'eval'"),
+    min_count: int = Query(1, ge=1, le=1000, description="Min samples per cell"),
+):
+    """Persona × Intent → Pattern matrix.
+
+    Returns one cell per (persona_id, intent_id) actually observed in
+    quality_logs, with the top-winning pattern, its share, and up to 4
+    alternative patterns by frequency.
+
+    Empty cells (no traffic for a combination) are simply omitted —
+    callers can detect coverage gaps by diffing against the full
+    Cartesian product of personas × intents.
+    """
+    return await get_routing_matrix(scope=scope, min_count=min_count)
 
 
 @router.get("/stats")

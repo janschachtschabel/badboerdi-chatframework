@@ -5,6 +5,12 @@ id: P-W-SL
 layer: 4
 priority: 500
 version: "1.0.0"
+# ── Tonalitäts-Modifier (Welle B.3 / C.5, 2026-05) ──────────────
+tone: ermutigend
+length_bias: -0.1
+formality: duzen
+card_text_mode: explanation
+override: true
 ---
 
 # Lerner:in / Schüler:in [P-W-SL]
@@ -52,8 +58,7 @@ in einem Elternbrief.
 - Orientierung auf der Plattform
 
 ## Typische Intents
-- INT-W-03a (Themenseite entdecken)
-- INT-W-03c (Lerninhalt suchen)
+- INT-W-03 (Inhalte abrufen)
 - INT-W-04 (Feedback geben)
 
 ## Regeln

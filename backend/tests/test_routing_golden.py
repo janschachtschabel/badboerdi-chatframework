@@ -37,7 +37,7 @@ GOLDEN_CASES = [
     dict(
         name="canvas_edit_via_verb_only",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-12",
             persona="P-W-LK",
             entities={},
@@ -93,16 +93,20 @@ GOLDEN_CASES = [
             entities={"thema": "X", "material_typ": "struktur"},
             message="erstelle eine materialsammlung zu X",
         ),
-        # both R-3 and R-3b should fire
+        # Welle C Sprint 3 (2026-05-15): expect_state_override entfernt.
+        # Die alte rule_lp_compilation_state_fix (SHADOW) setzte state-5,
+        # ist aber durch die Vereinfachung gelöscht — INT-W-10 ist in
+        # state-12 für PAT-19 (Unterrichts-Lernpfad) eh legitim (PAT-19
+        # gate_states enthält state-12 explizit). State-Korrektur kommt
+        # ggf. später durch rule_state12_guard, das ist hier OK.
         expect_intent_override="INT-W-10",
-        expect_state_override="state-5",
     ),
 
     # ── R-4 state-12 guard ───────────────────────────────────────
     dict(
         name="state12_dropped_for_search_intent",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-12",
             persona="P-W-LK",
             entities={"thema": "Mathe"},
@@ -128,7 +132,7 @@ GOLDEN_CASES = [
     dict(
         name="soft_create_with_material_typ",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-5",
             persona="P-W-LK",
             entities={"material_typ": "arbeitsblatt", "thema": "Photosynthese"},
@@ -136,23 +140,58 @@ GOLDEN_CASES = [
         ),
         expect_intent_override="INT-W-11",
     ),
+    # Welle C Sprint 4 (2026-05-15): INT-W-07 in INT-W-03 gemerged.
+    # Test umgebaut auf INT-W-08 (Inhalte evaluieren) — gleicher Sinn
+    # (R-5 soft-create darf einen klar-anderen Intent nicht überschreiben).
     dict(
-        name="soft_create_protected_for_INT_W_07",
+        name="soft_create_protected_for_INT_W_08",
         ctx=dict(
-            intent="INT-W-07",
+            intent="INT-W-08",
             state="state-5",
             persona="P-W-LK",
             entities={"material_typ": "arbeitsblatt"},
-            message="erstelle bitte ein download des arbeitsblatts",
+            message="erstelle bitte eine bewertung des arbeitsblatts",
         ),
-        expect_intent_override=None,  # should NOT override INT-W-07
+        expect_intent_override=None,  # should NOT override INT-W-08
+    ),
+
+    # ── R-6c topic_switch ohne neues Thema → PAT-02 Klärung ────
+    # Welle C Sprint 6: "ein anderes thema bitte" darf nicht in alte
+    # Suche zurückfallen. Pre-Route-Rule erzwingt PAT-02 mit klärenden
+    # Quick-Replies.
+    dict(
+        name="topic_switch_empty_thema_forces_clarification",
+        ctx=dict(
+            intent="INT-W-03",
+            state="state-6",
+            persona="P-AND",
+            entities={},  # leer nach session-reset
+            turn_type="topic_switch",
+            signals=["topic_switch"],
+            message="ein anderes thema bitte",
+        ),
+        expect_pattern="PAT-02",
+        expect_fired_contains="rule_topic_switch_needs_clarification",
+    ),
+    dict(
+        name="topic_switch_with_new_thema_no_clarification",
+        ctx=dict(
+            intent="INT-W-03",
+            state="state-5",
+            persona="P-W-LK",
+            entities={"thema": "Photosynthese"},  # User HAT neues Thema genannt
+            turn_type="topic_switch",
+            signals=["topic_switch"],
+            message="jetzt zu photosynthese bitte",
+        ),
+        expect_fired_not_contains="rule_topic_switch_needs_clarification",
     ),
 
     # ── R-6 vague search → orientation ───────────────────────────
     dict(
         name="vague_search_no_topic",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-5",
             persona="P-W-SL",
             entities={"fach": "Mathematik"},
@@ -163,7 +202,7 @@ GOLDEN_CASES = [
     dict(
         name="vague_search_with_topic_no_route",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-5",
             persona="P-W-SL",
             entities={"thema": "Photosynthese"},
@@ -175,7 +214,7 @@ GOLDEN_CASES = [
     dict(
         name="vague_search_meta_question_excluded",
         ctx=dict(
-            intent="INT-W-03c",
+            intent="INT-W-03",
             state="state-8",
             persona="P-W-SL",
             entities={},
@@ -188,7 +227,7 @@ GOLDEN_CASES = [
     dict(
         name="low_confidence_routes_to_clarify",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-5",
             persona="P-AND",
             entities={"thema": "Photosynthese"},
@@ -201,7 +240,7 @@ GOLDEN_CASES = [
     dict(
         name="high_confidence_no_clarify(self)",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-5",
             persona="P-AND",
             entities={"thema": "Photosynthese"},
@@ -215,7 +254,7 @@ GOLDEN_CASES = [
     dict(
         name="tight_race_pat01_pat02_shadow_only",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-5",
             persona="P-W-LK",
             entities={"fach": "Mathematik"},
@@ -233,7 +272,7 @@ GOLDEN_CASES = [
     dict(
         name="tight_race_pat01_pat02_with_thema_no_route",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-5",
             persona="P-W-LK",
             entities={"fach": "Mathematik", "thema": "Bruchrechnung"},
@@ -249,7 +288,7 @@ GOLDEN_CASES = [
     dict(
         name="tight_race_pat01_pat02_wide_gap_no_route",
         ctx=dict(
-            intent="INT-W-03b",
+            intent="INT-W-03",
             state="state-5",
             persona="P-W-LK",
             entities={"thema": "Photosynthese"},

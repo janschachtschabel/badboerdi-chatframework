@@ -1,0 +1,26 @@
+# Default-Modifier für unbekannte Personas
+# =========================================
+#
+# Welle C.5 (2026-05): Die Persona-spezifischen Tonalitäts-Modifier
+# wurden ins Frontmatter der jeweiligen Persona-Datei verschoben:
+#   04-personas/<id>.md  → frontmatter: tone / length_bias / formality /
+#                                       card_text_mode / override
+#
+# Diese YAML enthält nur noch den FALLBACK-Modifier — er wird benutzt,
+# wenn der Classifier eine Persona-ID liefert, für die keine
+# 04-personas/*.md existiert (z.B. weil eine neue Persona-ID
+# eingeführt aber noch keine Datei angelegt wurde).
+#
+# Studio-Pflege:
+# - Persona-spezifische Modifier  →  Studio-Element-Browser →
+#   "Dimensionen" → "Personas" → eine Persona auswählen → das
+#   "Tonalitäts-Modifier"-Form-UI über dem Markdown-Editor.
+# - Default-Modifier              →  hier direkt im Raw-YAML-Editor
+#   (Layer 1 Identität), oder über die PUT-API.
+
+default_modifier:
+    tone: locker
+    length_bias: 0.0
+    formality: duzen
+    card_text_mode: minimal
+    override: false

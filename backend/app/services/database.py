@@ -866,6 +866,189 @@ async def get_quality_stats(scope: str = "all") -> dict:
         return stats
 
 
+async def get_state_transitions(
+    scope: str = "all", min_count: int = 1, days: int = 30,
+) -> dict:
+    """Aggregate state-to-state transitions from quality_logs.
+
+    Welle C Sprint 6 — Conversation-Flow-Telemetry. Für jede Session
+    bauen wir die zeitliche Sequenz der State-IDs und zählen
+    (prev_state, next_state)-Paare. Plus pro State eine Häufigkeits-
+    Verteilung (state_distribution).
+
+    Returns:
+        {
+            "scope": ...,
+            "days": ...,
+            "total_turns": int,
+            "total_transitions": int,
+            "state_distribution": {"state-X": count, ...},
+            "transitions": [
+                {"prev": "state-5", "next": "state-6", "count": 42},
+                ...
+            ]
+        }
+
+    Used by Studio Conversation-Flow-View (Sankey-Diagram) plus by
+    "implausible transition rate" KPI on the Quality-Dashboard.
+    """
+    sc, sc_args = _scope_clause(scope)
+
+    # Filter on time + scope
+    where_parts = ["state_id != ''"]
+    args: list[Any] = []
+    if sc:
+        where_parts.append(sc)
+        args.extend(sc_args)
+    if days and days > 0:
+        where_parts.append("created_at >= datetime('now', ?)")
+        args.append(f"-{int(days)} days")
+    where_sql = "WHERE " + " AND ".join(where_parts)
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Total turns mit state in scope
+        c = await db.execute(
+            f"SELECT COUNT(*) as cnt FROM quality_logs {where_sql}", args,
+        )
+        total_turns = (await c.fetchone())["cnt"]
+
+        # State distribution
+        c = await db.execute(
+            f"""SELECT state_id, COUNT(*) AS cnt
+                FROM quality_logs
+                {where_sql}
+                GROUP BY state_id
+                ORDER BY cnt DESC""",
+            args,
+        )
+        state_distribution = {r["state_id"]: r["cnt"] for r in await c.fetchall()}
+
+        # Sessions + ordered turn sequences. We use turn_count to sort
+        # because created_at within a session may have sub-second ties.
+        c = await db.execute(
+            f"""SELECT session_id, state_id, turn_count
+                FROM quality_logs
+                {where_sql}
+                ORDER BY session_id, turn_count ASC""",
+            args,
+        )
+        session_seqs: dict[str, list[str]] = {}
+        for row in await c.fetchall():
+            session_seqs.setdefault(row["session_id"], []).append(row["state_id"])
+
+    # Count (prev → next) pairs across all sessions
+    pair_counts: dict[tuple[str, str], int] = {}
+    for seq in session_seqs.values():
+        for i in range(1, len(seq)):
+            key = (seq[i - 1], seq[i])
+            pair_counts[key] = pair_counts.get(key, 0) + 1
+
+    transitions = [
+        {"prev": prev, "next": nxt, "count": cnt}
+        for (prev, nxt), cnt in pair_counts.items()
+        if cnt >= min_count
+    ]
+    transitions.sort(key=lambda t: t["count"], reverse=True)
+
+    return {
+        "scope": scope,
+        "days": days,
+        "total_turns": total_turns,
+        "total_transitions": sum(t["count"] for t in transitions),
+        "state_distribution": state_distribution,
+        "transitions": transitions,
+    }
+
+
+async def get_routing_matrix(scope: str = "all", min_count: int = 1) -> dict:
+    """Aggregate (persona × intent → pattern) for the Studio matrix view.
+
+    Returns a structured dict the Studio renders as a heatmap:
+      {
+        "scope": "<scope>",
+        "total_turns": <int>,
+        "cells": [
+          {
+            "persona_id": "P-W-LK",
+            "intent_id": "INT-W-03",
+            "top_pattern": "PAT-18",
+            "top_pattern_count": 142,
+            "total_count": 287,
+            "share": 0.49,
+            "alternatives": [{"pattern_id": "PAT-07", "count": 95}, ...]
+          },
+          ...
+        ]
+      }
+
+    Used by Block 2 RoutingMatrix component to answer "what does the engine
+    actually pick when Persona X has Intent Y?" — empty cells signal coverage
+    gaps where no real traffic has been observed.
+
+    ``min_count`` filters out cells with too few samples to be meaningful
+    (default 1 = include all). Set to e.g. 3 to suppress one-off noise.
+    """
+    sc, sc_args = _scope_clause(scope)
+    where_sql = f"WHERE {sc}" if sc else ""
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Total turns for the scope (denominator for share calculations).
+        c = await db.execute(
+            f"SELECT COUNT(*) as cnt FROM quality_logs {where_sql}", sc_args,
+        )
+        total_turns = (await c.fetchone())["cnt"]
+
+        # Raw counts per (persona, intent, pattern). Filter out empty ids
+        # to keep the matrix clean — those are pre-classifier rows.
+        extra_clause = "persona_id != '' AND intent_id != '' AND pattern_id != ''"
+        full_where = f"{where_sql} {'AND' if where_sql else 'WHERE'} {extra_clause}"
+        c = await db.execute(
+            f"""SELECT persona_id, intent_id, pattern_id, COUNT(*) AS cnt
+                FROM quality_logs
+                {full_where}
+                GROUP BY persona_id, intent_id, pattern_id
+                ORDER BY persona_id, intent_id, cnt DESC""",
+            sc_args,
+        )
+        rows = [dict(r) for r in await c.fetchall()]
+
+    # Group by (persona, intent), then compute top + alternatives + share.
+    grouped: dict[tuple[str, str], list[dict]] = {}
+    for r in rows:
+        key = (r["persona_id"], r["intent_id"])
+        grouped.setdefault(key, []).append(r)
+
+    cells: list[dict] = []
+    for (pid, iid), items in grouped.items():
+        total = sum(it["cnt"] for it in items)
+        if total < min_count:
+            continue
+        items.sort(key=lambda x: x["cnt"], reverse=True)
+        top = items[0]
+        cells.append({
+            "persona_id": pid,
+            "intent_id": iid,
+            "top_pattern": top["pattern_id"],
+            "top_pattern_count": top["cnt"],
+            "total_count": total,
+            "share": round(top["cnt"] / total, 3) if total else 0.0,
+            "alternatives": [
+                {"pattern_id": it["pattern_id"], "count": it["cnt"]}
+                for it in items[1:5]  # cap to 4 alternatives for UI
+            ],
+        })
+
+    return {
+        "scope": scope,
+        "total_turns": total_turns,
+        "cells": cells,
+    }
+
+
 async def get_degradation_breakdown(
     scope: str = "all", limit: int = 50,
 ) -> dict:

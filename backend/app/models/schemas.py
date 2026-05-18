@@ -21,7 +21,7 @@ class ClassificationResult(BaseModel):
     """
     persona_id: str = "P-AND"
     persona_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
-    intent_id: str = "INT-W-03a"
+    intent_id: str = "INT-W-03"
     intent_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     signals: list[str] = Field(default_factory=list)
     entities: dict[str, Any] = Field(default_factory=dict)
@@ -123,6 +123,22 @@ class WloCard(BaseModel):
     # hin"-button. Backwards-compatible default keeps the legacy flow
     # unchanged for clients that ignore this field.
     guide_url: str = ""
+    # Card-Pipeline v2 — Single Source of Truth für den UI-Klick-Link.
+    # Befüllt vom Backend via :func:`card_pipeline.build_card_link` und
+    # ersetzt mittelfristig die Auswahl aus (``wlo_url`` | ``url`` |
+    # ``content_url`` | ``preview_url`` | ``topic_page_url`` | ``guide_url``)
+    # im Frontend.
+    #
+    # Modes:
+    #   * Themenseiten: kuratierte ``topic_page_url`` (extern)
+    #   * Sammlungen:  ``{repo}/edu-sharing/components/collections?id=…&q=…``
+    #   * Einzelinhalte: ``url`` (extern) im Normal-Modus,
+    #                    ``{repo}/edu-sharing/components/render/{uuid}`` im
+    #                    Lotsen-Modus.
+    #
+    # Backward-Compat: Default leer; Bestands-Frontend ignoriert das Feld
+    # und nutzt die alte URL-Logik weiter (Phase 10 zieht das Pflicht-Switch).
+    link: str = ""
 
 
 class ToolOutcome(BaseModel):

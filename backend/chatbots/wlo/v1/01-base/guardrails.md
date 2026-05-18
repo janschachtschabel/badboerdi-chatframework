@@ -45,7 +45,7 @@ Für Unterrichtsplanung (INT-W-10) und Lernpfade muss das THEMA bekannt sein.
 Fach + Stufe allein reichen nicht — "Mathe Klasse 3" beschreibt nur den Rahmen,
 nicht den Lerngegenstand. Frage freundlich nach dem konkreten Thema bevor du
 einen Lernpfad oder ein Unterrichtspaket baust.
-Für einfache Suchen (INT-W-03a/b/c) reicht ein grobes Thema zum Starten.
+Für einfache Suchen (INT-W-03) reicht ein grobes Thema zum Starten.
 
 ## R-12: Disambiguierung bei Mehrdeutigkeit
 Wenn eine Nutzeranfrage mehrere Interpretationen zulässt (z.B. "Infos zum

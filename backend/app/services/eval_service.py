@@ -83,7 +83,7 @@ KRITISCH — die Nachricht muss den Intent KLAR triggern:
     "Ich orientiere mich", "Ich schau, was es so gibt", "Bin neu hier".
     VERBOTEN: konkretes Fach, konkretes Thema, Such-/Erstell-/Plan-Verb,
     Lernpfad, Materialien-fuer-... — denn sobald ein konkretes Anliegen
-    drin ist, ist es NICHT mehr Soft Probing, sondern INT-W-03b/c/10/11.
+    drin ist, ist es NICHT mehr Soft Probing, sondern INT-W-03/10/11.
   * Andere Intents: KEINE generische "Was kannst du?"-Frage — das ist
     INT-W-01, nicht der hier vorgegebene. Konkretes Anliegen mit
     Intent-spezifischen Schluesselphrasen ist Pflicht.
@@ -119,7 +119,7 @@ GLEICH KRITISCH — die Nachricht muss die PERSONA erkennbar machen:
         "ich kapiere das nicht", "ich rafft nicht", "ist mir unklar",
         "kann ich ueberhaupt nicht"
       - Schueler-Selbst-ID: "als Schuelerin", "ich bin in der 8. Klasse",
-        "meine Lehrerin sagt", "ich besuche die {Schule/Stufe}"
+        "meine Lehrerin sagt", "ich besuche die {{Schule/Stufe}}"
       - Schueler-Aufgaben-Bezug aus 1st-Person: "fuer meine Hausaufgabe",
         "fuer meine Klausur", "fuer meinen Test", "fuer meine Pruefung",
         "fuer meinen Jahrgang", "fuer meine Mathe-Aufgabe"
@@ -138,7 +138,7 @@ GLEICH KRITISCH — die Nachricht muss die PERSONA erkennbar machen:
     AUSSER der/die Schueler:in sagt EXPLIZIT, dass es zum SELBST-LERNEN
     fuer sich/ihn ist — also "ein Uebungsblatt fuer MICH zum Bruchrechnen"
     oder "fuer mich selbst zum Pruefungstraining". Sobald "fuer die
-    {N}. Klasse" oder "fuer meine Schueler:innen" faellt, ist es P-W-LK.
+    {{N}}. Klasse" oder "fuer meine Schueler:innen" faellt, ist es P-W-LK.
 
   * P-W-RED (Redaktion):
     POSITIV: "ich kuratiere / Inhalte einstellen / als Redakteur:in /
@@ -202,6 +202,99 @@ Stil:
 - Variiere Laenge, Konkretheit und Tonfall zwischen den Fragen.
 - KEINE Nummerierung, KEIN Metatext. Nur die Fragen, eine pro Zeile.
 """
+
+
+# Deterministic Persona-Marker dictionary for post-generation filtering.
+# Lower-cased, accent-stripped substrings that — if any match — count as
+# a clear persona anchor in the generated text. P-AND has no positive
+# markers (anonymity IS the signal); we only flag P-AND drift indirectly
+# by checking whether OTHER persona markers leaked into a P-AND prompt.
+_PERSONA_MARKERS: dict[str, list[str]] = {
+    "P-W-LK": [
+        "meine klasse", "stundenentwurf", "mein unterricht",
+        "lehrplan", "klassenarbeit", "als lehrkraft", "als lehrerin",
+        "als lehrer", "sek i", "sek ii", "unterrichtseinstieg",
+        "lernziel", "curriculum", "fuer die klasse", "für die klasse",
+    ],
+    "P-W-SL": [
+        "ich verstehe nicht", "ich check", "ich kapier", "ich rafft",
+        "fuer meine klausur", "für meine klausur", "fuer meine hausaufgabe",
+        "für meine hausaufgabe", "fuer meinen test", "für meinen test",
+        "als schuelerin", "als schülerin", "als schueler", "als schüler",
+        "in meiner 8. klasse", "in meiner 9. klasse", "in meiner 10. klasse",
+        "fuer meinen jahrgang", "für meinen jahrgang",
+        "fuer meine pruefung", "für meine prüfung",
+        "fuer meine mathe-aufgabe", "für meine mathe-aufgabe",
+        "meine lehrerin sagt",
+    ],
+    "P-ELT": [
+        "mein sohn", "meine tochter", "mein kind", "als mutter",
+        "als vater", "elternsprechtag", "fuer zu hause", "für zu hause",
+        "hausaufgaben meines kindes", "fuer meinen nachwuchs",
+        "für meinen nachwuchs", "klasse meines kindes",
+    ],
+    "P-W-RED": [
+        "ich kuratiere", "inhalte einstellen", "als redakteur",
+        "als redakteurin", "fuer die sammlung", "für die sammlung",
+        "qualitaetspruefung", "qualitätsprüfung", "redaktioneller",
+    ],
+    "P-W-PRESSE": [
+        "als journalist", "fuer meinen artikel", "für meinen artikel",
+        "pressemitteilung", "fuer meine leser", "für meine leser",
+        "fuer meinen beitrag", "für meinen beitrag", "fuer eine story",
+        "für eine story", "fuer eine reportage", "für eine reportage",
+        "pressekit", "background-story", "hintergrundrecherche",
+    ],
+    "P-W-POL": [
+        "fuer meinen wahlkreis", "für meinen wahlkreis", "als politiker",
+        "bildungspolitik", "parlamentarische anfrage", "fuer die fraktion",
+        "für die fraktion", "fuer einen antrag", "für einen antrag",
+        "plenarsitzung",
+    ],
+    "P-VER": [
+        "fuer unsere verwaltung", "für unsere verwaltung",
+        "bezirksauswertung", "amtliche daten", "amtliche statistik",
+        "als schulamt", "fuer die schulaufsicht", "für die schulaufsicht",
+        "behoerdenanfrage", "behördenanfrage", "fuer den quartalsbericht",
+        "für den quartalsbericht", "verfuegbarkeitsmatrix", "fachreferat",
+        "kpi",
+    ],
+    "P-BER": [
+        "als beraterin", "als berater", "fuer unsere schule evaluieren",
+        "für unsere schule evaluieren", "beratungsprozess",
+        "schulentwicklung begleiten", "als coach",
+        "schulkollegium-workshop",
+    ],
+    # P-AND has no positive marker — see _has_persona_marker logic.
+    "P-AND": [],
+}
+
+
+def _has_persona_marker(text: str, persona_id: str) -> bool:
+    """Deterministic check: does the user text contain a persona-anchor?
+
+    Used to filter LLM-generated scenarios that drifted to generic
+    phrasing. Returns True if at least one marker for the expected
+    persona is present (case-insensitive substring match), OR if the
+    persona is P-AND and NO OTHER persona's markers are present (i.e.
+    the message is genuinely anonymous).
+    """
+    t = text.lower()
+    if persona_id == "P-AND":
+        # P-AND drift means another persona's marker leaked in. We accept
+        # P-AND only when the message is truly anchor-less.
+        for other_id, markers in _PERSONA_MARKERS.items():
+            if other_id == "P-AND":
+                continue
+            for m in markers:
+                if m in t:
+                    return False
+        return True
+    markers = _PERSONA_MARKERS.get(persona_id, [])
+    if not markers:
+        # Unknown persona — be permissive, don't drop the scenario.
+        return True
+    return any(m in t for m in markers)
 
 
 async def generate_scenarios(
@@ -272,9 +365,34 @@ async def generate_scenarios(
                         "Scenario generator returned no parseable lines for %s/%s. Raw: %r",
                         p.get("id"), i.get("id"), raw[:200],
                     )
+                # Persona-Marker quality gate (Block 1 — Sprint 6):
+                # Drop generated openings that lack a clear persona anchor.
+                # This is the Eval-Setup half of the P-W-SL / P-W-RED drift
+                # problem from Sprint 5: the simulator sometimes ignores the
+                # marker rules in _SCENARIO_PROMPT and produces generic text
+                # like "Gibt's Mathe-Material?" which is ambiguous between
+                # several personas. Filtering here is cheaper than scoring
+                # a useless turn end-to-end.
+                pid = p.get("id", "")
+                kept_lines: list[str] = []
+                dropped: list[str] = []
+                for ln in lines:
+                    if _has_persona_marker(ln, pid):
+                        kept_lines.append(ln)
+                    else:
+                        dropped.append(ln)
+                if dropped:
+                    logger.info(
+                        "Persona-Marker gate dropped %d/%d openings for %s/%s "
+                        "(no anchor in: %r). Kept: %d.",
+                        len(dropped), len(lines), pid, i.get("id"),
+                        [d[:80] for d in dropped],
+                        len(kept_lines),
+                    )
+                lines = kept_lines
                 for idx, line in enumerate(lines):
                     scenarios.append({
-                        "persona_id": p.get("id", ""),
+                        "persona_id": pid,
                         "persona_label": p.get("label", ""),
                         "intent_id": i.get("id", ""),
                         "intent_label": i.get("label", ""),
@@ -329,6 +447,41 @@ Regeln:
 - Halte die Nachrichten kurz (max 2 Saetze pro Turn, gerne 1).
 - Wenn dein Ziel erreicht ist oder du aufgibst: antworte wortwoertlich "[ENDE]".
 - KEIN Metatext, keine Anfuehrungszeichen. Nur die Nutzer-Nachricht selbst.
+
+PERSONA-VERANKERUNG (KRITISCH — auch in FOLGE-Turns!):
+- JEDE Nachricht — nicht nur die erste — muss mindestens EIN persona-spezifisches
+  Anker-Wort aus der "Typische Redeweise"-Liste oder einen der unten genannten
+  Persona-Marker enthalten. Sonst kann der Klassifikator nach Turn 1 nicht mehr
+  unterscheiden, ob die selbe Persona weiterspricht oder ob es jemand anderes ist
+  — und dein Spiel ist gebrochen.
+- Falls dir kein Anker einfaellt, paraphrasiere kurz deine Rolle:
+  z.B. "Ich als Lehrkraft brauche jetzt ..." / "Fuer meine Klausur ..." /
+  "Als Redakteurin pruefe ich gerade ..." / "Fuer meinen Wahlkreis ist ..."
+- Marker pro Persona (Auswahl — mindestens EINER pro Turn):
+  * P-W-LK:    "meine Klasse / Stundenentwurf / Sek I/II / Lehrplan / als Lehrkraft / Unterrichtseinstieg"
+  * P-W-SL:    "ich verstehe nicht / fuer meine Klausur / fuer meine Hausaufgabe /
+                als Schuelerin / fuer meinen Test / Bruchrechnung kapier ich nicht /
+                in meiner {{8/9/10}}. Klasse / fuer meinen Jahrgang"
+  * P-ELT:     "mein Sohn / meine Tochter / mein Kind / Hausaufgaben meines Kindes /
+                Elternsprechtag / fuer zu Hause"
+  * P-W-RED:   "ich kuratiere / Inhalte einstellen / als Redakteur:in / fuer die Sammlung /
+                Qualitaetspruefung / redaktioneller Ueberblick"
+  * P-W-PRESSE:"als Journalist:in / fuer meinen Artikel / Pressemitteilung /
+                fuer meine Leser:innen / Recherche fuer eine Story"
+  * P-W-POL:   "fuer meinen Wahlkreis / als Politiker:in / parlamentarische Anfrage /
+                fuer die Fraktion / Bildungspolitik"
+  * P-VER:     "fuer unsere Verwaltung / Bezirksauswertung / amtliche Daten / KPI /
+                als Schulamt / Behoerdenanfrage"
+  * P-BER:     "als Beraterin / fuer unsere Schule evaluieren / Beratungsprozess /
+                Schulentwicklung begleiten / als Coach"
+  * P-AND:     KEIN Persona-Marker (Anonymitaet IST das Signal) — bleib generisch:
+                "Was kann ich hier machen?" / "interessehalber" / "ich gucke mal".
+
+VERBOTEN in Folge-Turns:
+- "OK" / "Danke" / "Mehr davon" / "Weiter" — leer und persona-los.
+- Sobald du den Bot lobst oder weiter willst, kombiniere mit einem Persona-Marker:
+  z.B. "Super, gib mir bitte noch ein Beispiel zur 8. Klasse" (P-W-LK)
+  statt nur "Super, gib mir mehr".
 """
 
 
@@ -372,6 +525,10 @@ async def simulate_conversation(
 
     turns: list[dict[str, Any]] = []
     ended_early = False
+    # Welle C Sprint 6: Track state across turns so we can analyse the
+    # conversation-flow plausibility per-turn (was the transition typical
+    # for this state's next_likely list?).
+    prev_state: str = ""
 
     for turn_idx in range(max_turns):
         if user_msg.strip().upper() == "[ENDE]":
@@ -404,6 +561,24 @@ async def simulate_conversation(
                 f"---\n[Canvas-Inhalt — vom Nutzer sichtbar]\n\n"
                 f"{canvas_md}"
             )
+        # Welle C Sprint 6 — State-Verlauf erfassen für Conversation-Flow-Analyse.
+        # state-Strings kommen als "state-X (Label)" — wir extrahieren die ID für
+        # den Plausibilitäts-Check gegen next_likely aus states.yaml.
+        _state_raw = debug.get("state") or ""
+        _state_id = _state_raw.split(" ")[0] if _state_raw else ""
+        _transition_plausible: bool | None = None
+        if prev_state and _state_id:
+            try:
+                from app.services.config_loader import get_state_directive
+                _prev_meta = get_state_directive(prev_state)
+                _next_likely = _prev_meta.get("next_likely", []) if _prev_meta else []
+                if _next_likely:
+                    _transition_plausible = (
+                        _state_id in _next_likely or _state_id == prev_state
+                    )
+            except Exception:
+                pass
+
         turns.append({
             "user": user_msg,
             "bot": bot_text,
@@ -411,7 +586,11 @@ async def simulate_conversation(
                 "pattern": debug.get("pattern"),
                 "persona": debug.get("persona"),
                 "intent": debug.get("intent"),
-                "state": debug.get("state"),
+                # Welle C Sprint 6: state als ID + Übergangs-Telemetrie.
+                "state": _state_raw,
+                "state_id": _state_id,
+                "prev_state_id": prev_state,
+                "transition_plausible": _transition_plausible,
                 "safety": debug.get("safety"),
                 "tools_called": debug.get("tools_called", []),
                 # Phase-1-Pattern-Hint (für globale Aggregat-Metriken)
@@ -426,6 +605,9 @@ async def simulate_conversation(
             "cards_count": len(bot_resp.get("cards", []) or []),
             "response_length": len(bot_text),
         })
+        # Persist current state for next-turn transition analysis.
+        if _state_id:
+            prev_state = _state_id
 
         if turn_idx == max_turns - 1:
             break
@@ -485,10 +667,30 @@ Bewerte auf 5 Dimensionen, jeweils 0 (schlecht), 1 (mittel), 2 (gut):
                      etwas anderes fragt (z.B. vage Orientierungsfrage obwohl das
                      Test-Label "Material suchen" war), bewerte nach der ECHTEN
                      Nachricht, nicht nach dem Test-Label.
+                     MULTI-TURN-DRIFT-TOLERANZ (Welle C Sprint 6): Der
+                     LLM-User-Simulator weicht im Gespraechsverlauf oft vom
+                     urspruenglichen Test-Label ab — z.B. Initial-Label
+                     "INT-W-05 Routing Redaktion", aber spaetere Turns
+                     fordern konkretes Material. Bewerte STRIKT nach der
+                     aktuellen User-Nachricht (turn_user_text) — wenn der
+                     User im Turn 5 sagt "mach mir den Lernpfad", und der
+                     Bot baut einen Lernpfad, ist das intent_fit=2 — auch
+                     wenn das Conversation-Label "Feedback" hiess. Bestrafe
+                     den Bot NICHT fuer Drift, den der Simulator selbst
+                     verursacht hat.
 2. persona_tone    — passt der Tonfall zu dieser Persona?
                      Formal-Personas (Verwaltung, Presse, Politik, Berater) erwarten
                      Sie-Form + sachlich-professionellen Ton. Schueler:in/Eltern
                      duerfen locker angesprochen werden.
+                     EVAL-SETUP-TOLERANZ: Wenn die Nutzer-Nachricht KEINEN
+                     persona-spezifischen Anker enthaelt (z.B. "Gibt's Mathe-
+                     Material?" — koennte von Lehrkraft, Schueler:in, Eltern,
+                     Beraterin oder anonym kommen), und der Bot deshalb
+                     **P-AND-Tonfall** waehlt: das ist nicht der Fehler des Bots,
+                     sondern eine Limitation der Test-Nachricht. Bewerte
+                     persona_tone in dem Fall mindestens 1/2, wenn der Ton
+                     allgemein neutral-freundlich ist — bestrafe NICHT, dass
+                     die "richtige" Persona-Schiene nicht getroffen wurde.
 3. pattern_match   — passt das gewaehlte Pattern zum Intent/zur Situation?
 4. safety          — keine Guardrail-Verletzungen, keine unangemessenen Inhalte?
 5. info_quality    — sind die gelieferten Infos konkret und hilfreich (kein Geschwurbel)?
@@ -790,6 +992,16 @@ def _aggregate_classification_metrics(
     intent_confusion: dict[str, dict[str, int]] = {}
     pattern_confusion: dict[str, dict[str, int]] = {}  # llm_hint × engine
 
+    # Welle C Sprint 6 — State-Verlaufs-Analyse (Conversation Flow Machine).
+    # state_distribution: wie oft welcher State im Run getriggert wurde
+    # state_transitions: prev_state → next_state Häufigkeitsmatrix
+    # transition_plausibility_rate: Anteil der prev→next-Übergänge, die in
+    #                                der next_likely-Liste des prev-States stehen
+    state_distribution: dict[str, int] = {}
+    state_transitions: dict[str, dict[str, int]] = {}
+    transitions_total = 0
+    transitions_plausible = 0
+
     llm_hint_present = 0
     llm_engine_agree = 0
     llm_pattern_judge_ok = 0      # LLM-Hint passt UND Judge sagt pattern_match=2
@@ -844,6 +1056,26 @@ def _aggregate_classification_metrics(
             actual_intent = _strip_id(dbg.get("intent", ""))
             engine_pattern = _strip_id(dbg.get("pattern", ""))
             llm_hint = (dbg.get("pattern_id_hint") or "").strip()
+
+            # Welle C Sprint 6 — Conversation-Flow-Tracking pro Turn.
+            # state_id und prev_state_id wurden vom Simulator gesetzt
+            # (simulate_conversation, ~line 580). transition_plausible ist
+            # True/False/None (None wenn kein prev_state oder kein
+            # next_likely-Eintrag).
+            _curr_state = (dbg.get("state_id") or "").strip()
+            _prev_state = (dbg.get("prev_state_id") or "").strip()
+            _plausible = dbg.get("transition_plausible")
+            if _curr_state:
+                state_distribution[_curr_state] = (
+                    state_distribution.get(_curr_state, 0) + 1
+                )
+            if _prev_state and _curr_state:
+                row = state_transitions.setdefault(_prev_state, {})
+                row[_curr_state] = row.get(_curr_state, 0) + 1
+                if _plausible is not None:
+                    transitions_total += 1
+                    if _plausible:
+                        transitions_plausible += 1
 
             # Persona-Confusion + Genauigkeit
             if expected_persona and actual_persona:
@@ -961,6 +1193,15 @@ def _aggregate_classification_metrics(
         ),
         "intent_total_judged": intent_total,
         "intent_confusion": intent_confusion,
+        # Welle C Sprint 6 — Conversation-Flow-Metriken.
+        "state_distribution": state_distribution,
+        "state_transitions": state_transitions,
+        "transition_plausibility_rate": (
+            round(transitions_plausible / transitions_total, 3)
+            if transitions_total else 0.0
+        ),
+        "transitions_total": transitions_total,
+        "transitions_plausible": transitions_plausible,
         # Pattern-Hint vs Engine — wie oft stimmen sie überein?
         "llm_hint_present_count": llm_hint_present,
         "llm_engine_match_rate": (

@@ -52,3 +52,28 @@ oder das an die WLO-Redaktion weitergeben?"
 ## Beispiel-Response (Lob)
 "Freut mich, dass dir das geholfen hat. Moechtest du noch etwas zum
 Thema oder ein neues Thema?"
+
+## Folgehandlung KONKRET — nicht zu vage
+
+Eval-Befund (Welle C Sprint 5, 2026-05-15): Bei kurzem positiven
+Feedback wie „Danke, fand ich hilfreich!" antwortet der Bot oft zu
+allgemein („Schön, dass es geholfen hat — soll ich was anderes
+suchen?"), und der Judge wertet das mit pattern_match=0–1. Pflicht:
+**zwei konkrete Anschluss-Aktionen** in der Antwort, nicht nur eine
+vage Rückfrage:
+
+- Bei Lob mit Themen-Bezug aus dem vorigen Turn:
+  *"Freut mich, dass die Tipps zu **{Thema}** geholfen haben. Wenn du
+  möchtest, baue ich daraus einen kompakten Lernpfad oder zeige dir
+  weitere Sammlungen zum gleichen Thema."*
+
+- Bei Lob ohne klaren Thema-Kontext:
+  *"Schön, dass es passt! Magst du noch **vertiefen** (z. B. Material
+  zu einem konkreten Aspekt) oder **breiter exploren** (verwandte
+  Themenseiten)?"*
+
+- Bei Kritik (siehe Beispiel oben): immer Redaktions-Routing
+  ALS konkrete Quick-Reply, nicht nur als Text-Vorschlag.
+
+Quick-Replies (Pflicht ≥2) — siehe oben. Bei Lob: 2 konkrete Folge-
+Optionen, NICHT generisches „Anderes Thema?" alleine.

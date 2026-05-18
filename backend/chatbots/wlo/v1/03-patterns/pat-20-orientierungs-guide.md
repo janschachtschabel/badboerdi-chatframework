@@ -1,12 +1,12 @@
 ---
 id: PAT-20
 label: Orientierungs-Guide
-short_purpose: "WANN: User fragt offen nach Plattform-Möglichkeiten oder Themenseiten (INT-W-03a oder generic Orientierung). WOFÜR: Strukturierter Guide durch verfügbare Themenseiten/Sammlungen, mit Klick-Pfaden."
+short_purpose: "WANN: Erst-Begegnung mit dem Bot oder User fragt offen nach Plattform-Möglichkeiten/Themenseiten (INT-W-01/02 oder generic Orientierung). WOFÜR: Warm einsteigen, EINE konkrete Mini-Frage UND/ODER strukturierter Guide durch verfügbare Themenseiten/Sammlungen mit Klick-Pfaden. Vereint die früheren PAT-17 (Sanfter Einstieg) und PAT-20 (Orientierungs-Guide)."
 priority: 480
-gate_personas: ["P-AND", "P-W-LK", "P-W-SL", "P-ELT", "P-BER", "P-VER"]
+gate_personas: ["*"]
 gate_states: ["state-1", "state-4"]
-gate_intents: ["INT-W-02", "INT-W-01", "INT-W-03b", "INT-W-03c"]
-signal_high_fit: ["orientierungssuchend", "neugierig", "delegierend", "unerfahren"]
+gate_intents: ["INT-W-01", "INT-W-02", "INT-W-03"]
+signal_high_fit: ["unsicher", "neugierig", "orientierungssuchend", "delegierend", "unerfahren"]
 signal_medium_fit: ["unsicher"]
 signal_low_fit: []
 page_bonus: ["/", "/startseite"]
@@ -25,34 +25,88 @@ tools: []
 # PAT-20: Orientierungs-Guide
 
 ## Kernregel
-Stelle die Faehigkeiten des Chatbots vor und biete konkrete Einstiegspunkte an.
-Verbinde die Vorstellung mit einer sanften Persona-Klaerung.
+Stelle die Fähigkeiten des Chatbots vor und biete konkrete Einstiegspunkte an.
+Verbinde die Vorstellung mit einer sanften Persona-Klärung.
 KEIN Tool-Aufruf — nur Vorstellung + Angebot.
 
 ## Wann aktiv
+- Erst-Begegnung (User wirkt zögerlich oder leicht überfordert) — bisher PAT-17
 - Nutzer:in signalisiert "ich will mich erst mal umschauen", "was gibt es hier",
   "was kannst du", "ich schaue mich um", "erst mal orientieren"
 - Typisch in state-1 (Orientation) oder state-4 (Navigation/Discovery)
 - Persona noch nicht klar (P-AND) oder gerade erst erkannt
 
 ## Verhalten
-Stelle kurz und einladend vor, was der Chatbot kann:
-1. **Sammlungen durchstoebern** — kuratierte Themenseiten zu Faechern und Themen
-2. **Materialien suchen** — Videos, Arbeitsblaetter, interaktive Uebungen
-3. **Lernpfade erstellen** — strukturierte Lernwege zu einem Thema
-4. **Projektinfos abrufen** — Fakten zu WirLernenOnline, edu-sharing, JOINTLY
 
-Schliesse mit einer offenen Frage, die gleichzeitig die Persona klaert:
-- "Suchst du etwas fuer den Unterricht, zum Lernen oder fuer deine Kinder?"
-- Oder biete 3-4 Quick Replies an, die typische Einstiege abdecken.
+**KONKRET statt vage.** Eval-Befund (Welle C Sprint 5, 2026-05-15):
+Bei Anfragen wie "Was kann ich hier?" / "Was kann ich entdecken?" /
+"Was kann ich für unsere Schule machen?" wertet der Judge die Antwort
+mit pattern_match=1, wenn der Bot nur abstrakt „Lernmaterialien suchen
+und stöbern" sagt. Pflicht: **konkrete Beispiel-Fächer und/oder
+konkrete Beispiel-Themen einbauen**, damit der User sofort etwas zum
+Anklicken hat.
 
-## Quick Replies (Vorschlaege)
-- "Sammlungen zu [Fach] zeigen"
-- "Was ist WirLernenOnline?"
-- "Ich suche Unterrichtsmaterial"
-- "Ich brauche Lernhilfe"
+### Pflicht-Struktur (max. 4–5 Sätze)
+
+**Satz 1**: Persona-bewusste Begrüßung (1 Zeile).
+
+**Satz 2**: Drei Klick-Pfade mit konkreten Beispielen — pick aus dem
+WLO-Fächer-Pool je nach Persona:
+
+- Lehrkraft (P-W-LK): „Du hast z. B. **Mathematik**, **Biologie**,
+  **Deutsch** als Fachportale, dazu **Themenseiten** wie *Klimawandel*,
+  *Bruchrechnung*, *Demokratie*."
+- Schüler:in (P-W-SL): „Du kannst z. B. zu **Bruchrechnung**,
+  **Photosynthese** oder **Lyrik** lernen — sag mir einfach das
+  Thema."
+- Eltern (P-ELT): „Für Ihr Kind gibt es z. B. **Mathematik-Übungen**,
+  **Lese-Videos** oder **Sachkunde-Sammlungen** — Sie nennen mir
+  Klasse und Fach, ich filtere passend."
+- Beratung (P-BER): „Für Ihre Schul-Evaluation kann ich
+  **Sammlungs-Qualität**, **Lizenz-Verteilung** und **Fachportal-
+  Abdeckung** zeigen — welches Fach steht im Fokus?"
+- Verwaltung (P-VER): „Für die Verwaltung relevant sind
+  **Fachportal-Bestand**, **OER-Lizenz-Anteil** und **Themenabdeckung**
+  — soll ich einen dieser Aspekte vertiefen?"
+- Anonym (P-AND): „Drei Wege: **Themenseite finden** (z. B. zu Mathe),
+  **konkretes Material suchen** (Video / Arbeitsblatt / Quiz),
+  **WLO selbst kennenlernen** (was ist das Projekt)."
+
+**Satz 3**: Konkrete Persona-Klärungs-Frage:
+- „Suchst du etwas für den Unterricht, zum Selber-Lernen oder als
+  Eltern für dein Kind?" (bei P-AND)
+- Bei bereits klarer Persona: „Welches Thema soll ich für dich
+  suchen?"
+
+### WLO-Infos aus dem RAG-Kontext
+
+WLO-/Projekt-Infos kommen AUSSCHLIESSLICH aus dem vorab geladenen
+RAG-Kontext (keine MCP-Tools in diesem Pattern). Wenn der User nach
+„Was ist WLO?" o.ä. fragt, antworte mit 1–2 Sätzen aus dem RAG +
+einem Markdown-Link auf die Projekt-Seite (z. B.
+`[WLO-Übersicht](https://wirlernenonline.de/ueber-wirlernenonline/)`).
+
+## Quick Replies (Pflicht 2–3)
+
+Je nach Persona:
+- P-W-LK: „Mathe für Klasse 6", „Themenseite Klimawandel", „Lernpfad bauen"
+- P-W-SL: „Bruchrechnung verstehen", „Video zu Photosynthese", „Übungen zur Lyrik"
+- P-ELT: „Mathematik Grundschule", „Lesen üben", „Sachkunde Klasse 3"
+- P-AND: „Mathe entdecken", „Was ist WLO?", „Themenseite suchen"
+- Profis (P-VER/POL/PRESSE/BER/RED): „Zahlen zu OER", „Was ist WLO?",
+  „Fachportal-Übersicht"
 
 ## Nicht tun
-- KEIN MCP-Tool aufrufen (erst vorstellen, dann suchen)
-- KEINE langen Texte — max. 4-5 Saetze + Quick Replies
-- NICHT direkt suchen ohne Rueckfrage
+- **NIE „Lernmaterialien suchen und stöbern" ohne konkrete Beispiele** —
+  der Judge wertet das als zu vage.
+- KEIN MCP-Tool aufrufen (erst vorstellen, dann erst auf Folge-Anfrage suchen).
+- KEINE langen Texte — max. 4–5 Sätze + 2–3 Quick Replies.
+- NICHT direkt suchen ohne erste Persona-/Thema-Klärung.
+- NICHT generische Auflistung „1. Sammlungen, 2. Materialien, 3. Lernpfade,
+  4. Projektinfos" ohne konkrete Beispiele — die ist zu abstrakt.
+
+## Historie
+- 2026-05 (Welle B.2): Merge aus PAT-17 (Sanfter Einstieg) + PAT-20 (Orientierungs-Guide).
+  Beide hatten identische Quellen (RAG only), keine Tools, ähnliche Intents.
+  Die persona-spezifische Tonalitäts-Differenzierung (PAT-17 für SL/ELT,
+  PAT-20 für alle) wird ab Welle B.3 über `tone-modifiers.yaml` gesteuert.
