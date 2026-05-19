@@ -2835,10 +2835,17 @@ async def _postprocess_response_for_widget_modes(
             from app.services.card_pipeline import (
                 annotate_cards_with_link as _v2_attach_link,
             )
+            # ``q=``-Param der Collection-Browse-URL: bevorzugt das extrahierte
+            # ``thema`` aus den Entities (z.B. "Klimawandel"), fällt nur dann
+            # auf die volle User-Message zurück, wenn der Classifier noch kein
+            # Thema isoliert hat. Verhindert dass die Browse-URL die ganze
+            # User-Frage als Filter trägt ("Welche Materialien hast du zu
+            # Klimawandel?") — was praktisch kein Repo-Match liefert.
+            _sq_topic = (session_state.get("entities") or {}).get("thema") or ""
             _v2_attach_link(
                 cards_for_postprocess or [],
                 guide_mode=guide_mode_on,
-                search_query=req.message or "",
+                search_query=(str(_sq_topic).strip() or (req.message or "")),
                 require_allowed=guide_mode_on,
             )
         except Exception as _link_err:  # pragma: no cover — additiv, darf nicht crashen

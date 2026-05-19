@@ -161,6 +161,8 @@ interface CanvasSnapshot {
               [materialTypeCategory]="canvasMaterialCategory()"
               [markdown]="canvasMarkdown()"
               [cards]="canvasCards()"
+              [trustedHosts]="parsedTrustedHostList"
+              [sessionId]="chatRef?.sessionId || ''"
               [viewMode]="canvasMode()"
               [query]="canvasQuery()"
               [showTabs]="canvasHasBothPanes()"
@@ -1203,6 +1205,7 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
         .trim()
         .toLowerCase()
         .replace(/^https?:\/\//, '')
+        .replace(/^\*\./, '')   // *.example.com → example.com (matcher behandelt Subdomains via endsWith)
         .split('/')[0];
   }
 

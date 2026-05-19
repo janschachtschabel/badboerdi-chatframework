@@ -308,7 +308,12 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
     const h = (host || '').toLowerCase();
     if (!h || !Array.isArray(this.trustedHosts) || this.trustedHosts.length === 0) return false;
     for (const t of this.trustedHosts) {
-      const tn = (t || '').toLowerCase();
+      // Defensive: ``*.example.com`` und ``example.com`` als gleichwertig
+      // behandeln. Backend liefert beide Formen — wir normalisieren auf
+      // bare-domain, weil der ``endsWith('.X')``-Check Subdomains schon
+      // automatisch abdeckt. Ohne dieses Stripping würde ``*.openeduhub.net``
+      // nie matchen (kein Host fängt mit ``.*.openeduhub.net`` an).
+      const tn = (t || '').toLowerCase().replace(/^\*\./, '');
       if (!tn) continue;
       if (h === tn) return true;
       if (h.endsWith('.' + tn)) return true;

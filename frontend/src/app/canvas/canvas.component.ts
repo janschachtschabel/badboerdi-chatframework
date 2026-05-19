@@ -76,6 +76,14 @@ export class CanvasComponent {
   @Input() visibleCount = 5;
   /** Disable the load-more button while a server fetch is in flight. */
   @Input() loadingMore = false;
+  /** Vom Widget durchgereichte Trusted-Hosts-Whitelist. Wird benutzt um
+   *  bei Card-Links zu vertrauenswürdigen Hosts ``?bsid=`` anzuhängen
+   *  (Cross-TLD-Session-Persistenz). Empty list = keine bsid-Rewrites,
+   *  alle Links bleiben unverändert. */
+  @Input() trustedHosts: string[] = [];
+  /** Aktuelle Session-ID (``bb-...``) für den ``?bsid=``-Param. Wird vom
+   *  Widget aus der ChatComponent durchgereicht. Leer = kein Rewrite. */
+  @Input() sessionId = '';
 
   @Output() closeCanvas = new EventEmitter<void>();
   @Output() cardAction = new EventEmitter<{ action: CanvasCardAction; card: WloCard }>();
@@ -272,7 +280,67 @@ export class CanvasComponent {
 
   /** URL for the topic-page card (uses currently selected variant). */
   topicPageUrl(card: WloCard): string {
-    return this.selectedVariant(card)?.url || getCardPrimaryUrl(card);
+    const raw = this.selectedVariant(card)?.url || getCardPrimaryUrl(card);
+    return this._withBsid(raw);
+  }
+
+  /** Trusted-Host-Check (Wildcard-fähig — ``*.example.com`` und
+   *  ``example.com`` werden gleich behandelt). Spiegelt die Logik aus
+   *  ``ChatComponent.isHostTrusted`` und ``WidgetComponent._isTrustedHost``. */
+  isHostTrusted(host: string): boolean {
+    const h = (host || '').toLowerCase();
+    if (!h || !Array.isArray(this.trustedHosts) || this.trustedHosts.length === 0) return false;
+    for (const t of this.trustedHosts) {
+      const tn = (t || '').toLowerCase().replace(/^\*\./, '');
+      if (!tn) continue;
+      if (h === tn) return true;
+      if (h.endsWith('.' + tn)) return true;
+    }
+    return false;
+  }
+
+  /** Hängt ``?bsid=<sessionId>`` an URLs zu Trusted-Hosts an, damit
+   *  Cross-TLD-Navigation aus dem Canvas heraus die Session bewahrt.
+   *  Spiegelt ``ChatComponent._withBsid``. Empty/Same-Origin/Untrusted →
+   *  Original-URL unverändert. */
+  private _withBsid(url: string | null | undefined): string {
+    const raw = (url || '').trim();
+    if (!raw) return '';
+    if (!this.sessionId) return raw;
+    if (!/^bb-[0-9a-f-]{32,40}$/i.test(this.sessionId)) return raw;
+    let target: URL;
+    try {
+      target = new URL(raw, window.location.href);
+    } catch { return raw; }
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') return raw;
+    if (target.origin === window.location.origin) return raw;
+    if (!this.isHostTrusted(target.hostname.toLowerCase())) return raw;
+    if (target.searchParams.has('bsid')) return raw;
+    target.searchParams.set('bsid', this.sessionId);
+    return target.toString();
+  }
+
+  /** Public-Helper für Template-Bindings wie ``[href]="_withBsidPublic(v.url)"``.
+   *  Wrappt das private ``_withBsid`` damit es im Template aufrufbar ist
+   *  (TypeScript bzw. Angular AOT verbieten direkte private-Method-Calls
+   *  aus Template-Expressions). */
+  _withBsidPublic(url: string | null | undefined): string {
+    return this._withBsid(url);
+  }
+
+  /** Tooltip-Helper: gibt 'Achtung! Externe URL.' zurück wenn der Link
+   *  auf einen Host außerhalb der Trusted-Liste zeigt. */
+  externalLinkWarning(url: string | null | undefined): string {
+    const raw = (url || '').trim();
+    if (!raw) return '';
+    let host = '';
+    try {
+      host = new URL(raw, window.location.href).hostname.toLowerCase();
+    } catch { return ''; }
+    if (!host) return '';
+    if (host === window.location.hostname.toLowerCase()) return '';
+    if (this.isHostTrusted(host)) return '';
+    return 'Achtung! Externe URL.';
   }
 
   /** Map target-group code → human label (frontend-side fallback, mirrors
@@ -457,9 +525,11 @@ export class CanvasComponent {
     return (this.cards?.length || 0) > this.visibleCount;
   }
 
-  /** Typ-aware link resolver — used by the template. */
+  /** Typ-aware link resolver — used by the template. Hängt ``?bsid=``
+   *  für Cross-TLD-Session-Persistenz an, falls die Ziel-URL auf einen
+   *  Trusted-Host zeigt. */
   cardUrl(card: WloCard | null | undefined): string {
-    return getCardPrimaryUrl(card);
+    return this._withBsid(getCardPrimaryUrl(card));
   }
 
   onShowMore(): void { this.showMore.emit(); }

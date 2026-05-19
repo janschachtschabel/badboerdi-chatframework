@@ -196,7 +196,8 @@
           <a class="card-btn card-btn--primary"
              [href]="cardUrl(previewCard)"
              target="_blank"
-             rel="noopener noreferrer">
+             rel="noopener noreferrer"
+             [title]="externalLinkWarning(cardUrl(previewCard)) || null">
             <span class="bb-icon" [innerHTML]="ICONS.open_in_new | safeSvg"></span>
             <span>In neuem Tab öffnen</span>
           </a>
@@ -234,7 +235,8 @@
         <a class="wlo-card"
            [href]="topicPageUrl(c)"
            target="_blank"
-           rel="noopener noreferrer">
+           rel="noopener noreferrer"
+           [title]="externalLinkWarning(topicPageUrl(c)) || null">
 
           <!-- Header: nur Inhaltstyp links (Inhaltstyp links oben sagt
                schon "Themenseite"; das Badge rechts war redundant). -->
@@ -293,7 +295,7 @@
                [href]="topicPageUrl(c)"
                target="_blank"
                rel="noopener noreferrer"
-               [title]="'Themenseite öffnen — Variante: ' + (selectedVariant(c) ? variantLabel(c, selectedVariant(c)!) : 'Allgemein')">
+               [title]="'Themenseite öffnen — Variante: ' + (selectedVariant(c) ? variantLabel(c, selectedVariant(c)!) : 'Allgemein') + (externalLinkWarning(topicPageUrl(c)) ? ' — ' + externalLinkWarning(topicPageUrl(c)) : '')">
               <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
               <span>Themenseite</span>
             </a>
@@ -312,10 +314,10 @@
               <a *ngFor="let v of c.topic_pages"
                  class="card-btn-split__menu-item"
                  role="menuitem"
-                 [href]="v.url"
+                 [href]="_withBsidPublic(v.url)"
                  target="_blank"
                  rel="noopener noreferrer"
-                 [title]="variantLabel(c, v) + ' — ' + (v.url || '')"
+                 [title]="variantLabel(c, v) + ' — ' + (v.url || '') + (externalLinkWarning(v.url) ? ' — ' + externalLinkWarning(v.url) : '')"
                  [class.is-selected]="v.variant_id === selectedVariant(c)?.variant_id"
                  (click)="onPickVariant(c, v.variant_id, $event)">
                 <span class="variant-check bb-icon" aria-hidden="true"
@@ -358,7 +360,8 @@
         <a class="wlo-card"
            [href]="cardUrl(c)"
            target="_blank"
-           rel="noopener noreferrer">
+           rel="noopener noreferrer"
+           [title]="externalLinkWarning(cardUrl(c)) || null">
 
           <div class="card-header">
             <span class="card-content-type">
@@ -430,7 +433,8 @@
         <a class="wlo-card"
            [href]="cardUrl(c)"
            target="_blank"
-           rel="noopener noreferrer">
+           rel="noopener noreferrer"
+           [title]="externalLinkWarning(cardUrl(c)) || null">
 
           <div class="card-header">
             <span class="card-content-type">
