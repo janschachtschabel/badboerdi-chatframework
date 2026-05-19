@@ -208,8 +208,12 @@
           </div>
         </div>
 
-        <!-- Pagination: count + show more / load more -->
-        <div *ngIf="msg.cards && msg.cards.length > 1 && !hideCards" class="pagination-bar">
+        <!-- Pagination: count + show more / load more.
+             cardsEnabledBool muss mit geprüft werden — sonst zeigt sich die
+             "X von Y Ergebnissen"-Zeile auch wenn die eigentlichen Cards
+             durch ``cards-enabled="false"`` ausgeblendet sind (verwirrend:
+             Count + Mehr-Button ohne sichtbare Treffer). -->
+        <div *ngIf="msg.cards && msg.cards.length > 1 && !hideCards && cardsEnabledBool" class="pagination-bar">
           <span class="pagination-info">
             {{ getVisibleCards(msg).length }} von {{ msg.cards.length }} Ergebnissen
           </span>

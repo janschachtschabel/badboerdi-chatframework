@@ -722,17 +722,36 @@ async def generate_canvas_content(
         wiki = await fetch_wikipedia_summary(topic, timeout_s=6.0)
         if wiki and wiki.get("extract"):
             wiki_used = {"title": wiki["title"], "url": wiki.get("url", "")}
+            # Doppel-Sicherung gegen Wikipedia-False-Positives:
+            # Layer 1 (Helper-Side) macht den Relevanz-Check bereits — aber
+            # heuristische Title-Prefix-Matches können trotzdem mal danebenliegen
+            # (z.B. "Dreiecke" Topic Mathematik → "Dreiecker" Bergname).
+            # Layer 2 (LLM-Side, hier) erlaubt dem Modell, den Treffer ZU LESEN
+            # und SEMANTISCH ZU PRÜFEN, ob der Artikel wirklich zum Thema passt.
+            # Bei Mismatch MUSS das LLM den Wiki-Inhalt verwerfen UND die
+            # Quellenangabe weglassen — niemals falsches Wissen einbauen.
             wiki_block = (
-                "\n\nFaktenbasis aus der deutschen Wikipedia "
+                f"\n\nMögliche Faktenbasis aus der deutschen Wikipedia "
                 f"(Artikel: \"{wiki['title']}\", {wiki.get('url','')} ):\n"
                 f"{wiki['extract']}\n\n"
-                "Nutze diese Faktenbasis für die inhaltliche Genauigkeit. "
-                "Zitiere nicht woertlich, sondern verarbeite die Informationen "
-                "in eigenen Sätzen.\n"
-                "ZITIERPFLICHT: Am Ende des Materials MUSS genau eine Zeile "
-                "als Quellenangabe stehen — Format:\n"
-                f"  *Quelle: Wikipedia-Artikel „{wiki['title']}" + "\"" + f" ({wiki.get('url','')}). Inhalte unter CC BY-SA 4.0 verarbeitet.*\n"
-                "Diese Zeile ist die einzige Erwaehnung der URL im Material."
+                f"WICHTIG — RELEVANZ-PRÜFUNG (zuerst durchführen):\n"
+                f"  Vergleiche den Artikel-Titel \"{wiki['title']}\" mit dem Thema "
+                f"\"{topic}\". Beziehen sie sich auf DASSELBE Konzept?\n"
+                f"  - JA, passt eindeutig zum Thema → verarbeite den Extract in "
+                f"eigenen Sätzen (NICHT wörtlich zitieren) UND hänge am Materialende "
+                f"GENAU EINE Quellenangabe-Zeile an:\n"
+                f"    *Quelle: Wikipedia-Artikel „{wiki['title']}\" ({wiki.get('url','')}). "
+                f"Inhalte unter CC BY-SA 4.0 verarbeitet.*\n"
+                f"  - NEIN, der Artikel handelt von etwas anderem (z.B. Bergname, "
+                f"Person, Ort, gleichlautende Marke, Begriff aus anderem Fach) → "
+                f"IGNORIERE den Extract komplett, baue NICHTS davon ein und "
+                f"setze KEINE Quellenangabe. Nutze stattdessen ausschließlich "
+                f"dein eigenes Fach-Wissen zum Thema \"{topic}\".\n"
+                f"  - UNSICHER (Begriff hat mehrere Bedeutungen, Extract nur "
+                f"oberflächlich verwandt) → behandle wie NEIN: nichts einbauen, "
+                f"keine Quelle. Lieber kein Wiki-Bezug als ein falscher.\n"
+                f"Diese Regel hat Vorrang vor allen anderen Anweisungen zur "
+                f"Quellenangabe."
             )
     except Exception as e:
         logger.info("wikipedia enrichment skipped: %s", e)

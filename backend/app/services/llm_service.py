@@ -326,7 +326,9 @@ def _build_classify_system_prompt(
     try:
         from app.services import page_context_service
         _page_meta = page_context_service.get_cached(session_state)
-        _page_block = page_context_service.render_for_prompt(_page_meta)
+        _page_block = page_context_service.render_for_prompt(
+            _page_meta, environment.get("page_context"),
+        )
         # Fallback: when MCP resolution found nothing (off-platform host
         # page) but the widget's DOM-detector extracted visible text,
         # render that as a heuristic context block.
@@ -1323,7 +1325,9 @@ Rolle in dieser Phase: {_resp_state_meta.get('role', '—')}
     try:
         from app.services import page_context_service
         _pm = page_context_service.get_cached(session_state)
-        _pb = page_context_service.render_for_prompt(_pm)
+        _pb = page_context_service.render_for_prompt(
+            _pm, environment.get("page_context"),
+        )
         if _pb:
             system_parts.append(_pb)
         else:

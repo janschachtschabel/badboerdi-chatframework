@@ -104,9 +104,43 @@ def _is_relevant(topic: str, title: str, extract: str) -> bool:
     # Morphological relatives: "Bruchrechnung" ↔ "Bruch", "Feinoptik" ↔
     # "Feinoptiker". Word must share a common prefix of at least 5 chars
     # with a full word in the title.
+    #
+    # Sprint 7 (2026-05-19) Bug-Fix: vorher hat die Regel jeden gemeinsamen
+    # Prefix akzeptiert — das hat false positives wie "Dreiecke" (Topic
+    # Mathematik) → "Dreiecker" (Bergname) ergeben, weil "dreiecker"
+    # "dreiecke" als Prefix enthielt. Die 1-Char-Erweiterung kann ein
+    # völlig anderer Begriff sein (Dreieck-er, -e, -s …). Daher:
+    #   - Wenn das Title-Wort LÄNGER ist als das Topic → der Suffix muss
+    #     ein typischer ≥2-Char-Morphologie-Suffix sein (Inflektion oder
+    #     Wortbildung). 1-Char-Suffixe sind verboten (außer pluralisches
+    #     "-n" nach Konsonant — verhindern Edge-Cases zu hart).
+    #   - Wenn das Topic LÄNGER ist → klare Compound-Beziehung, weiter
+    #     ohne zusätzliche Suffix-Prüfung erlauben (z.B. "Bruchrechnung"
+    #     enthält "Bruch" am Wortanfang).
+    _SAFE_SUFFIXES = (
+        # Wortbildungs-Suffixe (klar abgeleiteter Begriff)
+        "ung", "heit", "keit", "schaft", "tum", "lich", "bar", "isch",
+        "iker", "iger", "isch", "haft", "lein", "chen",
+        # Klassische Inflektion (Plural / Genus)
+        "en", "es", "em", "ern", "ens", "eln",
+        # 2-Char-Endungen die professions-/zugehörigkeits-Suffixe sind
+        "er",
+    )
     for tw in nt.split():
-        if len(tw) >= 5 and (word.startswith(tw) or tw.startswith(word)):
+        if len(tw) < 5:
+            continue
+        # Topic-länger: Compound mit Title-Wort am Anfang (z.B.
+        # "bruchrechnung".startsWith("bruch")) — sicher.
+        if len(word) > len(tw) and word.startswith(tw):
             return True
+        # Title-länger: nur erlauben wenn der Anhang eine erkannte
+        # ≥2-Char-Morphologie ist.
+        if len(tw) > len(word) and tw.startswith(word):
+            suffix = tw[len(word):]
+            if len(suffix) >= 2 and any(suffix == s for s in _SAFE_SUFFIXES):
+                return True
+            # Suffix ist 1 Char oder unerkannt → wahrscheinlich anderer
+            # Begriff (z.B. "Dreiecker" für "Dreiecke") → ABLEHNEN.
 
     return False
 

@@ -364,11 +364,21 @@ async def resolve_page_context(
 # ────────────────────────────────────────────────────────────────────
 
 
-def render_for_prompt(meta: dict[str, Any] | None) -> str:
+def render_for_prompt(
+    meta: dict[str, Any] | None,
+    page_context: dict[str, Any] | None = None,
+) -> str:
     """Human-readable block for the system prompt.
 
     Returns empty string if no usable metadata. Otherwise returns a
     German-language block the LLM can reference directly.
+
+    ``page_context`` (optional, passed-through from the widget) liefert
+    Page-Kind und URL-Query-Filter (``search_query``) — Infos die das
+    MCP-resolved ``meta`` nicht hat. Wenn vorhanden, generiert die
+    Funktion eine Sammlungs-spezifische Überschrift + nennt Filter
+    und IDs explizit, damit das LLM ``get_collection_contents`` mit
+    der richtigen ``collection_id`` aufrufen kann.
     """
     if not isinstance(meta, dict):
         return ""
@@ -376,12 +386,28 @@ def render_for_prompt(meta: dict[str, Any] | None) -> str:
     if not title:
         return ""
 
-    lines: list[str] = ["## Aktuelle Themenseite"]
+    pc = page_context if isinstance(page_context, dict) else {}
+    page_kind = (pc.get("page_kind") or "").lower()
+    collection_id = (pc.get("collection_id") or "").strip()
+    node_id = (pc.get("node_id") or "").strip() or (meta.get("node_id") or "").strip()
+    search_query = (pc.get("search_query") or "").strip()
+
+    # Seitentyp-Label — Sammlung ist NICHT Themenseite. Vorher hatten wir
+    # immer "## Aktuelle Themenseite" was bei Collection-Pages irreführend
+    # war (Bot dachte er sei auf einer Themenseite und antwortete generisch).
+    heading_map = {
+        "topic": "Themenseite",
+        "collection": "Sammlung (edu-sharing)",
+        "content": "Inhaltsseite (Einzelmaterial)",
+        "subject": "Fachportal",
+        "search": "Such-Ergebnisseite",
+    }
+    heading = heading_map.get(page_kind, "Aktuelle Seite")
+    lines: list[str] = [f"## Aktuelle Seite — {heading}"]
     lines.append(f"Titel: {title}")
 
     desc = (meta.get("description") or "").strip()
     if desc:
-        # Limit description length to keep the prompt slim
         if len(desc) > 400:
             desc = desc[:397].rsplit(" ", 1)[0] + "…"
         lines.append(f"Beschreibung: {desc}")
@@ -402,6 +428,20 @@ def render_for_prompt(meta: dict[str, Any] | None) -> str:
     if lrt:
         lines.append(f"Materialtypen auf der Seite: {', '.join(lrt[:6])}")
 
+    # IDs für direkte MCP-Tool-Calls. ``collection_id`` ist die Sammlungs-
+    # Node-ID auf edu-sharing — das LLM kann ``get_collection_contents``
+    # damit direkt aufrufen statt blind zu suchen.
+    if collection_id:
+        lines.append(f"Sammlungs-ID (collection_id): {collection_id}")
+    elif node_id:
+        lines.append(f"Node-ID: {node_id}")
+
+    # Aktive URL-Filter (?q=…) — auf Sammlungs-Browse-Seiten der Filter
+    # innerhalb der Sammlung. Bot soll diesen Filter weitergeben wenn er
+    # innerhalb der Sammlung sucht.
+    if search_query:
+        lines.append(f"Aktiver Filter / Suchbegriff in der URL: {search_query}")
+
     if meta.get("url"):
         lines.append(f"URL: {meta['url']}")
 
@@ -416,9 +456,24 @@ def render_for_prompt(meta: dict[str, Any] | None) -> str:
         "Der Nutzer ist auf dieser Seite eingebettet. Regeln:"
     )
     lines.append(
-        "- Bei Fragen wie 'Worum geht es hier?', 'Was ist das?', 'Fuer welche "
-        "Klasse ist das?' -> beziehe dich direkt auf Titel/Beschreibung/Stufen."
+        "- Bei Fragen wie 'Auf welcher Seite bin ich?', 'Wo bin ich?', "
+        "'Worum geht es hier?', 'Was ist das?', 'In welcher Sammlung?' "
+        "-> beziehe dich direkt + KONKRET auf Titel + Seitentyp ('Du bist "
+        f"hier in der {heading.split()[0]} \"{title}\"'). Nutze den "
+        "Sammlungstitel namentlich, NICHT generische WLO-Floskeln."
     )
+    if collection_id:
+        lines.append(
+            f"- Wenn der Nutzer nach 'Materialien hier', 'was ist in dieser "
+            f"Sammlung' fragt -> rufe ``get_collection_contents`` mit "
+            f"``nodeId={collection_id}`` auf, NICHT eine offene Suche."
+        )
+    if search_query:
+        lines.append(
+            f"- Aktueller URL-Filter ist '{search_query}'. Wenn der Nutzer "
+            f"'mehr dazu' / 'weiter' / 'andere Treffer' sagt, suche INNERHALB "
+            f"der Sammlung mit diesem Filter."
+        )
     lines.append(
         "- Bei Create-Anfragen ohne eigenes Thema ('Erstelle mir ein "
         "Arbeitsblatt dazu', 'Mach ein Quiz hierzu') -> nimm den Seitentitel "
