@@ -1190,8 +1190,17 @@ export default function QualityView() {
                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                       Turn {selected.turn_count} · {selected.turn_type || '–'}
                     </span>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-                      Session: {selected.session_id.slice(0, 8)}…
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--text-muted)',
+                        marginLeft: 'auto',
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                        wordBreak: 'break-all',
+                      }}
+                      title={selected.session_id}
+                    >
+                      Session: {selected.session_id}
                     </span>
                     <button
                       className="btn btn-sm"

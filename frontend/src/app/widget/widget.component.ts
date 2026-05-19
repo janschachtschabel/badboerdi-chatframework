@@ -53,8 +53,12 @@ interface CanvasSnapshot {
          [class.mobile-canvas-active]="canvasOpen() && canvasEnabledBool && mobileTab() === 'canvas'"
          [attr.data-position]="position">
 
-      <!-- Chat panel -->
-      <div class="boerdi-panel" *ngIf="expanded">
+      <!-- Chat panel: lazy mount on first open, then stays in DOM and
+           is just hidden via CSS class. Preserves chat component state
+           (messages, cards, canvas markdown) across bubble collapse. -->
+      <div class="boerdi-panel"
+           *ngIf="everExpanded"
+           [class.boerdi-panel--hidden]="!expanded">
         <div class="boerdi-panel-header">
           <!-- Linker Bereich: Avatar + Name + Status -->
           <div class="boerdi-title-block">
@@ -196,6 +200,7 @@ interface CanvasSnapshot {
               [canvasEnabled]="canvasEnabled"
               [aiContentEnabled]="aiContentEnabled"
               [quickRepliesEnabled]="quickRepliesEnabled"
+              [trustedHosts]="parsedTrustedHostList"
               [emitGuideSuggestion]="emitGuideSuggestion"
               [emitRoutingDebug]="emitRoutingDebug"
               (pageAction)="handlePageAction($event)"
@@ -325,6 +330,12 @@ interface CanvasSnapshot {
       overflow: hidden;
       animation: boerdi-slidein 0.25s ease-out;
       transition: width 0.25s ease;
+    }
+    /* Lazy-mount hide: keeps the panel in the DOM (component state
+       preserved) but removes it visually and spatially. !important
+       overrides the central display:flex rule above. */
+    .boerdi-panel.boerdi-panel--hidden {
+      display: none !important;
     }
     .boerdi-widget.with-canvas .boerdi-panel {
       width: 900px;
@@ -792,6 +803,23 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   @Input() guideModeDefault: boolean | string = 'auto';
 
   expanded = false;
+  /** Welle C Sprint 7 (2026-05-19): Lazy-Mount-Flag für das Chat-Panel.
+   *  Vorher war das Panel ``*ngIf="expanded"`` → bei jedem Collapse wurde
+   *  ``<badboerdi-chat>`` aus dem DOM entfernt und ``messages``-Signal,
+   *  Canvas-State usw. gingen verloren. Beim Reopen lief ``ngOnInit`` +
+   *  ``restoreHistory()`` neu — Bot-Text kam zurück, aber Cards/Canvas-
+   *  Content nur soweit der Backend-Restore das wiederherstellen kann
+   *  (Cards ja seit A1-Fix, Canvas-Markdown jedoch nicht).
+   *
+   *  Lösung: ``everExpanded`` wird beim allerersten Open auf ``true``
+   *  gesetzt und bleibt das für die Lifetime des Widgets. Das Panel
+   *  rendert ab dann **immer** im DOM, nur visuell wird es per CSS
+   *  (``.boerdi-panel--hidden``) ein-/ausgeblendet. Component-State
+   *  überlebt jedes Collapse-Reopen.
+   *
+   *  Lazy-Mount bleibt erhalten: User, die das Widget nie öffnen, zahlen
+   *  keinen Bootstrap-Cost; erst der erste Click instanziiert ``<badboerdi-chat>``. */
+  everExpanded = false;
   resolvedPageContext: Record<string, any> = {};
 
   // ── Webseiten-Guide-Modus (Lotsen-Modus) ──────────────────────
@@ -901,8 +929,22 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     };
   });
 
+  // Welle C Sprint 7 (2026-05-19): Auto-Open-Persistenz auf sessionStorage
+  // umgestellt. Der vorherige localStorage-Ansatz hat das Widget auf
+  // *jeder* Seite des gleichen Hosts auto-geöffnet wenn der User es 30
+  // Minuten vorher mal angeklickt hatte — auf WordPress-Multi-Page-Setups
+  // (z.B. wp-test.wirlernenonline.de) wirkte das wie "Chatbot öffnet sich
+  // bei jedem Seitenwechsel".
+  //
+  // sessionStorage löst das sauber: persistiert nur innerhalb DESSELBEN
+  // Browser-Tabs (Same-Tab-Navigation bleibt open → User-Erfahrung
+  // konsistent), aber jeder neue Tab / Refresh / Cross-Tab-Navigation
+  // startet wieder mit closed. Cross-TLD-Handoff per ``?bsid=`` forciert
+  // weiterhin open, unabhängig vom Storage.
+  //
+  // TTL muss damit nicht mehr begrenzt werden — sessionStorage räumt
+  // sich beim Tab-Close von selbst auf.
   private readonly OPEN_KEY = 'boerdi_widget_open';
-  private readonly OPEN_TTL_MS = 30 * 60 * 1000; // 30 min
 
   // Fallback window listener — if the Angular @Output() binding on
   // <badboerdi-chat> doesn't propagate (e.g. when the widget is mounted
@@ -953,18 +995,22 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
       }
     } catch { /* ignore */ }
 
-    // Restore expanded state across pages (within TTL)
+    // Restore expanded state across SAME-TAB page navigation. sessionStorage
+    // (statt früher localStorage) bewirkt: Multi-Page-Sites wie WordPress
+    // behalten den Open-Zustand wenn der User innerhalb eines Tabs navigiert;
+    // ein neuer Tab oder Refresh startet aber wieder mit closed. Cross-TLD-
+    // Handoff per ``?bsid=`` (oben) bleibt unabhängig davon der force-open.
     try {
-      const raw = localStorage.getItem(this.OPEN_KEY);
-      if (raw) {
-        const ts = parseInt(raw, 10);
-        if (!isNaN(ts) && Date.now() - ts < this.OPEN_TTL_MS) {
-          this.expanded = true;
-        } else {
-          localStorage.removeItem(this.OPEN_KEY);
-        }
+      if (sessionStorage.getItem(this.OPEN_KEY) === '1') {
+        this.expanded = true;
       }
     } catch { /* ignore */ }
+
+    // Lazy-Mount-Flag setzen, nachdem ALLE Open-Entscheidungen
+    // (initialState, bsid, sessionStorage) ausgewertet wurden. Wenn das
+    // Widget mit Panel-Open startet, ist das Lazy-Gate sofort offen
+    // — sonst erst beim ersten User-Click (gesetzt in ``setExpanded``).
+    if (this.expanded) this.everExpanded = true;
 
     // ── Webseiten-Guide-Modus initialisieren ────────────────────
     // Allow-Liste + Default-Status vom Backend laden, mit dem aktuellen
@@ -1055,6 +1101,51 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     // Handler selbst — leere Liste = Handler bailt früh aus = Kosten 0.
     this._onDocumentLinkClick = (e: Event) => this._maybeRewriteOutgoingLink(e);
     document.addEventListener('click', this._onDocumentLinkClick, true);
+
+    // Canvas-Restore nach Page-Refresh: ChatComponent's ngOnInit hat
+    // beim ViewInit-Zeitpunkt seine sessionId bereits aus localStorage/
+    // Cookie eingelesen. Wir fragen den Backend-Endpoint ab und befüllen
+    // die Canvas-Signale, ohne den Pane automatisch zu öffnen — der User
+    // sieht den letzten Canvas-Inhalt erst, wenn er das Canvas selbst
+    // wieder öffnet (z.B. via "Material anzeigen"-Quick-Reply oder über
+    // die Bot-Antwort, die noch auf canvas_open hinweist). Vermeidet
+    // unerwünschte UX wenn der User das Canvas vor Refresh geschlossen
+    // hatte. Setzt nur, wenn aktuell noch nichts im Canvas liegt
+    // (canvasMarkdown leer) — sonst hätte schon ein neueres Event
+    // (z.B. canvas_open aus laufender Antwort) Priorität.
+    this._restoreCanvasAfterBootstrap();
+  }
+
+  private async _restoreCanvasAfterBootstrap(): Promise<void> {
+    // ChatComponent's sessionId ist sync verfügbar nach ngOnInit.
+    // ngAfterViewInit auf dem Widget läuft NACH ngOnInit auf dem Chat-
+    // Child, daher ist chatRef.sessionId hier garantiert gesetzt.
+    const sid = this.chatRef?.sessionId;
+    if (!sid) return;
+    // Schon Canvas-Inhalt da? Nicht überschreiben — andere Pfade
+    // (laufende Bot-Antwort, manueller Edit) haben Priorität.
+    if (this.canvasMarkdown()) return;
+    try {
+      const payload = await this.api.loadCanvas(sid);
+      if (!payload || !payload.markdown) return;
+      // Innerhalb der Angular-Zone aktualisieren, damit Change Detection
+      // ausgelöst wird (loadCanvas läuft mit await außerhalb des Click-
+      // oder Lifecycle-Trigger-Pfades, das ist hier nicht zonal).
+      this.zone.run(() => {
+        this.canvasTitle.set(payload.title || 'Canvas');
+        this.canvasMaterialLabel.set(payload.material_type_label || '');
+        const cat = payload.material_type_category;
+        this.canvasMaterialCategory.set(
+          cat === 'analytisch' ? 'analytisch'
+            : cat === 'didaktisch' ? 'didaktisch' : null,
+        );
+        this.canvasMarkdown.set(payload.markdown || '');
+        this.canvasPreferredView.set('material');
+        // ``canvasOpen`` bewusst NICHT auf true setzen — siehe Kommentar
+        // im Caller. User muss selbst entscheiden ob Canvas wieder
+        // sichtbar wird. Die Signale sind aber für den Moment befüllt.
+      });
+    } catch { /* never fail bootstrap on this */ }
   }
 
   ngOnDestroy() {
@@ -1113,6 +1204,14 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
         .toLowerCase()
         .replace(/^https?:\/\//, '')
         .split('/')[0];
+  }
+
+  /** Aktuelle Whitelist als Array — wird ans Chat-Component gegeben,
+   *  damit dort Inline-Markdown-Links korrekt klassifiziert werden können
+   *  (Trusted → same-tab + ?bsid= via Outgoing-Rewrite; External → target=_blank).
+   *  Returns die gleiche zusammengeführte Liste wie ``_parsedTrustedDomains()``. */
+  get parsedTrustedHostList(): string[] {
+    return this._parsedTrustedDomains();
   }
 
   /** True wenn host zur Whitelist passt — exakter Match ODER Subdomain. */
@@ -1245,22 +1344,20 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  (Toggle-Button, Public-API, attributeChangedCallback) konsistent
    *  localStorage pflegen und Angular die View neu rendert. */
   private setExpanded(open: boolean): void {
-    // Timestamp BEI JEDEM Öffnen-Call aktualisieren — auch wenn das Panel
-    // bereits offen ist. Hintergrund: ``boerdi_widget_open`` dient der
-    // Cross-Page-Persistenz innerhalb einer TTL. Wenn der User das Widget
-    // intensiv nutzt aber per ``openChatbot()`` immer dasselbe Panel
-    // erneut „anpinkt", soll die TTL nicht trotzdem ablaufen und das
-    // Widget auf der nächsten Seite zumachen.
-    if (open) {
-      try { localStorage.setItem(this.OPEN_KEY, String(Date.now())); } catch { /* ignore */ }
-    }
-    if (this.expanded === open) return;
-    this.expanded = open;
+    // Same-Tab-Persistenz über sessionStorage — überlebt Page-Navigation
+    // innerhalb desselben Tabs, nicht aber Tab-Close oder Cross-Tab.
+    // Wert ist '1' statt Timestamp (TTL nicht mehr nötig, sessionStorage
+    // wird beim Tab-Close von selbst geräumt).
     try {
-      if (!open) {
-        localStorage.removeItem(this.OPEN_KEY);
+      if (open) {
+        sessionStorage.setItem(this.OPEN_KEY, '1');
+      } else {
+        sessionStorage.removeItem(this.OPEN_KEY);
       }
     } catch { /* ignore */ }
+    if (this.expanded === open) return;
+    this.expanded = open;
+    if (open) this.everExpanded = true;
     // Angular Change-Detection läuft beim Klick automatisch — bei
     // externen Aufrufen (außerhalb Zone) müssen wir manuell anstoßen,
     // damit die View aktualisiert wird.

@@ -5,7 +5,14 @@ short_purpose: "WANN: Suche hat viele Treffer (>5), User braucht Kurations-Hilfe
 priority: 410
 gate_personas: ["P-W-LK", "P-W-SL", "P-BER", "P-AND", "P-ELT", "P-VER"]
 gate_states: ["state-6"]
-gate_intents: ["*"]
+# Welle C Sprint 7: gate_intents von ["*"] auf explizite Liste verengt.
+# Verhindert dass PAT-07 Create-/Edit-/Lernpfad-Intents (INT-W-10/11/12)
+# aufsaugt wenn der Classifier daneben liegt — typischer Fall: User
+# klickt nach Degradation-Brücke einen Material-Typ-QR, Classifier
+# liest "Arbeitsblatt" als Suchbegriff statt als Create-Antwort. Mit
+# Wildcard hätte PAT-07 gewonnen und Canvas-Halluzination produziert
+# ("habe ich aufgezogen" ohne tatsächliches canvas_open).
+gate_intents: ["INT-W-03", "INT-W-09", "INT-W-13"]
 signal_high_fit: ["orientierungssuchend", "neugierig", "delegierend"]
 signal_medium_fit: []
 signal_low_fit: []

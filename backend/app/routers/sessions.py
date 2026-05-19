@@ -111,6 +111,52 @@ async def get_session_messages(session_id: str, limit: int = 50):
     return await get_messages(session_id, limit)
 
 
+@router.get("/{session_id}/canvas")
+async def get_session_canvas(session_id: str):
+    """Return the last canvas content for a session.
+
+    Welle C Sprint 7 (2026-05-19): Damit das Widget nach Page-Refresh
+    den Canvas-Pane mit dem zuletzt generierten Material wieder
+    befüllen kann. Das Backend persistiert ``_canvas_last_markdown``,
+    ``_canvas_material_type`` und ``_canvas_topic`` in
+    ``session_state.entities`` bei jedem ``canvas_create`` / ``canvas_edit``.
+    Label und Category werden hier aus dem type-key abgeleitet — das
+    Widget bekommt die gleiche Payload-Struktur wie ein frisches
+    ``page_action.canvas_open``-Event.
+
+    Returns ``{}`` (Leer-Objekt) wenn keine Canvas-Historie vorhanden.
+    Frontend interpretiert das als "Canvas leer, kein Restore nötig".
+    """
+    session = await get_or_create_session(session_id)
+    try:
+        entities = json.loads(session.get("entities", "{}") or "{}")
+    except Exception:
+        entities = {}
+    md = (entities.get("_canvas_last_markdown") or "").strip()
+    if not md:
+        return {}
+    type_key = entities.get("_canvas_material_type") or ""
+    title = entities.get("_canvas_topic") or "Material"
+    # Label + Category aus dem Material-Type-Key ableiten.
+    from app.services.canvas_service import (
+        get_material_type_category, get_material_types,
+    )
+    types_meta = get_material_types()
+    info = types_meta.get(type_key) if type_key else None
+    if info:
+        label = f"{info.get('emoji', '')} {info.get('label', type_key)}".strip()
+    else:
+        label = type_key or "Material"
+    category = get_material_type_category(type_key)
+    return {
+        "title": title,
+        "material_type": type_key,
+        "material_type_label": label,
+        "material_type_category": category,
+        "markdown": md,
+    }
+
+
 @router.get("/{session_id}/memory", dependencies=_studio)
 async def get_session_memory(session_id: str, memory_type: str | None = None):
     """Get memory entries for a session."""

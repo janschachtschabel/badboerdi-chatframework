@@ -12,8 +12,21 @@ interface Session {
 }
 
 interface Message {
+  id?: number;
   role: string;
   content: string;
+  cards?: any[];
+  debug?: {
+    pattern?: string;
+    persona?: string;
+    intent?: string;
+    state?: string;
+    signals?: string[];
+    tools_called?: string[];
+    entities?: Record<string, any>;
+    page_action?: any;
+  };
+  created_at?: string;
 }
 
 export function SessionsView() {
@@ -142,8 +155,16 @@ export function SessionsView() {
                  onClick={() => loadMessages(s.session_id)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '.82rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {s.session_id.slice(0, 20)}…
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: '.78rem',
+                      wordBreak: 'break-all',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                    }}
+                    title={s.session_id}
+                  >
+                    {s.session_id}
                   </div>
                   <div style={{ fontSize: '.72rem', color: 'var(--text-muted)' }}>
                     {s.turn_count} Turns · {s.persona_id || 'unbekannt'} · {s.state_id}
@@ -204,28 +225,58 @@ export function SessionsView() {
                   </button>
                 )}
               </div>
-              {messages.map((m, i) => (
-                <div key={i} style={{
-                  padding: '8px 12px',
-                  marginBottom: 6,
-                  borderRadius: 8,
-                  background: m.role === 'user' ? '#DAE8F5' : '#F8FAFC',
-                  border: '1px solid var(--border)',
-                  fontSize: '.82rem',
-                }}>
-                  <div style={{ fontWeight: 600, fontSize: '.72rem', color: 'var(--text-muted)', marginBottom: 2, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    {m.role === 'user' ? (
-                      <>👤 Nutzer:in</>
-                    ) : (
-                      <>
-                        <img src="/boerdi.svg" alt="" style={{ width: 14, height: 14, verticalAlign: 'middle' }} />
-                        Boerdi
-                      </>
+              {messages.map((m, i) => {
+                const dbg = m.debug || {};
+                const hasDebug = m.role === 'assistant' && (
+                  dbg.pattern || dbg.persona || dbg.intent || dbg.state
+                );
+                const cardsCount = Array.isArray(m.cards) ? m.cards.length : 0;
+                return (
+                  <div key={m.id ?? i} style={{
+                    padding: '8px 12px',
+                    marginBottom: 6,
+                    borderRadius: 8,
+                    background: m.role === 'user' ? '#DAE8F5' : '#F8FAFC',
+                    border: '1px solid var(--border)',
+                    fontSize: '.82rem',
+                  }}>
+                    <div style={{ fontWeight: 600, fontSize: '.72rem', color: 'var(--text-muted)', marginBottom: 2, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      {m.role === 'user' ? (
+                        <>👤 Nutzer:in</>
+                      ) : (
+                        <>
+                          <img src="/boerdi.svg" alt="" style={{ width: 14, height: 14, verticalAlign: 'middle' }} />
+                          Boerdi
+                        </>
+                      )}
+                      {cardsCount > 0 && (
+                        <span style={{ marginLeft: 6, fontWeight: 500 }}>· 🎴 {cardsCount} Karte{cardsCount === 1 ? '' : 'n'}</span>
+                      )}
+                    </div>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                    {hasDebug && (
+                      <div style={{
+                        marginTop: 6,
+                        paddingTop: 6,
+                        borderTop: '1px dashed var(--border)',
+                        fontSize: '.68rem',
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '4px 10px',
+                      }}>
+                        {dbg.pattern && <span><strong>Pattern:</strong> {dbg.pattern}</span>}
+                        {dbg.intent && <span><strong>Intent:</strong> {dbg.intent}</span>}
+                        {dbg.persona && <span><strong>Persona:</strong> {dbg.persona}</span>}
+                        {dbg.state && <span><strong>State:</strong> {dbg.state}</span>}
+                        {Array.isArray(dbg.tools_called) && dbg.tools_called.length > 0 && (
+                          <span><strong>Tools:</strong> {dbg.tools_called.join(', ')}</span>
+                        )}
+                      </div>
                     )}
                   </div>
-                  {m.content}
-                </div>
-              ))}
+                );
+              })}
               {messages.length === 0 && (
                 <div className="card" style={{ color: 'var(--text-muted)' }}>
                   Keine Nachrichten in dieser Session.

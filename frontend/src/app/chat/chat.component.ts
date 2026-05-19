@@ -1,5 +1,5 @@
 import {
-  Component, ElementRef, HostListener, NgZone, ViewChild, AfterViewChecked, OnInit, OnDestroy, signal, Input,
+  Component, ElementRef, HostListener, NgZone, ViewChild, AfterViewChecked, OnInit, OnChanges, OnDestroy, signal, Input,
   Output, EventEmitter,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -15,6 +15,26 @@ import { getCardPrimaryUrl } from '../services/card-utils';
 import { BOERDI_LOGO_SVG, BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
 import { ICONS } from '../shared/icons';
 import { SafeSvgPipe } from '../shared/safe-svg.pipe';
+
+/** Mapping vom ``@@ICON:NAME@@``-Sentinel auf das deutsche Material-Label.
+ *  Wird als Hover-Tooltip auf Inline-Card-Link-Icons gesetzt, damit User
+ *  sehen ob ein Inline-Treffer eine Themenseite, eine Sammlung oder ein
+ *  konkreter Material-Typ (Video / Arbeitsblatt / Quiz / …) ist.
+ *  Quelle der Namen: ``backend/app/routers/chat.py::_icon_name_for_card``. */
+const INLINE_ICON_LABEL: Record<string, string> = {
+  topic: 'Themenseite',
+  auto_stories: 'Sammlung',
+  play_circle: 'Video',
+  article: 'Arbeitsblatt',
+  videogame_asset: 'Interaktiver Inhalt',
+  headphones: 'Audio',
+  quiz: 'Quiz',
+  image: 'Präsentation',
+  edit_note: 'Übung',
+  school: 'Kurs',
+  language: 'Webseite',
+  menu_book: 'Material',
+};
 
 /** Payload shape for the ``badboerdi:guide-suggestion`` CustomEvent and the
  *  ``(guideSuggestion)`` Output. Emitted at most once per bot-turn, when the
@@ -106,7 +126,7 @@ export interface RoutingDebugPayload {
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss'],
 })
-export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
+export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDestroy {
   /** Material-Symbols-Icon-Set, im Template referenzierbar. */
   readonly ICONS = ICONS;
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
@@ -198,6 +218,13 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   @Input() canvasEnabled: boolean | string = true;
   @Input() aiContentEnabled: boolean | string = true;
   @Input() quickRepliesEnabled: boolean | string = true;
+  /** Vom Widget durchgereichte Trusted-Hosts-Whitelist (Backend-Default
+   *  aus ``guide-mode.yaml`` + ``trusted-domains``-HTML-Attribut, mergiert).
+   *  Verwendung: Inline-Markdown-Links zu Hosts auf dieser Liste öffnen
+   *  same-tab (damit das Outgoing-Rewrite ``?bsid=`` greift und die
+   *  Session erhalten bleibt); externe Hosts öffnen target="_blank".
+   *  Empty-Default = alle Markdown-Links bekommen target="_blank". */
+  @Input() trustedHosts: string[] = [];
   /** Lotsen-Modus: passive Top-Result-Emission an die Host-Seite.
    *  Bei ``true`` wird bei JEDEM Bot-Turn, der Cards mit Lotsen-Link enthält,
    *  ein ``badboerdi:guide-suggestion``-CustomEvent auf ``window`` gefeuert
@@ -254,6 +281,40 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   get canvasEnabledBool(): boolean { return this.modeFlag(this.canvasEnabled); }
   get aiContentEnabledBool(): boolean { return this.modeFlag(this.aiContentEnabled); }
   get quickRepliesEnabledBool(): boolean { return this.modeFlag(this.quickRepliesEnabled); }
+
+  /** Wird vom Angular-Bindings-Layer aufgerufen wenn ein ``@Input()`` neu
+   *  gesetzt wird. Wir nutzen es, um den ``_renderCache`` zu invalidieren
+   *  wenn die Trusted-Hosts-Liste ankommt — Backend's ``guide-mode``-
+   *  Config lädt async beim Bootstrap, daher kann ein erstes Render mit
+   *  leerer Liste cached werden bevor die echte Liste eintrifft. Ohne
+   *  Cache-Reset würden Links zu Trusted-Hosts trotzdem ``target="_blank"``
+   *  zeigen, weil der Cache-Hit das Re-Rendering überspringt. */
+  ngOnChanges(changes: { trustedHosts?: { previousValue?: string[]; currentValue?: string[]; firstChange?: boolean } }) {
+    const c = changes.trustedHosts;
+    if (!c || c.firstChange) return;
+    const prev = JSON.stringify(c.previousValue || []);
+    const curr = JSON.stringify(c.currentValue || []);
+    if (prev !== curr) {
+      this._renderCache.clear();
+    }
+  }
+
+  /** Check ob ein Hostname auf der vom Widget durchgereichten Trusted-Hosts-
+   *  Liste steht. Match-Logik wie ``WidgetComponent._isTrustedHost``:
+   *  exakter Match ODER Subdomain (entry "openeduhub.net" matched alle
+   *  ``*.openeduhub.net``). Empty list → returns false → all hosts open
+   *  in new tab. */
+  isHostTrusted(host: string): boolean {
+    const h = (host || '').toLowerCase();
+    if (!h || !Array.isArray(this.trustedHosts) || this.trustedHosts.length === 0) return false;
+    for (const t of this.trustedHosts) {
+      const tn = (t || '').toLowerCase();
+      if (!tn) continue;
+      if (h === tn) return true;
+      if (h.endsWith('.' + tn)) return true;
+    }
+    return false;
+  }
 
   ngOnInit() {
     // Configure API base URL if provided as attribute
@@ -353,7 +414,13 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
       if (m.role === 'user') {
         this.addUserMessage(content);
       } else if (m.role === 'assistant') {
-        this.addBotMessage(content);
+        // Cards aus dem persistierten cards_json mit-restoren, damit
+        // Bot-Antworten nach Refresh/Page-Nav nicht als nackter Text
+        // ("Hier sind passende Treffer …") ohne die zugehörigen Kacheln
+        // dastehen. Backend liefert cards seit 2026-05 mit, ältere
+        // Sessions / Backends ohne das Feld bleiben rückwärtskompatibel.
+        const cards = Array.isArray(m.cards) ? m.cards : undefined;
+        this.addBotMessage(content, false, cards);
       }
     }
     // Nach dem Wiederherstellen ans Ende scrollen. Wir delegieren komplett
@@ -1731,7 +1798,57 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
 
   /** Exposed helper so the template can use the typ-aware URL resolver. */
   cardUrl(card: WloCard | null | undefined): string {
-    return getCardPrimaryUrl(card);
+    return this._withBsid(getCardPrimaryUrl(card));
+  }
+
+  /** Tooltip-Text für Card-Links und Themenseiten-Buttons, falls die
+   *  Ziel-URL auf einen Host außerhalb der Trusted-Liste zeigt (öffnet
+   *  dann in neuem Tab — siehe HTML target="_blank"). Empty-Return =
+   *  kein Warntooltip nötig. Wird auch genutzt für Topic-Page-Links. */
+  externalLinkWarning(url: string | null | undefined): string {
+    const raw = (url || '').trim();
+    if (!raw) return '';
+    let host = '';
+    try {
+      host = new URL(raw, window.location.href).hostname.toLowerCase();
+    } catch { return ''; }
+    if (!host) return '';
+    if (host === window.location.hostname.toLowerCase()) return '';
+    if (this.isHostTrusted(host)) return '';
+    return 'Achtung! Externe URL.';
+  }
+
+  /** Hängt ``?bsid=<sessionId>`` an URLs zu Trusted-Hosts an, damit:
+   *   - Right-Click → "Link-Adresse kopieren" die fertige URL liefert
+   *   - Middle-Click / Ctrl-Click den Session-Param direkt mitnimmt
+   *   - Screen-Reader und User-Skripte die korrekte URL sehen
+   *  Der document-level Click-Interceptor ist Fallback für Inline-Links
+   *  außerhalb von Angular-Templates, aber für Cards/Themenseiten-Buttons
+   *  ist der Render-Time-Rewrite die saubere Variante. Non-trusted Hosts
+   *  und Mailto/Tel/etc. bleiben unangetastet. */
+  private _withBsid(url: string | null | undefined): string {
+    const raw = (url || '').trim();
+    if (!raw) return '';
+    if (!this.sessionId) return raw;
+    if (!/^bb-[0-9a-f-]{32,40}$/i.test(this.sessionId)) return raw;
+    let target: URL;
+    try {
+      target = new URL(raw, window.location.href);
+    } catch { return raw; }
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') return raw;
+    // Same-origin braucht kein bsid — Cookie/LocalStorage reicht.
+    if (target.origin === window.location.origin) return raw;
+    // Trusted? Sonst kein bsid (keine Daten-Leakage an unbekannte Hosts).
+    if (!this.isHostTrusted(target.hostname.toLowerCase())) return raw;
+    // Schon vorhanden? Nicht doppelt.
+    if (target.searchParams.has('bsid')) return raw;
+    target.searchParams.set('bsid', this.sessionId);
+    return target.toString();
+  }
+
+  /** Public-Helper für Template-Binding: ``[href]="withBsid(card.topic_pages[0].url)"``. */
+  withBsid(url: string | null | undefined): string {
+    return this._withBsid(url);
   }
 
   hasHiddenCards(msg: ChatMessage): boolean {
@@ -1740,11 +1857,39 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
   }
 
   showMoreCards(msgId: string) {
+    // Old visibleCardCount merken, damit wir nach dem Render zur ERSTEN
+    // neu enthüllten Card scrollen können — ohne den Scroll-Hint wirken
+    // die zusätzlichen Cards für den User "unsichtbar", weil sie unter
+    // der Scroll-Region des Messages-Containers erscheinen und die
+    // Pagination-Bar (mit aktualisierter "X von Y"-Zahl) den einzigen
+    // sofort sichtbaren Effekt zeigt.
+    const msg = this.messages().find(m => m.id === msgId);
+    const previousCount = msg?.visibleCardCount || 5;
     this.messages.update(all => all.map(m => {
       if (m.id !== msgId || !m.cards) return m;
-      const newCount = (m.visibleCardCount || 5) + 5;
+      const newCount = previousCount + 5;
       return { ...m, visibleCardCount: newCount };
     }));
+    // Nach Angular-Re-Render zur ersten neu enthüllten Card scrollen.
+    // setTimeout(0) gibt der Change-Detection eine Tick Zeit, das DOM zu
+    // aktualisieren. ``block: 'center'`` sorgt dafür, dass die Card
+    // mittig in den Viewport rückt — der User sieht eindeutig dass neue
+    // Inhalte aufgetaucht sind.
+    setTimeout(() => {
+      try {
+        const container = this.messagesContainer?.nativeElement as HTMLElement | undefined;
+        if (!container) return;
+        // Alle wlo-card-wrapper innerhalb der Message finden (per msg.id-Anchor).
+        const msgEl = container.querySelector(`#msg-${msgId}`);
+        if (!msgEl) return;
+        const cards = msgEl.querySelectorAll('.wlo-card-wrapper');
+        // Erste neu enthüllte Card = Index previousCount (0-based).
+        const target = cards[previousCount] as HTMLElement | undefined;
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } catch { /* never break a click handler */ }
+    }, 0);
   }
 
   // ── Pagination: Load more cards (collection browse) ────
@@ -2120,11 +2265,18 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     // Sammlungen und Einzel-Inhalte optisch unterscheiden kann.
     // Ersatz passiert VOR marked, damit das Span IN den ``<a>``-Tag
     // wandert (Sentinel steht innerhalb der Link-Klammern beim Backend).
+    //
+    // ``data-bb-type`` auf dem Icon-Span trägt das deutsche Label
+    // (z.B. "Sammlung", "Video"), aus dem der ``<a>``-Post-Process
+    // einen ``title``-Tooltip baut — damit User per Maus-Hover sehen,
+    // welcher Materialtyp ein Inline-Treffer ist.
     const withIcons = withoutLatex.replace(/@@ICON:([a-z_]+)@@/g, (_match, name) => {
       const key = name as keyof typeof ICONS;
       const svg = ICONS[key];
       if (!svg) return '';
-      return `<span class="bb-inline-icon">${svg}</span>`;
+      const label = INLINE_ICON_LABEL[name] || '';
+      const attr = label ? ` data-bb-type="${label}"` : '';
+      return `<span class="bb-inline-icon"${attr}>${svg}</span>`;
     });
     // Use marked to parse Markdown to HTML, then DOMPurify to defang any
     // injected HTML/JS coming from bot output, persisted history, or tool
@@ -2147,26 +2299,74 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     // Sicherheit: trotzdem werden Skript-Tags, on*-Attribute usw. weiter
     // gestripped, weil HTML+SVG-Profile additiv sind.
     const clean = DOMPurify.sanitize(html, {
-      ADD_ATTR: ['target', 'rel'],
+      ADD_ATTR: ['target', 'rel', 'data-bb-type'],
       USE_PROFILES: { html: true, svg: true, svgFilters: true },
     });
-    // Post-Process: bei Inline-Card-Links den Titel in ``.bb-link-title``
-    // wrappen. CSS setzt dann ``text-decoration: none`` auf das ``<a>`` und
-    // ``text-decoration: underline`` auf das Title-Span — damit der
-    // Underline NICHT durch den ``margin-right``-Gap zwischen Icon und
-    // Titel zieht (das war optisch unschön: Underline begann vor dem
-    // Titel-Text). Wirkt nur auf Links die ein ``.bb-inline-icon``-Span
-    // als ersten Child haben (= Backend-Inline-Card-Links). Regulär
-    // Markdown-Links bleiben durchgehend unterstrichen wie bisher.
+    // Post-Process: (1) Externe Links (NICHT auf der Trusted-Hosts-Liste)
+    // in neuem Tab öffnen — Tabnabbing-sicher via ``rel="noopener noreferrer"``.
+    // Trusted-Hosts (Lotsen-Liste) bleiben same-tab, damit das Outgoing-
+    // Link-Rewrite des Widgets ``?bsid=<sid>`` anhängen kann und die Session
+    // über die TLD-Grenze erhalten bleibt. (2) Inline-Card-Title-Wrap für
+    // korrektes Icon-Title-CSS. Beide Schritte teilen denselben DOM-Parser.
     let final = clean;
-    if (clean.includes('bb-inline-icon')) {
+    if (clean.includes('<a ')) {
       try {
         const tmp = document.createElement('div');
         tmp.innerHTML = clean;
         tmp.querySelectorAll('a').forEach(a => {
+          // (1) Target-Klassifikation + bsid-Rewrite. Anker (#frag), Mailto,
+          // Tel, javascript: und same-origin-Pfad-Links unangetastet lassen.
+          const href = a.getAttribute('href') || '';
+          if (href && !href.startsWith('#') && !href.startsWith('javascript:')
+              && !href.startsWith('mailto:') && !href.startsWith('tel:')) {
+            let hostname = '';
+            try {
+              hostname = new URL(href, window.location.href).hostname.toLowerCase();
+            } catch { hostname = ''; }
+            const sameOrigin = hostname && hostname === window.location.hostname.toLowerCase();
+            const trusted = !!hostname && this.isHostTrusted(hostname);
+            // Externe + nicht-vertrauenswürdige Hosts → neuer Tab + Warntooltip.
+            // Same-origin und trusted hosts → same tab (für ?bsid=-Handoff).
+            if (hostname && !sameOrigin && !trusted) {
+              if (!a.hasAttribute('target')) a.setAttribute('target', '_blank');
+              if (!a.hasAttribute('rel')) a.setAttribute('rel', 'noopener noreferrer');
+              // Warntooltip nur setzen wenn kein anderer (z.B. Material-Typ-
+              // Label vom Inline-Card-Link) bereits einen ``title`` gesetzt
+              // hat — sonst kombinieren wir den Material-Typ-Tooltip mit
+              // der Warnung, damit der User beide Infos sieht.
+              const existingTitle = a.getAttribute('title') || '';
+              const warn = 'Achtung! Externe URL.';
+              if (!existingTitle) {
+                a.setAttribute('title', warn);
+              } else if (!existingTitle.includes(warn)) {
+                a.setAttribute('title', `${existingTitle} — ${warn}`);
+              }
+            }
+            // Bei trusted-Hosts ``?bsid=`` schon im href verankern — dann
+            // funktionieren auch Right-Click→Copy-Link, Middle-Click und
+            // Screen-Reader, nicht nur Plain-Left-Click via document-handler.
+            if (trusted) {
+              const rewritten = this._withBsid(href);
+              if (rewritten !== href) a.setAttribute('href', rewritten);
+            }
+          }
+
+          // (2) Inline-Card-Title-Wrap (nur wenn Backend-Inline-Icon-Span
+          // als erstes Child vorhanden ist).
           const iconSpan = a.querySelector(':scope > .bb-inline-icon');
           if (!iconSpan) return;
-          // Alle Nodes nach dem Icon einsammeln und in eine Title-Span wrappen.
+          // (2a) Material-Typ-Label vom Icon-Span auf Parent-<a> als
+          // ``title``-Tooltip durchreichen. User-Maus-Hover über das Icon
+          // (oder den ganzen Link) zeigt dann "Sammlung", "Video" etc.
+          const typeLabel = iconSpan.getAttribute('data-bb-type') || '';
+          if (typeLabel && !a.hasAttribute('title')) {
+            a.setAttribute('title', typeLabel);
+            // Icon-Span selbst kriegt auch ein title-Attribut für den Fall,
+            // dass jemand explizit nur das Icon hovert (manche Browser
+            // zeigen das Parent-title nicht wenn ein Child eigene Tooltip-
+            // Quellen hat).
+            iconSpan.setAttribute('title', typeLabel);
+          }
           const titleSpan = document.createElement('span');
           titleSpan.className = 'bb-link-title';
           let node = iconSpan.nextSibling;
@@ -2175,8 +2375,6 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
             titleSpan.appendChild(node);
             node = next;
           }
-          // Leerzeichen vom Anfang abschneiden (marked.js fügt manchmal
-          // welche zwischen Inline-HTML-Element und Folge-Text ein).
           if (titleSpan.firstChild?.nodeType === 3) {
             const t = titleSpan.firstChild as Text;
             t.textContent = (t.textContent ?? '').replace(/^\s+/, '');

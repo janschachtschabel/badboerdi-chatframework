@@ -79,9 +79,10 @@
                 </button>
                 <a *ngIf="card.topic_pages && card.topic_pages.length"
                    class="card-btn card-btn--tertiary"
-                   [href]="card.topic_pages[0].url"
+                   [href]="withBsid(card.topic_pages[0].url)"
                    target="_blank"
-                   rel="noopener noreferrer">
+                   rel="noopener noreferrer"
+                   [title]="externalLinkWarning(card.topic_pages[0].url) || null">
                   <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
                   <span>Themenseite</span>
                 </a>
@@ -107,6 +108,7 @@
                [href]="cardUrl(card)"
                target="_blank"
                rel="noopener noreferrer"
+               [title]="externalLinkWarning(cardUrl(card)) || null"
                (click)="$event.stopPropagation()">
 
               <!-- Typ-Header: Inhaltstyp-Icon + Label links oben.
@@ -115,7 +117,8 @@
                    reicht der konkrete Typ ("🎬 Video", "📄 Arbeitsblatt", …) —
                    ein redundantes "Inhalt"-Badge brauchen wir nicht. -->
               <div class="card-header">
-                <span class="card-content-type">
+                <span class="card-content-type"
+                      [title]="getContentTypeLabel(card) + (card.title ? ': ' + card.title : '')">
                   <span class="card-content-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
                   <span class="card-content-label">{{ getContentTypeLabel(card) }}</span>
                 </span>
@@ -172,12 +175,13 @@
               <!-- Topic page: single smart button (best match first from backend) -->
               <div *ngIf="card.topic_pages && card.topic_pages.length" class="tp-wrapper">
                 <a class="card-btn card-btn--tertiary"
-                   [href]="card.topic_pages[0].url"
+                   [href]="withBsid(card.topic_pages[0].url)"
                    target="_blank"
                    rel="noopener noreferrer"
-                   [title]="card.topic_pages.length > 1
+                   [title]="(card.topic_pages.length > 1
                      ? 'Themenseite (' + card.topic_pages[0].label + ') — weitere verfügbar'
-                     : 'Themenseite öffnen'">
+                     : 'Themenseite öffnen')
+                     + (externalLinkWarning(card.topic_pages[0].url) ? ' — ' + externalLinkWarning(card.topic_pages[0].url) : '')">
                   <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
                   <span>Themenseite</span>
                 </a>
@@ -190,9 +194,10 @@
                   <div class="tp-dropdown" *ngIf="openTopicDropdown === card.node_id">
                     <a *ngFor="let tp of card.topic_pages"
                        class="tp-dropdown-item"
-                       [href]="tp.url"
+                       [href]="withBsid(tp.url)"
                        target="_blank"
                        rel="noopener noreferrer"
+                       [title]="externalLinkWarning(tp.url) || null"
                        [class.tp-active]="tp === card.topic_pages[0]">
                       {{ tp.label }}
                     </a>

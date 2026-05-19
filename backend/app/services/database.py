@@ -1321,15 +1321,45 @@ async def save_message(session_id: str, role: str, content: str,
 
 
 async def get_messages(session_id: str, limit: int = 50) -> list[dict]:
+    """Return message history, newest LAST, with parsed cards_json and
+    debug_json. Cards werden vom Frontend beim Session-Restore gebraucht
+    damit Bot-Antworten nach Refresh/Page-Nav nicht als nackter Text mit
+    "Hier sind passende Treffer" aber ohne Kacheln dastehen. Debug-JSON
+    nutzt das Studio in der Session-View für Per-Turn-Pattern-Anzeige.
+
+    Defekte JSON-Spalten werden zu leeren Strukturen degradiert — der
+    Endpoint soll nie an einer korrupten Zeile sterben.
+    """
+    import json as _json
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT role, content FROM messages WHERE session_id = ? "
+            "SELECT id, role, content, cards_json, debug_json, created_at "
+            "FROM messages WHERE session_id = ? "
             "ORDER BY id DESC LIMIT ?",
             (session_id, limit),
         )
         rows = await cursor.fetchall()
-        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+    def _safe_json(raw: str | None, default):
+        if not raw:
+            return default
+        try:
+            return _json.loads(raw)
+        except Exception:
+            return default
+
+    return [
+        {
+            "id": r["id"],
+            "role": r["role"],
+            "content": r["content"],
+            "cards": _safe_json(r["cards_json"], []),
+            "debug": _safe_json(r["debug_json"], {}),
+            "created_at": r["created_at"],
+        }
+        for r in reversed(rows)
+    ]
 
 
 async def delete_messages_for_session(session_id: str) -> int:

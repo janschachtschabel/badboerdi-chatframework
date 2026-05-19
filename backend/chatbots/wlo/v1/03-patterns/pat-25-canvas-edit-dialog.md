@@ -10,7 +10,13 @@ signal_high_fit: []
 signal_medium_fit: []
 signal_low_fit: []
 page_bonus: []
-precondition_slots: []
+# Welle C Sprint 7: Hard-Gate auf "Canvas existiert" via _canvas_last_markdown.
+# Phase-1 disqualifiziert PAT-25 wenn entities._canvas_last_markdown leer ist
+# (also kein Canvas-Inhalt in der Session vorhanden). Ohne diesen Gate hat
+# PAT-25 in einer canvas-leeren Session "Erledigt, ich hab Lösungen ergänzt"
+# halluziniert obwohl gar nichts zu editieren war. Bei aktivem Canvas füllt
+# _handle_canvas_create / _handle_canvas_edit den Slot beim ersten Erfolg.
+precondition_slots: ["_canvas_last_markdown"]
 default_tone: sachlich
 default_length: kurz
 default_detail: niedrig

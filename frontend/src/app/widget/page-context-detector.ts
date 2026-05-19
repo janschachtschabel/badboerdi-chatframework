@@ -58,7 +58,26 @@ function _detectFromUrl(url: URL): Partial<DetectedContext> {
     return { node_id: renderMatch[1], page_kind: 'content', detection_source: 'url:components/render' };
   }
 
-  // 2. Query-param node / collection ids
+  // 2a. edu-sharing collection page: /components/collections?id=<uuid>[&q=…]
+  // Beispiel: https://repository.staging.openeduhub.net/edu-sharing/components/collections?id=aa0ecc77-…&q=Dreiecke
+  // Auf dieser Seite ist ``id`` der Collection-Identifier, ``q`` der Filter.
+  if (/\/components\/collections(?:\/|$)/i.test(path)) {
+    const id = sp.get('id');
+    if (id && UUID_RE.test(id)) {
+      const out: Partial<DetectedContext> = {
+        collection_id: id,
+        page_kind: 'collection',
+        detection_source: 'url:/components/collections?id',
+      };
+      const q = sp.get('q');
+      if (q && q.length >= 2 && q.length <= 200) {
+        out.search_query = q;
+      }
+      return out;
+    }
+  }
+
+  // 2b. Query-param node / collection ids (generic patterns auf Host-Seiten)
   const qNode = sp.get('node') || sp.get('node_id') || sp.get('nodeId');
   if (qNode && UUID_RE.test(qNode)) {
     return { node_id: qNode, page_kind: 'content', detection_source: 'url:?node' };

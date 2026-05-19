@@ -79,4 +79,36 @@ const PUBLIC_METHODS: ReadonlyArray<BoerdiChatPublicMethods> = [
   }
 
   customElements.define('boerdi-chat', element);
+
+  // Defensive: nur die ERSTE <boerdi-chat>-Instanz auf der Seite rendern.
+  // Hintergrund (Welle C Sprint 7, 2026-05-19): WordPress-Embed-Setups wie
+  // wp-test.wirlernenonline.de zogen sich gelegentlich zwei Chatbots
+  // gestapelt rein, weil das Widget-Snippet sowohl im Theme-Header als
+  // auch in einem Content-Block eingebunden war. Statt sich auf saubere
+  // Host-Konfiguration zu verlassen, blendet das Widget alle Duplikate
+  // aus (display:none auf dem zweiten+ Element) und logt eine Warnung.
+  //
+  // Wir nutzen einen MutationObserver, weil WordPress-Sites Tags
+  // dynamisch via JavaScript einfügen können (Lazy-Loading, AJAX-Reload
+  // bestimmter Layout-Blöcke). Ein einmaliger Check beim Bootstrap reicht
+  // nicht — wir müssen auf Insert-Events reagieren.
+  const enforceSingleInstance = () => {
+    const all = document.querySelectorAll('boerdi-chat');
+    if (all.length <= 1) return;
+    for (let i = 1; i < all.length; i++) {
+      const el = all[i] as HTMLElement;
+      if (el.dataset['boerdiDuplicateHidden'] === '1') continue;
+      el.dataset['boerdiDuplicateHidden'] = '1';
+      el.style.display = 'none';
+      console.warn(
+        '[BOERDi Widget] Duplicate <boerdi-chat> hidden — nur die erste Instanz rendert.',
+        el,
+      );
+    }
+  };
+  enforceSingleInstance();
+  if (typeof MutationObserver !== 'undefined' && document.body) {
+    const mo = new MutationObserver(enforceSingleInstance);
+    mo.observe(document.body, { childList: true, subtree: true });
+  }
 })().catch((err) => console.error('[BOERDi Widget] bootstrap failed:', err));

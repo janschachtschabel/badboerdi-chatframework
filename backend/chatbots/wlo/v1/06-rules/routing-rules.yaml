@@ -113,6 +113,40 @@ rules:
     then:
       state_override: "state-5"
 
+  # ── R-5b: QR-Material-Typ-Reply im Canvas-Kontext → Create ─────
+  # Welle C Sprint 7: Bug-Fix für die "habe ich aufgezogen"-Halluzination.
+  #
+  # Szenario: Bot fragt nach Material-Typ (z.B. PAT-06 Degradation, PAT-21
+  # ohne material_typ-Slot, "Welches Material soll ich erstellen?"). User
+  # klickt einen Material-Typ-QR ("Arbeitsblatt"). Da die Message keinen
+  # Create-Verb enthält, greift rule_soft_create (R-5) nicht. Der LLM-
+  # Classifier sieht nur "Arbeitsblatt" und wählt INT-W-03 (Inhalte abrufen)
+  # statt INT-W-11. PAT-21 (gate_intents=[INT-W-11]) wird in Phase-1
+  # disqualifiziert, PAT-07 (vor Sprint 7 mit gate_intents=["*"]) frisst
+  # den Turn und das LLM halluziniert "habe ich aufgezogen".
+  #
+  # Diese Regel fängt den Fall ab: wenn der vorherige Turn in state-12
+  # (Canvas-Arbeit) war UND in diesem Turn ein material_typ extrahiert
+  # wurde UND der Classifier kein eindeutiges Non-Create-Intent gewählt
+  # hat, korrigieren wir zu INT-W-11. Der Create-Verb-Regex (R-5) bleibt
+  # daneben aktiv für Fälle ohne vorigen state-12 (z.B. Erst-Anfrage
+  # "Erstell mir ein Quiz").
+  - id: rule_qr_material_in_create_context
+    description: "Material-Typ im Canvas-Kontext (prior state-12) → INT-W-11 (Create), auch ohne Create-Verb im Text."
+    priority: 65   # > rule_soft_create (60), damit dieses Pre-Pattern-Override zuerst greift
+    live: true
+    when:
+      all:
+        - entity.material_typ: { non_empty: true }
+        - intent:
+            not_in: ["INT-W-01", "INT-W-02", "INT-W-04",
+                     "INT-W-05", "INT-W-06", "INT-W-08",
+                     "INT-W-09", "INT-W-10", "INT-W-11", "INT-W-12"]
+        - session_state.state_id: { eq: "state-12" }
+    then:
+      intent_override: "INT-W-11"
+      state_override: "state-12"
+
   # ── R-5: soft-create override (material_typ + create-verb) ─────
   # Wenn der Classifier ein Such-Intent erkannt hat (INT-W-03b), aber
   # Material-Typ und ein klares Create-Verb auftauchen, korrigiert die

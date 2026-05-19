@@ -166,8 +166,17 @@ export default function SafetyLogsView() {
                 <span style={{ padding: '4px 10px', background: RISK_COLORS[selected.risk_level], color: '#fff', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
                   {selected.risk_level.toUpperCase()}
                 </span>
-                <span style={{ marginLeft: 12, fontSize: 12, color: 'var(--text-muted)' }}>
-                  Session: {selected.session_id.slice(0, 8)}…
+                <span
+                  style={{
+                    marginLeft: 12,
+                    fontSize: 12,
+                    color: 'var(--text-muted)',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                    wordBreak: 'break-all',
+                  }}
+                  title={selected.session_id}
+                >
+                  Session: {selected.session_id}
                 </span>
               </div>
               <div style={{ marginBottom: 10 }}>

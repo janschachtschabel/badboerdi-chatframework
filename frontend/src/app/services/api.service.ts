@@ -457,7 +457,10 @@ export class ApiService {
    * Load message history for an existing session (used to restore the
    * conversation when the widget loads on a new page).
    */
-  async loadHistory(sessionId: string, limit = 20): Promise<Array<{ role: string; content: string }>> {
+  async loadHistory(
+    sessionId: string,
+    limit = 20,
+  ): Promise<Array<{ role: string; content: string; cards?: any[]; debug?: Record<string, any> }>> {
     try {
       const resp = await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}`);
       if (!resp.ok) return [];
@@ -465,6 +468,27 @@ export class ApiService {
       return Array.isArray(data) ? data : [];
     } catch {
       return [];
+    }
+  }
+
+  /** Fetch the last canvas snapshot for a session so the widget can
+   *  rehydrate the canvas pane after a page refresh. Backend returns
+   *  ``{}`` when no canvas content has been persisted for the session;
+   *  the caller treats that as "nothing to restore". */
+  async loadCanvas(sessionId: string): Promise<{
+    title?: string;
+    material_type?: string;
+    material_type_label?: string;
+    material_type_category?: string;
+    markdown?: string;
+  }> {
+    try {
+      const resp = await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/canvas`);
+      if (!resp.ok) return {};
+      const data = await resp.json();
+      return (data && typeof data === 'object') ? data : {};
+    } catch {
+      return {};
     }
   }
 

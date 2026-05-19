@@ -600,6 +600,7 @@ function ConversationView({ conv }: { conv: RunConversation }) {
             Pattern: <code>{t.debug?.pattern || '?'}</code>
             {' · '}Intent: <code>{t.debug?.intent || '?'}</code>
             {' · '}Persona: <code>{t.debug?.persona || '?'}</code>
+            {' · '}State: <code>{t.debug?.state || '?'}</code>
             {t.debug?.tools_called && t.debug.tools_called.length > 0 && (
               <> · Tools: {t.debug.tools_called.join(', ')}</>
             )}
