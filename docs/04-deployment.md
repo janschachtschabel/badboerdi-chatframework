@@ -341,6 +341,7 @@ Das Widget wird in einen festen Container auf der Seite eingebettet, ohne schweb
 | `canvas-enabled` | Boolean | `true` | Canvas-Pane (Material-Erstellung, Lernpfad-Anzeige). `false` rendert Material direkt im Chat. |
 | `ai-content-enabled` | Boolean | `true` | KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix). `false` lehnt Erstell-Anfragen freundlich ab. |
 | `quick-replies-enabled` | Boolean | `true` | Gespraechsvorschlaege-Pillen. `false` blendet alle QR-Buttons aus; Lotsen-Hinweise werden inline eingebaut. |
+| `inline-result-grouping` | Boolean | `false` | Gruppierte Treffer-Darstellung. `true` zeigt Top-3-Themenseiten, Top-3-Sammlungen und (falls vorhanden) Webseiten-Inhalte aus dem Bot-Text in separaten Boxen plus einen prominenten Primary-Button „Alle Treffer in der Suche anzeigen". Einzelinhalte erscheinen nicht mehr als Kacheln — User springt direkt in die MCP-Suchergebnisliste. Default `false` = bestehendes Flat-Card-Layout. |
 | `show-debug-button` | Boolean | `true` | Debug-Toggle im Header. `false` fuer Produktiv-Embeddings. |
 | `show-language-buttons` | Boolean | `true` | TTS- und STT-Buttons. `false` = keine Sprach-Features. |
 | `show-guide-button` | Boolean | `true` | Lotsen-Toggle im Header. `false` blendet Button aus, Modus bleibt per `guide-mode-default` steuerbar. |

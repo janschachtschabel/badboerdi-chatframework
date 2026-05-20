@@ -3135,23 +3135,35 @@ async def _postprocess_response_for_widget_modes(
 
         # Re-Extraktion: ``_apply_widget_modes_postprocess`` kann Guide-QRs
         # (``__guide__|Label|URL``) als Bullet-Markdown an ``response_text``
-        # anhängen — siehe ``_guide_inline_lines``. Diese Bullets wurden
-        # vom initialen ``_extract_web_links_from_text``-Lauf in ``_chat_impl``
-        # nicht gesehen (sie existierten da noch nicht). Damit sie nicht
-        # doppelt erscheinen (Bullet im Text + getrennte Box im Frontend),
-        # ziehen wir sie hier durch dieselbe Extraktion: Bullets verschwinden
-        # aus ``txt`` und landen in ``web_links``.
-        _existing_links = [l.model_dump() if hasattr(l, "model_dump") else dict(l)
-                           for l in (resp.web_links or [])]
-        _final_txt, _new_links = _extract_web_links_from_text(txt, cards=cards_out)
-        # Merge: bestehende web_links bleiben (mit ihrer Reihenfolge),
-        # neue aus dem appended-Bullet-Lauf werden ergänzt, dedupliziert
-        # nach URL.
-        _seen_urls = {l.get("url") for l in _existing_links if isinstance(l, dict)}
-        for nl in _new_links:
-            if nl.get("url") not in _seen_urls:
-                _existing_links.append(nl)
-                _seen_urls.add(nl.get("url"))
+        # anhängen — siehe ``_guide_inline_lines`` — und im Inline-Mode
+        # (``cards-enabled=false``) zusätzlich die Treffer-Cards als Inline-
+        # Markdown-Links. Beide sind im NORMALEN Layout die einzige Anzeige-
+        # form für Treffer/Lotsen (sichtbare Bullets/Links im Bot-Text) und
+        # MÜSSEN dort bleiben.
+        #
+        # Nur wenn die Host-Seite ``inline-result-grouping="true"`` setzt,
+        # gibt es separate Boxen, die die Links nebenbei darstellen — dann
+        # ist der Bullet im Text Doppelung, und wir ziehen ihn in ``web_links``
+        # um. Andere Modi → Re-Extraktion überspringen, Links bleiben sichtbar.
+        env = req.environment
+        _grouping_on = bool(getattr(env, "inline_result_grouping", False))
+
+        if _grouping_on:
+            _existing_links = [l.model_dump() if hasattr(l, "model_dump") else dict(l)
+                               for l in (resp.web_links or [])]
+            _final_txt, _new_links = _extract_web_links_from_text(txt, cards=cards_out)
+            # Merge: bestehende web_links bleiben (mit ihrer Reihenfolge),
+            # neue aus dem appended-Bullet-Lauf werden ergänzt, dedupliziert
+            # nach URL.
+            _seen_urls = {l.get("url") for l in _existing_links if isinstance(l, dict)}
+            for nl in _new_links:
+                if nl.get("url") not in _seen_urls:
+                    _existing_links.append(nl)
+                    _seen_urls.add(nl.get("url"))
+        else:
+            _final_txt = txt
+            _existing_links = [l.model_dump() if hasattr(l, "model_dump") else dict(l)
+                               for l in (resp.web_links or [])]
 
         # ChatResponse rekonstruieren — Pydantic-Modell aufgrund von
         # Validierungsregeln kopieren wir per model_copy(update=...).
@@ -5599,9 +5611,21 @@ async def _chat_impl(
     # Save bot message (cleaned text + web_links werden weiter unten beim
     # Response-Build genauso wieder verwendet — siehe ``_final_text`` /
     # ``_web_links``). Hier zuerst rechnen, einmal save, einmal return.
-    _final_text, _web_links = _extract_web_links_from_text(
-        response_text, cards=cards,
-    )
+    #
+    # Die Extraktion strippt Inline-Markdown-Links aus dem Text und stellt
+    # sie strukturiert in ``web_links`` bereit. Sie ist NUR sinnvoll, wenn
+    # die Host-Seite die Links in einer separaten Box („Webseiten-Inhalte")
+    # rendert — also bei ``inline-result-grouping="true"``. Sonst wären
+    # Inline-Links die einzige sichtbare Quellen-Anzeige für den User und
+    # dürfen NICHT aus dem Text verschwinden (z.B. Lotsen-Bullets, Inline-
+    # Mode mit ``cards-enabled="false"``).
+    _grouping_on_impl = bool(getattr(req.environment, "inline_result_grouping", False))
+    if _grouping_on_impl:
+        _final_text, _web_links = _extract_web_links_from_text(
+            response_text, cards=cards,
+        )
+    else:
+        _final_text, _web_links = response_text, []
     _debug_for_save = debug.model_dump()
     if _web_links:
         # Persistieren in debug_json, damit nach Page-Refresh / Bubble-

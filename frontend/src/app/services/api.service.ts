@@ -24,6 +24,12 @@ export interface Environment {
   canvas_enabled?: boolean;
   ai_content_enabled?: boolean;
   quick_replies_enabled?: boolean;
+  /** Welle C.5: Host nutzt gruppierte Treffer-Darstellung (separate Boxen
+   *  für Themenseiten/Sammlungen/Webseiten-Inhalte/CTA). Backend zieht
+   *  dann Inline-Markdown-Links aus dem Bot-Text in ``web_links``, damit
+   *  sie nicht doppelt erscheinen. Default ``undefined``/``false`` → Text
+   *  behält seine Inline-Links (Lotsen-Bullets bleiben sichtbar). */
+  inline_result_grouping?: boolean;
 }
 
 export interface WloCard {
@@ -258,6 +264,7 @@ export class ApiService {
     canvas?: boolean;
     ai?: boolean;
     qr?: boolean;
+    inlineResultGrouping?: boolean;
   } = {};
 
   constructor() {
@@ -303,8 +310,9 @@ export class ApiService {
     canvas: boolean | undefined,
     ai: boolean | undefined,
     qr: boolean | undefined,
+    inlineResultGrouping?: boolean | undefined,
   ): void {
-    this.widgetModes = { cards, canvas, ai, qr };
+    this.widgetModes = { cards, canvas, ai, qr, inlineResultGrouping };
   }
 
   /** Build the optional widget-mode fields for the environment block.
@@ -318,6 +326,9 @@ export class ApiService {
     if (typeof m.canvas === 'boolean') out.canvas_enabled = m.canvas;
     if (typeof m.ai === 'boolean') out.ai_content_enabled = m.ai;
     if (typeof m.qr === 'boolean') out.quick_replies_enabled = m.qr;
+    if (typeof m.inlineResultGrouping === 'boolean') {
+      out.inline_result_grouping = m.inlineResultGrouping;
+    }
     return out;
   }
 

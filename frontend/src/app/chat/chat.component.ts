@@ -341,6 +341,10 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
       this.canvasEnabledBool ? undefined : false,
       this.aiContentEnabledBool ? undefined : false,
       this.quickRepliesEnabledBool ? undefined : false,
+      // ``inline-result-grouping`` ist *opt-in*: nur dann an Backend
+      // melden, wenn der Host explizit ``true`` setzt. Default = nicht
+      // gesetzt → Backend lässt Inline-Links im Bot-Text stehen.
+      this.inlineResultGroupingBool ? true : undefined,
     );
 
     // Parse page-context attribute (JSON string or already an object)

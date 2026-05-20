@@ -63,6 +63,19 @@ class Environment(BaseModel):
     canvas_enabled: bool | None = None
     ai_content_enabled: bool | None = None
     quick_replies_enabled: bool | None = None
+    # Welle C.5 (2026-05): Frontend zeigt Such-Treffer als gruppierte Boxen
+    # (Themenseiten / Sammlungen / Webseiten-Inhalte / CTA). Backend nutzt
+    # das Flag um:
+    #   - alle Inline-Links nach ``_apply_widget_modes_postprocess`` noch
+    #     einmal sauber aus dem Bot-Text in ``web_links`` zu ziehen (sonst
+    #     stehen sie doppelt: als Bullet im Text + als Box-Eintrag).
+    #   - Lotsen-Guide-Bullets („- [Über WLO](url)") ebenfalls in die
+    #     Webseiten-Inhalte-Box zu verschieben statt sie als Textbullet zu
+    #     belassen.
+    # Default None / False → bisheriges Verhalten: Inline-Links bleiben im
+    # Text (Inline-Mode mit ``cards-enabled=false`` oder Standard-Card-
+    # Layout mit Lotsen-Bullets als sichtbare Quellen-Liste).
+    inline_result_grouping: bool | None = None
 
 
 # ── Chat request / response ────────────────────────────────────────

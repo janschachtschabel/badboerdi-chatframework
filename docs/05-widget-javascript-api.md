@@ -38,6 +38,7 @@ Beide Kanäle sind gleichwertig — wähle den, der zur Host-Integration passt.
 | | `canvas-enabled` | Input | `true` |
 | | `ai-content-enabled` | Input | `true` |
 | | `quick-replies-enabled` | Input | `true` |
+| | `inline-result-grouping` | Input | `false` |
 | **UI-Toggles** | `show-debug-button` | Input | `true` |
 | | `show-language-buttons` | Input | `true` |
 | | `show-guide-button` | Input | `true` |
@@ -226,6 +227,34 @@ default auf `true`; Setzen auf `"false"` (String im HTML) oder `false`
 * `true` (Default): Quick-Reply-Pillen unter Bot-Antworten.
 * `false`: keine Pillen sichtbar. Lotsen-`__guide__|…`-Buttons werden
   vom Backend stattdessen als Inline-Markdown am Antwort-Ende eingebaut.
+
+#### `inline-result-grouping`
+
+Gruppierte Treffer-Darstellung statt flacher Card-Liste.
+
+* `false` (Default): bestehende flache Card-Liste mit Pagination-Bar
+  („Mehr anzeigen") — unverändert zur bisherigen Optik.
+* `true`: jede Bot-Antwort mit Suchergebnissen zeigt bis zu **vier
+  separate Boxen** statt einer langen Liste:
+  - **Themenseiten** — Top 3 kuratierte WLO-Themenseiten, falls vorhanden
+  - **Sammlungen** — Top 3 edu-sharing-Sammlungen, falls vorhanden
+  - **Webseiten-Inhalte** — bis zu 3 Inline-Links aus dem Bot-Text
+    (z.B. WLO-Artikel, FAQ-Seiten, RAG-Quellen), die nicht schon einer
+    Card entsprechen
+  - **Primary-Button „Alle Treffer in der Suche anzeigen"** — vollflächig
+    in der Theme-Farbe (`primary-color`), führt zur MCP-Such-URL der
+    breitesten Tool-Anfrage (priorisiert `search_wlo_content` >
+    `search_wlo_collections` > `search_wlo_topic_pages`)
+
+  Einzelinhalte erscheinen damit **nicht mehr als Kacheln**; der User
+  springt direkt in die volle Trefferliste. Greift parallel im Canvas-
+  Pane (dort werden die Einzelinhalte-Cards ausgeblendet und durch
+  denselben Primary-CTA-Button ersetzt). LLM kennt die ausgeblendeten
+  Cards weiterhin und kann sie für Folge-Fragen nutzen.
+
+  Layout: schmaler einheitlicher Rahmen pro Box, graue outlined Material-
+  Symbol-Icons im Heading, kompakte Zeilen. Heading-Farbe und Icons sind
+  theme-agnostisch — nur der Primary-CTA übernimmt `--boerdi-primary`.
 
 ---
 

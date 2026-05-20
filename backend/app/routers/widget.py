@@ -101,6 +101,19 @@ async def widget_demo_inline():
     return HTMLResponse(_DEMO_INLINE_HTML)
 
 
+@router.get("/classic", response_class=HTMLResponse)
+async def widget_demo_classic():
+    """Embed-Modus-Demo OHNE ``inline-result-grouping``.
+
+    Wie ``/widget/inline``, aber ohne die strukturierten Result-Boxen
+    (Themenseiten / Sammlungen / Webseiten-Inhalte / CTA). Lotsen-Treffer
+    und RAG-Quellen erscheinen als Markdown-Bullets im Bot-Text — der
+    klassische Inline-Link-Modus aus der Zeit vor Welle C.5.
+    Nützlich zum direkten A/B-Vergleich gegen ``/widget/inline``.
+    """
+    return HTMLResponse(_DEMO_CLASSIC_HTML)
+
+
 @router.get("/{asset_name}")
 async def widget_asset(asset_name: str):
     """Serve any auxiliary file (chunks, css) emitted by the build."""
@@ -1048,8 +1061,50 @@ window.addEventListener('badboerdi:query-meta', (e) =&gt; {
 """
 
 
-# Inspector-Snippet in beide Demo-Templates injizieren. Ein einzelner
-# Wartungspunkt — Änderungen am Inspector greifen automatisch in beiden
-# Demos.
+# ── Classic-Demo: identisch zu /widget/inline, aber OHNE
+# ``inline-result-grouping``. Wir leiten sie deterministisch per
+# String-Replacement vom Inline-Template ab, damit Layout, Inspector und
+# Styling synchron bleiben. Nur Titel, Lead-Text, Swap-Link und der eine
+# Embed-Attribut-Eintrag werden überschrieben.
+_DEMO_CLASSIC_HTML = (
+    _DEMO_INLINE_HTML
+    .replace(
+        "BOERDi Widget — Inline-Modus (keine Kacheln, kein Canvas)",
+        "BOERDi Widget — Classic-Modus (ohne Result-Grouping)",
+    )
+    .replace(
+        ">Inline-Link-Modus</h1>",
+        ">Classic-Modus (ohne Result-Grouping)</h1>",
+    )
+    .replace(
+        'Diese Demo zeigt das Widget mit deaktivierten Kacheln und deaktiviertem Canvas — der\n    Anwendungsfall für eine Themenseite, ein WordPress-Theme oder ein fremdes CMS, das\n    selbst Layout und Inhalts-Komponenten mitbringt.',
+        'Diese Demo entspricht <a href="/widget/inline" style="color:#1c4587;">/widget/inline</a>,\n    läuft aber OHNE den Parameter <code>inline-result-grouping</code>.\n    Damit zeigt der Bot Treffer- und Lotsen-Quellen wieder als Markdown-Bullets\n    im Antworttext (der klassische Inline-Link-Modus aus der Zeit vor Welle C.5)\n    statt sie in separate Boxen (Themenseiten / Sammlungen / Webseiten-Inhalte /\n    Such-CTA) zu gruppieren.',
+    )
+    .replace(
+        '<a class="swap-link" href="/widget/">← Zurück zur klassischen Demo (mit Kacheln + Canvas)</a>',
+        '<a class="swap-link" href="/widget/inline">→ Zur Demo /widget/inline mit gruppierten Result-Boxen</a>',
+    )
+    # Embed-Attribut ``inline-result-grouping="true"`` aus dem
+    # ``<boerdi-chat>``-Element entfernen (inkl. Einrückung + Newline).
+    .replace(
+        '    inline-result-grouping="true"\n',
+        '',
+    )
+    # Kacheln im Classic-Modus AUS — wir wollen ausschließlich
+    # Inline-Markdown-Links im Bot-Text, keine Card-Boxen. Im Inline-
+    # Demo-Template steht ``cards-enabled="true"`` genau einmal (im
+    # tatsächlichen ``<boerdi-chat>``-Element); der ``<pre>``-Block davor
+    # hat schon ``cards-enabled="false"`` und wird daher NICHT angefasst.
+    .replace(
+        'cards-enabled="true"',
+        'cards-enabled="false"',
+    )
+)
+
+
+# Inspector-Snippet in alle Demo-Templates injizieren. Ein einzelner
+# Wartungspunkt — Änderungen am Inspector greifen automatisch in allen
+# Demos (Standard, Inline-Grouping, Classic).
 _DEMO_HTML = _DEMO_HTML.replace("<!-- {{EVENT_INSPECTOR}} -->", _EVENT_INSPECTOR_HTML)
 _DEMO_INLINE_HTML = _DEMO_INLINE_HTML.replace("<!-- {{EVENT_INSPECTOR}} -->", _EVENT_INSPECTOR_HTML)
+_DEMO_CLASSIC_HTML = _DEMO_CLASSIC_HTML.replace("<!-- {{EVENT_INSPECTOR}} -->", _EVENT_INSPECTOR_HTML)
