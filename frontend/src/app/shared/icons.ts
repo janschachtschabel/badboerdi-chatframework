@@ -55,6 +55,9 @@ export const ICONS = {
   // ── Navigation / Aktionen ──────────────────────────────────────────
   /** Zurück (Pfeil links) */
   arrow_back: `<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor"><path d="M400-80 0-480l400-400 71 71-329 329 329 329-71 71Z"/></svg>`,
+  arrow_forward: `<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor"><path d="M560-80l-71-71 329-329H80v-80h738L489-889l71-71 400 400-400 400Z"/></svg>`,
+  /** Chevron rechts (offen, schmaler Pfeil ohne Schaft) — für Karten-CTAs */
+  chevron_right: `<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor"><path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/></svg>`,
   /** Dropdown-Pfeil */
   arrow_drop_down: `<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor"><path d="M480-360 280-560h400L480-360Z"/></svg>`,
   /** Häkchen (klein) */

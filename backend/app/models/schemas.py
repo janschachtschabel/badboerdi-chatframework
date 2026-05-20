@@ -273,6 +273,19 @@ class PaginationInfo(BaseModel):
     collection_title: str = ""   # Title for display
 
 
+class WebLink(BaseModel):
+    """Strukturierter Web-Link aus dem Bot-Antwort-Text — typischerweise
+    RAG-Quellen (FAQ-Artikel, WLO-Themenseiten, externe Referenzen) die
+    der LLM während der Antwort zitiert hat. Vom Backend rausgezogen,
+    damit das Frontend sie in einer eigenen Box rendern kann ohne den
+    Bot-Text mit fragilen Regex zu parsen. Die zugehörigen Markdown-
+    Links werden aus ``ChatResponse.content`` entfernt — Bullet-Zeilen
+    komplett, Inline-Links nur die ``(url)``-Klammer (Label bleibt
+    Plain-Text)."""
+    title: str
+    url: str
+
+
 class ChatResponse(BaseModel):
     session_id: str
     content: str
@@ -283,6 +296,7 @@ class ChatResponse(BaseModel):
     page_action: dict[str, Any] | None = None
     pagination: PaginationInfo | None = None
     query_metas: list[QueryMetaEntry] = Field(default_factory=list)
+    web_links: list[WebLink] = Field(default_factory=list)
 
 
 # ── Session / Memory ──────────────────────────────────────────────

@@ -163,6 +163,9 @@ interface CanvasSnapshot {
               [cards]="canvasCards()"
               [trustedHosts]="parsedTrustedHostList"
               [sessionId]="chatRef?.sessionId || ''"
+              [inlineResultGrouping]="inlineResultGrouping"
+              [searchCtaUrl]="canvasSearchCtaUrl()"
+              [searchCtaTerm]="canvasSearchCtaTerm()"
               [viewMode]="canvasMode()"
               [query]="canvasQuery()"
               [showTabs]="canvasHasBothPanes()"
@@ -203,6 +206,7 @@ interface CanvasSnapshot {
               [aiContentEnabled]="aiContentEnabled"
               [quickRepliesEnabled]="quickRepliesEnabled"
               [trustedHosts]="parsedTrustedHostList"
+              [inlineResultGrouping]="inlineResultGrouping"
               [emitGuideSuggestion]="emitGuideSuggestion"
               [emitRoutingDebug]="emitRoutingDebug"
               (pageAction)="handlePageAction($event)"
@@ -707,6 +711,17 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   @Input() trustedDomains = '';
   @Input() greeting = '';
   @Input() autoContext: boolean | string = true;
+  /** Neue Such-Ergebnis-Darstellung (Sprint 7, 2026-05-19):
+   *  Wenn ``true`` zeigt der Chat keine flache Card-Liste mehr, sondern
+   *  gruppiert die Treffer pro Bot-Antwort in eigene Boxen:
+   *    - Top 3 Themenseiten
+   *    - Top 3 Sammlungen
+   *    - Search-CTA-Box mit Link zur kompletten Trefferliste
+   *      (kein Einzelinhalte-Kachelblock mehr; das LLM darf sie noch
+   *      kennen, aber visuell springt der User direkt in die Suche)
+   *  Wirkt parallel auf Chat-Cards und Canvas-Cards. Default ``false`` =
+   *  Bestehendes Verhalten — kein Bestandsbruch. */
+  @Input() inlineResultGrouping: boolean | string = false;
   /** Show the 🔍 debug-toggle button in the chat header. Default true. */
   @Input() showDebugButton: boolean | string = true;
   /** Show the 🔊 TTS and 🎤 mic buttons. Default true. */
@@ -880,6 +895,10 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   canvasMaterialCategory = signal<'analytisch' | 'didaktisch' | null>(null);
   canvasCards = signal<WloCard[]>([]);
   canvasQuery = signal('');
+  /** MCP-Search-URL + Begriff aus dem letzten ``badboerdi:query-meta``-
+   *  Event. Wird im Grouping-Modus als Search-CTA im Canvas angeboten. */
+  canvasSearchCtaUrl = signal('');
+  canvasSearchCtaTerm = signal('');
   canvasPagination = signal<PaginationInfo | null>(null);
   /** How many cards are initially rendered in the canvas cards pane.
    *  Chat stays at 5; canvas has more space and should show more upfront. */
@@ -959,6 +978,7 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     private zone: NgZone,
     private api: ApiService,
     private cdr: ChangeDetectorRef,
+    private elementRef: ElementRef<HTMLElement>,
   ) {}
 
   /** Reaktiv auf Attribut-Änderungen zur Laufzeit.
@@ -1083,13 +1103,31 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     // Forward query-meta events to the Angular Output emitter.
     this._onWindowQueryMeta = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail) this.zone.run(() => this.queryMeta.emit(detail));
+      if (detail) {
+        this.zone.run(() => {
+          this.queryMeta.emit(detail);
+          // Search-CTA für Canvas/Chat-Grouping aus den Query-Metas extrahieren.
+          // Priorisiere search_wlo_content (breit), dann collections/topic_pages.
+          const queries = Array.isArray(detail?.queries) ? detail.queries : [];
+          const byTool = (t: string) => queries.find((q: any) => q?.tool_name === t && q?.search_url);
+          const meta = byTool('search_wlo_content')
+            || byTool('search_wlo_collections')
+            || byTool('search_wlo_topic_pages')
+            || queries.find((q: any) => q?.search_url);
+          if (meta?.search_url) {
+            this.canvasSearchCtaUrl.set(String(meta.search_url));
+            this.canvasSearchCtaTerm.set(String(meta.search_term || ''));
+          }
+        });
+      }
     };
     window.addEventListener('badboerdi:query-meta', this._onWindowQueryMeta);
 
-    // Outgoing-Link-Rewrite für Cross-TLD-Session-Handoff. Greift JEDEN
-    // Link-Klick auf der Host-Seite ab (nicht nur im Widget) und hängt
-    // ``?bsid=…`` an, falls das Link-Ziel zu einer Whitelist-Domain führt.
+    // Outgoing-Link-Rewrite für Cross-TLD-Session-Handoff. Greift Link-
+    // Klicks INNERHALB des Widget-Host-Elements ab (Cards, Inline-Markdown,
+    // Canvas-Pane, Lotsen-CTAs) und hängt ``?bsid=…`` an, falls das Ziel
+    // zu einer Whitelist-Domain führt. Host-Seiten-Links bleiben unberührt
+    // — siehe Scope-Kommentar unten und Bug-Fix-Hintergrund.
     //
     // WICHTIG: Handler IMMER registrieren, auch wenn die Trusted-Domain-
     // Liste zum Zeitpunkt von ``ngAfterViewInit`` noch leer ist. Grund:
@@ -1101,8 +1139,24 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     // (Browser-Default-Pfad statt explizite ``window.location.href``-
     // Navigation). Die Trusted-Host-Prüfung passiert pro Klick im
     // Handler selbst — leere Liste = Handler bailt früh aus = Kosten 0.
+    // Scope auf das ``<boerdi-chat>``-Host-Element. Vorher hing der
+    // Handler am ``document`` und intercepted JEDEN Klick auf der Host-
+    // Seite — was bei Embeds wie WLO normale Navigation kaputt machte
+    // (Same-Tab-Links wurden mit ``preventDefault`` + ``window.location.href``
+    // explizit navigiert, was z.B. SPA-Routing oder Bound-Click-Handler
+    // der Host-Seite umgangen hat). Mit Scope auf die Widget-Wurzel
+    // greift der bsid-Rewrite nur noch innerhalb von Card-Grid, Inline-
+    // Markdown-Links, Canvas-Pane und Lotsen-CTAs. Externe Host-Page-
+    // Links bleiben vom Widget völlig unberührt.
+    //
+    // Side-Effect: Cross-TLD-Handoff per ``?bsid=`` greift bei nicht-
+    // Widget-Links auf der Host-Seite nicht mehr automatisch. Hosts die
+    // das brauchen, können den Host weiter selbst per JS ergänzen.
     this._onDocumentLinkClick = (e: Event) => this._maybeRewriteOutgoingLink(e);
-    document.addEventListener('click', this._onDocumentLinkClick, true);
+    const host = this.elementRef?.nativeElement || document;
+    host.addEventListener('click', this._onDocumentLinkClick, true);
+    // Host-Referenz merken für sauberes Detach in ngOnDestroy.
+    this._clickListenerHost = host;
 
     // Canvas-Restore nach Page-Refresh: ChatComponent's ngOnInit hat
     // beim ViewInit-Zeitpunkt seine sessionId bereits aus localStorage/
@@ -1158,12 +1212,18 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
       window.removeEventListener('badboerdi:query-meta', this._onWindowQueryMeta);
     }
     if (this._onDocumentLinkClick) {
-      document.removeEventListener('click', this._onDocumentLinkClick, true);
+      // Detach vom selben Host, an den ngAfterViewInit den Listener
+      // gehängt hatte (Widget-Host-Element, nicht document).
+      const host = this._clickListenerHost || document;
+      host.removeEventListener('click', this._onDocumentLinkClick, true);
     }
   }
 
   // ── Cross-TLD-Session-Handoff ─────────────────────────────────────
   private _onDocumentLinkClick?: (e: Event) => void;
+  /** Wohin der Click-Listener gehängt wurde — gespeichert damit
+   *  ``ngOnDestroy`` ihn am SELBEN Element wieder abnimmt. */
+  private _clickListenerHost?: HTMLElement | Document;
 
   /** Cached parsed list of trusted hostnames (lower-case), merged from
    *  HTML-attribute + backend ``/api/config/guide-mode.trusted_domains``.

@@ -526,6 +526,239 @@ def _sort_cards_for_inline(cards: list[Any], prefer_content: bool) -> list[Any]:
     return topic + coll + content
 
 
+def _extract_web_links_from_text(
+    text: str,
+    cards: list[Any] | None = None,
+    *,
+    max_links: int = 5,
+) -> tuple[str, list[dict[str, str]]]:
+    """Zieht Markdown-Links ``[label](url)`` aus dem Bot-Antwort-Text raus,
+    sofern sie nicht bereits zu einer Card gehören. Rückgabe:
+
+    - **cleaned_text**: Originaltext, aber Bullet-Zeilen die nur aus
+      Link bestehen sind entfernt; Inline-Links sind zu Plain-Text-
+      Labels umgewandelt (``[Label](url)`` → ``Label``). Triple-Blank-
+      Lines werden auf Double kollabiert.
+    - **web_links**: Liste ``[{title, url}]`` der promoteten Links in
+      Erscheinungsreihenfolge, dedupliziert.
+
+    Card-URLs (``link``, ``url``, ``wlo_url``, ``topic_pages[*].url``)
+    werden ausgeschlossen, damit Treffer-Kacheln nicht doppelt erscheinen
+    (einmal als Card, einmal als Web-Link). Frontend liest ``web_links``
+    direkt aus dem strukturierten Feld statt im Markdown zu parsen.
+
+    ``max_links`` cappt die Liste (Default 5) — verhindert dass ein
+    überschwängliches LLM 20 Links in die Box pumpt.
+    """
+    raw = text or ""
+    # Fast-Path: nichts zu tun wenn weder Markdown- noch HTML-Link-Pattern
+    # im Text auftaucht. Beide Indikatoren prüfen — sonst wären HTML-only-
+    # Outputs (z.B. ``- <a href="...">X</a>``) fälschlich übersprungen.
+    has_md = "[" in raw and "](" in raw
+    has_html = "<a " in raw.lower() and "href" in raw.lower()
+    if not has_md and not has_html:
+        return raw, []
+
+    # Card-URLs sammeln (für Filter — verhindert Duplikate mit Card-Boxen)
+    card_urls: set[str] = set()
+    for c in (cards or []):
+        if isinstance(c, dict):
+            _get = lambda k: c.get(k)
+        else:
+            _get = lambda k, _c=c: getattr(_c, k, None)
+        for fld in ("link", "guide_url", "wlo_url", "url", "topic_page_url"):
+            v = (_get(fld) or "").strip() if _get(fld) else ""
+            if v:
+                card_urls.add(v)
+        tps = _get("topic_pages") or []
+        if isinstance(tps, list):
+            for tp in tps:
+                if isinstance(tp, dict):
+                    tu = (tp.get("url") or "").strip()
+                    if tu:
+                        card_urls.add(tu)
+
+    # Aggressive Link-Regex für ZWEI Syntax-Varianten:
+    #  A) Markdown ``[label](url)`` — Standard-Bot-Output
+    #  B) HTML ``<a href="url">label</a>`` — manche LLMs produzieren das,
+    #     vor allem in Bullet-Listen oder bei Pattern-Outputs die HTML
+    #     teilweise erlauben (gebraucht für mehr Layout-Kontrolle)
+    #
+    # Bullet-Variante: ganze Zeile entfernen wenn sie ausschließlich aus
+    # Bullet + Link besteht. Verschiedene Bullet-Marker erlaubt: ``-`` ``*``
+    # ``+`` (Markdown) sowie typografische Zeichen wie ``•`` ``◦`` ``▪`` ``·``
+    # die manche LLMs trotz Markdown-Anweisung produzieren.
+
+    # Markdown-Bullet-Line: ``- [Label](url)``  (auch mit Bold/Italic/Quote
+    # um den Link, nummerierte Listen ``1. [Label](url)`` und beliebigem
+    # Präfix-Text VOR dem Link wie ``- **Sammlung:** [Dreiecke](url)`` oder
+    # ``- Video: [Titel](url)``. Der Präfix ist alles bis zur ersten ``[``
+    # und darf ``**``/``__``/``:`` und Wörter enthalten — solange darin
+    # KEIN weiterer Markdown-Link vorkommt.
+    bullet_link_re = _re.compile(
+        r"""^\s*
+            (?:[-*+•◦▪·‣⁃▪►▶]|\d+[.)])    # Bullet ODER ``1.``/``1)`` Numbering
+            \s+
+            [^\[\n]{0,80}?                # optionaler Präfix vor dem Link
+                                          # (Label wie ``**Sammlung:**``)
+            \[([^\]\n]+)\]
+            \(\s*<?(https?://.+?)>?\s*\)
+            [^\[\n]{0,40}?                # optionaler Suffix nach dem Link
+                                          # (Trailing-Bold/Italic-Wrapper,
+                                          # Punctuation, kurze Anmerkung)
+            \s*$
+        """,
+        _re.VERBOSE,
+    )
+    # HTML-Bullet-Line: ``- <a href="url">Label</a>``  (auch mit Bold)
+    bullet_html_link_re = _re.compile(
+        r"""^\s*[-*+•◦▪·]\s+
+            (?:\*{0,2}|_{0,2})            # ggf. **/* Bold/Italic
+            <a\s+[^>]*?href\s*=\s*["'](https?://[^"']+)["'][^>]*>
+            ([^<]+)
+            </a>
+            (?:\*{0,2}|_{0,2})
+            \s*$
+        """,
+        _re.VERBOSE | _re.IGNORECASE,
+    )
+    # Inline-Markdown-Link irgendwo im Text
+    inline_link_re = _re.compile(
+        r"""\[([^\]\n]+)\]\s*
+            \(
+            [^)]*?
+            (https?://[^)\s>"'<]+)
+            [^)]*?
+            \)
+        """,
+        _re.VERBOSE,
+    )
+    # Inline-HTML-Link irgendwo im Text
+    inline_html_link_re = _re.compile(
+        r"""<a\s+[^>]*?href\s*=\s*["'](https?://[^"']+)["'][^>]*>
+            ([^<]+)
+            </a>
+        """,
+        _re.VERBOSE | _re.IGNORECASE,
+    )
+
+    web_links: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def _is_material_url(url: str) -> bool:
+        """True wenn ``url`` auf ein einzelnes Material zeigt (Video,
+        Arbeitsblatt, externes Lehrer-Online-Modul, …) statt auf eine
+        Webseite (Artikel, FAQ, Themenseite). Solche URLs gehören NICHT
+        in die ``web_links``-Box „Webseiten-Inhalte" — sie sind Inhalte,
+        die der LLM nur zufällig inline verlinkt hat, statt sie über die
+        Card-Pipeline anzubieten.
+
+        Heuristiken:
+        - edu-sharing-Render-Pfade (``/edu-sharing/components/`` etc.)
+        - Video-Plattformen (YouTube, Vimeo, Mediathekviewweb)
+        - Direkt-Downloads (PDF, MP4, MP3, …)
+        """
+        u = (url or "").lower()
+        if not u:
+            return False
+        # edu-sharing Material-Render-Pfade
+        if (
+            "/edu-sharing/components/" in u
+            or "/edu-sharing/eduservlet/" in u
+            or "/edu-sharing/rest/" in u
+        ):
+            return True
+        # Video-Plattformen (YouTube, Vimeo etc. = einzelne Inhalte)
+        from urllib.parse import urlparse
+        try:
+            host = (urlparse(url).hostname or "").lower()
+        except Exception:
+            host = ""
+        if any(host.endswith(h) for h in (
+            "youtube.com", "youtu.be", "vimeo.com",
+            "dailymotion.com", "twitch.tv", "tiktok.com",
+        )):
+            return True
+        # Direkt-File-URLs (Endung)
+        if u.endswith((
+            ".pdf", ".mp4", ".mp3", ".wav", ".ogg", ".webm",
+            ".docx", ".doc", ".pptx", ".ppt", ".odt", ".odp",
+            ".zip", ".epub",
+        )):
+            return True
+        return False
+
+    def _record(label: str, url: str) -> bool:
+        """True wenn Link aufgenommen ODER bewusst gestrippt werden soll.
+        Rückgabe steuert nur die Text-Strip-Logik — ``web_links`` wird
+        intern befüllt. ``True`` heißt: aus Text entfernen (Bullet) bzw.
+        durch Label ersetzen (Inline). ``False`` heißt: ungültiger Input
+        oder leeres Label.
+        """
+        label = (label or "").strip()
+        url = (url or "").strip()
+        if not label or not url:
+            return False
+        if url in seen:
+            # Duplikat — aus Text strippen, aber kein 2. Eintrag in web_links
+            return True
+        # URL wird trotzdem aus Text entfernt, kommt aber nicht in die
+        # ``Webseiten-Inhalte``-Box wenn es ein Card-Treffer ODER ein
+        # einzelnes Material ist. So bleibt der Bot-Text frei von Links,
+        # ohne dass die Box Materialien aufnimmt, die in die Sammlungen-
+        # /Inhalte-Boxen gehören.
+        skip_box = (url in card_urls) or _is_material_url(url)
+        if skip_box:
+            seen.add(url)
+            return True
+        if len(web_links) >= max_links:
+            # Trotz max-Cap aus dem Text strippen — sonst stehen die
+            # ersten 5 in der Box und der 6. bleibt als Underline im Text.
+            seen.add(url)
+            return True
+        seen.add(url)
+        web_links.append({"title": label, "url": url})
+        return True
+
+    # Pass 1: zeilenweise — Bullet-Link-Zeilen ganz entfernen.
+    # Versucht erst Markdown-Bullet, dann HTML-Bullet — Reihenfolge
+    # wichtig, damit ein gemischter Pattern wie ``- <a href=...>X</a>``
+    # nicht durch die Markdown-Regex fälschlich gematcht würde.
+    out_lines: list[str] = []
+    for line in raw.split("\n"):
+        m_md = bullet_link_re.match(line)
+        if m_md and _record(m_md.group(1), m_md.group(2)):
+            continue
+        m_html = bullet_html_link_re.match(line)
+        if m_html and _record(m_html.group(2), m_html.group(1)):
+            # HTML: group(1) = url, group(2) = label (Reihenfolge anders als MD)
+            continue
+        out_lines.append(line)
+    stripped = "\n".join(out_lines)
+
+    # Pass 2a: Inline-Markdown-Links → "[Label](url)" durch "Label" ersetzen
+    def _replace_md(match: "_re.Match[str]") -> str:
+        label, url = match.group(1), match.group(2)
+        if _record(label, url):
+            return label
+        return match.group(0)
+
+    # Pass 2b: Inline-HTML-Links → "<a href="url">Label</a>" durch "Label"
+    def _replace_html(match: "_re.Match[str]") -> str:
+        # HTML-Regex hat group(1)=url, group(2)=label
+        url, label = match.group(1), match.group(2)
+        if _record(label, url):
+            return label
+        return match.group(0)
+
+    cleaned = inline_link_re.sub(_replace_md, stripped)
+    cleaned = inline_html_link_re.sub(_replace_html, cleaned)
+
+    # Triple-Blank-Lines kollabieren (Bullet-Strip kann Lücken hinterlassen)
+    cleaned = _re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned, web_links
+
+
 def _icon_name_for_card(card: Any) -> str:
     """Pick a Material-Symbol-Name passend zum Inhaltstyp einer Card.
 
@@ -2900,13 +3133,34 @@ async def _postprocess_response_for_widget_modes(
             selected_card_ids=selected_card_ids,
         )
 
+        # Re-Extraktion: ``_apply_widget_modes_postprocess`` kann Guide-QRs
+        # (``__guide__|Label|URL``) als Bullet-Markdown an ``response_text``
+        # anhängen — siehe ``_guide_inline_lines``. Diese Bullets wurden
+        # vom initialen ``_extract_web_links_from_text``-Lauf in ``_chat_impl``
+        # nicht gesehen (sie existierten da noch nicht). Damit sie nicht
+        # doppelt erscheinen (Bullet im Text + getrennte Box im Frontend),
+        # ziehen wir sie hier durch dieselbe Extraktion: Bullets verschwinden
+        # aus ``txt`` und landen in ``web_links``.
+        _existing_links = [l.model_dump() if hasattr(l, "model_dump") else dict(l)
+                           for l in (resp.web_links or [])]
+        _final_txt, _new_links = _extract_web_links_from_text(txt, cards=cards_out)
+        # Merge: bestehende web_links bleiben (mit ihrer Reihenfolge),
+        # neue aus dem appended-Bullet-Lauf werden ergänzt, dedupliziert
+        # nach URL.
+        _seen_urls = {l.get("url") for l in _existing_links if isinstance(l, dict)}
+        for nl in _new_links:
+            if nl.get("url") not in _seen_urls:
+                _existing_links.append(nl)
+                _seen_urls.add(nl.get("url"))
+
         # ChatResponse rekonstruieren — Pydantic-Modell aufgrund von
         # Validierungsregeln kopieren wir per model_copy(update=...).
         return resp.model_copy(update={
-            "content": txt,
+            "content": _final_txt,
             "cards": cards_out,
             "quick_replies": qrs,
             "page_action": pa,
+            "web_links": _existing_links,
         })
     except Exception as _e:  # pragma: no cover — postprocess darf nie blockieren
         logger.warning("widget-modes postprocess failed: %s", _e)
@@ -5342,11 +5596,23 @@ async def _chat_impl(
         turn_count=session_state["turn_count"] + 1,
     )
 
-    # Save bot message
+    # Save bot message (cleaned text + web_links werden weiter unten beim
+    # Response-Build genauso wieder verwendet — siehe ``_final_text`` /
+    # ``_web_links``). Hier zuerst rechnen, einmal save, einmal return.
+    _final_text, _web_links = _extract_web_links_from_text(
+        response_text, cards=cards,
+    )
+    _debug_for_save = debug.model_dump()
+    if _web_links:
+        # Persistieren in debug_json, damit nach Page-Refresh / Bubble-
+        # Reopen die strukturierte Link-Liste via ``GET /messages`` →
+        # ``msg.debug._web_links`` wieder ans Frontend kommt.
+        _debug_for_save["_web_links"] = _web_links
+
     await save_message(
-        req.session_id, "assistant", response_text,
+        req.session_id, "assistant", _final_text,
         cards=[c.model_dump() for c in cards],
-        debug=debug.model_dump(),
+        debug=_debug_for_save,
     )
 
     # 12. Quality logging (non-blocking, fire-and-forget).
@@ -5418,9 +5684,11 @@ async def _chat_impl(
             "queries": [m.model_dump() for m in _query_meta_entries],
         })
 
+    # ``_final_text`` + ``_web_links`` wurden bereits oben (vor save_message)
+    # berechnet — wiederverwenden, statt ein zweites Mal zu extrahieren.
     return ChatResponse(
         session_id=req.session_id,
-        content=response_text,
+        content=_final_text,
         cards=cards,
         follow_up=pattern_output.get("format_follow_up", "quick_replies"),
         quick_replies=quick_replies,
@@ -5428,6 +5696,7 @@ async def _chat_impl(
         page_action=page_action,
         pagination=pagination,
         query_metas=_query_meta_entries,
+        web_links=_web_links,
     )
 
 

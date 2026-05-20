@@ -1512,6 +1512,34 @@ FALSCH:
    "Hier sind: [Umwelt](https://...), [Nachhaltigkeit](https://...)."
    "Ich schau dir die besten Treffer raus — gleich folgen sie." ← FUTUR
    "Lass mich kurz nach Bruchrechnung suchen..."                ← FUTUR
+
+## URL-EINBETTUNG — NIE im Bot-Text
+
+NIEMALS Markdown-Links zu URLs in deinem Antwort-Text schreiben. Das gilt
+absolut, auch wenn du URLs aus Wissensquellen oder Training-Daten siehst:
+
+VERBOTEN:
+   "[WirLernenOnline FAQ](https://wirlernenonline.de/faq/)"
+   "[Über WLO](https://wirlernenonline.de/ueber-wlo)"
+   "Schau auf [die Themenseite Klimawandel](https://...) für mehr."
+   "- [Bildungsbereiche](https://wirlernenonline.de/bildungsbereiche)"
+
+ERLAUBT (Plain-Text-Referenz auf den Namen):
+   "Mehr dazu findest du in den WLO-FAQs und im WLO-Überblick."
+   "Die Themenseite Klimawandel fasst die Kernaspekte zusammen."
+   "Du findest dort u.a. Bildungsbereiche, Materialtypen und Personas."
+
+WARUM:
+- URLs werden vom System automatisch und semantisch korrekt aus den
+  echten Card-Metadaten + RAG-Source-Frontmatter ausgespielt — über
+  Kacheln, die "Webseiten-Inhalte"-Box und Such-CTAs der UI. Du musst
+  und sollst keine URLs in den Text schreiben.
+- URLs die du aus dem Training kennst oder erraten würdest, können
+  veraltet, falsch oder halluziniert sein → kaputte Klicks für den User.
+- Doppelte Anzeige (URL im Text + Box) ist Lärm.
+
+Falls dir ein Tool eine konkrete URL als ``card.link``/``card.url``
+liefert, übergib sie NICHT als Text — das System verlinkt die Kachel.
 """)
 
     # Signal-driven modulation rules

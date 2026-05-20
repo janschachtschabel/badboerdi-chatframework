@@ -424,6 +424,153 @@ $accent-orange: #E79800;
   margin-top: 10px;
 }
 
+/* ───────────── Grouped Result Display (Sprint 7) ─────────────
+ * Opt-in via ``inline-result-grouping="true"``: Themenseiten + Sammlungen
+ * in eigenen Boxen, plus Search-CTA-Box. Optik bewusst schlicht — schmaler
+ * neutraler Rahmen, keine Farbleisten links, kompakte Zeilenhöhen damit
+ * 2-3 Boxen + CTA gut in eine Bot-Bubble passen.
+ */
+.result-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.result-group {
+  border: 1px solid $border;
+  border-radius: 8px;
+  padding: 6px 10px 8px;
+  background: #fff;
+
+  &__heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .82rem;
+    font-weight: 600;
+    color: $text;
+    margin-bottom: 4px;
+
+    .bb-icon {
+      display: inline-flex;
+      color: $text-muted;
+      font-size: 1em;
+    }
+  }
+
+  &__items {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 5px;
+    text-decoration: none;
+    color: $text;
+    font-size: .82rem;
+    line-height: 1.3;
+
+    &:hover {
+      background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 7%, white);
+      text-decoration: underline;
+    }
+
+    &-icon {
+      display: inline-flex;
+      flex-shrink: 0;
+      color: $text-muted;
+      font-size: 1em;
+    }
+
+    &-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  /* Such-CTA: helle Card-Optik mit Primary-Akzent. Statt komplett gefüllt
+     in Primary-Farbe (zu dominant) ein dezenter Container mit:
+       - Border in Primary, sehr aufgehellt (~25% Primary auf Weiß)
+       - Icon-Bubble (rund) in noch hellerem Primary-Tint, Icon in Primary
+       - Text in Standard-Dark, damit die CTA neben der Sammlungs-Box
+         leicht „klickbar" wirkt ohne mit ihr farblich zu konkurrieren
+       - Chevron in Primary
+     ``color-mix`` läuft mit Fallback (--boerdi-primary fallback ist
+     #1c4587). Browser-Support: 90%+ moderne Browser; ältere bekommen
+     den per ``border-color``-Wert gesetzten Fallback. */
+  &--cta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--boerdi-primary, #1c4587);
+    border-color: color-mix(in srgb, var(--boerdi-primary, #1c4587) 28%, #fff);
+    border-radius: 12px;
+    background: #fff;
+    color: #1a1a2e;
+    text-decoration: none;
+    transition: border-color .12s ease, background .12s ease, transform .12s ease;
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--boerdi-primary, #1c4587) 55%, #fff);
+      background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 4%, #fff);
+      transform: translateY(-1px);
+      text-decoration: none;
+    }
+
+    .result-group__cta-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 12%, #fff);
+      color: var(--boerdi-primary, #1c4587);
+      font-size: 1.05em;
+    }
+
+    .result-group__cta-text {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: .82rem;
+      line-height: 1.3;
+      min-width: 0;
+
+      strong {
+        font-weight: 600;
+        color: #1a1a2e;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
+
+    .result-group__cta-sub {
+      font-size: .76rem;
+      color: #5f5f6f;
+    }
+
+    .result-group__cta-arrow {
+      display: inline-flex;
+      flex-shrink: 0;
+      font-size: 1.2em;
+      color: var(--boerdi-primary, #1c4587);
+    }
+  }
+}
+
 .wlo-card-wrapper {
   display: flex;
   flex-direction: column;

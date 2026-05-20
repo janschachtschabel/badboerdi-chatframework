@@ -225,6 +225,10 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
    *  Session erhalten bleibt); externe Hosts öffnen target="_blank".
    *  Empty-Default = alle Markdown-Links bekommen target="_blank". */
   @Input() trustedHosts: string[] = [];
+  /** Wenn ``true``: Such-Treffer werden gruppiert dargestellt
+   *  (Top 3 Themenseiten + Top 3 Sammlungen + Search-CTA-Box statt
+   *  Einzelinhalte-Kacheln). Default ``false`` = bisheriges Verhalten. */
+  @Input() inlineResultGrouping: boolean | string = false;
   /** Lotsen-Modus: passive Top-Result-Emission an die Host-Seite.
    *  Bei ``true`` wird bei JEDEM Bot-Turn, der Cards mit Lotsen-Link enthält,
    *  ein ``badboerdi:guide-suggestion``-CustomEvent auf ``window`` gefeuert
@@ -281,6 +285,7 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   get canvasEnabledBool(): boolean { return this.modeFlag(this.canvasEnabled); }
   get aiContentEnabledBool(): boolean { return this.modeFlag(this.aiContentEnabled); }
   get quickRepliesEnabledBool(): boolean { return this.modeFlag(this.quickRepliesEnabled); }
+  get inlineResultGroupingBool(): boolean { return this.modeFlag(this.inlineResultGrouping); }
 
   /** Wird vom Angular-Bindings-Layer aufgerufen wenn ein ``@Input()`` neu
    *  gesetzt wird. Wir nutzen es, um den ``_renderCache`` zu invalidieren
@@ -547,7 +552,7 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
 
       // Remove loading, add real response
       this.removeMessage(loadingId);
-      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, resp.query_metas);
+      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, resp.query_metas, resp.web_links);
       this.scrollTargetId = botMsgId;
 
       this.latestDebug = resp.debug;
@@ -1439,6 +1444,200 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     return card.node_type !== 'collection';
   }
 
+  // ── Grouped-Result-Display (Sprint 7) ─────────────────────────
+  // Aktiviert via ``[inline-result-grouping]="true"``: separate Boxen
+  // für Themenseiten / Sammlungen + Search-CTA statt flacher Liste.
+
+  /** Top N Themenseiten der Bot-Antwort. */
+  groupedTopicCards(msg: ChatMessage, n = 3): WloCard[] {
+    if (!msg.cards) return [];
+    return msg.cards.filter(c => this.isThemenseite(c)).slice(0, n);
+  }
+
+  /** Top N reine Sammlungen (ohne Themenseiten-Markup). */
+  groupedCollectionCards(msg: ChatMessage, n = 3): WloCard[] {
+    if (!msg.cards) return [];
+    return msg.cards.filter(c => this.isSammlung(c)).slice(0, n);
+  }
+
+  /** Anzahl Einzelinhalte (Content-Cards), die per Search-CTA verfügbar
+   *  bleiben würden — fürs UI-Label "X Einzelinhalte in der Suche". */
+  groupedContentCardsCount(msg: ChatMessage): number {
+    if (!msg.cards) return 0;
+    return msg.cards.filter(c => this.isInhalt(c)).length;
+  }
+
+  /** Wählt die "haupt"-relevante MCP-Such-URL aus den Query-Metadata.
+   *  Bevorzugt search_wlo_content > search_wlo_collections > erste mit
+   *  nicht-leerer search_url. Liefert ``''`` wenn keine vorhanden. */
+  groupedSearchUrl(msg: ChatMessage): string {
+    const metas = msg.queryMetas || [];
+    if (!metas.length) return '';
+    const byTool = (t: string) => metas.find(m => m.tool_name === t && m.search_url);
+    return (
+      byTool('search_wlo_content')?.search_url
+      || byTool('search_wlo_collections')?.search_url
+      || byTool('search_wlo_topic_pages')?.search_url
+      || metas.find(m => m.search_url)?.search_url
+      || ''
+    );
+  }
+
+  /** Such-Begriff für das Search-CTA-Label. Falls in den Metas vorhanden,
+   *  zeigen wir ihn an ("Alle Treffer zu „Klimawandel" in der Suche"). */
+  groupedSearchTerm(msg: ChatMessage): string {
+    const metas = msg.queryMetas || [];
+    const m = metas.find(x => x.search_term?.trim());
+    return (m?.search_term || '').trim();
+  }
+
+  /** Sichtbarer Bot-Text. Bei aktivem ``inline-result-grouping`` werden
+   *  jene Markdown-Bullet-Links aus dem ``content`` rausgestrippt, die
+   *  bereits in die separate Webseiten-Inhalte-Box gewandert sind —
+   *  sonst sähe der User dieselben Links zweimal (einmal als Bullet
+   *  im Text, einmal in der Box). Inline-Links MITTEN im Satz bleiben
+   *  unangetastet (die liest der User als Teil des Fließtexts; sie
+   *  nochmal in der Box zu zeigen wäre Doppelung, aber sie zu strippen
+   *  würde den Satz zerreißen — Bullets sind das eindeutige Signal
+   *  für "redundante Aufzählung"). */
+  displayContent(msg: ChatMessage): string {
+    const raw = msg.content || '';
+    if (!raw) return raw;
+    if (!this.inlineResultGroupingBool) return raw;
+    const promoted = this.groupedWebLinks(msg);
+    if (!promoted.length) return raw;
+    // Promoted-URLs OHNE bsid normalisieren — die Content-Bullets haben
+    // die Original-URL (vor _withBsid), Strip-Vergleich muss damit auch
+    // bsid-freie und bsid-gesetzte Varianten matchen.
+    const stripBsid = (u: string): string => {
+      try {
+        const x = new URL(u);
+        x.searchParams.delete('bsid');
+        return x.toString().replace(/\?$/, '');
+      } catch { return u; }
+    };
+    const promotedUrls = new Set(promoted.map(l => stripBsid(l.url)));
+    const lines = raw.split('\n');
+    // Match nur ganze Bullet-Zeilen — die sind die typische LLM-Output-
+    // Form für Quellen-Aufzählung. Inline-Links wie "Schau dir [Faq](…) an"
+    // bleiben.
+    // Bullet (-, *, +, typografisch) ODER Numbering (1., 1)) am Zeilenanfang,
+    // optional Bold/Italic/Quote um den Link, optional Trailing-Punctuation.
+    // Parallel zum Backend-Pattern (chat.py:bullet_link_re) — Sicherheitsnetz
+    // für alte gespeicherte Messages aus der Zeit vor dem Backend-Fix sowie
+    // für LLM-Varianten, die das Backend ausnahmsweise durchlässt.
+    const bulletWithLinkRe = /^\s*(?:[-*+•◦▪·‣⁃►▶]|\d+[.)])\s+(?:\*{0,2}|_{0,2}|["'])?\[[^\]\n]+\]\(\s*<?(https?:\/\/[^\s)>]+)>?\s*\)(?:\*{0,2}|_{0,2}|["'])?\s*[.,;:!?]?\s*$/;
+    // HTML-Variante: ``- <a href="…">Label</a>`` (auch mit Bold-Wrappern).
+    const bulletHtmlLinkRe = /^\s*(?:[-*+•◦▪·‣⁃►▶]|\d+[.)])\s+(?:\*{0,2}|_{0,2})?<a\s+[^>]*?href\s*=\s*["'](https?:\/\/[^"']+)["'][^>]*>[^<]+<\/a>(?:\*{0,2}|_{0,2})?\s*[.,;:!?]?\s*$/i;
+    const out: string[] = [];
+    for (const line of lines) {
+      const m = line.match(bulletWithLinkRe);
+      if (m && promotedUrls.has(stripBsid(m[1]))) continue;
+      const h = line.match(bulletHtmlLinkRe);
+      if (h && promotedUrls.has(stripBsid(h[1]))) continue;
+      out.push(line);
+    }
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  /** Web-Links für die ``Webseiten-Inhalte``-Box. Bevorzugt das strukturierte
+   *  Feld ``msg.webLinks`` (vom Backend per ``_extract_web_links_from_text``
+   *  rausgezogen — der saubere Pfad). Fallback: Markdown-Link-Regex auf
+   *  ``msg.content`` für alte gespeicherte Messages aus der Zeit vor dem
+   *  strukturierten Feld. ``?bsid=`` wird auf Trusted-Hosts angehängt. */
+  groupedWebLinks(msg: ChatMessage, n = 3): Array<{ title: string; url: string }> {
+    // ── Primärpfad: strukturiertes Backend-Feld ─────────────────
+    if (Array.isArray(msg.webLinks) && msg.webLinks.length > 0) {
+      return msg.webLinks
+        .slice(0, n)
+        .map(l => ({ title: l.title, url: this._withBsid(l.url) }));
+    }
+    // ── Fallback: ChatMessage hat möglicherweise webLinks im debug-Feld
+    // (kommt aus altem ``GET /messages``-Restore via ``_web_links``-Key) ──
+    const debugLinks = (msg.debug as any)?._web_links;
+    if (Array.isArray(debugLinks) && debugLinks.length > 0) {
+      return debugLinks
+        .filter((l: any) => l && l.title && l.url)
+        .slice(0, n)
+        .map((l: any) => ({ title: String(l.title), url: this._withBsid(String(l.url)) }));
+    }
+    // ── Letzter Fallback: Regex auf Content ─────────────────────
+    // Greift nur bei alten gespeicherten Messages oder bei custom Backends
+    // die ``web_links`` noch nicht implementiert haben. Card-URLs werden
+    // ausgeschlossen damit nichts doppelt erscheint.
+    const content = msg.content || '';
+    if (!content) return [];
+    const cardUrls = new Set<string>();
+    (msg.cards || []).forEach(c => {
+      const u = (c.link || c.guide_url || c.wlo_url || c.url || '').trim();
+      if (u) cardUrls.add(u);
+      (c.topic_pages || []).forEach(tp => {
+        if (tp?.url) cardUrls.add(tp.url);
+      });
+    });
+    const re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    const seen = new Set<string>();
+    const out: Array<{ title: string; url: string }> = [];
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(content)) !== null) {
+      const label = m[1].trim();
+      const url = m[2].trim();
+      if (!label || !url) continue;
+      if (seen.has(url) || cardUrls.has(url)) continue;
+      seen.add(url);
+      out.push({ title: label, url: this._withBsid(url) });
+      if (out.length >= n) break;
+    }
+    return out;
+  }
+
+  /** Title-Tooltip für ein Result-Group-Item bauen.
+   *
+   *  - Label (Card-Titel oder Link-Titel) als Basis,
+   *  - bei externem/nicht-vertrauenswürdigem Host wird die Warnung
+   *    ``"Achtung! Externe URL."`` mit `` — `` angehängt.
+   *  - Wenn weder Label noch Warnung vorhanden ist, ``null``-Rückgabe
+   *    sorgt dafür, dass Angular das ``title``-Attribut komplett weglässt
+   *    (statt literal ``"null"`` ins DOM zu schreiben).
+   *
+   *  Verwendet vom Template für Themenseiten-/Sammlungen-/Webseiten-Boxen
+   *  und für die Search-CTA. Ersetzt den vorherigen
+   *  ``externalLinkWarning(url) || null``-Ausdruck, der bei trusted Hosts
+   *  ``"null"`` als String anzeigte. */
+  itemTooltip(label: string | undefined | null, url: string | undefined | null): string | null {
+    const lbl = (label || '').trim();
+    const warn = url ? (this.externalLinkWarning(url) || '') : '';
+    if (lbl && warn) return `${lbl} — ${warn}`;
+    if (lbl) return lbl;
+    if (warn) return warn;
+    return null;
+  }
+
+  /** Tooltip-Builder für die Search-CTA-Box im Result-Grouping-Modus.
+   *  Baut den String ``Alle Treffer in der Suche anzeigen zu „<term>"`` plus
+   *  ggf. Extern-Warnung. Im Template aufrufen statt das umständliche
+   *  Inline-Escaping mit ``\"`` zu hantieren. */
+  searchCtaTooltip(msg: ChatMessage): string | null {
+    const term = this.groupedSearchTerm(msg);
+    const base = 'Alle Treffer in der Suche anzeigen' + (term ? ` zu „${term}"` : '');
+    return this.itemTooltip(base, this.groupedSearchUrl(msg));
+  }
+
+  /** True wenn die Gruppierungs-Anzeige für diese Message überhaupt etwas
+   *  Sichtbares enthält (Themenseiten / Sammlungen / Web-Links / Search-CTA).
+   *  Verhindert leere Wrapper bei Antworten ohne Suche und ohne RAG-Links. */
+  hasGroupedResults(msg: ChatMessage): boolean {
+    const hasCards = !!(msg.cards && msg.cards.length);
+    const hasWebLinks = this.groupedWebLinks(msg).length > 0;
+    if (!hasCards && !hasWebLinks) return false;
+    return (
+      (hasCards && (this.groupedTopicCards(msg).length > 0
+                    || this.groupedCollectionCards(msg).length > 0
+                    || !!this.groupedSearchUrl(msg)))
+      || hasWebLinks
+    );
+  }
+
   /**
    * Kompakte Lizenz-Anzeige für das Footer-Badge auf dem Vorschaubild.
    * "CC BY-SA 4.0" → "CC BY-SA", "Custom"/"Individuelle Lizenz" → "©",
@@ -1662,7 +1861,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
         this.canvasState,
       );
       this.removeMessage(loadingId);
-      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination);
+      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, undefined, resp.web_links);
       this.scrollTargetId = botMsgId;
       this.latestDebug = resp.debug;
       this.dispatchPageAction(resp.page_action);
@@ -1714,7 +1913,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
         this.canvasState,
       );
       this.removeMessage(loadingId);
-      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination);
+      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, undefined, resp.web_links);
       this.scrollTargetId = botMsgId;
       this.latestDebug = resp.debug;
       this.dispatchPageAction(resp.page_action);
@@ -1769,6 +1968,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       this.removeMessage(loadingId);
       const botMsgId = this.addBotMessage(
         resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination,
+        undefined, resp.web_links,
       );
       this.scrollTargetId = botMsgId;
       this.latestDebug = resp.debug;
@@ -2016,6 +2216,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     cards?: WloCard[], quickReplies?: string[], debug?: DebugInfo,
     pagination?: PaginationInfo | null,
     queryMetas?: import('../services/api.service').QueryMetaEntry[],
+    webLinks?: import('../services/api.service').WebLink[],
   ): string {
     const id = this.uid();
     const pageSize = pagination?.page_size || 5;
@@ -2024,6 +2225,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       pagination: pagination || undefined,
       visibleCardCount: pageSize,
       queryMetas: queryMetas || undefined,
+      webLinks: webLinks || undefined,
       timestamp: new Date(),
     };
     this.messages.update(msgs => [...msgs, msg]);

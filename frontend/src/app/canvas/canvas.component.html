@@ -197,7 +197,7 @@
              [href]="cardUrl(previewCard)"
              target="_blank"
              rel="noopener noreferrer"
-             [title]="externalLinkWarning(cardUrl(previewCard)) || null">
+             [title]="itemTooltip('In neuem Tab öffnen' + (previewCard?.title ? ': ' + previewCard.title : ''), cardUrl(previewCard))">
             <span class="bb-icon" [innerHTML]="ICONS.open_in_new | safeSvg"></span>
             <span>In neuem Tab öffnen</span>
           </a>
@@ -236,7 +236,7 @@
            [href]="topicPageUrl(c)"
            target="_blank"
            rel="noopener noreferrer"
-           [title]="externalLinkWarning(topicPageUrl(c)) || null">
+           [title]="itemTooltip(c.title, topicPageUrl(c))">
 
           <!-- Header: nur Inhaltstyp links (Inhaltstyp links oben sagt
                schon "Themenseite"; das Badge rechts war redundant). -->
@@ -361,7 +361,7 @@
            [href]="cardUrl(c)"
            target="_blank"
            rel="noopener noreferrer"
-           [title]="externalLinkWarning(cardUrl(c)) || null">
+           [title]="itemTooltip(c.title, cardUrl(c))">
 
           <div class="card-header">
             <span class="card-content-type">
@@ -434,7 +434,7 @@
            [href]="cardUrl(c)"
            target="_blank"
            rel="noopener noreferrer"
-           [title]="externalLinkWarning(cardUrl(c)) || null">
+           [title]="itemTooltip(c.title, cardUrl(c))">
 
           <div class="card-header">
             <span class="card-content-type">
@@ -487,6 +487,26 @@
           </button>
         </div>
       </div>
+
+      <!-- Search-CTA (Sprint 7): nur bei inline-result-grouping aktiv.
+           Ersetzt den ausgeblendeten Einzelinhalte-Block durch einen
+           Absprung in die volle MCP-Trefferliste — auch im Canvas. -->
+      <a *ngIf="inlineResultGrouping && searchCtaUrl"
+         class="canvas-search-cta"
+         [href]="searchCtaUrl"
+         target="_blank"
+         rel="noopener noreferrer"
+         [title]="searchCtaTooltip()">
+        <span class="canvas-search-cta__icon" [innerHTML]="ICONS.search | safeSvg"></span>
+        <span class="canvas-search-cta__text">
+          <strong *ngIf="searchCtaTerm; else canvasNoTerm">
+            Treffer zur Suche „{{ searchCtaTerm }}"
+          </strong>
+          <ng-template #canvasNoTerm><strong>Alle Treffer in der Suche</strong></ng-template>
+          <span class="canvas-search-cta__sub">Alle passenden Materialien anzeigen</span>
+        </span>
+        <span class="canvas-search-cta__arrow" [innerHTML]="ICONS.chevron_right | safeSvg"></span>
+      </a>
 
       <div *ngIf="!cards?.length" class="canvas-empty">
         <div class="empty-icon empty-icon--svg" aria-hidden="true"

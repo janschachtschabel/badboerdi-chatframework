@@ -22,8 +22,11 @@
           <span *ngIf="msg.loadingPhase" class="typing-phase">{{ msg.loadingPhase }}</span>
         </div>
 
-        <!-- Content -->
-        <div *ngIf="!msg.isLoading && msg.content" [innerHTML]="renderMarkdown(msg.content, msg.sender)" class="msg-content"></div>
+        <!-- Content. ``displayContent(msg)`` ist normalerweise identisch zu
+             ``msg.content`` — nur bei aktivem ``inline-result-grouping``
+             werden Bullet-Markdown-Links, die in der Webseiten-Inhalte-Box
+             auftauchen, hier rausgestrippt, damit keine Doppelung entsteht. -->
+        <div *ngIf="!msg.isLoading && msg.content" [innerHTML]="renderMarkdown(displayContent(msg), msg.sender)" class="msg-content"></div>
 
         <!-- Lernpfad: prominenter Druck-Button am Ende des Textes -->
         <div *ngIf="!msg.isLoading && isLearningPath(msg)" class="lp-print-bar">
@@ -97,8 +100,97 @@
           </ng-container>
         </div>
 
+        <!-- ──────── Grouped Result Display (Sprint 7 opt-in via
+             ``inline-result-grouping="true"``) ──────────────────────────
+             Statt einer flachen Card-Liste rendert dieser Block separate
+             Boxen für Themenseiten + Sammlungen + Search-CTA. Einzel-
+             inhalte werden visuell ausgeblendet und durch den Link zur
+             vollständigen Suche ersetzt. Greift parallel zu cards-enabled
+             und canvas-enabled — bei aktivem Canvas bleibt der Block hier
+             unsichtbar, weil ``hideCards`` true ist. -->
+        <ng-container *ngIf="inlineResultGroupingBool && !hideCards && cardsEnabledBool && hasGroupedResults(msg)">
+          <div class="result-groups">
+            <!-- Themenseiten -->
+            <div *ngIf="groupedTopicCards(msg).length" class="result-group result-group--topic">
+              <div class="result-group__heading">
+                <span class="bb-icon" [innerHTML]="ICONS.auto_stories | safeSvg"></span>
+                Themenseiten
+              </div>
+              <div class="result-group__items">
+                <a *ngFor="let card of groupedTopicCards(msg)"
+                   class="result-group__item"
+                   [href]="cardUrl(card)"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   [title]="itemTooltip(card.title, cardUrl(card))">
+                  <span class="result-group__item-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
+                  <span class="result-group__item-title">{{ card.title }}</span>
+                </a>
+              </div>
+            </div>
+
+            <!-- Sammlungen -->
+            <div *ngIf="groupedCollectionCards(msg).length" class="result-group result-group--collection">
+              <div class="result-group__heading">
+                <span class="bb-icon" [innerHTML]="ICONS.collections_bookmark | safeSvg"></span>
+                Sammlungen
+              </div>
+              <div class="result-group__items">
+                <a *ngFor="let card of groupedCollectionCards(msg)"
+                   class="result-group__item"
+                   [href]="cardUrl(card)"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   [title]="itemTooltip(card.title, cardUrl(card))">
+                  <span class="result-group__item-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
+                  <span class="result-group__item-title">{{ card.title }}</span>
+                </a>
+              </div>
+            </div>
+
+            <!-- Webseiten-Inhalte: Web-Links aus dem Bot-Text (RAG-Quellen
+                 wie WLO-Artikel, FAQ, edu-sharing-network.org-Hintergrund-
+                 Texte). Nur sichtbar wenn welche extrahierbar sind. -->
+            <div *ngIf="groupedWebLinks(msg).length" class="result-group result-group--web">
+              <div class="result-group__heading">
+                <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
+                Webseiten-Inhalte
+              </div>
+              <div class="result-group__items">
+                <a *ngFor="let link of groupedWebLinks(msg)"
+                   class="result-group__item"
+                   [href]="link.url"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   [title]="itemTooltip(link.title, link.url)">
+                  <span class="result-group__item-icon" [innerHTML]="ICONS.description | safeSvg"></span>
+                  <span class="result-group__item-title">{{ link.title }}</span>
+                </a>
+              </div>
+            </div>
+
+            <!-- Search-CTA -->
+            <a *ngIf="groupedSearchUrl(msg)"
+               class="result-group result-group--cta"
+               [href]="groupedSearchUrl(msg)"
+               target="_blank"
+               rel="noopener noreferrer"
+               [title]="searchCtaTooltip(msg)">
+              <span class="result-group__cta-icon" [innerHTML]="ICONS.search | safeSvg"></span>
+              <span class="result-group__cta-text">
+                <strong *ngIf="groupedSearchTerm(msg) as q; else noTermTitle">
+                  Treffer zur Suche „{{ q }}"
+                </strong>
+                <ng-template #noTermTitle><strong>Alle Treffer in der Suche</strong></ng-template>
+                <span class="result-group__cta-sub">Alle passenden Materialien anzeigen</span>
+              </span>
+              <span class="result-group__cta-arrow" [innerHTML]="ICONS.chevron_right | safeSvg"></span>
+            </a>
+          </div>
+        </ng-container>
+
         <!-- Cards (nur wenn cardsEnabled — Host-Flag aus <boerdi-chat cards-enabled="...">) -->
-        <div *ngIf="msg.cards && msg.cards.length && !hideCards && cardsEnabledBool" class="cards-list">
+        <div *ngIf="!inlineResultGroupingBool && msg.cards && msg.cards.length && !hideCards && cardsEnabledBool" class="cards-list">
           <div *ngFor="let card of getVisibleCards(msg)"
                class="wlo-card-wrapper"
                [class.is-themenseite]="isThemenseite(card)"
@@ -212,8 +304,11 @@
              cardsEnabledBool muss mit geprüft werden — sonst zeigt sich die
              "X von Y Ergebnissen"-Zeile auch wenn die eigentlichen Cards
              durch ``cards-enabled="false"`` ausgeblendet sind (verwirrend:
-             Count + Mehr-Button ohne sichtbare Treffer). -->
-        <div *ngIf="msg.cards && msg.cards.length > 1 && !hideCards && cardsEnabledBool" class="pagination-bar">
+             Count + Mehr-Button ohne sichtbare Treffer).
+             ``inlineResultGroupingBool``-Check: bei aktivem Grouping
+             ersetzt die Result-Group-CTA die klassische "Mehr anzeigen"-
+             Pagination, also hier verstecken. -->
+        <div *ngIf="msg.cards && msg.cards.length > 1 && !hideCards && cardsEnabledBool && !inlineResultGroupingBool" class="pagination-bar">
           <span class="pagination-info">
             {{ getVisibleCards(msg).length }} von {{ msg.cards.length }} Ergebnissen
           </span>

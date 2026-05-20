@@ -170,6 +170,17 @@ export interface QueryMetaEntry {
   search_url: string;
 }
 
+/** Strukturierter Web-Link aus dem Bot-Antwort-Text — typischerweise
+ *  RAG-Quellen die das Backend per ``_extract_web_links_from_text`` aus
+ *  dem ``content`` rausgezogen hat. Frontend rendert sie im Grouping-
+ *  Modus in einer eigenen Box statt im Fließtext.
+ *  ``cards``-URLs werden vom Backend ausgeschlossen, sodass Treffer nicht
+ *  doppelt erscheinen. */
+export interface WebLink {
+  title: string;
+  url: string;
+}
+
 export interface ChatResponse {
   session_id: string;
   content: string;
@@ -180,6 +191,11 @@ export interface ChatResponse {
   page_action: { action: string; payload: any } | null;
   pagination: PaginationInfo | null;
   query_metas?: QueryMetaEntry[];
+  /** Strukturierte Web-Links die das Backend aus dem ``content`` rausgezogen
+   *  hat (RAG-Quellen etc.). Frontend rendert sie im Grouping-Modus in
+   *  der separaten Webseiten-Inhalte-Box. Leer = keine Quellen-Links in
+   *  dieser Antwort. */
+  web_links?: WebLink[];
 }
 
 /**
@@ -216,6 +232,7 @@ export interface ChatMessage {
   pagination?: PaginationInfo | null;
   visibleCardCount?: number;  // how many cards to show (for client-side paging)
   queryMetas?: QueryMetaEntry[];
+  webLinks?: WebLink[];
   timestamp: Date;
 }
 

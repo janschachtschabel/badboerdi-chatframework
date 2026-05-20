@@ -654,6 +654,8 @@ _DEMO_HTML = """<!doctype html>
         <td>KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix) ein/aus. <code>false</code> lehnt Erstell-Anfragen mit der Alt-Antwort aus <code>widget-modes.yaml</code> freundlich ab.</td></tr>
     <tr><td><code>cards-enabled</code></td><td>boolean</td><td><code>true</code></td>
         <td>Kachel-Anzeige ein/aus. <code>false</code> rendert Treffer als dezente Inline-Markdown-Links im Bot-Text (max. N aus <code>widget-modes.yaml</code> → <code>cards_inline_link_limit</code>). Titel wird im Frontend gekürzt; URL ist <code>guide_url</code> (Lotsen-Modus an) oder <code>wlo_url</code> (Direktlink).</td></tr>
+    <tr><td><code>inline-result-grouping</code></td><td>boolean</td><td><code>false</code></td>
+        <td>Gruppierte Treffer-Darstellung statt flacher Liste. <code>true</code>: Top-3-Themenseiten, Top-3-Sammlungen und (falls vorhanden) Webseiten-Inhalte aus dem Bot-Text in eigenen Boxen + ein vollflächiger Primary-Button „Alle Treffer in der Suche anzeigen" (Theme-Ton, übernimmt <code>primary-color</code>). Einzelinhalte erscheinen nicht mehr als Kacheln — User springt direkt in die MCP-Suchergebnisliste. Wirkt auch im Canvas-Pane.</td></tr>
     <tr><td><code>quick-replies-enabled</code></td><td>boolean</td><td><code>true</code></td>
         <td>Gesprächsvorschläge-Pillen unter Bot-Antworten. <code>false</code> blendet alle QR-Buttons komplett aus — keine Konversations-Vorschläge mehr. <br>Lotsen-Hinweise sind davon nicht betroffen: sie werden <em>in jedem Modus</em> als Inline-Link im Bot-Text gerendert, nicht als Pille.</td></tr>
     <tr><td><code>show-guide-button</code></td><td>boolean</td><td><code>true</code></td>
@@ -1029,8 +1031,9 @@ window.addEventListener('badboerdi:query-meta', (e) =&gt; {
   </script>
   <script src="/widget/boerdi-widget.js" defer></script>
   <boerdi-chat
-    cards-enabled="false"
+    cards-enabled="true"
     canvas-enabled="false"
+    inline-result-grouping="true"
     show-language-buttons="false"
     show-debug-button="false"
     show-guide-button="false"

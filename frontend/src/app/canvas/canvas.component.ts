@@ -84,6 +84,15 @@ export class CanvasComponent {
   /** Aktuelle Session-ID (``bb-...``) für den ``?bsid=``-Param. Wird vom
    *  Widget aus der ChatComponent durchgereicht. Leer = kein Rewrite. */
   @Input() sessionId = '';
+  /** Opt-in via ``inline-result-grouping="true"``: limitiert Themenseiten +
+   *  Sammlungen auf Top 3, blendet Einzelinhalte aus und zeigt stattdessen
+   *  einen Search-CTA-Button. */
+  @Input() inlineResultGrouping: boolean | string = false;
+  /** Search-CTA-URL und Suchbegriff — vom Widget durchgereicht (aus
+   *  query_metas der Bot-Antwort). Werden nur im Grouping-Modus
+   *  angezeigt. */
+  @Input() searchCtaUrl = '';
+  @Input() searchCtaTerm = '';
 
   @Output() closeCanvas = new EventEmitter<void>();
   @Output() cardAction = new EventEmitter<{ action: CanvasCardAction; card: WloCard }>();
@@ -184,18 +193,32 @@ export class CanvasComponent {
     return sorted.slice(0, this.visibleCount);
   }
 
-  /** Themenseiten-slice (collections that expose topic-page variants). */
+  /** Wenn Inline-Result-Grouping aktiv: max 3 pro Typ + KEIN Content. */
+  private get _groupingActive(): boolean {
+    return this.inlineResultGrouping === true
+      || (typeof this.inlineResultGrouping === 'string'
+          && this.inlineResultGrouping.toLowerCase() !== 'false');
+  }
+
+  /** Themenseiten-slice (collections that expose topic-page variants).
+   *  Im Grouping-Modus auf Top 3 begrenzt. */
   get visibleTopicPageCards(): WloCard[] {
-    return this.visibleCards.filter(isTopicPage);
+    const all = this.visibleCards.filter(isTopicPage);
+    return this._groupingActive ? all.slice(0, 3) : all;
   }
 
-  /** Plain-Sammlung-slice (collections WITHOUT topic-page variants). */
+  /** Plain-Sammlung-slice (collections WITHOUT topic-page variants).
+   *  Im Grouping-Modus auf Top 3 begrenzt. */
   get visiblePureCollectionCards(): WloCard[] {
-    return this.visibleCards.filter(isPureCollection);
+    const all = this.visibleCards.filter(isPureCollection);
+    return this._groupingActive ? all.slice(0, 3) : all;
   }
 
-  /** Content-slice of the currently visible cards. */
+  /** Content-slice of the currently visible cards.
+   *  Im Grouping-Modus leer (Einzelinhalte über Search-CTA, nicht als
+   *  Kacheln). LLM darf sie noch kennen — sie sind nur visuell versteckt. */
   get visibleContentCards(): WloCard[] {
+    if (this._groupingActive) return [];
     return this.visibleCards.filter(isContent);
   }
 
@@ -341,6 +364,29 @@ export class CanvasComponent {
     if (host === window.location.hostname.toLowerCase()) return '';
     if (this.isHostTrusted(host)) return '';
     return 'Achtung! Externe URL.';
+  }
+
+  /** Title-Tooltip für ein Canvas-Item bauen — Label + optionale
+   *  Extern-Warnung. ``null`` wenn beides fehlt, damit Angular das
+   *  ``title``-Attribut komplett weglässt statt literal ``"null"``
+   *  ins DOM zu schreiben. Spiegel von ``ChatComponent.itemTooltip``.
+   */
+  itemTooltip(label: string | undefined | null, url: string | undefined | null): string | null {
+    const lbl = (label || '').trim();
+    const warn = url ? (this.externalLinkWarning(url) || '') : '';
+    if (lbl && warn) return `${lbl} — ${warn}`;
+    if (lbl) return lbl;
+    if (warn) return warn;
+    return null;
+  }
+
+  /** Tooltip-Builder für die Search-CTA-Box im Canvas — analog zur
+   *  ChatComponent. Baut ``Alle Treffer in der Suche anzeigen zu „<term>"``
+   *  plus optionale Extern-Warnung. */
+  searchCtaTooltip(): string | null {
+    const term = (this.searchCtaTerm || '').trim();
+    const base = 'Alle Treffer in der Suche anzeigen' + (term ? ` zu „${term}"` : '');
+    return this.itemTooltip(base, this.searchCtaUrl);
   }
 
   /** Map target-group code → human label (frontend-side fallback, mirrors
