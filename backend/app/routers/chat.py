@@ -3142,14 +3142,28 @@ async def _postprocess_response_for_widget_modes(
         # MÜSSEN dort bleiben.
         #
         # Seit dem Default-Flip 2026-05-21 ist die gruppierte Box-Darstellung
-        # Standard — die Re-Extraktion läuft also IMMER, außer der Host setzt
-        # explizit ``inline-result-grouping="false"`` und will das alte flache
-        # Card-Layout zurück. Logik:
-        #   - True / None (nicht gesetzt) → Grouping an → Re-Extraktion läuft
-        #   - False (explizit deaktiviert) → Grouping aus → Inline-Links bleiben
+        # Standard — die Re-Extraktion läuft also IMMER, außer:
+        #   (a) der Host setzt explizit ``inline-result-grouping="false"`` —
+        #       altes flaches Card-Layout zurück, oder
+        #   (b) ``cards-enabled="false"`` ist gesetzt — INLINE-MODE: Cards
+        #       werden vom Backend als Markdown-Bullets im Bot-Text ausgegeben,
+        #       das ist die einzige sichtbare Treffer-Anzeige. Re-Extraktion
+        #       würde diese Inline-Bullets fälschlich strippen (vor allem
+        #       wegen ``_is_material_url`` Filter, der edu-sharing-Render-URLs
+        #       NICHT in ``web_links`` aufnimmt → komplettes Verschwinden
+        #       der Treffer für den User). Bei Inline-Mode IMMER skip,
+        #       unabhängig vom Grouping-Flag.
+        #
+        # Logik:
+        #   - cards_enabled == False → Inline-Mode → Re-Extraktion AUS
+        #   - inline_result_grouping == True/None + cards_enabled != False →
+        #     Grouping an → Re-Extraktion AN
+        #   - inline_result_grouping == False → Re-Extraktion AUS
         env = req.environment
         _ig_flag = getattr(env, "inline_result_grouping", None)
-        _grouping_on = _ig_flag is not False
+        _ce_flag = getattr(env, "cards_enabled", None)
+        _inline_mode = _ce_flag is False
+        _grouping_on = (_ig_flag is not False) and (not _inline_mode)
 
         if _grouping_on:
             _existing_links = [l.model_dump() if hasattr(l, "model_dump") else dict(l)
@@ -5617,11 +5631,18 @@ async def _chat_impl(
     #
     # Die Extraktion strippt Inline-Markdown-Links aus dem Text und stellt
     # sie strukturiert in ``web_links`` bereit. Sie läuft seit Welle C.5
-    # (Default-Flip 2026-05-21) per Default — nur wenn der Host explizit
-    # ``inline-result-grouping="false"`` setzt (= flaches Card-Layout zurück),
-    # bleiben Inline-Links als sichtbare Quellen-Anzeige im Bot-Text.
+    # (Default-Flip 2026-05-21) per Default. Sie wird ÜBERSPRUNGEN wenn:
+    #   (a) ``inline-result-grouping="false"`` explizit gesetzt (altes Card-
+    #       Layout), oder
+    #   (b) ``cards-enabled="false"`` (Inline-Mode) — dann sind Inline-
+    #       Markdown-Links die EINZIGE sichtbare Treffer-Anzeige, sie dürfen
+    #       NICHT in web_links umgehängt werden, sonst verschwinden sie
+    #       komplett (vor allem wenn ``_is_material_url`` greift und edu-
+    #       sharing-Render-URLs auch aus web_links filtert).
     _ig_flag_impl = getattr(req.environment, "inline_result_grouping", None)
-    _grouping_on_impl = _ig_flag_impl is not False
+    _ce_flag_impl = getattr(req.environment, "cards_enabled", None)
+    _inline_mode_impl = _ce_flag_impl is False
+    _grouping_on_impl = (_ig_flag_impl is not False) and (not _inline_mode_impl)
     if _grouping_on_impl:
         _final_text, _web_links = _extract_web_links_from_text(
             response_text, cards=cards,
