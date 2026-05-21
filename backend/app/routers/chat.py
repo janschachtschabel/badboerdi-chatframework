@@ -5667,12 +5667,94 @@ async def _chat_impl(
         )
     else:
         _final_text, _web_links = response_text, []
+    # Collect all MCP query metadata accumulated during this turn — wir
+    # bauen die Liste hier (vor save_message), damit sie GEMEINSAM mit dem
+    # Bot-Text in ``debug_json`` persistiert wird. Beim Session-Restore
+    # ``GET /messages`` → ``msg.debug._query_metas`` kommt der Search-CTA
+    # ("Alle Treffer in der Suche…") dann auch nach Reopen/Page-Nav wieder.
+    from app.models.schemas import QueryMetaEntry
+    _raw_metas = get_query_metas()
+    _query_meta_entries = []
+    for _rm in _raw_metas:
+        try:
+            _query_meta_entries.append(QueryMetaEntry(
+                tool_name=_rm.get("toolName", ""),
+                query_type=_rm.get("queryType", ""),
+                search_term=_rm.get("searchTerm", ""),
+                criteria=_rm.get("criteria", []),
+                pagination=_rm.get("pagination", {}),
+                repository_url=_rm.get("repositoryUrl", ""),
+                search_url=_rm.get("searchUrl", ""),
+            ))
+        except Exception:
+            pass
+    # ── Synthetic fallback meta für die Search-CTA (Welle C.5+, 2026-05-21) ──
+    # Wenn das MCP für die Sammlungs-/Themenseiten-Tools keinen ``searchUrl``/
+    # ``searchTerm`` mitliefert (passiert in Praxis bei manchen Tool-Variants),
+    # bleibt die "Treffer zur Suche"-CTA im Frontend leer — obwohl Cards
+    # gefunden wurden. Dann hat der Bot **defensiv** eine Suche durchgeführt,
+    # die Frontend-Box sollte dem User auch den Sprung in die volle Suche
+    # ermöglichen. Wir synthetisieren in diesem Fall einen Meta-Eintrag aus
+    # den Klassifikations-Entities (thema / fach / Nachricht) + REPO_BASE_URL,
+    # sodass der Frontend-Fallback (groupedSearchUrl) ohne Sonderlogik greift.
+    _has_usable_search_signal = any(
+        (m.search_url or m.search_term) for m in _query_meta_entries
+    )
+    if cards and not _has_usable_search_signal:
+        _classif_entities = classification_dict.get("entities", {}) or {}
+        _fallback_term = ""
+        for _k in ("thema", "topic"):
+            _v = (_classif_entities.get(_k) or "").strip()
+            if _v:
+                _fallback_term = _v
+                break
+        if not _fallback_term:
+            _fach = (_classif_entities.get("fach") or "").strip()
+            if _fach:
+                _fallback_term = _fach
+        if not _fallback_term:
+            _msg = (req.message or "").strip()
+            if _msg and len(_msg) <= 120:
+                _fallback_term = _msg
+        if _fallback_term:
+            try:
+                from app.models.schemas import QueryMetaEntry as _QME
+                _repo = (get_repo_base_url() or "").rstrip("/")
+                _synthetic = _QME(
+                    tool_name="synthetic_fallback",
+                    query_type="fallback",
+                    search_term=_fallback_term,
+                    criteria=[],
+                    pagination={},
+                    repository_url=_repo,
+                    search_url="",
+                )
+                _query_meta_entries.append(_synthetic)
+                logger.info(
+                    "synthesized fallback queryMeta for search-CTA: term=%r repo=%r",
+                    _fallback_term, _repo,
+                )
+            except Exception as _qm_err:
+                logger.warning("fallback queryMeta synthesis failed: %s", _qm_err)
+
+    if _query_meta_entries:
+        tracer.record("query_meta", "MCP search queries", {
+            "queries": [m.model_dump() for m in _query_meta_entries],
+        })
+
     _debug_for_save = debug.model_dump()
     if _web_links:
         # Persistieren in debug_json, damit nach Page-Refresh / Bubble-
         # Reopen die strukturierte Link-Liste via ``GET /messages`` →
         # ``msg.debug._web_links`` wieder ans Frontend kommt.
         _debug_for_save["_web_links"] = _web_links
+    if _query_meta_entries:
+        # Analog zu ``_web_links``: damit nach Restore der Search-CTA
+        # ("Alle Treffer zu „<term>" in der Suche") wieder erscheint —
+        # er braucht ``search_url`` + ``search_term`` aus den query_metas.
+        _debug_for_save["_query_metas"] = [
+            m.model_dump() for m in _query_meta_entries
+        ]
 
     await save_message(
         req.session_id, "assistant", _final_text,
@@ -5727,30 +5809,9 @@ async def _chat_impl(
         has_cards=bool(cards),
     )
 
-    # Collect all MCP query metadata accumulated during this turn.
-    from app.models.schemas import QueryMetaEntry
-    _raw_metas = get_query_metas()
-    _query_meta_entries = []
-    for _rm in _raw_metas:
-        try:
-            _query_meta_entries.append(QueryMetaEntry(
-                tool_name=_rm.get("toolName", ""),
-                query_type=_rm.get("queryType", ""),
-                search_term=_rm.get("searchTerm", ""),
-                criteria=_rm.get("criteria", []),
-                pagination=_rm.get("pagination", {}),
-                repository_url=_rm.get("repositoryUrl", ""),
-                search_url=_rm.get("searchUrl", ""),
-            ))
-        except Exception:
-            pass
-    if _query_meta_entries:
-        tracer.record("query_meta", "MCP search queries", {
-            "queries": [m.model_dump() for m in _query_meta_entries],
-        })
-
-    # ``_final_text`` + ``_web_links`` wurden bereits oben (vor save_message)
-    # berechnet — wiederverwenden, statt ein zweites Mal zu extrahieren.
+    # ``_final_text`` + ``_web_links`` + ``_query_meta_entries`` wurden
+    # bereits oben (vor save_message) berechnet — wiederverwenden, statt
+    # ein zweites Mal zu extrahieren.
     return ChatResponse(
         session_id=req.session_id,
         content=_final_text,

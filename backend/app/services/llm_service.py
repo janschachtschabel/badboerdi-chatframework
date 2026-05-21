@@ -1364,6 +1364,22 @@ Rolle in dieser Phase: {_resp_state_meta.get('role', '—')}
     # Embed-Host diesen Modus aktiv anfordert, sollen wir die Treffer
     # direkt liefern statt zurückzufragen.
     _cards_inline_mode = environment.get("cards_enabled") is False
+    # Welle C.5 (2026-05): Im inline-result-grouping-Modus rendert das Frontend
+    # die Treffer NICHT als 5er-Liste mit Einzelmaterial-Icons, sondern in drei
+    # separaten Boxen (Themenseiten / Sammlungen / Webseiten-Inhalte) mit je
+    # **max. 3 sichtbaren Items**, dazu eine Such-CTA-Box ("Alle Treffer
+    # zur Suche „<term>"" → springt auf die WLO-Suche, in der Einzelinhalte
+    # auftauchen). Einzelinhalte (node_type != collection / keine topic_pages)
+    # haben in diesem Modus also KEIN sichtbares UI-Pendant — Erwähnungen im
+    # Text wirken für den User wie "wo sind die zwei Materialien hin?" (vgl.
+    # User-Feedback 2026-05-21: „zwei konkrete Materialien" → nicht sichtbar).
+    # Default ist seit Welle C.5 ``True`` (None → True), wir branchen also auf
+    # ``not False`` — Legacy-Inline (cards_enabled=False + grouping=False
+    # explizit) kriegt weiter das alte 5er-Listen-Prompt.
+    _inline_grouping_mode = (
+        _cards_inline_mode
+        and environment.get("inline_result_grouping") is not False
+    )
     if _card_mode == "minimal":
         system_parts.append("""
 ## Darstellungsregel: Materialien als Kacheln (Modus: minimal)
@@ -1427,7 +1443,105 @@ Disciplines). Bei Klärungs-Turn / leeren Tool-Results: NICHT aufrufen.""")
     # Rueckfrage am Ende fuehlt sich dann wie eine Sackgasse an
     # ("der Bot fragt schon wieder?") statt wie ein hilfreicher Folge-Schritt.
     # In diesem Modus sollst du direkt liefern, nicht zurueckfragen.
-    if _cards_inline_mode:
+    if _inline_grouping_mode:
+        system_parts.append("""
+## Inline-Result-Grouping-Mode (Host-Setting inline-result-grouping=true, Default seit Welle C.5)
+Die Treffer werden in DREI nach Typ getrennten Boxen angezeigt:
+  - **Themenseiten** (max. 3 sichtbar) — kuratierte Übersichts-Seiten
+  - **Sammlungen** (max. 3 sichtbar) — thematisch gebündelte Materialien
+  - **Webseiten-Inhalte** (max. 3 sichtbar) — RAG-Quellen aus deinem Text
+Darunter eine **Such-CTA-Box** ("Alle Treffer zur Suche „<term>"")
+die auf die externe WLO-Suche springt, in der Einzelinhalte (Videos,
+Arbeitsblätter, Übungen …) zu finden sind.
+
+**WICHTIG — Was der User SIEHT vs. was du im Tool-Loop kennst:**
+Du darfst weiterhin ``search_wlo_content`` aufrufen und kennst dann die
+Einzelinhalte aus dem Tool-Result. Aber: Diese **Einzelinhalte werden NICHT
+als sichtbare Items angezeigt** — sie tauchen für den User nur indirekt über
+die "Alle Treffer zur Suche"-CTA auf. Wenn du im Text sagst "ich habe dir
+zwei Videos rausgesucht" oder "konkrete Materialien zusammengestellt",
+sieht der User KEINE zwei Videos in der UI — nur Sammlungen/Themenseiten.
+Das verwirrt.
+
+**TEXT-REGEL (ABSOLUT STRIKT — KEINE AUSNAHMEN):**
+
+Es gibt nur ZWEI sichtbare Anker für den User: Themenseiten und Sammlungen.
+NUR diese beiden Begriffe darfst du im Antwort-Text verwenden, wenn du
+Treffer anpreist.
+
+VERBOTENE WÖRTER im Antwort-Text (auch wenn du sie im Tool-Result siehst):
+  ❌ "Video"      ❌ "Arbeitsblatt"  ❌ "Übung"      ❌ "Quiz"
+  ❌ "Audio"      ❌ "Präsentation"  ❌ "Lehrbuch"   ❌ "Interaktiv"
+  ❌ "Material"   ❌ "Materialien"   ❌ "Inhalt"     ❌ "Inhalte"
+  ❌ "Aufgabe"    ❌ "Beispiel"      ❌ "Erklärung"  ❌ "Anwendung"
+Auch keine Anwendungs-Themen ("für Fläche, Umfang und Konstruktion") als
+ob du konkrete Materialien dazu liefern würdest — du lieferst nur
+Sammlungen/Themenseiten, die diese Aspekte abdecken könnten.
+
+ERLAUBTE Begriffe für Treffer: "Themenseite(n)", "Sammlung(en)",
+"Überblick", "Einstieg", "kuratierte Auswahl". Punkt.
+
+KEINE Mengenangaben für unsichtbare Treffer:
+  ❌ "ein Arbeitsblatt und ein Video"
+  ❌ "zwei konkrete Materialien"
+  ❌ "drei Übungen zum Vertiefen"
+  ❌ "ergänzende Inhalte"
+  ✅ "eine Sammlung und zwei Themenseiten"
+  ✅ "passende Sammlungen zum Thema"
+
+KEIN "dazu kommt …" / "ergänzend …" / "zusätzlich noch …" für
+Material-Typen — wenn da was kommt, dann nur weitere Sammlungen/
+Themenseiten oder die Such-CTA.
+
+**FORMEL FÜR DEINE EINLEITUNG (1-2 Sätze, mehr nicht):**
+  "Hier ist/sind [Anzahl] [Themenseite(n)/Sammlung(en)] zu <Thema>.
+   [optional: 1 Satz Einordnung, warum es passt.]"
+  → Optional am Ende: "Für Einzelinhalte (Videos, Arbeitsblätter …) klick
+    auf die Such-CTA darunter."
+
+**TURN-FLOW (STRIKT):**
+1. **search_wlo_***-Tools aufrufen — typischerweise ``search_wlo_topic_pages``
+   und/oder ``search_wlo_collections``. ``search_wlo_content`` ist OPTIONAL
+   (hilfreich für Lernpfad-Vorbereitung, aber nicht nötig für die Box-
+   Anzeige) — wenn du es rufst, beziehe dich im Text trotzdem nicht auf
+   die einzelnen Inhalte.
+2. **select_top_cards** ist OPTIONAL in diesem Modus — das Backend filtert
+   die Cards automatisch in die drei Boxen. Wenn du eine bestimmte Reihen-
+   folge bevorzugst, rufe es trotzdem (Re-Rank-Hint).
+3. **Plain-Text-Antwort** — 1-2-Satz-Einleitung, GENERISCH formuliert,
+   NUR Themenseiten/Sammlungen erwähnen.
+
+**KONKRETE BEISPIELE — bezogen auf reale Fehler:**
+
+User: "Dreiecke in Mathematik"
+  ✅ RICHTIG: "Hier sind passende Treffer zu Dreiecken in Mathematik. Die
+              Sammlung gibt dir einen kuratierten Überblick über das Thema."
+  ❌ FALSCH:  "Hier sind passende Treffer zu Dreiecken in Mathematik. Die
+              Sammlung gibt dir den Überblick, dazu kommen ein Arbeitsblatt
+              und ein Video für Fläche, Umfang und Konstruktion."
+      ↑ "Arbeitsblatt", "Video", "dazu kommen" → verspricht unsichtbare Items.
+
+User: "Mathe Grundschule"
+  ✅ RICHTIG: "Für Mathe in der Grundschule habe ich dir zwei Sammlungen
+              und eine Themenseite herausgesucht."
+  ❌ FALSCH:  "Ich habe dir einen Überblick und zwei konkrete Materialien
+              zusammengestellt."
+      ↑ "Materialien" verboten.
+
+User: "Hast du was zu Klimawandel?"
+  ✅ RICHTIG: "Ja, hier sind passende Sammlungen zum Klimawandel — eine
+              Themenseite fasst die zentralen Aspekte zusammen."
+  ❌ FALSCH:  "Ja, ich habe dir eine Themenseite und ein Video zum Treibhaus-
+              effekt herausgesucht."
+      ↑ "Video" verboten.
+
+## URL-EINBETTUNG — NIE im Bot-Text
+
+NIEMALS Markdown-Links zu URLs in deinem Antwort-Text schreiben. Das gilt
+absolut, auch wenn du URLs aus Wissensquellen oder Training-Daten siehst.
+URLs werden vom System automatisch über Kacheln/Boxen/CTAs gerendert.
+""")
+    elif _cards_inline_mode:
         system_parts.append("""
 ## Inline-Link-Mode (Host-Setting cards-enabled="false")
 Die Treffer werden NICHT als Kacheln gerendert. Stattdessen hängt das
@@ -2178,6 +2292,86 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     if not knowledge_prefetched:
         messages.append({"role": "user", "content": message})
 
+    # Tools deren Ergebnis im inline_result_grouping-Modus Einzelinhalt-
+    # Details enthalten könnte und damit Quellen für "Arbeitsblatt"-/
+    # "Video"-/"Inhalt"-Leakage in den Bot-Text sind. Nicht enthalten:
+    # search_wlo_collections / _topic_pages / browse_collection_tree /
+    # get_subject_portals — deren Treffer SIND als Boxen sichtbar, der
+    # User sieht also was beschrieben wird.
+    _EINZELINHALT_LEAK_TOOLS = {
+        "search_wlo_content",      # primärer Treffer-Pool für Einzelmaterialien
+        "get_collection_contents",  # Sammlung-Inhalte = i.d.R. Einzelmaterialien
+        "get_node_details",        # Detail-View eines konkreten (oft Einzel-)Knotens
+    }
+
+    def _is_einzelinhalt_card(c: dict) -> bool:
+        """True wenn die Card im Frontend als Einzelinhalt rendert (also NICHT
+        in den sichtbaren Boxen erscheint, nur über die Such-CTA erreichbar
+        ist). Spiegelt die Frontend-Klassifikation ``isInhalt`` aus
+        ``chat.component.ts``: node_type != 'collection'."""
+        nt = (c.get("node_type") or "").strip().lower()
+        if nt == "collection":
+            return False
+        # Topic-pages werden im Frontend als Themenseiten gerendert (sichtbar).
+        if c.get("topic_pages"):
+            return False
+        return True
+
+    def _redact_search_content_for_llm(
+        name: str, raw_text: str, parsed_cards: list[dict],
+    ) -> str:
+        """Im inline_result_grouping-Modus die Einzelinhalte aus dem
+        LLM-sichtbaren Tool-Result-Text rausziehen — die Cards selbst
+        bleiben in ``all_cards`` / Prefetch-Akkumulatoren erhalten, sodass
+        Such-CTA-Count und Lernpfad-Generator (separater Flow) weiter
+        Zugriff haben.
+
+        Greift wenn:
+          - inline_result_grouping-Modus aktiv UND
+          - Tool gehört zu den Einzelinhalt-Quellen UND
+          - die geparsten Cards enthalten mindestens 1 Einzelinhalt.
+
+        Tools mit ausschließlich Sammlungen/Themenseiten (search_wlo_collections,
+        search_wlo_topic_pages, browse_collection_tree, get_subject_portals)
+        werden NICHT redacted — der User SIEHT diese Treffer.
+        """
+        if not (_inline_grouping_mode and parsed_cards):
+            return raw_text[:4000]
+        if name not in _EINZELINHALT_LEAK_TOOLS:
+            return raw_text[:4000]
+        einzel = [c for c in parsed_cards if _is_einzelinhalt_card(c)]
+        if not einzel:
+            # Tool steht zwar auf der Leak-Liste, aber konkret nur Sammlungen
+            # zurückgekommen → keine Redaction nötig (z.B. get_collection_contents
+            # einer Meta-Sammlung).
+            return raw_text[:4000]
+        n = len(einzel)
+        types: dict[str, int] = {}
+        for c in einzel:
+            lrt = (c.get("lrt_label")
+                   or c.get("learning_resource_type")
+                   or "Inhalt")
+            types[lrt] = types.get(lrt, 0) + 1
+        type_summary = ", ".join(
+            f"{k}x {t}" for t, k in sorted(
+                types.items(), key=lambda x: -x[1],
+            )[:5]
+        ) or "verschiedene Typen"
+        _logger.info(
+            "inline_grouping: redacted %s (n=%d einzelinhalte, types=%s)",
+            name, n, type_summary,
+        )
+        return (
+            f"OK - {name} lieferte {n} Einzelinhalte "
+            f"({type_summary}). Diese sind im Backend gespeichert "
+            "und werden NICHT als sichtbare Items angezeigt - der "
+            "User erreicht sie nur ueber die Such-CTA. WICHTIG: "
+            "Du darfst diese Einzelinhalte NICHT im Antwort-Text "
+            "erwaehnen, zaehlen oder typisieren (kein 'ein Video', "
+            "'ein Arbeitsblatt', 'zwei Materialien', 'eine Aufgabe'). "
+            "Sprich im Text NUR ueber Themenseiten und Sammlungen."
+        )
+
     # ── Speculative MCP prefetch injection ─────────────────────────
     # If chat.py spawned a speculative MCP search in parallel with safety
     # and pattern selection, the result lands here as `prefetched_tool`.
@@ -2217,7 +2411,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         messages.append({
             "role": "tool",
             "tool_call_id": "prefetch_mcp",
-            "content": _txt[:4000],
+            "content": _redact_search_content_for_llm(_name, _txt, mcp_prefetch_cards),
         })
         mcp_prefetched = True
 
@@ -2273,7 +2467,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
             messages.append({
                 "role": "tool",
                 "tool_call_id": _tc_id,
-                "content": _ex_text[:4000],
+                "content": _redact_search_content_for_llm(_ex_name, _ex_text, _ex_cards),
             })
 
     # Tool calling loop
@@ -2687,10 +2881,23 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     else:
                         all_cards.append(c)
 
+                # ── Inline-Result-Grouping: search_wlo_content-Redaction ──
+                # Im Box-Anzeige-Modus zeigt die UI Einzelinhalte NICHT direkt
+                # an — sie tauchen nur indirekt über die "Alle Treffer zur
+                # Suche"-CTA auf. Wenn die LLM den vollen Tool-Result-Text mit
+                # Titeln/Beschreibungen sieht, paraphrasiert sie diese unter-
+                # mauernd ("ein Arbeitsblatt und ein Video für Fläche, Umfang
+                # und Konstruktion") — der User sieht aber gar keine
+                # Materialien in der UI und ist verwirrt (User-Feedback
+                # 2026-05-21). Helper-Funktion ``_redact_search_content_for_llm``
+                # ersetzt den Text durch eine kompakte Summary (Anzahl + grobe
+                # Typ-Verteilung). Cards selbst bleiben in ``all_cards``, sodass
+                # Lernpfad-Generator (separater Flow) und Such-CTA-Count weiter
+                # arbeiten.
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": result_text[:4000],
+                    "content": _redact_search_content_for_llm(tool_name, result_text, cards),
                 })
 
             # If respond_to_user was called among the tool calls, treat THIS
@@ -2965,15 +3172,45 @@ in der Bewertung & Feedback eine Probing-Frage, in der Slot-Erfassung wahrschein
 (Inspiration — nicht woertlich uebernehmen, auf den konkreten Kontext anpassen.)
 {chr(10).join(f"- {h}" for h in filled_hints)}
 
-## Perspektive
-Die 4 Vorschlaege sind saetze, die der NUTZER dem Bot sagt — NICHT der Bot zum Nutzer.
-FALSCH: "Weitere Materialien zeigen", "Suche eingrenzen"
-RICHTIG: "Zeig mir mehr davon", "Ich will das eingrenzen"
+## Perspektive (STRIKT — wichtigste Regel)
+Die 4 Vorschlaege sind **Saetze, die der NUTZER dem Bot sagt**, nicht der Bot
+zum Nutzer. Schreib aus Ich-/Du-Perspektive des Users. Bot-imperative
+("Mach", "Zeige", "Filtere"...) sind nur dann ok, wenn der NUTZER damit etwas
+vom Bot verlangt ("Zeig mir nur Videos") — nicht als Bot-Selbstbefehl
+("Material zeigen"). Faustregel: Jeder Vorschlag muss vor dem Wort
+"Boerdi/Bot" stehen koennen wie ein User-Satz.
+FALSCH (Bot-Perspektive / handlungslos):
+  - "Weitere Materialien zeigen"
+  - "Suche eingrenzen"
+  - "Nur Arbeitsblaetter zeigen"   ← wirkt wie Bot-Selbstbefehl
+RICHTIG (Nutzer-Perspektive):
+  - "Zeig mir mehr davon"
+  - "Ich will das auf Klasse 8 eingrenzen"
+  - "Zeig mir nur Arbeitsblaetter"   ← Nutzer fordert vom Bot
+  - "Hast du auch Videos dazu?"
+
+## Standalone-Regel (KRITISCH — kein Kontext-Anhang moeglich)
+Jeder Vorschlag wird als **alleinstehender Button** dargestellt. Der Nutzer
+kann ihn NICHT bearbeiten oder ergaenzen — er klickt 1:1 wie er da steht.
+Deshalb:
+  - Jeder Vorschlag muss **fuer sich alleine sinnvoll** sein, ohne den
+    vorherigen Bot-Satz mitzulesen.
+  - KEINE Demonstrativa ohne Bezug: "Mehr davon", "Das genauer", "Mach es
+    einfacher" sind nur OK wenn aus dem Thema-Kontext eindeutig ist, worauf
+    sich "davon"/"das"/"es" bezieht. Im Zweifel das Thema konkret nennen:
+      SCHLECHT: "Mehr davon zeigen"
+      BESSER:   "Mehr zu Photosynthese zeigen"
+  - KEINE Vorschlaege die ein ungesagtes Subjekt voraussetzen.
 
 ## Struktur (4 verschiedene Typen — KEIN Duplikat)
 Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien):
-  (a) **Vertiefung** — mehr zum aktuellen Thema/Treffer
-      z.B. "Hast du auch Videos dazu?", "Gibt es das fuer Klasse 8?"
+  (a) **Vertiefung / Material-Typ-Filter** — mehr zum aktuellen Thema/Treffer,
+      gerne mit konkretem Material-Typ-Filter (Video, Arbeitsblatt, Uebung,
+      Audio, Praesentation, Interaktiv, Quiz, Bild, Text). Diese Filter sind
+      ausdruecklich erwuenscht — sie propagieren in die Suche und werden
+      als Such-Filter weitergereicht.
+      z.B. "Hast du auch Videos dazu?", "Zeig mir nur Arbeitsblaetter",
+           "Gibt es das fuer Klasse 8?", "Ich brauche interaktive Uebungen"
   (b) **Canvas-Ausgabe** — neues Material erstellen lassen (zieht den aktuellen
       Kontext als Thema heran)
       z.B. "Mach mir ein Quiz daraus", "Erstell mir einen Lernpfad"

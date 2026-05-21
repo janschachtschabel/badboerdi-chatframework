@@ -488,12 +488,38 @@ export class ApiService {
   async loadHistory(
     sessionId: string,
     limit = 20,
-  ): Promise<Array<{ role: string; content: string; cards?: any[]; debug?: Record<string, any> }>> {
+  ): Promise<Array<{
+    role: string;
+    content: string;
+    cards?: any[];
+    debug?: Record<string, any>;
+    /** Aus ``debug._web_links`` (Backend persistiert seit Welle C.5 die
+     *  vom Bot-Text extrahierten RAG-/Quellen-Links). Reicht aus, damit
+     *  das Frontend nach Restore die ``Webseiten-Inhalte``-Box ohne
+     *  Regex-Fallback rendern kann. */
+    webLinks?: Array<{ title: string; url: string }>;
+    /** Aus ``debug._query_metas`` — enthält ``search_url`` + ``search_term``,
+     *  ohne die die Search-CTA ("Alle Treffer in der Suche anzeigen") nach
+     *  Restore unsichtbar bleibt (groupedSearchUrl() würde leer liefern). */
+    queryMetas?: QueryMetaEntry[];
+  }>> {
     try {
       const resp = await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}`);
       if (!resp.ok) return [];
       const data = await resp.json();
-      return Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) return [];
+      // Backend persistiert webLinks/queryMetas in ``debug_json`` (siehe
+      // chat.py: ``_debug_for_save["_web_links"]`` /
+      // ``_debug_for_save["_query_metas"]``). Wir packen sie hier auf die
+      // Top-Level der zurückgegebenen Message-Objekte, damit Caller (z.B.
+      // ``ChatComponent.restoreHistory``) sie ohne zweites Mapping direkt
+      // an ``addBotMessage`` übergeben können.
+      return data.map((m: any) => {
+        const dbg = m && typeof m === 'object' ? (m.debug || {}) : {};
+        const wl = Array.isArray(dbg._web_links) ? dbg._web_links : undefined;
+        const qm = Array.isArray(dbg._query_metas) ? dbg._query_metas : undefined;
+        return { ...m, webLinks: wl, queryMetas: qm };
+      });
     } catch {
       return [];
     }

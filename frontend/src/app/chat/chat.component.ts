@@ -427,19 +427,39 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
       this.showGreeting();
       return;
     }
+    // Hardcodierte Anfangs-Begrüßung IMMER an den Anfang setzen — sie
+    // wird vom Backend NICHT persistiert (kein User-Turn → kein
+    // ``save_message``), würde nach Reopen/Cross-TLD-Handoff also
+    // verschwinden. Hier prepended, damit der Verlauf konsistent wirkt
+    // (Welle C.5, 2026-05).
+    this.showGreeting();
+    // Die Greeting-QR-Pillen sollen NUR am ganz frischen Chat-Anfang
+    // klickbar bleiben — sobald echte Konversation folgt (also: History
+    // hat irgendeine User- oder Assistant-Nachricht), strippen wir die
+    // QRs der gerade prepended Greeting-Bubble. Sonst hätte der User
+    // mitten im Verlauf plötzlich wieder die Einstiegs-Buttons.
+    this.messages.update(msgs => {
+      if (!msgs.length) return msgs;
+      const head = msgs[0];
+      return [{ ...head, quickReplies: undefined }, ...msgs.slice(1)];
+    });
     for (const m of history) {
       const content = (m.content || '').trim();
       if (!content) continue;
       if (m.role === 'user') {
         this.addUserMessage(content);
       } else if (m.role === 'assistant') {
-        // Cards aus dem persistierten cards_json mit-restoren, damit
-        // Bot-Antworten nach Refresh/Page-Nav nicht als nackter Text
-        // ("Hier sind passende Treffer …") ohne die zugehörigen Kacheln
-        // dastehen. Backend liefert cards seit 2026-05 mit, ältere
-        // Sessions / Backends ohne das Feld bleiben rückwärtskompatibel.
+        // Cards / Web-Links / Query-Metas aus dem persistierten Backend-
+        // State mit-restoren, damit Bot-Antworten nach Refresh/Page-Nav
+        // nicht als nackter Text ohne ihre Kacheln, ohne die Webseiten-
+        // Inhalte-Box und ohne den "Treffer zur Suche"-CTA dastehen.
+        // Backend persistiert ``cards`` direkt + ``web_links`` /
+        // ``query_metas`` in ``debug_json`` (siehe chat.py:
+        // ``_debug_for_save["_web_links"]`` / ``["_query_metas"]``).
         const cards = Array.isArray(m.cards) ? m.cards : undefined;
-        this.addBotMessage(content, false, cards);
+        const webLinks = Array.isArray((m as any).webLinks) ? (m as any).webLinks : undefined;
+        const queryMetas = Array.isArray((m as any).queryMetas) ? (m as any).queryMetas : undefined;
+        this.addBotMessage(content, false, cards, undefined, undefined, undefined, queryMetas, webLinks);
       }
     }
     // Nach dem Wiederherstellen ans Ende scrollen. Wir delegieren komplett
@@ -1457,16 +1477,52 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
   // Aktiviert via ``[inline-result-grouping]="true"``: separate Boxen
   // für Themenseiten / Sammlungen + Search-CTA statt flacher Liste.
 
-  /** Top N Themenseiten der Bot-Antwort. */
-  groupedTopicCards(msg: ChatMessage, n = 3): WloCard[] {
-    if (!msg.cards) return [];
-    return msg.cards.filter(c => this.isThemenseite(c)).slice(0, n);
+  /** Dedup-Key für Gruppen-Items. Eine Karte gilt als duplikat-gleich
+   *  wenn entweder ``node_id`` matched ODER der normalisierte Titel
+   *  (lowercase, getrimmt) gleich ist. Hintergrund (User-Feedback
+   *  2026-05-21): kombinierte Tool-Calls (search_wlo_collections +
+   *  search_wlo_topic_pages + Prefetch) können denselben Datensatz unter
+   *  verschiedenen Node-IDs liefern (z.B. "Winkelsummen" 2× nebeneinander
+   *  in der Sammlungen-Box). Ein reiner node_id-Dedup wie in der
+   *  Backend-Merge-Logik reicht dann nicht. */
+  private _dedupKey(c: WloCard): { id: string; title: string } {
+    const id = (c.node_id || '').trim();
+    const title = (c.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return { id, title };
   }
 
-  /** Top N reine Sammlungen (ohne Themenseiten-Markup). */
+  /** Filtert eine Card-Liste auf max. N Treffer und entfernt Duplikate
+   *  per ``node_id`` ODER normalisiertem Titel. Reihenfolge bleibt erhalten,
+   *  d.h. der ERSTE Treffer mit einem bestimmten Titel gewinnt — meist
+   *  ist das der relevanteste (Sortierung kommt aus dem Backend-Re-Rank). */
+  private _dedupTake(cards: WloCard[], n: number): WloCard[] {
+    const out: WloCard[] = [];
+    const seenIds = new Set<string>();
+    const seenTitles = new Set<string>();
+    for (const c of cards) {
+      const k = this._dedupKey(c);
+      if (k.id && seenIds.has(k.id)) continue;
+      if (k.title && seenTitles.has(k.title)) continue;
+      if (k.id) seenIds.add(k.id);
+      if (k.title) seenTitles.add(k.title);
+      out.push(c);
+      if (out.length >= n) break;
+    }
+    return out;
+  }
+
+  /** Top N Themenseiten der Bot-Antwort — dedupliziert per node_id +
+   *  normalisiertem Titel (siehe ``_dedupTake``). */
+  groupedTopicCards(msg: ChatMessage, n = 3): WloCard[] {
+    if (!msg.cards) return [];
+    return this._dedupTake(msg.cards.filter(c => this.isThemenseite(c)), n);
+  }
+
+  /** Top N reine Sammlungen (ohne Themenseiten-Markup) — dedupliziert
+   *  per node_id + normalisiertem Titel (siehe ``_dedupTake``). */
   groupedCollectionCards(msg: ChatMessage, n = 3): WloCard[] {
     if (!msg.cards) return [];
-    return msg.cards.filter(c => this.isSammlung(c)).slice(0, n);
+    return this._dedupTake(msg.cards.filter(c => this.isSammlung(c)), n);
   }
 
   /** Anzahl Einzelinhalte (Content-Cards), die per Search-CTA verfügbar
@@ -1478,18 +1534,48 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
 
   /** Wählt die "haupt"-relevante MCP-Such-URL aus den Query-Metadata.
    *  Bevorzugt search_wlo_content > search_wlo_collections > erste mit
-   *  nicht-leerer search_url. Liefert ``''`` wenn keine vorhanden. */
+   *  nicht-leerer search_url. Liefert ``''`` wenn keine vorhanden.
+   *
+   *  Welle C.5 (2026-05-21): Fallback — wenn KEINE der Metas ein
+   *  ``search_url`` mitliefert (kann passieren wenn der Bot nur
+   *  ``search_wlo_collections`` / ``search_wlo_topic_pages`` aufgerufen hat
+   *  und das MCP für diese Tools die ``searchUrl`` nicht ausspielt), bauen
+   *  wir die URL aus ``repository_url`` + ``search_term`` selbst zusammen.
+   *  Damit erscheint die Such-CTA auch in Turns ohne Einzelinhalt-Suche.
+   *  Reihenfolge:
+   *    1. ``repository_url`` + ``/edu-sharing/components/search?query=<term>``
+   *    2. ``https://wirlernenonline.de/?s=<term>`` (Public-Site-Fallback)
+   *  Beide ziehen Sammlungen UND Einzelinhalte im Ergebnis, also passend
+   *  für die CTA. */
   groupedSearchUrl(msg: ChatMessage): string {
     const metas = msg.queryMetas || [];
     if (!metas.length) return '';
     const byTool = (t: string) => metas.find(m => m.tool_name === t && m.search_url);
-    return (
+    const direct = (
       byTool('search_wlo_content')?.search_url
       || byTool('search_wlo_collections')?.search_url
       || byTool('search_wlo_topic_pages')?.search_url
       || metas.find(m => m.search_url)?.search_url
       || ''
     );
+    if (direct) return direct;
+    // ── Fallback-Komposition ────────────────────────────────────
+    // Nimm den ersten nicht-leeren search_term aus den Metas (die Tools
+    // schreiben den User-Suchbegriff alle gleich rein, search_wlo_content/
+    // collections/topic_pages teilen sich das Schema).
+    const termMeta = metas.find(m => m.search_term?.trim());
+    const term = (termMeta?.search_term || '').trim();
+    if (!term) return '';
+    const repoMeta = metas.find(m => m.repository_url?.trim());
+    const repo = (repoMeta?.repository_url || '').trim().replace(/\/+$/, '');
+    const q = encodeURIComponent(term);
+    if (repo) {
+      // Edu-Sharing-Such-Komponente — surface alle Treffer (Sammlungen +
+      // Einzelinhalte) für den Suchbegriff.
+      return `${repo}/edu-sharing/components/search?query=${q}`;
+    }
+    // Public-Site-Fallback wenn auch keine ``repository_url`` da ist.
+    return `https://wirlernenonline.de/?s=${q}`;
   }
 
   /** Such-Begriff für das Search-CTA-Label. Falls in den Metas vorhanden,
