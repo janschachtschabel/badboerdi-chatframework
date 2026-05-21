@@ -254,6 +254,53 @@ Ueberwachung:
 docker compose logs watchtower
 ```
 
+### Memory-Sizing & Reranker-Toggle
+
+Backend braucht im Lastfall (parallele Embedding-Batches + ONNX-Cross-Encoder-Reranker + RAG-Cache) bis zu **1.6-1.8 GB** RAM. Default-Limit im `docker-compose.yml`: **2 GB**.
+
+| vServer-Größe | Empfehlung |
+|---|---|
+| **≥ 4 GB**       | Default belassen (`BACKEND_MEM_LIMIT=2g`, Reranker an). Komfortabel mit Headroom für Studio + Caddy. |
+| **2 GB (knapp)** | Reranker abschalten + Host-Swap einrichten (siehe unten). Backend läuft dann mit ~700-900 MB stabil. |
+| **< 2 GB**       | Nicht empfohlen. Reranker-Inferenz selbst spiked > 500 MB; ohne Swap kommt es zu OOM-Kills. |
+
+**Reranker via ENV abschalten** (in `/opt/badboerdi/.env`):
+```env
+RAG_RERANKER_ENABLED=false
+BACKEND_MEM_LIMIT=1g
+BACKEND_MEMSWAP_LIMIT=2g
+```
+Anschließend:
+```bash
+cd /opt/badboerdi
+docker compose up -d --force-recreate backend
+```
+RAG-Antworten laufen dann mit Embedding-only-Ranking — etwas weniger präzise Top-1-Sortierung, aber funktional.
+
+**Host-Swap-File anlegen** (verhindert OOM-Kills bei Speicher-Spikes):
+```bash
+# Auf dem vServer als root:
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+
+# Permanent in /etc/fstab eintragen
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+# Prüfen
+free -h
+swapon --show
+```
+
+Swap nur als Sicherheitsnetz nutzen — wenn Backend wirklich oft swappt, wird's spürbar langsam. Besser: vServer auf 4 GB upgraden.
+
+**OOM-Diagnose nach einem Crash**:
+```bash
+dmesg -T | grep -i "killed.*uvicorn\|oom" | tail -10
+docker inspect badboerdi-backend --format 'Restarts: {{.RestartCount}}  OOMKilled: {{.State.OOMKilled}}'
+```
+
 ---
 
 ## 3. Chat-Widget einbinden

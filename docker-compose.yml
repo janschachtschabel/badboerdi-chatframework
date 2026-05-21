@@ -50,6 +50,20 @@ services:
       - GUIDE_TRUSTED_DOMAINS=${GUIDE_TRUSTED_DOMAINS:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DATABASE_PATH=/data/badboerdi.db
+      # ── RAG-Reranker an/aus ────────────────────────────────────
+      # Default: an (Cross-Encoder ONNX, ~150-300 MB RAM, präzisere
+      # Top-1-Sortierung). Bei kleinen vServern (≤ 2 GB) auf "false"
+      # setzen — RAG läuft dann mit Embedding-only-Ranking weiter.
+      - RAG_RERANKER_ENABLED=${RAG_RERANKER_ENABLED:-true}
+    # ── Memory-Limits ──────────────────────────────────────────
+    # Backend braucht im Lastfall (parallele Embedding-Batches +
+    # ONNX-Reranker + RAG-Cache) bis zu ~1.8 GB. Limit auf 2 GB
+    # passt für 4-GB-vServer (lässt Headroom für Studio + Caddy +
+    # OS). Swap-Limit gleich groß = kein Swap-Thrashing.
+    # Auf 2-GB-Servern: ``RAG_RERANKER_ENABLED=false`` + Werte
+    # halbieren (mem_limit: 1g, memswap_limit: 2g + Host-Swap).
+    mem_limit: ${BACKEND_MEM_LIMIT:-2g}
+    memswap_limit: ${BACKEND_MEMSWAP_LIMIT:-2g}
     volumes:
       - backend_data:/data
       - ./backend/chatbots:/app/chatbots

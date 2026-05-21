@@ -296,8 +296,28 @@ def _reranker_model_dir() -> str | None:
     return None
 
 
+def _reranker_enabled_via_env() -> bool:
+    """Return False wenn ``RAG_RERANKER_ENABLED`` per ENV explizit
+    abgeschaltet wurde. Akzeptierte „false"-Werte: ``false``, ``0``,
+    ``no``, ``off`` (case-insensitive, mit whitespace-Stripping).
+    Alles andere (auch fehlende Variable) → True = Reranker aktiv.
+
+    Use-Case: kleine RAM-Deployments (≤ 2 GB), in denen der ONNX-
+    Reranker (~150-300 MB resident) zu OOM-Crashes führt. Embedding-
+    only-Ranking ist die Fallback-Strategie — RAG-Antworten sind
+    weiterhin nutzbar, nur die Top-1-Sortierung wird etwas weniger
+    präzise als mit Cross-Encoder-Reranking.
+    """
+    import os as _os
+    raw = (_os.getenv("RAG_RERANKER_ENABLED") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in ("false", "0", "no", "off")
+
+
 def _get_reranker():
-    """Load reranker on first use. Returns wrapper or None if unavailable."""
+    """Load reranker on first use. Returns wrapper or None if unavailable
+    OR explicitly disabled via ``RAG_RERANKER_ENABLED=false``."""
     global _reranker, _reranker_loaded
     if _reranker_loaded:
         return _reranker or None
@@ -305,6 +325,19 @@ def _get_reranker():
 
     import logging as _logging
     log = _logging.getLogger(__name__)
+
+    # ENV-basiertes Opt-out für Small-RAM-Deployments. Greift VOR dem
+    # Modell-Disk-Check, damit weder Datei-IO noch ORT-Bibliothek
+    # geladen werden — das spart ca. 30-50 MB Startup-Speicher selbst
+    # wenn der Reranker nie tatsächlich benutzt würde.
+    if not _reranker_enabled_via_env():
+        log.info(
+            "RAG reranker disabled via RAG_RERANKER_ENABLED=false — "
+            "running with embedding-only ranking."
+        )
+        _reranker = False
+        return None
+
     model_dir = _reranker_model_dir()
     if model_dir is None:
         log.warning(
@@ -332,12 +365,24 @@ async def warmup_reranker() -> None:
     """Load the reranker + run one prediction so the first real request
     doesn't pay the ~1–1.5 s model-load + first-inference cost. Called
     from the FastAPI lifespan handler as a background task.
+
+    Wenn ``RAG_RERANKER_ENABLED=false`` per ENV gesetzt ist, wird der
+    Warmup übersprungen — sinnvoll für Small-RAM-Deployments
+    (siehe ``_get_reranker``).
     """
     import asyncio as _aio
     import logging as _logging
     import time as _time
 
     log = _logging.getLogger(__name__)
+
+    if not _reranker_enabled_via_env():
+        log.info(
+            "Reranker warmup skipped (RAG_RERANKER_ENABLED=false). "
+            "Embedding-only ranking aktiv."
+        )
+        return
+
     loop = _aio.get_event_loop()
 
     def _work():
