@@ -47,7 +47,38 @@ _RULES: list[tuple[str, str, str, int]] = [
     (r"\bwas\s+(?:ist|sind|bedeutet)\s+(?:eine|die)?\s*themenseite",
      "Themenseiten-Beispiel", "https://wirlernenonline.de/themenseite/klimawandel", 80),
 
-    # Mitmachen / Beitragen / Inhalte einreichen
+    # Inhalt einreichen / Quelle vorschlagen — SPEZIFISCHER als das generelle
+    # "Mitmachen". Trigger zielen auf den konkreten Use-Case "Ich habe ein
+    # OER/Material gefunden und will es der Redaktion zukommen lassen".
+    # Höhere Priorität (85) als "Mitmachen" generell (75), damit z.B.
+    # "ich will Material einreichen" hier matcht und nicht im allgemeinen
+    # Mitmachen-Bucket landet.
+    #
+    # Die Regex hat mehrere Pfade, weil User das Anliegen sehr unter-
+    # schiedlich formulieren:
+    #   (1) Direkter Phrase-Match: "Material einreichen", "Quelle vorschlagen", …
+    #   (2) Inverse Reihenfolge: "vorschlagen ein Material", "einreichen einen Link"
+    #   (3) "Kann ich das einreichen?" / "Wo kann ich vorschlagen?" — Verb-Catchall
+    #   (4) "Ich habe ein <evtl. Adjektiv> Video/Material gefunden" — Finder-Phrase
+    #   (5) Direkte Verweise auf Redaktion oder das Formular-Konzept
+    (r"\b(?:material(?:ien)?|oer|inhalt(?:e)?|quelle(?:n)?|link(?:s)?|video(?:s)?|arbeitsblatt|sammlung|seite)"
+     r"\s+(?:vorschlagen|einreichen|hochladen|teilen|empfehlen|melden|tippen|beisteuern|spenden)\b"
+     r"|\b(?:vorschlagen|einreichen|hochladen|empfehlen|beisteuern)"
+     r"\s+(?:ein(?:e|en|er|es)?)?\s*"
+     r"(?:material|inhalt|quelle|link|video|arbeitsblatt|sammlung|seite|oer)\b"
+     r"|\b(?:wo|wie|wohin)\s+kann\s+ich\s+(?:\w+\s+){0,4}?"
+     r"(?:einreichen|vorschlagen|hochladen|empfehlen|beisteuern|reinstellen)\b"
+     r"|\b(?:kann|darf|möchte|will)\s+ich\s+(?:das|es|sowas|so\s+was|den|die|einen|eine|ein|meinen?|meine|hier|sowas)"
+     r"\s*(?:\w+\s+){0,3}?(?:einreichen|vorschlagen|hochladen|empfehlen|beisteuern)\b"
+     r"|\b(?:ich\s+(?:habe|hab|hätte|kenne|will|möchte|würde))"
+     r"\s+(?:einen?|eine|ein)\s+(?:\w+\s+){0,3}?"
+     r"(?:material|inhalt|quelle|link|video|arbeitsblatt|sammlung|seite|oer|fund)\s+"
+     r"(?:gefunden|entdeckt|empfehlung|gesehen|am\s+start|im\s+kopf|parat)\b"
+     r"|\b(?:redaktion(?:s)?(?:einreichen|vorschlag|einsendung|formular)?|inhalt-vorschlagen|einreich-formular)\b",
+     "Inhalt vorschlagen", "https://wp-test.wirlernenonline.de/mitmachen/inhalt-vorschlagen/?type=quelle#esform", 85),
+
+    # Mitmachen / Beitragen / Inhalte allgemein — Fallback wenn die Anfrage
+    # weniger spezifisch auf das Einreich-Formular zielt.
     (r"\b(?:mitmachen|mit\s*machen|beitragen|inhalte\s+(?:einreichen|hochladen|teilen)|wie\s+kann\s+ich\s+(?:bei\s+wlo\s+)?(?:helfen|mitwirken))\b",
      "Mitmachen-Seite", "https://wirlernenonline.de/mitmachen", 75),
 

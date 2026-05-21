@@ -1290,6 +1290,19 @@ Ton: {pattern_output.get('tone', 'sachlich')}
 ### Anrede-Form (STRIKT einhalten — Persona-abhängig)
 Formality: {pattern_output.get('formality', 'neutral')}
 {_formality_guidance(pattern_output.get('formality', 'neutral'), persona_id)}
+
+**WICHTIG — Quick-Replies (Pillen-Buttons) IMMER in Du-Form:**
+Die Formality-Regel oben gilt NUR für den **Bot-Antwort-Text** (was BOERDi
+dem Nutzer schreibt). Die Quick-Replies dagegen sind **nutzerseitige
+Folge-Eingaben** — der Nutzer spricht BOERDi an, und der Nutzer duzt
+BOERDi IMMER (BOERDi ist eine freundliche Eule, kein formaler Beamter).
+- Quick-Replies in **Du-Form** schreiben, egal welche Persona-Formality
+  oben gesetzt ist: „Kannst du das genauer erklären?", „Zeig mir mehr",
+  „Erklär mir den Unterschied".
+- **NIE Sie-Form** in Quick-Replies: NICHT „Können Sie mir helfen?",
+  NICHT „Zeigen Sie mir mehr.", NICHT „Bitte erklären Sie das."
+- Auch nicht „Ja, bitte sagen Sie mir …" — sondern „Ja, gerne." oder
+  „Ja, sag's mir."
 Länge: {pattern_output.get('length', 'mittel')} (kurz=kompakte 2-4 Saetze, ein Absatz; mittel=strukturierte Erklaerung mit 2-4 Absaetzen, gerne mit H3-Unterpunkten wenn das Thema mehrere Aspekte hat; lang=ausfuehrliche Darstellung mit mehreren Absaetzen, Beispielen und Aufzaehlungen)
 Wenn internes Wissen (RAG-Kontext, query_knowledge-Ergebnisse) verfuegbar ist, nutze es inhaltlich REICH aus — der Nutzer hat explizit gefragt und erwartet eine substantielle Antwort, keine Ein-Satz-Zusammenfassung.
 
@@ -2000,8 +2013,16 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     "hast und die finale Antwort fertig ist. Liefere die Markdown-"
                     "formatierte Antwort als ``text`` und 2-4 kurze nutzerseitige "
                     "Folgevorschläge als ``quick_replies`` (max 6-8 Wörter pro "
-                    "Vorschlag, in Persona-passender Anrede, vom Nutzer formuliert "
-                    "z.B. 'Mehr davon zeigen', 'Anderes Thema wählen'). "
+                    "Vorschlag, vom NUTZER formuliert — der Text MUSS so klingen, "
+                    "als würde der Nutzer ihn selbst tippen, z.B. 'Mehr davon "
+                    "zeigen', 'Anderes Thema wählen', 'Ja, gerne', 'Nein danke'). "
+                    "ANREDE-REGEL (kritisch): Der Nutzer spricht BOERDi mit DU an, "
+                    "nicht mit Sie — auch wenn die Persona-Modulation 'siezen' "
+                    "auf den BOT-Text gesetzt ist (das gilt nur für die Antwort "
+                    "des Bots an den Nutzer, NICHT für die Pillen-Vorschläge). "
+                    "Quick-Replies dürfen daher NICHT 'Können Sie mir helfen?' "
+                    "enthalten, sondern 'Kannst du mir helfen?' / 'Zeig mir mehr' / "
+                    "'Erklär mir den Unterschied'. Du-Form ist Pflicht. "
                     "Wenn keine Folgevorschläge passen (z.B. CRISIS), gib leere Liste. "
                     "BRING-MICH-HIN-VORSCHLAG: Wenn deine Antwort eine konkrete "
                     "WLO-Webseiten-URL adressiert (z.B. /themenseite/<slug>, "
@@ -2027,9 +2048,15 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                             "description": (
                                 "2-4 kurze Folgevorschläge. Jeder Vorschlag ist ein "
                                 "Satz, den der Nutzer als nächste Eingabe sagen würde "
-                                "(NICHT was der Bot vorschlägt zu tun). EIN Eintrag "
-                                "darf optional ein Bring-mich-hin-Spezialformat sein: "
-                                "``__guide__|<Label>|<URL>`` — siehe Tool-Description."
+                                "(NICHT was der Bot vorschlägt zu tun). "
+                                "ANREDE: Du-Form, weil der Nutzer den Bot duzt — "
+                                "auch dann, wenn die Bot-Antwort selbst siezt. "
+                                "Beispiele: 'Zeig mir mehr', 'Anderes Thema wählen', "
+                                "'Kannst du das genauer erklären?'. KEINE Sie-Form "
+                                "wie 'Können Sie mir ...?' / 'Zeigen Sie mir ...'. "
+                                "EIN Eintrag darf optional ein Bring-mich-hin-"
+                                "Spezialformat sein: ``__guide__|<Label>|<URL>`` — "
+                                "siehe Tool-Description."
                             ),
                             "minItems": 0,
                             "maxItems": 4,

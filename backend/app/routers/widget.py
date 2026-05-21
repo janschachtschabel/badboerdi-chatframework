@@ -667,8 +667,8 @@ _DEMO_HTML = """<!doctype html>
         <td>KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix) ein/aus. <code>false</code> lehnt Erstell-Anfragen mit der Alt-Antwort aus <code>widget-modes.yaml</code> freundlich ab.</td></tr>
     <tr><td><code>cards-enabled</code></td><td>boolean</td><td><code>true</code></td>
         <td>Kachel-Anzeige ein/aus. <code>false</code> rendert Treffer als dezente Inline-Markdown-Links im Bot-Text (max. N aus <code>widget-modes.yaml</code> → <code>cards_inline_link_limit</code>). Titel wird im Frontend gekürzt; URL ist <code>guide_url</code> (Lotsen-Modus an) oder <code>wlo_url</code> (Direktlink).</td></tr>
-    <tr><td><code>inline-result-grouping</code></td><td>boolean</td><td><code>false</code></td>
-        <td>Gruppierte Treffer-Darstellung statt flacher Liste. <code>true</code>: Top-3-Themenseiten, Top-3-Sammlungen und (falls vorhanden) Webseiten-Inhalte aus dem Bot-Text in eigenen Boxen + ein vollflächiger Primary-Button „Alle Treffer in der Suche anzeigen" (Theme-Ton, übernimmt <code>primary-color</code>). Einzelinhalte erscheinen nicht mehr als Kacheln — User springt direkt in die MCP-Suchergebnisliste. Wirkt auch im Canvas-Pane.</td></tr>
+    <tr><td><code>inline-result-grouping</code></td><td>boolean</td><td><code>true</code></td>
+        <td><strong>Default seit Welle C.5 (2026-05-21): an.</strong> Gruppierte Treffer-Darstellung — Top-3-Themenseiten, Top-3-Sammlungen und (falls vorhanden) Webseiten-Inhalte aus dem Bot-Text in eigenen Boxen + Card-Button „Treffer zur Suche „<em>Term</em>"" (Theme-Ton, übernimmt <code>primary-color</code>). Einzelinhalte erscheinen nicht mehr als Kacheln — User springt direkt in die MCP-Suchergebnisliste. Wirkt auch im Canvas-Pane. Hosts, die das alte flache Kachel-/Inline-Link-Layout zurück wollen, setzen <code>inline-result-grouping="false"</code>.</td></tr>
     <tr><td><code>quick-replies-enabled</code></td><td>boolean</td><td><code>true</code></td>
         <td>Gesprächsvorschläge-Pillen unter Bot-Antworten. <code>false</code> blendet alle QR-Buttons komplett aus — keine Konversations-Vorschläge mehr. <br>Lotsen-Hinweise sind davon nicht betroffen: sie werden <em>in jedem Modus</em> als Inline-Link im Bot-Text gerendert, nicht als Pille.</td></tr>
     <tr><td><code>show-guide-button</code></td><td>boolean</td><td><code>true</code></td>
@@ -1043,10 +1043,13 @@ window.addEventListener('badboerdi:query-meta', (e) =&gt; {
     try { localStorage.setItem('boerdi.guide_mode', '1'); } catch(e) {}
   </script>
   <script src="/widget/boerdi-widget.js" defer></script>
+  <!-- ``inline-result-grouping`` ist seit Welle C.5 (2026-05-21)
+       Default = ``true``. Wir setzen es hier bewusst NICHT, damit die
+       Demo das minimalste Embed mit aktuellem Default-Verhalten zeigt.
+       Für Opt-out auf das alte Flat-Card-Layout siehe ``/widget/classic``. -->
   <boerdi-chat
     cards-enabled="true"
     canvas-enabled="false"
-    inline-result-grouping="true"
     show-language-buttons="false"
     show-debug-button="false"
     show-guide-button="false"
@@ -1061,34 +1064,42 @@ window.addEventListener('badboerdi:query-meta', (e) =&gt; {
 """
 
 
-# ── Classic-Demo: identisch zu /widget/inline, aber OHNE
-# ``inline-result-grouping``. Wir leiten sie deterministisch per
-# String-Replacement vom Inline-Template ab, damit Layout, Inspector und
-# Styling synchron bleiben. Nur Titel, Lead-Text, Swap-Link und der eine
-# Embed-Attribut-Eintrag werden überschrieben.
+# ── Classic-Demo: identisch zu /widget/inline, aber mit explizitem
+# ``inline-result-grouping="false"`` — also Opt-out aus dem neuen Default.
+# Wir leiten sie deterministisch per String-Replacement vom Inline-Template
+# ab, damit Layout, Inspector und Styling synchron bleiben. Nur Titel,
+# Lead-Text, Swap-Link und der Embed-Attribut-Eintrag werden überschrieben.
+#
+# Default-Flip 2026-05-21: Grouping ist jetzt Standard. Wer das alte
+# flache Card-/Inline-Link-Verhalten sehen will, muss explizit OPT-OUT,
+# daher die ``inline-result-grouping="false"``-Zeile statt sie zu entfernen.
 _DEMO_CLASSIC_HTML = (
     _DEMO_INLINE_HTML
     .replace(
         "BOERDi Widget — Inline-Modus (keine Kacheln, kein Canvas)",
-        "BOERDi Widget — Classic-Modus (ohne Result-Grouping)",
+        "BOERDi Widget — Classic-Modus (Result-Grouping deaktiviert)",
     )
     .replace(
         ">Inline-Link-Modus</h1>",
-        ">Classic-Modus (ohne Result-Grouping)</h1>",
+        ">Classic-Modus (Result-Grouping deaktiviert)</h1>",
     )
     .replace(
         'Diese Demo zeigt das Widget mit deaktivierten Kacheln und deaktiviertem Canvas — der\n    Anwendungsfall für eine Themenseite, ein WordPress-Theme oder ein fremdes CMS, das\n    selbst Layout und Inhalts-Komponenten mitbringt.',
-        'Diese Demo entspricht <a href="/widget/inline" style="color:#1c4587;">/widget/inline</a>,\n    läuft aber OHNE den Parameter <code>inline-result-grouping</code>.\n    Damit zeigt der Bot Treffer- und Lotsen-Quellen wieder als Markdown-Bullets\n    im Antworttext (der klassische Inline-Link-Modus aus der Zeit vor Welle C.5)\n    statt sie in separate Boxen (Themenseiten / Sammlungen / Webseiten-Inhalte /\n    Such-CTA) zu gruppieren.',
+        'Diese Demo entspricht <a href="/widget/inline" style="color:#1c4587;">/widget/inline</a>,\n    setzt aber <code>inline-result-grouping="false"</code> — der klassische\n    Inline-Link-Modus aus der Zeit vor Welle C.5. Treffer- und Lotsen-Quellen\n    erscheinen als Markdown-Bullets im Antworttext statt in separaten Boxen\n    (Themenseiten / Sammlungen / Webseiten-Inhalte / Such-CTA).\n    <br><br><strong>Hinweis:</strong> seit Welle C.5 (2026-05-21) ist Grouping\n    Default. Diese Demo ist also das Opt-out-Beispiel; ohne expliziten\n    Parameter würde die Anzeige wie in <code>/widget/inline</code> aussehen.',
     )
     .replace(
         '<a class="swap-link" href="/widget/">← Zurück zur klassischen Demo (mit Kacheln + Canvas)</a>',
-        '<a class="swap-link" href="/widget/inline">→ Zur Demo /widget/inline mit gruppierten Result-Boxen</a>',
+        '<a class="swap-link" href="/widget/inline">→ Zur Demo /widget/inline mit Default-Grouping</a>',
     )
-    # Embed-Attribut ``inline-result-grouping="true"`` aus dem
-    # ``<boerdi-chat>``-Element entfernen (inkl. Einrückung + Newline).
+    # Embed-Attribut ``inline-result-grouping="false"`` EINFÜGEN — das
+    # Inline-Template enthält den Parameter seit dem Default-Flip nicht
+    # mehr (Grouping ist Default), also kann hier nichts mehr ersetzt
+    # werden. Stattdessen hängen wir die Opt-out-Zeile direkt nach
+    # ``canvas-enabled="false"`` an, damit Classic das alte Verhalten
+    # zurück bekommt.
     .replace(
-        '    inline-result-grouping="true"\n',
-        '',
+        '    canvas-enabled="false"\n',
+        '    canvas-enabled="false"\n    inline-result-grouping="false"\n',
     )
     # Kacheln im Classic-Modus AUS — wir wollen ausschließlich
     # Inline-Markdown-Links im Bot-Text, keine Card-Boxen. Im Inline-

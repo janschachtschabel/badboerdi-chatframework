@@ -72,9 +72,11 @@ class Environment(BaseModel):
     #   - Lotsen-Guide-Bullets („- [Über WLO](url)") ebenfalls in die
     #     Webseiten-Inhalte-Box zu verschieben statt sie als Textbullet zu
     #     belassen.
-    # Default None / False → bisheriges Verhalten: Inline-Links bleiben im
-    # Text (Inline-Mode mit ``cards-enabled=false`` oder Standard-Card-
-    # Layout mit Lotsen-Bullets als sichtbare Quellen-Liste).
+    #
+    # **Default-Flip 2026-05-21**: ``None`` wird jetzt als ``True`` interpretiert
+    # (die gruppierte Darstellung ist Standard). Frontend sendet ``False``
+    # nur noch dann, wenn der Host ``inline-result-grouping="false"`` setzt
+    # und das alte flache Card-Layout zurück will.
     inline_result_grouping: bool | None = None
 
 

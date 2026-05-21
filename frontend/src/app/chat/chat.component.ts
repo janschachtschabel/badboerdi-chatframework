@@ -225,10 +225,14 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
    *  Session erhalten bleibt); externe Hosts öffnen target="_blank".
    *  Empty-Default = alle Markdown-Links bekommen target="_blank". */
   @Input() trustedHosts: string[] = [];
-  /** Wenn ``true``: Such-Treffer werden gruppiert dargestellt
-   *  (Top 3 Themenseiten + Top 3 Sammlungen + Search-CTA-Box statt
-   *  Einzelinhalte-Kacheln). Default ``false`` = bisheriges Verhalten. */
-  @Input() inlineResultGrouping: boolean | string = false;
+  /** Treffer-Darstellung: gruppierte Boxen (Top 3 Themenseiten + Top 3
+   *  Sammlungen + Webseiten-Inhalte + „Alle Treffer"-CTA) statt flacher
+   *  Einzelinhalte-Kacheln.
+   *
+   *  **Default ist ``true``** — die neue Box-Darstellung ist seit Welle C.5
+   *  (2026-05) der Standard. Wer explizit das alte flache Kachel-Layout
+   *  möchte, setzt ``inline-result-grouping="false"``. */
+  @Input() inlineResultGrouping: boolean | string = true;
   /** Lotsen-Modus: passive Top-Result-Emission an die Host-Seite.
    *  Bei ``true`` wird bei JEDEM Bot-Turn, der Cards mit Lotsen-Link enthält,
    *  ein ``badboerdi:guide-suggestion``-CustomEvent auf ``window`` gefeuert
@@ -341,10 +345,11 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
       this.canvasEnabledBool ? undefined : false,
       this.aiContentEnabledBool ? undefined : false,
       this.quickRepliesEnabledBool ? undefined : false,
-      // ``inline-result-grouping`` ist *opt-in*: nur dann an Backend
-      // melden, wenn der Host explizit ``true`` setzt. Default = nicht
-      // gesetzt → Backend lässt Inline-Links im Bot-Text stehen.
-      this.inlineResultGroupingBool ? true : undefined,
+      // ``inline-result-grouping`` ist seit Welle C.5 **Default an**.
+      // Wir senden also nur dann explizit ``false`` ans Backend, wenn der
+      // Host das Feature aktiv abgeschaltet hat — sonst ``undefined``
+      // (= Backend nutzt seinen eigenen Default ``true``).
+      this.inlineResultGroupingBool ? undefined : false,
     );
 
     // Parse page-context attribute (JSON string or already an object)

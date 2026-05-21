@@ -793,7 +793,7 @@ export default function InfoView() {
               ['Embed-Modi', 'canvas-enabled', 'true', 'Bei "false": Canvas-Pane wird nicht geöffnet; Material/Lernpfad rendert im Chat-Verlauf'],
               ['Embed-Modi', 'ai-content-enabled', 'true', 'Bei "false": Erstell-Anfragen (PAT-19/21) werden mit Alt-Response aus widget-modes.yaml abgelehnt'],
               ['Embed-Modi', 'quick-replies-enabled', 'true', 'Bei "false": Quick-Reply-Pillen ausgeblendet; Lotsen-QRs werden inline angehängt'],
-              ['Embed-Modi', 'inline-result-grouping', 'false', 'Bei "true": Treffer in separaten Boxen (Top-3 Themenseiten + Top-3 Sammlungen + Webseiten-Inhalte) plus Primary-Button "Alle Treffer in der Suche anzeigen". Einzelinhalte nicht mehr als Kacheln. Wirkt auch im Canvas.'],
+              ['Embed-Modi', 'inline-result-grouping', 'true', 'Default seit Welle C.5 (2026-05-21): Treffer in separaten Boxen (Top-3 Themenseiten + Top-3 Sammlungen + Webseiten-Inhalte) plus Card-Button "Treffer zur Suche". Einzelinhalte nicht mehr als Kacheln. Wirkt auch im Canvas. Opt-out via "inline-result-grouping=\\"false\\"" bringt das alte Flat-Card-Layout zurück.'],
               ['Lotsen', 'guide-mode-default', 'auto', 'Initial-State: "true" | "false" | "auto" (URL-Param → localStorage → Backend)'],
               ['Integration', 'intercept-edu-sharing-links', 'false', 'Bei "true": Link-Klicks emitten (linkClicked)-Event statt zu navigieren'],
               ['Integration', 'emit-guide-suggestion', 'false', 'Bei "true": Bot-Turns mit Lotsen-Treffer feuern badboerdi:guide-suggestion CustomEvent'],

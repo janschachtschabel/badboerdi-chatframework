@@ -3141,12 +3141,15 @@ async def _postprocess_response_for_widget_modes(
         # form für Treffer/Lotsen (sichtbare Bullets/Links im Bot-Text) und
         # MÜSSEN dort bleiben.
         #
-        # Nur wenn die Host-Seite ``inline-result-grouping="true"`` setzt,
-        # gibt es separate Boxen, die die Links nebenbei darstellen — dann
-        # ist der Bullet im Text Doppelung, und wir ziehen ihn in ``web_links``
-        # um. Andere Modi → Re-Extraktion überspringen, Links bleiben sichtbar.
+        # Seit dem Default-Flip 2026-05-21 ist die gruppierte Box-Darstellung
+        # Standard — die Re-Extraktion läuft also IMMER, außer der Host setzt
+        # explizit ``inline-result-grouping="false"`` und will das alte flache
+        # Card-Layout zurück. Logik:
+        #   - True / None (nicht gesetzt) → Grouping an → Re-Extraktion läuft
+        #   - False (explizit deaktiviert) → Grouping aus → Inline-Links bleiben
         env = req.environment
-        _grouping_on = bool(getattr(env, "inline_result_grouping", False))
+        _ig_flag = getattr(env, "inline_result_grouping", None)
+        _grouping_on = _ig_flag is not False
 
         if _grouping_on:
             _existing_links = [l.model_dump() if hasattr(l, "model_dump") else dict(l)
@@ -5613,13 +5616,12 @@ async def _chat_impl(
     # ``_web_links``). Hier zuerst rechnen, einmal save, einmal return.
     #
     # Die Extraktion strippt Inline-Markdown-Links aus dem Text und stellt
-    # sie strukturiert in ``web_links`` bereit. Sie ist NUR sinnvoll, wenn
-    # die Host-Seite die Links in einer separaten Box („Webseiten-Inhalte")
-    # rendert — also bei ``inline-result-grouping="true"``. Sonst wären
-    # Inline-Links die einzige sichtbare Quellen-Anzeige für den User und
-    # dürfen NICHT aus dem Text verschwinden (z.B. Lotsen-Bullets, Inline-
-    # Mode mit ``cards-enabled="false"``).
-    _grouping_on_impl = bool(getattr(req.environment, "inline_result_grouping", False))
+    # sie strukturiert in ``web_links`` bereit. Sie läuft seit Welle C.5
+    # (Default-Flip 2026-05-21) per Default — nur wenn der Host explizit
+    # ``inline-result-grouping="false"`` setzt (= flaches Card-Layout zurück),
+    # bleiben Inline-Links als sichtbare Quellen-Anzeige im Bot-Text.
+    _ig_flag_impl = getattr(req.environment, "inline_result_grouping", None)
+    _grouping_on_impl = _ig_flag_impl is not False
     if _grouping_on_impl:
         _final_text, _web_links = _extract_web_links_from_text(
             response_text, cards=cards,

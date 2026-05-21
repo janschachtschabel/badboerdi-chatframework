@@ -38,7 +38,7 @@ Beide Kanäle sind gleichwertig — wähle den, der zur Host-Integration passt.
 | | `canvas-enabled` | Input | `true` |
 | | `ai-content-enabled` | Input | `true` |
 | | `quick-replies-enabled` | Input | `true` |
-| | `inline-result-grouping` | Input | `false` |
+| | `inline-result-grouping` | Input | `true` |
 | **UI-Toggles** | `show-debug-button` | Input | `true` |
 | | `show-language-buttons` | Input | `true` |
 | | `show-guide-button` | Input | `true` |
@@ -232,10 +232,14 @@ default auf `true`; Setzen auf `"false"` (String im HTML) oder `false`
 
 Gruppierte Treffer-Darstellung statt flacher Card-Liste.
 
-* `false` (Default): bestehende flache Card-Liste mit Pagination-Bar
-  („Mehr anzeigen") — unverändert zur bisherigen Optik.
-* `true`: jede Bot-Antwort mit Suchergebnissen zeigt bis zu **vier
-  separate Boxen** statt einer langen Liste:
+**Default-Flip seit Welle C.5 (2026-05-21):** dieser Parameter ist jetzt
+**standardmäßig `true`**. Wer das alte flache Card-Layout zurück will,
+setzt explizit `inline-result-grouping="false"`. Bestandsembeds, die
+den Parameter ohnehin schon auf `="true"` gesetzt hatten, ändern sich
+nicht.
+
+* `true` (Default): jede Bot-Antwort mit Suchergebnissen zeigt bis zu
+  **vier separate Boxen** statt einer langen Liste:
   - **Themenseiten** — Top 3 kuratierte WLO-Themenseiten, falls vorhanden
   - **Sammlungen** — Top 3 edu-sharing-Sammlungen, falls vorhanden
   - **Webseiten-Inhalte** — bis zu 3 Inline-Links aus dem Bot-Text
@@ -249,12 +253,19 @@ Gruppierte Treffer-Darstellung statt flacher Card-Liste.
   Einzelinhalte erscheinen damit **nicht mehr als Kacheln**; der User
   springt direkt in die volle Trefferliste. Greift parallel im Canvas-
   Pane (dort werden die Einzelinhalte-Cards ausgeblendet und durch
-  denselben Primary-CTA-Button ersetzt). LLM kennt die ausgeblendeten
+  denselben Card-CTA-Button ersetzt). LLM kennt die ausgeblendeten
   Cards weiterhin und kann sie für Folge-Fragen nutzen.
 
   Layout: schmaler einheitlicher Rahmen pro Box, graue outlined Material-
   Symbol-Icons im Heading, kompakte Zeilen. Heading-Farbe und Icons sind
-  theme-agnostisch — nur der Primary-CTA übernimmt `--boerdi-primary`.
+  theme-agnostisch — nur die Search-CTA übernimmt `--boerdi-primary`
+  (heller Card-Stil mit Primary-Tint-Icon-Bubble + Chevron).
+
+* `false`: alte flache Card-Liste mit Pagination-Bar („Mehr anzeigen") —
+  Einzelinhalte, Sammlungen und Themenseiten als gestaffelte Kacheln.
+  Lotsen-Inline-Links bleiben als Markdown-Bullets im Bot-Text sichtbar
+  (statt in eine Webseiten-Inhalte-Box zu wandern). Nützlich für CMS-
+  Embeds, die Layout-Konsistenz mit eigenen Listen-Komponenten wollen.
 
 ---
 

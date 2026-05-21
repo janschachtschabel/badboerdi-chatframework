@@ -84,10 +84,13 @@ export class CanvasComponent {
   /** Aktuelle Session-ID (``bb-...``) für den ``?bsid=``-Param. Wird vom
    *  Widget aus der ChatComponent durchgereicht. Leer = kein Rewrite. */
   @Input() sessionId = '';
-  /** Opt-in via ``inline-result-grouping="true"``: limitiert Themenseiten +
-   *  Sammlungen auf Top 3, blendet Einzelinhalte aus und zeigt stattdessen
-   *  einen Search-CTA-Button. */
-  @Input() inlineResultGrouping: boolean | string = false;
+  /** Treffer-Darstellung im Canvas: limitiert Themenseiten + Sammlungen
+   *  auf Top 3, blendet Einzelinhalte aus und zeigt stattdessen einen
+   *  Search-CTA-Button.
+   *
+   *  **Default ``true``** seit Welle C.5 (2026-05). Wer das volle alte
+   *  Card-Grid will, setzt ``inline-result-grouping="false"`` am Widget. */
+  @Input() inlineResultGrouping: boolean | string = true;
   /** Search-CTA-URL und Suchbegriff — vom Widget durchgereicht (aus
    *  query_metas der Bot-Antwort). Werden nur im Grouping-Modus
    *  angezeigt. */

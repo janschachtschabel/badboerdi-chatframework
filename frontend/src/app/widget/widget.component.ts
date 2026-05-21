@@ -711,17 +711,20 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   @Input() trustedDomains = '';
   @Input() greeting = '';
   @Input() autoContext: boolean | string = true;
-  /** Neue Such-Ergebnis-Darstellung (Sprint 7, 2026-05-19):
-   *  Wenn ``true`` zeigt der Chat keine flache Card-Liste mehr, sondern
-   *  gruppiert die Treffer pro Bot-Antwort in eigene Boxen:
+  /** Such-Ergebnis-Darstellung (Sprint 7, 2026-05-19, Default-Flip Welle C.5,
+   *  2026-05-21): Chat + Canvas zeigen Treffer NICHT mehr als flache Card-
+   *  Liste, sondern gruppieren pro Bot-Antwort in eigene Boxen:
    *    - Top 3 Themenseiten
    *    - Top 3 Sammlungen
-   *    - Search-CTA-Box mit Link zur kompletten Trefferliste
-   *      (kein Einzelinhalte-Kachelblock mehr; das LLM darf sie noch
-   *      kennen, aber visuell springt der User direkt in die Suche)
-   *  Wirkt parallel auf Chat-Cards und Canvas-Cards. Default ``false`` =
-   *  Bestehendes Verhalten — kein Bestandsbruch. */
-  @Input() inlineResultGrouping: boolean | string = false;
+   *    - Webseiten-Inhalte (RAG-Quellen, FAQ etc.)
+   *    - Search-CTA-Box „Alle Treffer in der Suche anzeigen"
+   *      (Einzelinhalte-Kacheln blieben weg; das LLM darf sie noch kennen,
+   *       aber visuell springt der User direkt in die Suche)
+   *
+   *  **Default ``true``** seit Welle C.5. Hosts, die das alte flache
+   *  Card-Layout zurück wollen, setzen ``inline-result-grouping="false"``.
+   *  Wirkt parallel auf Chat-Cards und Canvas-Cards. */
+  @Input() inlineResultGrouping: boolean | string = true;
   /** Show the 🔍 debug-toggle button in the chat header. Default true. */
   @Input() showDebugButton: boolean | string = true;
   /** Show the 🔊 TTS and 🎤 mic buttons. Default true. */
