@@ -298,6 +298,13 @@ def _widget_modes(req: "ChatRequest") -> dict[str, bool]:
         "canvas_enabled": _val("canvas_enabled"),
         "ai_content_enabled": _val("ai_content_enabled"),
         "quick_replies_enabled": _val("quick_replies_enabled"),
+        # inline-result-grouping: separater Flag, gleiche Default-Semantik
+        # (None → True seit Welle C.5). Wird vom Postprocess gebraucht, um
+        # zu entscheiden, ob Cards bei ``cards_enabled=false`` zu Inline-
+        # Markdown-Bullets umgewandelt werden (Legacy) oder als Cards
+        # durchgereicht werden (damit das Frontend sie in der Box-Anzeige
+        # rendern kann, unabhängig von der Tile-Anzeige).
+        "inline_result_grouping": _val("inline_result_grouping"),
     }
 
 
@@ -992,7 +999,16 @@ def _apply_widget_modes_postprocess(
     # Modus Lärm: der User hat die schlanke Variante gewählt, will keine
     # spekulativen Off-Topic-Hinweise. Daher Lotsen-QRs hier IMMER strippen,
     # statt sie als Inline-Markdown anzuhängen.
-    _cards_inline_mode = not modes["cards_enabled"]
+    #
+    # AUSNAHME (Welle C.5 Refactor 2026-05-21): Wenn ``inline-result-grouping``
+    # an ist (Default), gibt es im Frontend separate Box-Anzeigen für Cards
+    # (Themenseiten / Sammlungen) und Webseiten-Inhalte. Dann ist
+    # ``cards-enabled=false`` keine Inline-Link-Anweisung mehr, sondern nur
+    # noch „keine Card-Tile-Anzeige" — die Cards bleiben aber im Array
+    # erhalten und werden vom Frontend in den Boxen gerendert. Inline-Card-
+    # Markdown wird in dem Fall NICHT erzeugt.
+    _grouping_on_pp = modes.get("inline_result_grouping", True)
+    _cards_inline_mode = (not modes["cards_enabled"]) and (not _grouping_on_pp)
 
     if _cards_inline_mode or _has_substantive_content:
         # Cards / Canvas-Material decken die Information ab — Lotsen-
@@ -1008,7 +1024,12 @@ def _apply_widget_modes_postprocess(
         quick_replies, _guide_inline_lines = _extract_guide_inline(quick_replies)
 
     # ── 2) cards_enabled=false ───────────────────────────────────────
-    if not modes["cards_enabled"]:
+    # ABER: nur in den Inline-Markdown-Konversions-Pfad, wenn auch
+    # ``inline-result-grouping=false`` ist. Bei aktivem Grouping bleiben
+    # Cards in der Liste erhalten — das Frontend rendert sie dann in den
+    # Result-Group-Boxen (Themenseiten/Sammlungen/Webseiten), nicht als
+    # Tile und nicht als Inline-Markdown. Siehe ``_cards_inline_mode`` oben.
+    if (not modes["cards_enabled"]) and not _grouping_on_pp:
         wm = _lwm()
         limit = int(wm.get("cards_inline_link_limit", 3))
         title_max = int(wm.get("cards_inline_link_title_max", 70))
@@ -3142,28 +3163,22 @@ async def _postprocess_response_for_widget_modes(
         # MÜSSEN dort bleiben.
         #
         # Seit dem Default-Flip 2026-05-21 ist die gruppierte Box-Darstellung
-        # Standard — die Re-Extraktion läuft also IMMER, außer:
-        #   (a) der Host setzt explizit ``inline-result-grouping="false"`` —
-        #       altes flaches Card-Layout zurück, oder
-        #   (b) ``cards-enabled="false"`` ist gesetzt — INLINE-MODE: Cards
-        #       werden vom Backend als Markdown-Bullets im Bot-Text ausgegeben,
-        #       das ist die einzige sichtbare Treffer-Anzeige. Re-Extraktion
-        #       würde diese Inline-Bullets fälschlich strippen (vor allem
-        #       wegen ``_is_material_url`` Filter, der edu-sharing-Render-URLs
-        #       NICHT in ``web_links`` aufnimmt → komplettes Verschwinden
-        #       der Treffer für den User). Bei Inline-Mode IMMER skip,
-        #       unabhängig vom Grouping-Flag.
-        #
-        # Logik:
-        #   - cards_enabled == False → Inline-Mode → Re-Extraktion AUS
-        #   - inline_result_grouping == True/None + cards_enabled != False →
-        #     Grouping an → Re-Extraktion AN
-        #   - inline_result_grouping == False → Re-Extraktion AUS
+        # Standard. Re-Extraktion läuft per Default, außer im LEGACY-Inline-
+        # Mode:
+        #   - cards_enabled=False + inline_result_grouping=False → Legacy:
+        #     Cards werden als Markdown-Bullets im Text inline angehängt,
+        #     die müssen sichtbar bleiben. Re-Extraktion AUS.
+        #   - cards_enabled=False + inline_result_grouping=True/None →
+        #     Welle-C.5-Refactor: Cards bleiben im Array, Frontend rendert
+        #     sie in Boxen. Keine Inline-Bullets im Text. Re-Extraktion AN
+        #     (für LLM-flowing-text-Links + Lotsen-QRs in web_links).
+        #   - inline_result_grouping=False (egal cards_enabled): Legacy-
+        #     Layout → Re-Extraktion AUS.
         env = req.environment
         _ig_flag = getattr(env, "inline_result_grouping", None)
         _ce_flag = getattr(env, "cards_enabled", None)
-        _inline_mode = _ce_flag is False
-        _grouping_on = (_ig_flag is not False) and (not _inline_mode)
+        _legacy_inline_mode = (_ce_flag is False) and (_ig_flag is False)
+        _grouping_on = (_ig_flag is not False) and (not _legacy_inline_mode)
 
         if _grouping_on:
             _existing_links = [l.model_dump() if hasattr(l, "model_dump") else dict(l)
@@ -5631,18 +5646,21 @@ async def _chat_impl(
     #
     # Die Extraktion strippt Inline-Markdown-Links aus dem Text und stellt
     # sie strukturiert in ``web_links`` bereit. Sie läuft seit Welle C.5
-    # (Default-Flip 2026-05-21) per Default. Sie wird ÜBERSPRUNGEN wenn:
-    #   (a) ``inline-result-grouping="false"`` explizit gesetzt (altes Card-
-    #       Layout), oder
-    #   (b) ``cards-enabled="false"`` (Inline-Mode) — dann sind Inline-
-    #       Markdown-Links die EINZIGE sichtbare Treffer-Anzeige, sie dürfen
-    #       NICHT in web_links umgehängt werden, sonst verschwinden sie
-    #       komplett (vor allem wenn ``_is_material_url`` greift und edu-
-    #       sharing-Render-URLs auch aus web_links filtert).
+    # (Default-Flip 2026-05-21) per Default — wird nur im LEGACY-Inline-
+    # Mode übersprungen:
+    #   - ``inline-result-grouping=false`` (explizit) → altes Layout, Inline-
+    #     Links bleiben als Lotsen-Bullets im Text.
+    #   - ``cards-enabled=false`` + ``inline-result-grouping=false`` → Legacy:
+    #     Cards werden vom Postprocess als Markdown-Bullets im Text angehängt,
+    #     die müssen sichtbar bleiben — also Re-Extraktion AUS.
+    #   - ``cards-enabled=false`` + ``inline-result-grouping=true/None`` →
+    #     Welle-C.5-Refactor: keine Inline-Card-Bullets im Text, Frontend
+    #     rendert Cards in Boxen. Re-Extraktion AN (für LLM-flowing-text-
+    #     Links → Webseiten-Inhalte-Box).
     _ig_flag_impl = getattr(req.environment, "inline_result_grouping", None)
     _ce_flag_impl = getattr(req.environment, "cards_enabled", None)
-    _inline_mode_impl = _ce_flag_impl is False
-    _grouping_on_impl = (_ig_flag_impl is not False) and (not _inline_mode_impl)
+    _legacy_inline_impl = (_ce_flag_impl is False) and (_ig_flag_impl is False)
+    _grouping_on_impl = (_ig_flag_impl is not False) and (not _legacy_inline_impl)
     if _grouping_on_impl:
         _final_text, _web_links = _extract_web_links_from_text(
             response_text, cards=cards,

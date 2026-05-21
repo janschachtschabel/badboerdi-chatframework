@@ -108,7 +108,14 @@
              vollständigen Suche ersetzt. Greift parallel zu cards-enabled
              und canvas-enabled — bei aktivem Canvas bleibt der Block hier
              unsichtbar, weil ``hideCards`` true ist. -->
-        <ng-container *ngIf="inlineResultGroupingBool && !hideCards && cardsEnabledBool && hasGroupedResults(msg)">
+        <!-- Welle C.5 (2026-05-21): ``cardsEnabledBool`` aus der Gate-Bedingung
+             entfernt — die Result-Group-Boxen (Themenseiten/Sammlungen/
+             Webseiten-Inhalte/CTA) sind eine LAYOUT-Wahl unabhängig davon,
+             ob Card-Tiles rendert werden. Mit ``cards-enabled="false"``
+             entfallen nur die großen Tile-Karten weiter unten — die Box-
+             Übersicht hier bleibt sichtbar, sodass Treffer auch in der
+             schlanken Embed-Konfiguration kompakt angeboten werden. -->
+        <ng-container *ngIf="inlineResultGroupingBool && !hideCards && hasGroupedResults(msg)">
           <div class="result-groups">
             <!-- Themenseiten -->
             <div *ngIf="groupedTopicCards(msg).length" class="result-group result-group--topic">

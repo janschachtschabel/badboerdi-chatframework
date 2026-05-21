@@ -915,12 +915,19 @@ _DEMO_INLINE_HTML = """<!doctype html>
     </p>
     <p>
       <strong>Was sich gegenüber der Standard-Demo ändert:</strong>
-      Treffer-Kacheln entfallen — der Bot listet stattdessen <strong>maximal 3 Inline-Links</strong>
-      direkt in der Antwort (Limit aus <code>chatbots/wlo/v1/01-base/widget-modes.yaml</code>).
-      Links sind <u>dezent unterstrichen</u> in der Schriftfarbe des Bot-Texts. Material- und
-      Lernpfad-Erstellung landen ebenfalls direkt im Chat-Verlauf statt im Canvas.
+      Treffer-Kacheln entfallen — stattdessen erscheinen die Treffer pro Bot-Antwort
+      in <strong>kompakten Result-Group-Boxen</strong> (Themenseiten / Sammlungen /
+      Webseiten-Inhalte / „Alle Treffer in der Suche anzeigen"-CTA). Diese Anzeige ist
+      seit Welle C.5 (2026-05-21) Default — der Parameter
+      <code>inline-result-grouping</code> ist nicht mehr nötig.
+      Material- und Lernpfad-Erstellung landen direkt im Chat-Verlauf statt im Canvas.
       Header-Buttons (🔊 TTS, 🎤 Mic, 🔍 Debug, 🧭 Lotsen-Toggle) sind ausgeblendet — der
-      Lotsen-Modus läuft trotzdem (per Default an) und liefert Inline-Repo/WLO-Links.
+      Lotsen-Modus läuft trotzdem (per Default an) und liefert Repo-/WLO-Ziele.
+    </p>
+    <p style="font-size:.9em;color:#475569;">
+      Wer das alte Inline-Markdown-Bullet-Verhalten zurück will, kann mit
+      <code>inline-result-grouping="false"</code> opt-out — siehe
+      <a href="/widget/classic" style="color:#1c4587;">/widget/classic</a>.
     </p>
     <p>
       <a class="swap-link" href="/widget/">← Zurück zur klassischen Demo (mit Kacheln + Canvas)</a>
@@ -1043,12 +1050,14 @@ window.addEventListener('badboerdi:query-meta', (e) =&gt; {
     try { localStorage.setItem('boerdi.guide_mode', '1'); } catch(e) {}
   </script>
   <script src="/widget/boerdi-widget.js" defer></script>
-  <!-- ``inline-result-grouping`` ist seit Welle C.5 (2026-05-21)
-       Default = ``true``. Wir setzen es hier bewusst NICHT, damit die
-       Demo das minimalste Embed mit aktuellem Default-Verhalten zeigt.
-       Für Opt-out auf das alte Flat-Card-Layout siehe ``/widget/classic``. -->
+  <!-- ``inline-result-grouping`` ist seit Welle C.5 (2026-05-21) Default
+       = ``true``, ``cards-enabled="false"`` koppelt nur die Tile-Card-
+       Anzeige ab. Resultat: kompaktes Embed mit den neuen Result-Group-
+       Boxen (Themenseiten / Sammlungen / Webseiten-Inhalte / CTA) statt
+       großer Card-Kacheln. Für Opt-out auf das Legacy-Inline-Markdown-
+       Layout siehe ``/widget/classic``. -->
   <boerdi-chat
-    cards-enabled="true"
+    cards-enabled="false"
     canvas-enabled="false"
     show-language-buttons="false"
     show-debug-button="false"
@@ -1091,24 +1100,16 @@ _DEMO_CLASSIC_HTML = (
         '<a class="swap-link" href="/widget/">← Zurück zur klassischen Demo (mit Kacheln + Canvas)</a>',
         '<a class="swap-link" href="/widget/inline">→ Zur Demo /widget/inline mit Default-Grouping</a>',
     )
-    # Embed-Attribut ``inline-result-grouping="false"`` EINFÜGEN — das
-    # Inline-Template enthält den Parameter seit dem Default-Flip nicht
-    # mehr (Grouping ist Default), also kann hier nichts mehr ersetzt
-    # werden. Stattdessen hängen wir die Opt-out-Zeile direkt nach
-    # ``canvas-enabled="false"`` an, damit Classic das alte Verhalten
-    # zurück bekommt.
+    # Embed-Attribut ``inline-result-grouping="false"`` EINFÜGEN — die
+    # einzige strukturelle Differenz zwischen Inline- und Classic-Demo.
+    # Classic erzwingt das Legacy-Verhalten: Cards werden zu Inline-
+    # Markdown-Bullets im Bot-Text gewandelt (statt in den Result-Group-
+    # Boxen zu landen). ``cards-enabled="false"`` ist seit Welle C.5
+    # bereits im Inline-Template gesetzt (gleiche kompakte Embed-Optik
+    # für beide Demos), muss hier also nicht mehr nachgezogen werden.
     .replace(
         '    canvas-enabled="false"\n',
         '    canvas-enabled="false"\n    inline-result-grouping="false"\n',
-    )
-    # Kacheln im Classic-Modus AUS — wir wollen ausschließlich
-    # Inline-Markdown-Links im Bot-Text, keine Card-Boxen. Im Inline-
-    # Demo-Template steht ``cards-enabled="true"`` genau einmal (im
-    # tatsächlichen ``<boerdi-chat>``-Element); der ``<pre>``-Block davor
-    # hat schon ``cards-enabled="false"`` und wird daher NICHT angefasst.
-    .replace(
-        'cards-enabled="true"',
-        'cards-enabled="false"',
     )
 )
 
