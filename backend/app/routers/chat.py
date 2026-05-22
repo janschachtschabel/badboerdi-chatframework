@@ -3710,6 +3710,36 @@ async def _chat_impl(
         # Also lift into session_state so downstream code sees it
         session_state.setdefault("entities", {})["material_typ"] = _heuristic_mt
 
+    # ── Type-Focus-Heuristik (Welle C.5+, 2026-05-22) ─────────────
+    # Wenn der Classifier "nur videos bitte" / "hast du Arbeitsblätter?"
+    # nicht als ``medientyp`` extrahiert hat, fallen wir auf die
+    # ``_resolve_wanted_content_types``-Regex zurück. Setzen den ersten
+    # canonical Treffer als ``classification.entities.medientyp``, damit:
+    #   1. der LLM-Tool-Strip (llm_service.py: medientyp → entferne
+    #      search_wlo_collections + search_wlo_topic_pages aus active_tools)
+    #      sicher greift
+    #   2. die downstream-Suche per ``search_wlo_content`` mit
+    #      learningResourceType-Filter läuft
+    #   3. das Backend den Search-CTA-Link MIT korrektem Typ-Filter
+    #      generiert (User-Anforderung: "Suchanfrage mit Thema +
+    #      inhaltstyp=video")
+    if not (classification.entities or {}).get("medientyp"):
+        _wanted_for_inject = _resolve_wanted_content_types(
+            req.message or "",
+            session_entities=session_state.get("entities") or {},
+            classification_entities=classification.entities or {},
+        )
+        if _wanted_for_inject:
+            _injected_mt = sorted(_wanted_for_inject)[0]
+            if classification.entities is None:
+                classification.entities = {}
+            classification.entities["medientyp"] = _injected_mt
+            session_state.setdefault("entities", {})["medientyp"] = _injected_mt
+            logger.info(
+                "type-focus heuristic injected medientyp=%r (resolved from %r)",
+                _injected_mt, req.message,
+            )
+
     # ── Pre-Route Rule Engine ────────────────────────────────────
     # Runs BEFORE pattern selection so persona/intent/state corrections
     # propagate into all downstream layers. Live rules (live: true in
@@ -5661,12 +5691,383 @@ async def _chat_impl(
     _ce_flag_impl = getattr(req.environment, "cards_enabled", None)
     _legacy_inline_impl = (_ce_flag_impl is False) and (_ig_flag_impl is False)
     _grouping_on_impl = (_ig_flag_impl is not False) and (not _legacy_inline_impl)
+
+    # ── Off-Topic-Card-Filter (Welle C.5+, 2026-05-22) ─────────────────
+    # Im inline_grouping_mode landen Cards 1:1 in Themenseiten-/Sammlungs-
+    # Boxen. Wenn der MCP-Pool fachfremde Treffer enthält (beobachtet:
+    # "Chemie" / "Chemie und Umwelt 123" bei query=Klimawandel), bekommt
+    # der User irreführende Boxen. Wir matchen Titel-Tokens gegen den
+    # User-Suchbegriff + Klassifikator-Entities (thema/fach) und droppen
+    # Cards ohne Token-Overlap aus ``cards`` (in-place).
+    # Cards ohne thema/fach/Nachricht-Signal werden NICHT gefiltert
+    # (zu wenig Kontext für Relevanz-Urteil).
+    if _grouping_on_impl and cards:
+        try:
+            import re as _re_tf
+            _classif_entities = classification_dict.get("entities", {}) or {}
+            _topic_signal = " ".join([
+                str(_classif_entities.get("thema") or ""),
+                str(_classif_entities.get("topic") or ""),
+                str(_classif_entities.get("fach") or ""),
+                str(req.message or ""),
+            ]).lower()
+            # Tokens >= 4 Zeichen → grobe Stopword-Filterung ohne Liste
+            # ("der", "die", "das", "ich", "zum", … fallen weg). Begriffe
+            # werden geteilt an Whitespace + Bindestrich (Klima-wandel →
+            # Klima, wandel).
+            _topic_tokens = {
+                t.strip("„""'\".,;:!?()[]{}/")
+                for t in _re_tf.split(r"[\s\-/]+", _topic_signal)
+                if len(t) >= 4
+            }
+            _topic_tokens.discard("")
+            if _topic_tokens:
+                # Per-Card-Match: irgendein Token im Titel/Beschreibung/
+                # Keywords? Auch Substring (klimawandel matcht "klima").
+                def _card_matches(_c) -> bool:
+                    _t = (str(getattr(_c, "title", "") or "") + " "
+                          + str(getattr(_c, "description", "") or "") + " "
+                          + " ".join(getattr(_c, "keywords", None) or [])
+                          ).lower()
+                    if not _t.strip():
+                        # Card ohne Text → defensiv durchlassen
+                        return True
+                    for tok in _topic_tokens:
+                        # Token oder kürzeres Präfix (>= 4 Zeichen) im
+                        # Card-Text? Substring statt regex \b um auch
+                        # zusammengesetzte deutsche Wörter abzudecken
+                        # (Klimawandel ≈ Klimaschutz, Klimaforschung).
+                        if tok in _t:
+                            return True
+                        # Präfix-Match: tok="klimawandel" → "klima" in _t?
+                        if len(tok) >= 7 and tok[:5] in _t:
+                            return True
+                    return False
+                _before_cards = list(cards)
+                cards = [c for c in cards if _card_matches(c)]
+                if len(cards) < len(_before_cards):
+                    _kept_ids = {getattr(c, "node_id", None) for c in cards}
+                    _dropped_titles = [
+                        str(getattr(c, "title", "?"))[:40]
+                        for c in _before_cards
+                        if getattr(c, "node_id", None) not in _kept_ids
+                    ]
+                    logger.info(
+                        "off-topic-filter: %d → %d cards (signal-tokens=%s, dropped=%s)",
+                        len(_before_cards), len(cards),
+                        sorted(_topic_tokens)[:6],
+                        _dropped_titles[:5],
+                    )
+        except Exception as _otf_err:
+            logger.warning("off-topic filter crashed: %s", _otf_err)
+
+    # ── Type-Focus Card-Strip + Text-Replace (Welle C.5+, 2026-05-22) ──
+    # User-Anforderung: Wenn der User explizit nach Material-Typ fragt
+    # ("nur videos bitte", "hast du Arbeitsblätter?", "Übungen zu X"),
+    # ist die korrekte UI für inline_grouping_mode KOMPLETT minimal:
+    #   - 0 Themenseiten-Box
+    #   - 0 Sammlungen-Box
+    #   - 0 Webseiten-Inhalte-Box (RAG-Quellen sind unnötig — User will
+    #     gefilterte Einzelmaterialien)
+    #   - Nur Such-CTA mit dem Typ-gefilterten Suchlink
+    # Bot-Text: ein Satz, der auf die Such-CTA verweist.
+    #
+    # Der User-O-Ton (2026-05-22): "er sollte an diesem punkt keine
+    # sammlungen anzeigen oder als info im prompt berücksichtigen — da
+    # der user mit erwähnung des zusätzlichen filter klar gemacht hat
+    # das es um konkrete einzelmaterialien geht".
+    _type_focus_label = ""
+    if _grouping_on_impl:
+        try:
+            _classif_e = classification_dict.get("entities", {}) or {}
+            _session_e = session_state.get("entities", {}) or {}
+            _wanted = _resolve_wanted_content_types(
+                req.message or "",
+                session_entities=_session_e,
+                classification_entities=_classif_e,
+            )
+            if _wanted:
+                # Display-Label aus dem ersten canonical Type
+                # ("video" → "Videos", "arbeitsblatt" → "Arbeitsblätter").
+                _label_map = {
+                    "video": "Videos",
+                    "arbeitsblatt": "Arbeitsblätter",
+                    "übung": "Übungen",
+                    "uebung": "Übungen",
+                    "quiz": "Quizze",
+                    "audio": "Audios",
+                    "präsentation": "Präsentationen",
+                    "praesentation": "Präsentationen",
+                    "test": "Tests",
+                    "podcast": "Podcasts",
+                    "bild": "Bilder",
+                    "lied": "Lieder",
+                    "aufgabe": "Aufgaben",
+                    "simulation": "Simulationen",
+                }
+                _first_wanted = sorted(_wanted)[0]
+                _type_focus_label = _label_map.get(_first_wanted, _first_wanted.capitalize())
+
+                # A) Cards: Sammlungen/Themenseiten KOMPLETT raus —
+                #    der User will sie nicht sehen, sie verwirren ihn nur.
+                #    Einzelinhalte bleiben (für Such-CTA-Count + Lernpfad).
+                _before_n = len(cards) if cards else 0
+                cards = [
+                    c for c in (cards or [])
+                    if getattr(c, "node_type", None) != "collection"
+                    and not getattr(c, "topic_pages", None)
+                ]
+                if len(cards) < _before_n:
+                    logger.info(
+                        "type-focus card-strip: %d → %d (gefiltert: Sammlungen/Themenseiten "
+                        "raus, Typ-Fokus=%s)",
+                        _before_n, len(cards), sorted(_wanted),
+                    )
+
+                # B) Bot-Text: KOMPLETT durch Such-CTA-Verweis ersetzen.
+                #    Egal was die LLM ausspuckt — bei Type-Focus ist die
+                #    ehrliche Antwort immer "Für [Typ] schau in die Suche
+                #    unten". Sonst rutschen Variationen wie "Hier sind
+                #    passende Videos…" durch, die so tun als wären die
+                #    Videos sichtbar (sind sie nicht — sie sind hinter
+                #    der Such-CTA). Verlust eines höflichen "Klar — …"-
+                #    Intros nehmen wir bewusst in Kauf; die Antwort wird
+                #    dadurch maximal eindeutig.
+                if response_text:
+                    _topic_for_text = (
+                        (_classif_e.get("thema")
+                         or _classif_e.get("topic")
+                         or _session_e.get("thema")
+                         or "").strip()
+                    )
+                    _topic_suffix = (
+                        f" zu „{_topic_for_text}"" "
+                        if _topic_for_text else " zum Thema "
+                    )
+                    _new_response = (
+                        f"Für {_type_focus_label}{_topic_suffix}schau "
+                        "in die Suche unten — dort findest du die "
+                        "gefilterten Treffer."
+                    )
+                    if _new_response.strip() != response_text.strip():
+                        logger.warning(
+                            "type-focus text-replace (label=%s): "
+                            "original=%r | replaced=%r",
+                            _type_focus_label,
+                            response_text[:200],
+                            _new_response[:200],
+                        )
+                        response_text = _new_response
+        except Exception as _tf_err:
+            logger.warning("type-focus rewriter crashed: %s", _tf_err)
+
+    # ── Anti-Hallucination-Wächter (Welle C.5+, 2026-05-21) ────────────
+    # Nur im inline_grouping_mode. Der LLM bekommt zwar UI-BOX-STATUS-
+    # Footer + verschärfte Prompt-Regeln, halluziniert aber gelegentlich
+    # Sammlungen/Themenseiten, die gar nicht im UI sichtbar sind
+    # ("Hier sind zwei Sammlungen…" obwohl die Boxen leer sind).
+    # Verifikation gegen die *tatsächlich* in ``cards`` vorhandenen
+    # Knoten + leichtes Auto-Rewrite, falls die Behauptung falsch ist.
+    # Strippt nicht heuristisch ganze Sätze (zu fragil), sondern
+    # ersetzt nur die Behauptungswörter durch eine ehrliche Variante,
+    # die auf die Such-CTA verweist.
+    #
+    # Zusätzlich seit 2026-05-22: Material-Typ-Anfrage-Erkennung. Wenn der
+    # User explizit nach Video/Arbeitsblatt/Übung/… fragt, ist der korrekte
+    # Antwort-Modus IMMER ein Such-CTA-Verweis ("Für [Typ] schau in die
+    # Suche unten") — egal ob Sammlungen/Themenseiten zufällig auch im
+    # Pool sind. Sonst Bait-and-Switch ("User wollte Videos, Bot zeigte
+    # Sammlung"). Diese Mode-Erkennung wirkt VOR den Box-Hallucination-
+    # Patches: ist sie aktiv und der Text erwähnt Sammlung/Themenseite,
+    # rewriten wir den führenden Satz auf einen Type-Verweis.
+    if _grouping_on_impl and response_text and cards is not None:
+        try:
+            _n_themen = sum(
+                1 for c in cards
+                if (getattr(c, "node_type", None) == "collection"
+                    and bool(getattr(c, "topic_pages", None)))
+            )
+            _n_samml = sum(
+                1 for c in cards
+                if (getattr(c, "node_type", None) == "collection"
+                    and not getattr(c, "topic_pages", None))
+            )
+            import re as _re_wd
+            _new_text = response_text
+            _changed_reasons = []
+
+            # ── Material-Typ-Detection aus User-Message + Entities ──
+            # Signale (in Prioritätsreihenfolge):
+            #   1. classification.entities.medientyp gesetzt (klassifikator-
+            #      erkannt — höchste Sicherheit, z.B. "Video", "Arbeitsblatt")
+            #   2. Regex auf req.message: explizite Material-Typ-Wörter
+            #      kombiniert mit "zeig mir / ich brauche / hast du / gibt es"
+            _classif_e = classification_dict.get("entities", {}) or {}
+            _medientyp_classif = (_classif_e.get("medientyp") or "").strip()
+            _type_words_re = _re_wd.compile(
+                # Singular + Plural + Umlaut/AE-Varianten.
+                # ``arbeitsbl[äa]tt(?:er|aer)?`` deckt
+                # arbeitsblatt / arbeitsblätter / arbeitsblaetter.
+                r"\b(videos?|"
+                r"arbeitsbl(?:a|ä|ae)tt(?:er|aer)?|"
+                r"(?:ü|ue)bung(?:en)?|"
+                r"quiz(?:ze)?|audios?|"
+                r"pr(?:ä|ae)sentation(?:en)?|"
+                r"interaktive[srn]?\s+(?:(?:ü|ue)bung|aufgabe)|"
+                r"aufgaben?|tests?|lieder|podcasts?|"
+                r"bilder|grafiken?|simulation(?:en)?|"
+                r"erkl(?:ä|ae)rvideos?)\b",
+                _re_wd.IGNORECASE,
+            )
+            _user_msg_match = _type_words_re.search(req.message or "")
+            _is_type_focus = bool(_medientyp_classif) or bool(_user_msg_match)
+            _type_label = (
+                _medientyp_classif
+                or (_user_msg_match.group(0).capitalize() if _user_msg_match
+                    else "Materialien")
+            )
+
+            # Schärfung A: Material-Typ-Anfrage → führender Satz wird auf
+            # Such-CTA-Verweis getauscht, wenn Bot stattdessen Sammlung/
+            # Themenseite anpreist. Wir machen das auch dann, wenn
+            # _n_samml > 0 oder _n_themen > 0 — der User wollte ja
+            # explizit den Material-Typ, nicht die Sammlungs-Übersicht.
+            if _is_type_focus and _re_wd.search(
+                r"\b(?:Sammlung(?:en)?|Themenseite(?:n)?)\b",
+                _new_text, _re_wd.IGNORECASE,
+            ):
+                # Ersten Satz, der Sammlung/Themenseite enthält, ersetzen
+                # durch einen Type-Verweis. Folgesätze bleiben — der Bot
+                # darf weiter freundlich anbieten zu verfeinern.
+                _first_sentence_with_claim = _re_wd.compile(
+                    r"(?is)^[^.!?]*?\b(?:Sammlung(?:en)?|Themenseite(?:n)?)"
+                    r"\b[^.!?]*?[.!?]\s*",
+                )
+                _replacement = (
+                    f"Für {_type_label} zum Thema klick auf die Suche "
+                    "unten — dort findest du die gefilterten Treffer. "
+                )
+                _patched = _first_sentence_with_claim.sub(
+                    _replacement, _new_text, count=1,
+                )
+                if _patched != _new_text:
+                    _new_text = _patched
+                    _changed_reasons.append(
+                        f"type-focus={_type_label!r} aber Text claimt Sammlung/Themenseite"
+                    )
+
+            # Capitalization-Helper: wenn das Match am Satzanfang steht
+            # (Vorgänger ist Satzende-Punktuation + Whitespace ODER String-
+            # Start), Replacement mit Großbuchstaben starten. Sonst klein —
+            # passt mitten im Satz nahtlos. Vermeidet das beobachtete
+            # "...nicht gefunden. passende Treffer..."-Problem (lowercase
+            # nach Punkt), User-Feedback 2026-05-22.
+            def _ctx_aware_sub(_pattern: "_re_wd.Pattern", _text: str,
+                                _base_repl: str, _count: int = 3) -> str:
+                def _replace(m):
+                    pos = m.start()
+                    # Backtrack: letzter nicht-Whitespace vor dem Match
+                    before = _text[:pos]
+                    j = len(before) - 1
+                    while j >= 0 and before[j].isspace():
+                        j -= 1
+                    is_sentence_start = (j < 0) or before[j] in ".!?\""
+                    if is_sentence_start:
+                        return _base_repl[:1].upper() + _base_repl[1:]
+                    return _base_repl
+                return _pattern.sub(_replace, _text, count=_count)
+
+            # Bot behauptet Sammlung(en), aber keine sichtbar — patchen.
+            if _n_samml == 0 and _re_wd.search(
+                r"\bSammlung(?:en)?\b", _new_text, _re_wd.IGNORECASE,
+            ):
+                # Zwei-Stufen-Rewrite: erst Adjektiv+Sammlung-Phrasen
+                # ("zwei passende Sammlungen", "eine Sammlung", "die Sammlung"),
+                # dann nackte Wort-Matches. Wir ersetzen großzügig durch
+                # "passende Treffer in der Suche", was zur Such-CTA passt.
+                # Capitalization passt sich automatisch dem Satzkontext an.
+                _phrase_re = _re_wd.compile(
+                    r"(?:\b(?:zwei|drei|vier|fünf|ein|eine|einer|"
+                    r"einige|mehrere|die|der|das|diese|passende)\s+)?"
+                    r"\bSammlung(?:en)?\b",
+                    _re_wd.IGNORECASE,
+                )
+                _new_text = _ctx_aware_sub(
+                    _phrase_re, _new_text,
+                    "passende Treffer in der Suche", _count=3,
+                )
+                _changed_reasons.append(f"sammlungen=0 aber Text claimt")
+
+            # Bot behauptet Themenseite(n), aber keine sichtbar — patchen.
+            if _n_themen == 0 and _re_wd.search(
+                r"\bThemenseite(?:n)?\b", _new_text, _re_wd.IGNORECASE,
+            ):
+                _phrase_re = _re_wd.compile(
+                    r"(?:\b(?:zwei|drei|vier|fünf|ein|eine|einer|"
+                    r"einige|mehrere|die|der|das|diese|passende)\s+)?"
+                    r"\bThemenseite(?:n)?\b",
+                    _re_wd.IGNORECASE,
+                )
+                _new_text = _ctx_aware_sub(
+                    _phrase_re, _new_text,
+                    "passende Treffer in der Suche", _count=3,
+                )
+                _changed_reasons.append(f"themenseiten=0 aber Text claimt")
+
+            # "ich hab(e) dir … rausgezogen/zusammengestellt/herausgesucht"
+            # — auch wenn die Box leer ist, hat der Bot diese Liefer-
+            # Behauptungen im Repertoire. Wenn weder Themenseiten noch
+            # Sammlungen sichtbar sind, ist das eine pure Halluzination.
+            # Dann ersetzen wir den Liefer-Satz durch einen Suchverweis.
+            if _n_samml == 0 and _n_themen == 0:
+                _new_text = _re_wd.sub(
+                    r"(?im)^.*?(?:rausgezogen|rausgesucht|zusammengestellt|"
+                    r"herausgesucht|gefunden|kuratiert).*?[.!?]\s*",
+                    "Schau in die verlinkte Suche unten — dort findest du "
+                    "passende Treffer zum Thema. ",
+                    _new_text,
+                    count=1,
+                )
+                if _new_text != response_text:
+                    _changed_reasons.append("liefer-claim ohne sichtbare Boxen")
+
+            if _changed_reasons and _new_text != response_text:
+                logger.warning(
+                    "anti-halluzination patch: %s | original=%r | patched=%r",
+                    "; ".join(_changed_reasons),
+                    response_text[:200],
+                    _new_text[:200],
+                )
+                response_text = _new_text
+        except Exception as _wd_err:
+            # Wächter darf NIE den ganzen Turn fallen lassen — defensiv
+            # nur warnen und Original-Text durchlassen.
+            logger.warning(
+                "anti-halluzination watchdog crashed: %s", _wd_err,
+            )
+
     if _grouping_on_impl:
         _final_text, _web_links = _extract_web_links_from_text(
             response_text, cards=cards,
         )
     else:
         _final_text, _web_links = response_text, []
+
+    # Type-Focus defensiv: Webseiten-Inhalte-Box weg, wenn der User
+    # Einzelinhalte wollte. Im Type-Focus-Mode ist der ehrliche Antwort-
+    # Modus "Klick auf die Suche unten" — eine Webseiten-Inhalte-Box mit
+    # RAG-Quellen lenkt davon ab und wirkt wie ein Treffer ("schau hier
+    # ist was"). Auch wenn der Type-Focus-Text-Replace bereits gegriffen
+    # hat und _web_links jetzt schon leer wäre — bei einem hypothetischen
+    # Replace-Skip (z.B. wenn response_text leer war) hätte _web_links
+    # noch Inhalt. Diese Zeile macht das Verhalten deterministisch.
+    if _grouping_on_impl and _type_focus_label and _web_links:
+        logger.info(
+            "type-focus: cleared %d web_links (type-focus answer should be "
+            "Such-CTA-only)", len(_web_links),
+        )
+        _web_links = []
+
     # Collect all MCP query metadata accumulated during this turn — wir
     # bauen die Liste hier (vor save_message), damit sie GEMEINSAM mit dem
     # Bot-Text in ``debug_json`` persistiert wird. Beim Session-Restore
@@ -5737,6 +6138,57 @@ async def _chat_impl(
             except Exception as _qm_err:
                 logger.warning("fallback queryMeta synthesis failed: %s", _qm_err)
 
+    # ── Type-Focus Search-URL-Override (Welle C.5+, 2026-05-22) ────────
+    # Prefetched search_wlo_collections-Metas tragen i.d.R. nur den
+    # discipline-Filter (z.B. taxonid=Mathematik), aber NICHT den vom
+    # User explizit gewollten learningResourceType=Video. Bei aktivem
+    # Type-Focus prependen wir einen synthetischen Meta-Eintrag, der die
+    # WLO-Public-Site-Suche mit ``?s=<thema>+<typ_label>`` als search_url
+    # mitbringt. ``groupedSearchUrl`` im Frontend bevorzugt
+    # ``search_wlo_content`` > collections > topic_pages > erste mit URL —
+    # damit unser Synthetic ganz oben in der Reihenfolge steht, taggen
+    # wir es als ``tool_name="search_wlo_content"`` (de-facto: es IST
+    # die Type-gefilterte Variante).
+    if _type_focus_label:
+        try:
+            from app.models.schemas import QueryMetaEntry as _QME_tf
+            from urllib.parse import quote as _quote_tf
+            _classif_e_tf = classification_dict.get("entities", {}) or {}
+            _sess_e_tf = session_state.get("entities", {}) or {}
+            _tf_topic = (
+                (_classif_e_tf.get("thema")
+                 or _classif_e_tf.get("topic")
+                 or _sess_e_tf.get("thema")
+                 or "").strip()
+            )
+            if _tf_topic:
+                _tf_query_str = f"{_tf_topic} {_type_focus_label}"
+                _tf_search_url = (
+                    f"https://wirlernenonline.de/?s={_quote_tf(_tf_query_str)}"
+                )
+                _tf_meta = _QME_tf(
+                    tool_name="search_wlo_content",
+                    query_type="type-focus-synth",
+                    search_term=_tf_topic,
+                    criteria=[{
+                        "property": "learningResourceType",
+                        "values": [_type_focus_label.lower()],
+                        "label": _type_focus_label,
+                    }],
+                    pagination={},
+                    repository_url=(get_repo_base_url() or "").rstrip("/"),
+                    search_url=_tf_search_url,
+                )
+                # An den ANFANG der Liste — Frontend nimmt den ersten
+                # search_wlo_content-Match.
+                _query_meta_entries.insert(0, _tf_meta)
+                logger.info(
+                    "type-focus search-url override: %s",
+                    _tf_search_url[:120],
+                )
+        except Exception as _tfm_err:
+            logger.warning("type-focus search-url override failed: %s", _tfm_err)
+
     if _query_meta_entries:
         tracer.record("query_meta", "MCP search queries", {
             "queries": [m.model_dump() for m in _query_meta_entries],
@@ -5755,6 +6207,14 @@ async def _chat_impl(
         _debug_for_save["_query_metas"] = [
             m.model_dump() for m in _query_meta_entries
         ]
+    if _type_focus_label:
+        # Type-Focus-Marker für die Frontend-Render-Logik (auch beim
+        # Session-Restore aus debug_json verfügbar). Frontend blendet
+        # Webseiten-Inhalte-Box hart aus, wenn dieser Marker gesetzt
+        # ist — damit auch alte Messages, deren ``debug._web_links``
+        # aus der Zeit vor dem Type-Focus-Patch noch Inhalt trägt,
+        # konsistent gerendert werden.
+        _debug_for_save["_type_focus"] = _type_focus_label
 
     await save_message(
         req.session_id, "assistant", _final_text,
@@ -5808,6 +6268,29 @@ async def _chat_impl(
         quick_replies=quick_replies,
         has_cards=bool(cards),
     )
+
+    # Type-Focus QR-Filter (Welle C.5+, 2026-05-22): wenn der User
+    # explizit Material-Typ wollte, sind „Welche Sammlungen gibt es noch
+    # dazu?" / „Zeig mir mehr Themenseiten" als QR widersprüchlich — der
+    # User hat sich gerade WEG von Sammlungen/Themenseiten bewegt. Wir
+    # filtern QRs, die diese Begriffe enthalten, raus.
+    if _type_focus_label and quick_replies:
+        import re as _re_qrf
+        _qr_block_re = _re_qrf.compile(
+            r"\b(?:Sammlung(?:en)?|Themenseite(?:n)?)\b",
+            _re_qrf.IGNORECASE,
+        )
+        _before_qr = list(quick_replies)
+        quick_replies = [
+            q for q in quick_replies
+            if not _qr_block_re.search(q or "")
+        ]
+        if len(quick_replies) < len(_before_qr):
+            _dropped_qrs = [q for q in _before_qr if q not in quick_replies]
+            logger.info(
+                "type-focus QR-filter: dropped %d QRs (%r)",
+                len(_dropped_qrs), _dropped_qrs,
+            )
 
     # ``_final_text`` + ``_web_links`` + ``_query_meta_entries`` wurden
     # bereits oben (vor save_message) berechnet — wiederverwenden, statt

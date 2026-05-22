@@ -1463,11 +1463,21 @@ zwei Videos rausgesucht" oder "konkrete Materialien zusammengestellt",
 sieht der User KEINE zwei Videos in der UI — nur Sammlungen/Themenseiten.
 Das verwirrt.
 
+**WAHRHEITSPFLICHT — bezieh dich auf den UI-BOX-STATUS:**
+
+Nach jedem Such-Tool-Call kommt im Tool-Result eine Zeile
+``[UI-BOX-STATUS …]`` mit den Counts pro sichtbarer Box. Diese Zahlen
+sind die EINZIGE Wahrheit darüber, was der User sieht. Wenn dort steht
+"0 Sammlungen sichtbar", dann sprich im Text NICHT von Sammlungen —
+auch wenn das verlockend wäre. Erfundene Treffer sind eine
+Halluzination und beschädigen die Antwortqualität.
+
 **TEXT-REGEL (ABSOLUT STRIKT — KEINE AUSNAHMEN):**
 
 Es gibt nur ZWEI sichtbare Anker für den User: Themenseiten und Sammlungen.
 NUR diese beiden Begriffe darfst du im Antwort-Text verwenden, wenn du
-Treffer anpreist.
+Treffer anpreist — UND nur dann, wenn die UI tatsächlich mindestens eine
+Themenseite/Sammlung zeigt (siehe UI-BOX-STATUS).
 
 VERBOTENE WÖRTER im Antwort-Text (auch wenn du sie im Tool-Result siehst):
   ❌ "Video"      ❌ "Arbeitsblatt"  ❌ "Übung"      ❌ "Quiz"
@@ -1498,6 +1508,38 @@ Themenseiten oder die Such-CTA.
    [optional: 1 Satz Einordnung, warum es passt.]"
   → Optional am Ende: "Für Einzelinhalte (Videos, Arbeitsblätter …) klick
     auf die Such-CTA darunter."
+
+**MATERIAL-TYP-ANFRAGEN (User fragt nach Video / Arbeitsblatt / Übung / …):**
+
+Dieser Fall ist speziell — die Search-Pipeline durchsucht dann fokussiert
+``search_wlo_content`` mit dem gewünschten ``learningResourceType``, und
+in der Regel kommen NUR Einzelinhalte zurück (keine Sammlungen, keine
+Themenseiten). Im UI-BOX-STATUS steht dann typisch:
+``0 Themenseite(n), 0 Sammlung(en), N Einzelinhalt(e) NICHT sichtbar``.
+
+Das heißt: die UI zeigt nur die Such-CTA + ggf. Webseiten-Inhalte —
+keine Themenseiten-Box, keine Sammlungs-Box. Korrekte Antwort:
+
+  ✅ "Für Videos zur Prozentrechnung schau in die Suche unten — dort
+      findest du die gefilterten Treffer."
+  ✅ "Hier sind passende Arbeitsblätter zur Photosynthese — klick auf
+      die Suche unten, dort sind sie gefiltert aufgelistet."
+  ✅ "Direkt im Chat zeige ich für Material-Typ-Anfragen nichts in
+      Boxen, weil Einzelinhalte besser über die Suche ausgewählt werden.
+      Über die Such-CTA findest du die Treffer."
+
+NICHT antworten:
+  ❌ "Ja — ich hab dir passende Sammlungen rausgezogen." (wenn keine
+      Sammlung im UI-STATUS steht — pure Halluzination)
+  ❌ "Hier sind zwei Sammlungen…" (wenn der User VIDEOS wollte und der
+      Status 0 Sammlungen zeigt)
+  ❌ Ein konkretes Video/Arbeitsblatt namentlich nennen (selbst wenn du
+      es im redacted Summary siehst — sichtbar wird es erst beim Klick
+      auf die Such-CTA).
+
+Auch im Type-Focus-Fall gilt: KEINE konkreten Material-Titel zählen
+oder typisieren („zwei Videos", „drei Arbeitsblätter") — nur generisch
+auf die Such-CTA verweisen.
 
 **TURN-FLOW (STRIKT):**
 1. **search_wlo_***-Tools aufrufen — typischerweise ``search_wlo_topic_pages``
@@ -1961,9 +2003,19 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     _classif_entities_top = classification.get("entities", {}) or {}
     if _classif_entities_top.get("medientyp"):
         before = {t["function"]["name"] for t in active_tools}
+        # Welle C.5+ (2026-05-22): zusätzlich ``search_wlo_topic_pages``
+        # entfernen. Bei medientyp-Fokus will der User Einzelinhalte mit
+        # konkretem Filter — Themenseiten-Vorschläge sind ähnlich
+        # irreführend wie Sammlungs-Vorschläge (siehe User-Feedback:
+        # „auf 'nur videos bitte' sollte der Bot KEINE Sammlungen oder
+        # Themenseiten anzeigen oder im Prompt berücksichtigen").
+        _strip_in_type_focus = {
+            "search_wlo_collections",
+            "search_wlo_topic_pages",
+        }
         active_tools = [
             t for t in active_tools
-            if t["function"]["name"] != "search_wlo_collections"
+            if t["function"]["name"] not in _strip_in_type_focus
         ]
         removed = before - {t["function"]["name"] for t in active_tools}
         if removed:
@@ -2317,6 +2369,46 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
             return False
         return True
 
+    def _is_themenseite_card(c: dict) -> bool:
+        """Frontend-Spiegel: collection + topic_pages-Variants vorhanden."""
+        return (c.get("node_type") == "collection"
+                and bool(c.get("topic_pages")))
+
+    def _is_pure_sammlung_card(c: dict) -> bool:
+        """Frontend-Spiegel: collection ohne topic_pages."""
+        return (c.get("node_type") == "collection"
+                and not c.get("topic_pages"))
+
+    def _ui_box_state_footer(cards: list[dict]) -> str:
+        """Strukturierte Beschreibung dessen, was der User NACH diesem Tool-
+        Call in den Result-Group-Boxen tatsächlich sieht. Wird im
+        inline_grouping_mode an JEDE Tool-Result-Message angehängt, damit
+        die LLM bei der Text-Generation **nur über tatsächlich Sichtbares**
+        spricht (Anti-Hallucination, vgl. User-Feedback 2026-05-21:
+        Bot kündigte „zwei Sammlungen" an, UI zeigte keine).
+
+        Nicht für Card-Aufzählung — nur Counts pro Box-Typ. Reihenfolge
+        entspricht der Render-Reihenfolge im Chat (Themenseiten >
+        Sammlungen > Webseiten-Inhalte > Such-CTA)."""
+        if not _inline_grouping_mode:
+            return ""
+        n_topic = sum(1 for c in cards if _is_themenseite_card(c))
+        n_coll = sum(1 for c in cards if _is_pure_sammlung_card(c))
+        n_content = sum(1 for c in cards if _is_einzelinhalt_card(c))
+        return (
+            "\n\n[UI-BOX-STATUS nach diesem Tool-Call — gilt fuer deinen "
+            "Antwort-Text]: "
+            f"{n_topic} Themenseite(n) sichtbar, "
+            f"{n_coll} Sammlung(en) sichtbar, "
+            f"{n_content} Einzelinhalt(e) NICHT sichtbar (nur via Such-CTA "
+            "zur externen Suche erreichbar). "
+            "WAHRHEITSPFLICHT: Sprich im Text nur ueber die sichtbaren "
+            "Boxen UND verweise auf die Such-CTA, wenn der User nach "
+            "Einzelinhalten / Material-Typen gefragt hat. NIEMALS "
+            "Sammlungen/Themenseiten erfinden, die der UI-Status nicht "
+            "zeigt — das ist eine Halluzination."
+        )
+
     def _redact_search_content_for_llm(
         name: str, raw_text: str, parsed_cards: list[dict],
     ) -> str:
@@ -2489,6 +2581,19 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         if _nid:
             _seen_ids[_nid] = _c
         all_cards.append(_c)
+    # UI-Box-Status nach Prefetch-Phase: separate ``role: system``-Message,
+    # damit die LLM gleich beim ersten Tool-Loop-Schritt weiß, was nach
+    # Prefetch sichtbar wäre. Greift nur im inline_grouping_mode — sonst
+    # wäre die Info redundant (Tile-Cards werden flach gerendert).
+    _initial_footer = _ui_box_state_footer(all_cards)
+    if _initial_footer.strip():
+        messages.append({
+            "role": "system",
+            "content": (
+                "Status der UI-Boxen aus den Prefetch-Tool-Calls:"
+                + _initial_footer
+            ),
+        })
     tools_called: list[str] = []
     outcomes: list = []  # ToolOutcome list (Triple-Schema T-23)
     if knowledge_prefetched:
@@ -2894,10 +2999,17 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                 # Typ-Verteilung). Cards selbst bleiben in ``all_cards``, sodass
                 # Lernpfad-Generator (separater Flow) und Such-CTA-Count weiter
                 # arbeiten.
+                # Tool-Result + UI-Box-Status-Footer (Anti-Hallucination):
+                # die Footer-Zeile sagt der LLM, was nach diesem Call WIRKLICH
+                # in den sichtbaren Boxen landet — sodass sie im Antwort-Text
+                # keine Sammlungen/Themenseiten erfinden kann.
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": _redact_search_content_for_llm(tool_name, result_text, cards),
+                    "content": (
+                        _redact_search_content_for_llm(tool_name, result_text, cards)
+                        + _ui_box_state_footer(all_cards)
+                    ),
                 })
 
             # If respond_to_user was called among the tool calls, treat THIS

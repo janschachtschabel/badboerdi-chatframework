@@ -516,7 +516,15 @@ export class ApiService {
       // an ``addBotMessage`` übergeben können.
       return data.map((m: any) => {
         const dbg = m && typeof m === 'object' ? (m.debug || {}) : {};
-        const wl = Array.isArray(dbg._web_links) ? dbg._web_links : undefined;
+        // Type-Focus-Marker: wenn die Bot-Antwort im inline-grouping-Mode
+        // eine Material-Typ-Antwort war (z.B. "Für Videos zu …"), darf
+        // KEINE Webseiten-Inhalte-Box gerendert werden — selbst wenn das
+        // alte ``debug._web_links`` aus pre-patch-Zeiten noch Inhalt hat.
+        // Wir überstimmen die Stale-Daten hier mit einer leeren Liste.
+        const isTypeFocus = !!dbg._type_focus;
+        const wl = isTypeFocus
+          ? []
+          : (Array.isArray(dbg._web_links) ? dbg._web_links : undefined);
         const qm = Array.isArray(dbg._query_metas) ? dbg._query_metas : undefined;
         return { ...m, webLinks: wl, queryMetas: qm };
       });

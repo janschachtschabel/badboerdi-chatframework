@@ -1641,6 +1641,17 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
    *  ``msg.content`` für alte gespeicherte Messages aus der Zeit vor dem
    *  strukturierten Feld. ``?bsid=`` wird auf Trusted-Hosts angehängt. */
   groupedWebLinks(msg: ChatMessage, n = 3): Array<{ title: string; url: string }> {
+    // Type-Focus-Antworten (Material-Typ-Anfrage „nur Videos / hast du
+    // Arbeitsblätter / …") rendern NIEMALS eine Webseiten-Inhalte-Box —
+    // der Antwortmodus ist „Klick auf die Such-CTA", alles andere
+    // verwirrt. Zwei Detection-Pfade:
+    //   1. Backend-Marker ``debug._type_focus`` (auf neuen Antworten +
+    //      via api.service.ts auch beim Restore mitgereicht)
+    //   2. Content-Pattern-Match (defensiv für alte gespeicherte Messages
+    //      die noch keinen Marker haben).
+    if ((msg.debug as any)?._type_focus) return [];
+    const _tfPattern = /^\s*Für\s+\S.*\bschau\s+in\s+die\s+Suche\s+unten\b/i;
+    if (_tfPattern.test(msg.content || '')) return [];
     // ── Primärpfad: strukturiertes Backend-Feld ─────────────────
     if (Array.isArray(msg.webLinks) && msg.webLinks.length > 0) {
       return msg.webLinks
@@ -1720,16 +1731,24 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
 
   /** True wenn die Gruppierungs-Anzeige für diese Message überhaupt etwas
    *  Sichtbares enthält (Themenseiten / Sammlungen / Web-Links / Search-CTA).
-   *  Verhindert leere Wrapper bei Antworten ohne Suche und ohne RAG-Links. */
+   *  Verhindert leere Wrapper bei Antworten ohne Suche und ohne RAG-Links.
+   *
+   *  Welle C.5+ (2026-05-22): Type-Focus-Antworten („Für Videos zu …")
+   *  haben oft NUR die Such-CTA — keine Cards, keine Web-Links, weil die
+   *  Box-Anzeige bewusst minimal sein soll. ``groupedSearchUrl`` ist dann
+   *  unser einziger sichtbarer Anker und muss als Trigger zählen.
+   */
   hasGroupedResults(msg: ChatMessage): boolean {
     const hasCards = !!(msg.cards && msg.cards.length);
     const hasWebLinks = this.groupedWebLinks(msg).length > 0;
-    if (!hasCards && !hasWebLinks) return false;
+    const hasSearchCta = !!this.groupedSearchUrl(msg);
+    if (!hasCards && !hasWebLinks && !hasSearchCta) return false;
     return (
       (hasCards && (this.groupedTopicCards(msg).length > 0
                     || this.groupedCollectionCards(msg).length > 0
-                    || !!this.groupedSearchUrl(msg)))
+                    || hasSearchCta))
       || hasWebLinks
+      || hasSearchCta
     );
   }
 
