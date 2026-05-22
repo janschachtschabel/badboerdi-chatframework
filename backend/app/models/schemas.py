@@ -104,10 +104,13 @@ class WloCard(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     learning_resource_types: list[str] = Field(default_factory=list)
     # Primary "open this resource" URL — external (ccm:wwwurl) for content
-    # nodes, in-repo render-URL for collections.
+    # nodes, in-repo browse-URL for collections.
     url: str = ""
-    # Stable in-repo URL (`/components/render/<id>`) — useful as a permalink
-    # even when `url` points to an external host.
+    # Stable in-repo URL — useful as a permalink even when `url` points to an
+    # external host. Variante hängt am ``node_type``:
+    #   * content     → ``/components/render/<uuid>``  (ccm:io-Permalink)
+    #   * collection  → ``/components/collections?id=<uuid>``  (ccm:map-Browse)
+    # Frontend kann die URL direkt nehmen ohne erneutes Pattern-Switching.
     wlo_url: str = ""
     # Direct binary download URL (no auth needed). Set on file nodes whose
     # content is hosted in edu-sharing; empty for external-link nodes,

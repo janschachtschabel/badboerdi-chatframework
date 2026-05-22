@@ -447,11 +447,36 @@ _DEMO_HTML = """<!doctype html>
     <p>Klicke unten rechts auf die Eule, um den Chatbot zu öffnen.</p>
     <p>Diese Seite demonstriert alle Integrations-Varianten. Das Widget läuft hier mit
        <code>auto-context="true"</code> — URL, Titel und Themenseiten-Slug werden automatisch erkannt.</p>
+    <p style="margin-top:14px;">
+      <strong>Auf dieser Demo-Seite gesetzt:</strong>
+      <span class="tag" style="background:#dcfce7;color:#166534;">position="bottom-right"</span>
+      <span class="tag" style="background:#dbeafe;color:#1e3a8a;">primary-color="#1c4587"</span>
+      <span class="tag" style="background:#dcfce7;color:#166534;">emit-guide-suggestion="true"</span>
+      <span class="tag" style="background:#dcfce7;color:#166534;">emit-routing-debug="true"</span>
+      <br><span style="font-size:12px;color:#6b7280;">Implizite Defaults: <code>cards-enabled="true"</code>, <code>canvas-enabled="true"</code>, <code>ai-content-enabled="true"</code>, <code>quick-replies-enabled="true"</code>, <code>inline-result-grouping="true"</code>, <code>persist-session="true"</code>, <code>auto-context="true"</code>, <code>show-debug-button="true"</code>, <code>show-language-buttons="true"</code>, <code>show-guide-button="true"</code>.</span>
+    </p>
   </div>
 
   <div class="note" style="background:#ecfdf5;border-left-color:#10b981;">
     <strong>Was ist neu?</strong>
     <ul style="margin:6px 0 0 0;">
+      <li><strong>Result-Grouping als Default (Welle C.5, 2026-05-21)</strong>:
+        <code>inline-result-grouping</code> ist jetzt standardmäßig <code>true</code>.
+        Treffer erscheinen in drei separaten Boxen (Themenseiten / Sammlungen /
+        Webseiten-Inhalte; je max. 3, deduped per <code>node_id</code> + Titel) plus
+        Card-Button „Treffer zur Suche „&lt;Term&gt;"". Such-CTA hat einen Backend-
+        Synthese-Fallback (aus <code>entities.thema</code>/<code>fach</code> +
+        <code>REPO_BASE_URL</code>), greift auch bei reinen Sammlungs-/Themenseiten-
+        Treffern. LLM bekommt Einzelinhalt-Details aus <code>search_wlo_content</code>/
+        <code>get_collection_contents</code>/<code>get_node_details</code> redacted
+        (kompakte Typ-Summary), damit der Bot keine unsichtbaren Materialien anpreist.
+        Cards bleiben in der Response — Lernpfad-Flow + Such-CTA-Count nutzen sie weiter.
+        Opt-out auf das alte Card-Layout: <code>inline-result-grouping="false"</code>
+        (Demo <a href="/widget/classic">/widget/classic</a>).</li>
+      <li><strong>Session-Restore mit Greeting + CTA</strong>: beim Wiederöffnen einer
+        Session wird die hardcodierte Begrüßung an den Verlauf vorangestellt, Cards +
+        Web-Links + Query-Metas werden aus <code>debug_json</code> rehydriert — die
+        Such-CTA erscheint nach Reopen wieder mit dem richtigen Link.</li>
       <li><strong>Trusted Domains</strong> für den Lotsen-Modus liegen jetzt im Backend
         (<code>guide-mode.yaml</code> oder Env <code>GUIDE_TRUSTED_DOMAINS</code>) — HTML-
         Attribut <code>trusted-domains</code> ist nur noch optional und additiv. Stored-XSS
@@ -900,6 +925,7 @@ _DEMO_INLINE_HTML = """<!doctype html>
   </p>
 
   <div class="hero">
+    <p style="margin-bottom:10px;"><strong>Auf dieser Demo-Seite gesetzt (explizit):</strong></p>
     <p>
       <span class="pill pill-off">cards-enabled="false"</span>
       <span class="pill pill-off">canvas-enabled="false"</span>
@@ -907,22 +933,31 @@ _DEMO_INLINE_HTML = """<!doctype html>
       <span class="pill pill-off">show-debug-button="false"</span>
       <span class="pill pill-off">show-guide-button="false"</span>
       <span class="pill pill-on">guide-mode-default="true"</span>
-      <span class="pill pill-on">quick-replies-enabled="true"</span>
-      <span class="pill pill-on">ai-content-enabled="true"</span>
       <span class="pill pill-on">emit-guide-suggestion="true"</span>
       <span class="pill pill-on">emit-routing-debug="true"</span>
       <span class="pill" style="background:#8b0000;color:#fff">primary-color="#8b0000"</span>
     </p>
-    <p>
+    <p style="margin-top:10px;font-size:12.5px;color:#475569;">
+      <strong>Implizite Defaults greifen zusätzlich:</strong>
+      <code>inline-result-grouping="true"</code> (Welle-C.5-Default; treibt die
+      Result-Group-Boxen unten),
+      <code>quick-replies-enabled="true"</code>,
+      <code>ai-content-enabled="true"</code>,
+      <code>persist-session="true"</code>,
+      <code>auto-context="true"</code>.
+    </p>
+    <p style="margin-top:12px;">
       <strong>Was sich gegenüber der Standard-Demo ändert:</strong>
-      Treffer-Kacheln entfallen — stattdessen erscheinen die Treffer pro Bot-Antwort
-      in <strong>kompakten Result-Group-Boxen</strong> (Themenseiten / Sammlungen /
-      Webseiten-Inhalte / „Alle Treffer in der Suche anzeigen"-CTA). Diese Anzeige ist
-      seit Welle C.5 (2026-05-21) Default — der Parameter
-      <code>inline-result-grouping</code> ist nicht mehr nötig.
-      Material- und Lernpfad-Erstellung landen direkt im Chat-Verlauf statt im Canvas.
+      Treffer-Kacheln entfallen (<code>cards-enabled="false"</code>) — stattdessen erscheinen
+      die Treffer pro Bot-Antwort in <strong>kompakten Result-Group-Boxen</strong>
+      (Themenseiten / Sammlungen / Webseiten-Inhalte / „Treffer zur Suche „&lt;Term&gt;""-CTA).
+      Diese Box-Anzeige ist seit Welle C.5 (2026-05-21) Default — der Parameter
+      <code>inline-result-grouping</code> bleibt hier deshalb unbenannt (greift implizit).
+      Dedup pro Box, Such-CTA-Synthese und Einzelinhalt-Redaction sind aktiv.
+      Material- und Lernpfad-Erstellung landen direkt im Chat-Verlauf statt im Canvas
+      (<code>canvas-enabled="false"</code>).
       Header-Buttons (🔊 TTS, 🎤 Mic, 🔍 Debug, 🧭 Lotsen-Toggle) sind ausgeblendet — der
-      Lotsen-Modus läuft trotzdem (per Default an) und liefert Repo-/WLO-Ziele.
+      Lotsen-Modus läuft trotzdem (per <code>guide-mode-default="true"</code> immer an).
     </p>
     <p style="font-size:.9em;color:#475569;">
       Wer das alte Inline-Markdown-Bullet-Verhalten zurück will, kann mit
@@ -1099,6 +1134,22 @@ _DEMO_CLASSIC_HTML = (
     .replace(
         '<a class="swap-link" href="/widget/">← Zurück zur klassischen Demo (mit Kacheln + Canvas)</a>',
         '<a class="swap-link" href="/widget/inline">→ Zur Demo /widget/inline mit Default-Grouping</a>',
+    )
+    # Pill-Bar im Hero-Block: Classic toggelt grouping AUS, das soll der
+    # User auf einen Blick sehen. Wir tauschen die implizit-Default-Pill-
+    # Beschreibung gegen eine explizit-Off-Pill und korrigieren den
+    # "Was ist gesetzt"-Erläuterungstext.
+    .replace(
+        '<code>inline-result-grouping="true"</code> (Welle-C.5-Default; treibt die\n      Result-Group-Boxen unten),',
+        '<code>inline-result-grouping="false"</code> ist hier <strong>explizit gesetzt</strong>\n      (Legacy-Inline-Markdown-Modus statt Result-Group-Boxen),',
+    )
+    .replace(
+        '<span class="pill" style="background:#8b0000;color:#fff">primary-color="#8b0000"</span>',
+        '<span class="pill pill-off">inline-result-grouping="false"</span>\n      <span class="pill" style="background:#8b0000;color:#fff">primary-color="#8b0000"</span>',
+    )
+    .replace(
+        'Treffer-Kacheln entfallen (<code>cards-enabled="false"</code>) — stattdessen erscheinen\n      die Treffer pro Bot-Antwort in <strong>kompakten Result-Group-Boxen</strong>\n      (Themenseiten / Sammlungen / Webseiten-Inhalte / „Treffer zur Suche „&lt;Term&gt;""-CTA).\n      Diese Box-Anzeige ist seit Welle C.5 (2026-05-21) Default — der Parameter\n      <code>inline-result-grouping</code> bleibt hier deshalb unbenannt (greift implizit).\n      Dedup pro Box, Such-CTA-Synthese und Einzelinhalt-Redaction sind aktiv.',
+        'Treffer-Kacheln entfallen (<code>cards-enabled="false"</code>), UND der\n      Result-Grouping-Modus ist explizit aus (<code>inline-result-grouping="false"</code>).\n      Treffer + Lotsen-Quellen werden also als <strong>Markdown-Bullets im Bot-Text</strong>\n      gerendert (Legacy-Layout vor Welle C.5) — keine separaten Themenseiten-/Sammlungs-/\n      Webseiten-Inhalte-Boxen, keine „Treffer zur Suche"-CTA, keine Einzelinhalt-Redaction\n      (Bot sieht volle Tool-Results und kann sie im Text referenzieren).',
     )
     # Embed-Attribut ``inline-result-grouping="false"`` EINFÜGEN — die
     # einzige strukturelle Differenz zwischen Inline- und Classic-Demo.

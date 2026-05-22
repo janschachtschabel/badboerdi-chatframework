@@ -312,6 +312,34 @@ def normalize_cards(
             continue
         _rewrite_card_urls(c, target_repo)
         c["node_type"] = _infer_node_type(c)
+        # Schritt 2b: wlo_url-Repair. Falls die Card als Sammlung erkannt
+        # wurde (entweder vom Parser oder via Post-Set in den callers, z.B.
+        # ``search_wlo_collections``-Cards bekommen ``node_type = "collection"``
+        # erst NACH dem Parse), zeigt ``wlo_url`` ggf. noch auf den falschen
+        # ``/components/render/<id>``-Endpoint (ccm:io-Permalink). Wir
+        # rewriten ihn hier auf ``/components/collections?id=<id>``, sodass
+        # auch direkter Aufruf von ``card.wlo_url`` im Frontend einen
+        # validen Sammlungs-Link liefert.
+        # Beobachtet 2026-05-21: Sammlung wurde als
+        # ``…/render/39f845f1-…`` ausgespielt — falsch.
+        nid = str(c.get("node_id") or "").strip()
+        # Topic-pages SIND Sammlungen (ccm:map mit topic_page-Variants).
+        # Ihre wlo_url muss ebenso auf den collections-Browse-Endpoint
+        # zeigen — der render-Endpoint wäre für ccm:io.
+        if nid and c["node_type"] in ("collection", "topic_page"):
+            cur_wlo = str(c.get("wlo_url") or "").strip()
+            # Nur Repo-Render-URLs umbiegen — externe URLs (z.B. fremdes
+            # Repo, Themenseiten-Provider) bleiben unangetastet.
+            if cur_wlo and "/edu-sharing/components/render/" in cur_wlo:
+                c["wlo_url"] = _repo_collection_browse_url(nid, target_repo)
+        elif nid and c["node_type"] == "content":
+            # Defensiv: wenn ein als "content" gemerkter Knoten fälschlich
+            # eine Sammlungs-Browse-URL trägt (z.B. Post-Fix lief in die
+            # falsche Richtung), zurück auf Render. Sehr selten, aber
+            # Symmetrie macht den Pfad vorhersagbar.
+            cur_wlo = str(c.get("wlo_url") or "").strip()
+            if cur_wlo and "/edu-sharing/components/collections?id=" in cur_wlo:
+                c["wlo_url"] = _repo_render_url(nid, target_repo)
 
     # Schritt 3: Dedup per node_id. Cards ohne node_id (defensiv) bleiben
     # alle erhalten — ohne ID können wir nicht entscheiden, ob's Duplikate

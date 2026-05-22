@@ -1207,9 +1207,16 @@ def parse_wlo_topic_page_cards(mcp_text: str) -> list[dict]:
             "node_type":            "collection",
             "topic_pages":          topic_pages,
             "educational_contexts": r.get("educationalContexts") or [],
+            # Themenseiten-Treffer SIND Sammlungen (ccm:map) — daher MUSS
+            # die wlo_url auf den Sammlungs-Browse-Endpoint zeigen, nicht
+            # auf ``/components/render/<id>`` (das ist der Permalink für
+            # ccm:io-Knoten und liefert für eine Sammlung eine 404 bzw.
+            # eine falsche Detail-Ansicht). Beobachtet 2026-05-21:
+            # eingebettete Bot-Antwort zeigte ``…/render/39f845…`` für
+            # einen reinen Sammlungs-Treffer.
             "wlo_url": (
                 f"{get_repo_base_url()}/edu-sharing/"
-                f"components/render/{cid}"
+                f"components/collections?id={cid}"
             ),
             "topic_page_url": r.get("topicPageUrl") or "",
         })
@@ -1270,6 +1277,21 @@ def _cards_from_json_envelope(data: dict) -> list[dict] | None:
         if not nid:
             continue
         node_type = r.get("nodeType") or "content"
+        # wlo_url muss zum node_type passen: Sammlungen (ccm:map) brauchen
+        # den ``components/collections?id=<uuid>``-Browse-Endpoint, nicht
+        # ``components/render/<uuid>`` (das ist ccm:io-Permalink und liefert
+        # für eine Sammlung eine falsche/leere Detail-View). Für content-
+        # Nodes bleibt render/<uuid> korrekt. Hinweis: Wenn die Eingabe
+        # ``nodeType`` nicht setzt (default "content"), aber später per
+        # ``c.setdefault("node_type", "collection")`` in den callers
+        # (chat.py / llm_service.py für search_wlo_collections) überschrieben
+        # wird, holt ``normalize_cards`` (card_pipeline) den wlo_url-Repair
+        # nach — siehe dort.
+        _repo = get_repo_base_url()
+        if node_type == "collection":
+            _wlo_url = f"{_repo}/edu-sharing/components/collections?id={nid}"
+        else:
+            _wlo_url = f"{_repo}/edu-sharing/components/render/{nid}"
         cards.append({
             "node_id": nid,
             "title": r.get("title") or "",
@@ -1295,10 +1317,7 @@ def _cards_from_json_envelope(data: dict) -> list[dict] | None:
             "license": r.get("license") or "",
             "publisher": r.get("publisher") or "",
             "node_type": node_type,
-            "wlo_url": (
-                f"{get_repo_base_url()}/edu-sharing/components/"
-                f"render/{nid}"
-            ),
+            "wlo_url": _wlo_url,
             "topic_page_url": r.get("topicPageUrl") or "",
         })
     return _normalize_card_repo_hosts(cards)
