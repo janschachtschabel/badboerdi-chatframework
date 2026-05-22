@@ -1542,11 +1542,14 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
    *  und das MCP für diese Tools die ``searchUrl`` nicht ausspielt), bauen
    *  wir die URL aus ``repository_url`` + ``search_term`` selbst zusammen.
    *  Damit erscheint die Such-CTA auch in Turns ohne Einzelinhalt-Suche.
-   *  Reihenfolge:
-   *    1. ``repository_url`` + ``/edu-sharing/components/search?query=<term>``
-   *    2. ``https://wirlernenonline.de/?s=<term>`` (Public-Site-Fallback)
-   *  Beide ziehen Sammlungen UND Einzelinhalte im Ergebnis, also passend
-   *  für die CTA. */
+   *  Reihenfolge (alle bleiben im edu-sharing/openeduhub-Ökosystem —
+   *  wirlernenonline.de/?s=… wird NICHT mehr genutzt, der WP-Endpoint
+   *  ist instabil und nicht für Such-Targeting gedacht):
+   *    1. Erstes ``search_wlo_content``-Meta mit URL
+   *    2. Erstes Collections-/Topic-Pages-Meta mit URL
+   *    3. Jedes Meta mit nicht-leerem search_url
+   *    4. ``repository_url`` aus Metas + ``/components/search?query=<term>``
+   *    5. Gar nichts (leerer String → CTA versteckt) */
   groupedSearchUrl(msg: ChatMessage): string {
     const metas = msg.queryMetas || [];
     if (!metas.length) return '';
@@ -1559,7 +1562,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       || ''
     );
     if (direct) return direct;
-    // ── Fallback-Komposition ────────────────────────────────────
+    // ── Fallback-Komposition (nur edu-sharing) ──────────────────
     // Nimm den ersten nicht-leeren search_term aus den Metas (die Tools
     // schreiben den User-Suchbegriff alle gleich rein, search_wlo_content/
     // collections/topic_pages teilen sich das Schema).
@@ -1568,14 +1571,13 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     if (!term) return '';
     const repoMeta = metas.find(m => m.repository_url?.trim());
     const repo = (repoMeta?.repository_url || '').trim().replace(/\/+$/, '');
-    const q = encodeURIComponent(term);
-    if (repo) {
-      // Edu-Sharing-Such-Komponente — surface alle Treffer (Sammlungen +
-      // Einzelinhalte) für den Suchbegriff.
-      return `${repo}/edu-sharing/components/search?query=${q}`;
+    if (!repo) {
+      // Ohne repository_url kein Fallback — wir leiten NICHT auf
+      // wirlernenonline.de/?s=… um (WP wirft 500). Eher CTA verstecken.
+      return '';
     }
-    // Public-Site-Fallback wenn auch keine ``repository_url`` da ist.
-    return `https://wirlernenonline.de/?s=${q}`;
+    const q = encodeURIComponent(term);
+    return `${repo}/edu-sharing/components/search?query=${q}`;
   }
 
   /** Such-Begriff für das Search-CTA-Label. Falls in den Metas vorhanden,

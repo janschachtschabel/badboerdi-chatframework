@@ -6139,20 +6139,27 @@ async def _chat_impl(
                 logger.warning("fallback queryMeta synthesis failed: %s", _qm_err)
 
     # ── Type-Focus Search-URL-Override (Welle C.5+, 2026-05-22) ────────
-    # Prefetched search_wlo_collections-Metas tragen i.d.R. nur den
-    # discipline-Filter (z.B. taxonid=Mathematik), aber NICHT den vom
-    # User explizit gewollten learningResourceType=Video. Bei aktivem
-    # Type-Focus prependen wir einen synthetischen Meta-Eintrag, der die
-    # WLO-Public-Site-Suche mit ``?s=<thema>+<typ_label>`` als search_url
-    # mitbringt. ``groupedSearchUrl`` im Frontend bevorzugt
-    # ``search_wlo_content`` > collections > topic_pages > erste mit URL —
-    # damit unser Synthetic ganz oben in der Reihenfolge steht, taggen
-    # wir es als ``tool_name="search_wlo_content"`` (de-facto: es IST
-    # die Type-gefilterte Variante).
+    # Wir bleiben im edu-sharing/openeduhub-Ökosystem (User-Feedback
+    # 2026-05-22: wirlernenonline.de/?s=… wirft WP-500 und ist nicht der
+    # gewünschte Search-Endpoint). Reihenfolge der Fallbacks:
+    #
+    #   1. Existierender Meta-Eintrag mit ``search_url`` (egal welches
+    #      Tool — collections, topic_pages, content) — wir nehmen den
+    #      ersten brauchbaren, fügen den Type-Label-Begriff am Query-
+    #      Parameter (``q=``) hinzu. Damit bleiben alle Filter (taxonid/
+    #      discipline) erhalten und der learningResourceType wirkt als
+    #      Keyword-Hint im Volltext-Match.
+    #
+    #   2. Synthetischer Fallback aus ``REPO_BASE_URL`` + Thema + Typ:
+    #      ``<repo>/edu-sharing/components/search?query=<thema>+<typ>``.
+    #
+    # Public-WLO-Search (wirlernenonline.de/?s=…) wird NICHT mehr genutzt
+    # — der Endpoint ist instabil und nicht für Such-Targeting gedacht.
     if _type_focus_label:
         try:
             from app.models.schemas import QueryMetaEntry as _QME_tf
-            from urllib.parse import quote as _quote_tf
+            from urllib.parse import quote as _quote_tf, urlparse, urlunparse
+            from urllib.parse import parse_qsl, urlencode
             _classif_e_tf = classification_dict.get("entities", {}) or {}
             _sess_e_tf = session_state.get("entities", {}) or {}
             _tf_topic = (
@@ -6162,30 +6169,72 @@ async def _chat_impl(
                  or "").strip()
             )
             if _tf_topic:
+                # Stufe 1: nimm eine existierende search_url und ergänze Typ
+                _existing_url = ""
+                for _m in _query_meta_entries:
+                    if _m.search_url:
+                        _existing_url = _m.search_url
+                        break
+                _tf_search_url = ""
                 _tf_query_str = f"{_tf_topic} {_type_focus_label}"
-                _tf_search_url = (
-                    f"https://wirlernenonline.de/?s={_quote_tf(_tf_query_str)}"
-                )
-                _tf_meta = _QME_tf(
-                    tool_name="search_wlo_content",
-                    query_type="type-focus-synth",
-                    search_term=_tf_topic,
-                    criteria=[{
-                        "property": "learningResourceType",
-                        "values": [_type_focus_label.lower()],
-                        "label": _type_focus_label,
-                    }],
-                    pagination={},
-                    repository_url=(get_repo_base_url() or "").rstrip("/"),
-                    search_url=_tf_search_url,
-                )
-                # An den ANFANG der Liste — Frontend nimmt den ersten
-                # search_wlo_content-Match.
-                _query_meta_entries.insert(0, _tf_meta)
-                logger.info(
-                    "type-focus search-url override: %s",
-                    _tf_search_url[:120],
-                )
+                if _existing_url:
+                    try:
+                        _p = urlparse(_existing_url)
+                        _qs = dict(parse_qsl(_p.query, keep_blank_values=True))
+                        # edu-sharing's Search-Komponente nutzt ``q=`` als
+                        # Haupt-Query-Param; wir mergen den Type-Begriff dort
+                        # rein. Bestehende Filter (filters=...) bleiben drin.
+                        _q_key = "q" if "q" in _qs else ("query" if "query" in _qs else "q")
+                        _cur = _qs.get(_q_key, "")
+                        _new_q = (
+                            f"{_cur} {_type_focus_label}".strip()
+                            if _cur and _type_focus_label.lower() not in _cur.lower()
+                            else (_cur or _tf_query_str)
+                        )
+                        _qs[_q_key] = _new_q
+                        _tf_search_url = urlunparse(
+                            (_p.scheme, _p.netloc, _p.path, _p.params,
+                             urlencode(_qs, safe=":/,"), _p.fragment),
+                        )
+                        logger.info(
+                            "type-focus search-url enhance (existing-url, q+=%s): %s",
+                            _type_focus_label, _tf_search_url[:140],
+                        )
+                    except Exception as _enh_err:
+                        logger.warning(
+                            "type-focus URL-enhance from existing failed: %s",
+                            _enh_err,
+                        )
+                        _tf_search_url = ""
+                # Stufe 2: synthetischer edu-sharing-Search-Link
+                if not _tf_search_url:
+                    _repo = (get_repo_base_url() or "").rstrip("/")
+                    if _repo:
+                        _tf_search_url = (
+                            f"{_repo}/edu-sharing/components/search"
+                            f"?query={_quote_tf(_tf_query_str)}"
+                        )
+                        logger.info(
+                            "type-focus search-url synthesized: %s",
+                            _tf_search_url[:140],
+                        )
+                if _tf_search_url:
+                    _tf_meta = _QME_tf(
+                        tool_name="search_wlo_content",
+                        query_type="type-focus-synth",
+                        search_term=_tf_topic,
+                        criteria=[{
+                            "property": "learningResourceType",
+                            "values": [_type_focus_label.lower()],
+                            "label": _type_focus_label,
+                        }],
+                        pagination={},
+                        repository_url=(get_repo_base_url() or "").rstrip("/"),
+                        search_url=_tf_search_url,
+                    )
+                    # An den ANFANG der Liste — Frontend nimmt den ersten
+                    # search_wlo_content-Match.
+                    _query_meta_entries.insert(0, _tf_meta)
         except Exception as _tfm_err:
             logger.warning("type-focus search-url override failed: %s", _tfm_err)
 
