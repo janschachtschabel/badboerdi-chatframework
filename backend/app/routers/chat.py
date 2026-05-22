@@ -5892,6 +5892,26 @@ async def _chat_impl(
                 if (getattr(c, "node_type", None) == "collection"
                     and not getattr(c, "topic_pages", None))
             )
+
+            # Offer-Mode-Skip: Wenn in diesem Turn KEIN Such-Tool gelaufen
+            # ist (z.B. PAT-20-Orientierungs-Antwort: „Ich kann nach
+            # passenden Themenseiten/Sammlungen suchen — nenn mir dein
+            # Thema"), ist die Erwähnung dieser Worte KEINE Halluzination
+            # über aktuelle Treffer, sondern ein **Angebot für Folge-Turns**.
+            # Watchdog-Patches treffen dann unschuldige Sätze — beobachtet
+            # 2026-05-22: „passenden Themenseiten oder Sammlungen" →
+            # „passende Treffer in der Suche oder passende Treffer in der
+            # Suche". Wir skippen die Sammlung/Themenseite-Patches in
+            # diesem Fall komplett.
+            _offered_only_no_search = not any(
+                t in (tools_called or [])
+                for t in ("search_wlo_content",
+                          "search_wlo_collections",
+                          "search_wlo_topic_pages",
+                          "browse_collection_tree",
+                          "get_subject_portals",
+                          "get_collection_contents")
+            )
             import re as _re_wd
             _new_text = response_text
             _changed_reasons = []
@@ -5977,19 +5997,35 @@ async def _chat_impl(
                     return _base_repl
                 return _pattern.sub(_replace, _text, count=_count)
 
+            # Determiner-/Adjektiv-Präfix mit allen DE-Deklinationen.
+            # Greift „zwei passende Sammlungen", „die passenden Sammlungen",
+            # „eine passende Sammlung", „diesen passenden Sammlungen" usw.
+            # Vorher (Bug 2026-05-22): „passende" matched, „passenden"
+            # nicht → Ergebnis „passenden passende Treffer in der Suche".
+            # Jetzt: alle Adjektiv-Endungen + Artikel-Deklinationen.
+            _det_adj = (
+                r"(?:\b(?:"
+                r"zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|"
+                r"ein(?:e[srnm]?)?|"
+                r"d(?:er|ie|as|em|en|es)|"
+                r"diese[srnm]?|"
+                r"meine[srnm]?|deine[srnm]?|seine[srnm]?|"
+                r"unsere[srnm]?|eure[srnm]?|ihre[srnm]?|"
+                r"passende[srnm]?|"
+                r"einige|mehrere|alle[srnm]?|viele|wenige|"
+                r"weitere|andere[srnm]?|"
+                r"ähnliche[srnm]?|verwandte[srnm]?"
+                r")\s+)?"
+            )
+
             # Bot behauptet Sammlung(en), aber keine sichtbar — patchen.
-            if _n_samml == 0 and _re_wd.search(
-                r"\bSammlung(?:en)?\b", _new_text, _re_wd.IGNORECASE,
-            ):
-                # Zwei-Stufen-Rewrite: erst Adjektiv+Sammlung-Phrasen
-                # ("zwei passende Sammlungen", "eine Sammlung", "die Sammlung"),
-                # dann nackte Wort-Matches. Wir ersetzen großzügig durch
-                # "passende Treffer in der Suche", was zur Such-CTA passt.
-                # Capitalization passt sich automatisch dem Satzkontext an.
+            # Skip wenn kein Such-Tool gelaufen ist (Offer-Mode).
+            if (not _offered_only_no_search and _n_samml == 0
+                and _re_wd.search(
+                    r"\bSammlung(?:en)?\b", _new_text, _re_wd.IGNORECASE,
+                )):
                 _phrase_re = _re_wd.compile(
-                    r"(?:\b(?:zwei|drei|vier|fünf|ein|eine|einer|"
-                    r"einige|mehrere|die|der|das|diese|passende)\s+)?"
-                    r"\bSammlung(?:en)?\b",
+                    _det_adj + r"\bSammlung(?:en)?\b",
                     _re_wd.IGNORECASE,
                 )
                 _new_text = _ctx_aware_sub(
@@ -5999,13 +6035,13 @@ async def _chat_impl(
                 _changed_reasons.append(f"sammlungen=0 aber Text claimt")
 
             # Bot behauptet Themenseite(n), aber keine sichtbar — patchen.
-            if _n_themen == 0 and _re_wd.search(
-                r"\bThemenseite(?:n)?\b", _new_text, _re_wd.IGNORECASE,
-            ):
+            # Skip wenn kein Such-Tool gelaufen ist (Offer-Mode).
+            if (not _offered_only_no_search and _n_themen == 0
+                and _re_wd.search(
+                    r"\bThemenseite(?:n)?\b", _new_text, _re_wd.IGNORECASE,
+                )):
                 _phrase_re = _re_wd.compile(
-                    r"(?:\b(?:zwei|drei|vier|fünf|ein|eine|einer|"
-                    r"einige|mehrere|die|der|das|diese|passende)\s+)?"
-                    r"\bThemenseite(?:n)?\b",
+                    _det_adj + r"\bThemenseite(?:n)?\b",
                     _re_wd.IGNORECASE,
                 )
                 _new_text = _ctx_aware_sub(
@@ -6019,7 +6055,8 @@ async def _chat_impl(
             # Behauptungen im Repertoire. Wenn weder Themenseiten noch
             # Sammlungen sichtbar sind, ist das eine pure Halluzination.
             # Dann ersetzen wir den Liefer-Satz durch einen Suchverweis.
-            if _n_samml == 0 and _n_themen == 0:
+            if (not _offered_only_no_search
+                and _n_samml == 0 and _n_themen == 0):
                 _new_text = _re_wd.sub(
                     r"(?im)^.*?(?:rausgezogen|rausgesucht|zusammengestellt|"
                     r"herausgesucht|gefunden|kuratiert).*?[.!?]\s*",
@@ -6139,27 +6176,87 @@ async def _chat_impl(
                 logger.warning("fallback queryMeta synthesis failed: %s", _qm_err)
 
     # ── Type-Focus Search-URL-Override (Welle C.5+, 2026-05-22) ────────
-    # Wir bleiben im edu-sharing/openeduhub-Ökosystem (User-Feedback
-    # 2026-05-22: wirlernenonline.de/?s=… wirft WP-500 und ist nicht der
-    # gewünschte Search-Endpoint). Reihenfolge der Fallbacks:
-    #
-    #   1. Existierender Meta-Eintrag mit ``search_url`` (egal welches
-    #      Tool — collections, topic_pages, content) — wir nehmen den
-    #      ersten brauchbaren, fügen den Type-Label-Begriff am Query-
-    #      Parameter (``q=``) hinzu. Damit bleiben alle Filter (taxonid/
-    #      discipline) erhalten und der learningResourceType wirkt als
-    #      Keyword-Hint im Volltext-Match.
-    #
-    #   2. Synthetischer Fallback aus ``REPO_BASE_URL`` + Thema + Typ:
-    #      ``<repo>/edu-sharing/components/search?query=<thema>+<typ>``.
-    #
-    # Public-WLO-Search (wirlernenonline.de/?s=…) wird NICHT mehr genutzt
-    # — der Endpoint ist instabil und nicht für Such-Targeting gedacht.
+    # WLO/edu-sharing-Such-URL nutzt ``q=<keyword>&filters=<json>``.
+    # Wir bauen die URL strukturiert und packen ALLE bekannten Filter
+    # mit URI rein (URI-Lookup via mcp_client._label_to_uri_cache):
+    #   q=<thema>
+    #   filters={
+    #     "ccm:oeh_lrt_aggregated": ["<lrt-uri>"]      # Material-Typ
+    #     "ccm:taxonid":            ["<discipline-uri>"]  # Fach
+    #     "ccm:educationalcontext": ["<eduCtx-uri>"]   # Bildungsstufe
+    #   }
+    #   sort={"active":"cm:modified","direction":"desc"} (Konvention)
+    # Jeder Filter ist optional — fehlt das Entity oder findet das
+    # Vocab-Lookup keine URI, fällt nur dieser eine Filter weg, der
+    # Rest bleibt. Bei komplett leerem Filter-Dict landet der User in
+    # der reinen Volltext-Suche und kann dort manuell filtern.
     if _type_focus_label:
         try:
             from app.models.schemas import QueryMetaEntry as _QME_tf
-            from urllib.parse import quote as _quote_tf, urlparse, urlunparse
-            from urllib.parse import parse_qsl, urlencode
+            from urllib.parse import urlencode as _urlencode_tf
+            import json as _json_tf
+
+            # Vocab-Lookup-Helper (Best-Effort, returnt "" bei Miss).
+            # Probiert Singular/Plural-Varianten + Umlaut-Transformationen,
+            # weil das MCP-Vocab oft Singular-Canonicals speichert
+            # (z.B. "Arbeitsblatt") und der User-Begriff Plural ist
+            # (z.B. "Arbeitsblätter").
+            async def _vocab_uri_for(vocab: str, label: str) -> str:
+                if not label or not label.strip():
+                    return ""
+                try:
+                    from app.services.mcp_client import (
+                        _label_to_uri_cache as _vc,
+                        _ensure_label_cache as _ev,
+                        _fuzzy_lookup as _fv,
+                    )
+                    await _ev(vocab)
+                    _vmap = _vc.get(vocab) or {}
+
+                    def _de_umlaut_a_o_u(s: str) -> str:
+                        return (s.replace("ä", "a").replace("ö", "o")
+                                 .replace("ü", "u").replace("ß", "ss"))
+
+                    def _de_umlaut_ae(s: str) -> str:
+                        return (s.replace("ä", "ae").replace("ö", "oe")
+                                 .replace("ü", "ue").replace("ß", "ss"))
+
+                    # Generiere Variantenliste: Original, plural-stripped,
+                    # umlaut-transformiert. Reihenfolge so, dass die
+                    # genauesten Matches zuerst stehen.
+                    _base = label.strip().lower()
+                    _stems: list[str] = []
+                    for v in (_base, _de_umlaut_a_o_u(_base), _de_umlaut_ae(_base)):
+                        if v and v not in _stems:
+                            _stems.append(v)
+                    # Plural-Suffixe abschneiden: er, en, e, n, s
+                    _suffixes = ("er", "en", "e", "n", "s")
+                    _candidates: list[str] = []
+                    for stem in _stems:
+                        if stem not in _candidates:
+                            _candidates.append(stem)
+                        for suf in _suffixes:
+                            if stem.endswith(suf) and len(stem) > len(suf) + 2:
+                                _c = stem[:-len(suf)]
+                                if _c not in _candidates:
+                                    _candidates.append(_c)
+                    # Direkt-Hit?
+                    for _k in _candidates:
+                        if _k in _vmap:
+                            return _vmap[_k]
+                    # Fuzzy auf Original + Umlaut-Varianten
+                    for _try in (label, _de_umlaut_a_o_u(_base),
+                                  _de_umlaut_ae(_base)):
+                        _m = _fv(_vmap, _try)
+                        if _m:
+                            return _m[1]
+                except Exception as _e:
+                    logger.debug(
+                        "vocab-uri-lookup %s=%r nicht verfügbar: %s",
+                        vocab, label, _e,
+                    )
+                return ""
+
             _classif_e_tf = classification_dict.get("entities", {}) or {}
             _sess_e_tf = session_state.get("entities", {}) or {}
             _tf_topic = (
@@ -6169,55 +6266,110 @@ async def _chat_impl(
                  or "").strip()
             )
             if _tf_topic:
-                # Stufe 1: nimm eine existierende search_url und ergänze Typ
-                _existing_url = ""
-                for _m in _query_meta_entries:
-                    if _m.search_url:
-                        _existing_url = _m.search_url
-                        break
+                # ── URIs aus MCP-queryMeta extrahieren (Primärquelle) ──
+                # MCP's _queryMeta-Blöcke enthalten die URI-resolved
+                # Filter-Daten in ``criteria`` (Liste von Dicts wie
+                # ``{property: "ccm:taxonid", values: [<uri>], label: ...}``).
+                # Wir bevorzugen diese URIs gegenüber dem eigenen
+                # Vocab-Lookup, weil sie genau die sind, mit denen die
+                # MCP-Tool-Calls tatsächlich gefiltert haben — kein
+                # Risiko von Free-Text-Mismatch.
+                _props_to_uri: dict[str, str] = {}
+                for _meta in _query_meta_entries:
+                    for _c in (_meta.criteria or []):
+                        _prop = (_c.get("property") if isinstance(_c, dict)
+                                 else "") or ""
+                        _vals = (_c.get("values") if isinstance(_c, dict)
+                                 else []) or []
+                        # nur URIs übernehmen (Heuristik: beginnt mit
+                        # ``http://`` oder ``https://``)
+                        for _v in _vals:
+                            if isinstance(_v, str) and _v.startswith(("http://", "https://")):
+                                # Erstes URI je Property gewinnt (Reihenfolge =
+                                # Tool-Call-Reihenfolge ≈ Relevanz).
+                                _props_to_uri.setdefault(_prop, _v)
+                                break
+
+                # Property-Namen-Normalisierung: MCP nutzt manchmal Synonyme
+                # ("ccm:educationalcontext" vs. "ccm:educationalContext",
+                # "ccm:taxonid" als unique key). Wir mappen auf die
+                # kanonischen WLO-Search-URL-Filter-Keys.
+                def _pick_props(*keys: str) -> str:
+                    for _k in keys:
+                        _u = _props_to_uri.get(_k, "")
+                        if _u:
+                            return _u
+                    return ""
+
+                # 1) LRT — bevorzugt aus MCP criteria, sonst Vocab-Lookup
+                _lrt_uri = _pick_props(
+                    "ccm:oeh_lrt_aggregated",
+                    "learningResourceType",
+                )
+                if not _lrt_uri:
+                    _lrt_uri = await _vocab_uri_for("lrt", _type_focus_label)
+                # 2) Discipline — bevorzugt aus MCP criteria, sonst entity-Lookup
+                _disc_uri = _pick_props("ccm:taxonid", "discipline")
+                if not _disc_uri:
+                    _fach_label = (
+                        (_classif_e_tf.get("fach")
+                         or _sess_e_tf.get("fach")
+                         or "").strip()
+                    )
+                    if _fach_label:
+                        _disc_uri = await _vocab_uri_for("discipline", _fach_label)
+                # 3) EducationalContext — analog
+                _eductx_uri = _pick_props(
+                    "ccm:educationalcontext",
+                    "ccm:educationalContext",
+                    "educationalContext",
+                )
+                if not _eductx_uri:
+                    _stufe_label = (
+                        (_classif_e_tf.get("stufe")
+                         or _classif_e_tf.get("bildungsstufe")
+                         or _sess_e_tf.get("stufe")
+                         or "").strip()
+                    )
+                    if _stufe_label:
+                        _eductx_uri = await _vocab_uri_for("educationalContext", _stufe_label)
+
+                _repo = (get_repo_base_url() or "").rstrip("/")
                 _tf_search_url = ""
-                _tf_query_str = f"{_tf_topic} {_type_focus_label}"
-                if _existing_url:
-                    try:
-                        _p = urlparse(_existing_url)
-                        _qs = dict(parse_qsl(_p.query, keep_blank_values=True))
-                        # edu-sharing's Search-Komponente nutzt ``q=`` als
-                        # Haupt-Query-Param; wir mergen den Type-Begriff dort
-                        # rein. Bestehende Filter (filters=...) bleiben drin.
-                        _q_key = "q" if "q" in _qs else ("query" if "query" in _qs else "q")
-                        _cur = _qs.get(_q_key, "")
-                        _new_q = (
-                            f"{_cur} {_type_focus_label}".strip()
-                            if _cur and _type_focus_label.lower() not in _cur.lower()
-                            else (_cur or _tf_query_str)
+                if _repo:
+                    _qs: dict[str, str] = {"q": _tf_topic}
+                    _filters_dict: dict[str, list[str]] = {}
+                    if _lrt_uri:
+                        _filters_dict["ccm:oeh_lrt_aggregated"] = [_lrt_uri]
+                    if _disc_uri:
+                        _filters_dict["ccm:taxonid"] = [_disc_uri]
+                    if _eductx_uri:
+                        _filters_dict["ccm:educationalcontext"] = [_eductx_uri]
+                    if _filters_dict:
+                        _qs["filters"] = _json_tf.dumps(
+                            _filters_dict,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
                         )
-                        _qs[_q_key] = _new_q
-                        _tf_search_url = urlunparse(
-                            (_p.scheme, _p.netloc, _p.path, _p.params,
-                             urlencode(_qs, safe=":/,"), _p.fragment),
+                        # Sort-Konvention: neueste zuerst — passt zum Type-
+                        # Focus-Anwendungsfall (User will frische Treffer).
+                        _qs["sort"] = _json_tf.dumps(
+                            {"active": "cm:modified", "direction": "desc"},
+                            separators=(",", ":"),
+                            ensure_ascii=False,
                         )
-                        logger.info(
-                            "type-focus search-url enhance (existing-url, q+=%s): %s",
-                            _type_focus_label, _tf_search_url[:140],
-                        )
-                    except Exception as _enh_err:
-                        logger.warning(
-                            "type-focus URL-enhance from existing failed: %s",
-                            _enh_err,
-                        )
-                        _tf_search_url = ""
-                # Stufe 2: synthetischer edu-sharing-Search-Link
-                if not _tf_search_url:
-                    _repo = (get_repo_base_url() or "").rstrip("/")
-                    if _repo:
-                        _tf_search_url = (
-                            f"{_repo}/edu-sharing/components/search"
-                            f"?query={_quote_tf(_tf_query_str)}"
-                        )
-                        logger.info(
-                            "type-focus search-url synthesized: %s",
-                            _tf_search_url[:140],
-                        )
+                    logger.info(
+                        "type-focus url-filters: lrt=%s discipline=%s eduCtx=%s",
+                        bool(_lrt_uri), bool(_disc_uri), bool(_eductx_uri),
+                    )
+                    _tf_search_url = (
+                        f"{_repo}/edu-sharing/components/search"
+                        f"?{_urlencode_tf(_qs)}"
+                    )
+                    logger.info(
+                        "type-focus search-url built (lrt_uri=%s): %s",
+                        bool(_lrt_uri), _tf_search_url[:200],
+                    )
                 if _tf_search_url:
                     _tf_meta = _QME_tf(
                         tool_name="search_wlo_content",
@@ -6225,11 +6377,11 @@ async def _chat_impl(
                         search_term=_tf_topic,
                         criteria=[{
                             "property": "learningResourceType",
-                            "values": [_type_focus_label.lower()],
+                            "values": [_lrt_uri] if _lrt_uri else [_type_focus_label.lower()],
                             "label": _type_focus_label,
                         }],
                         pagination={},
-                        repository_url=(get_repo_base_url() or "").rstrip("/"),
+                        repository_url=_repo,
                         search_url=_tf_search_url,
                     )
                     # An den ANFANG der Liste — Frontend nimmt den ersten

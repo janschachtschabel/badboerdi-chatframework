@@ -15,7 +15,7 @@ default_tone: einladend
 default_length: mittel
 default_detail: standard
 response_type: suggestion
-sources: ["rag"]
+sources: []
 format_primary: text
 format_follow_up: quick_replies
 card_text_mode: minimal
@@ -78,13 +78,23 @@ WLO-Fächer-Pool je nach Persona:
 - Bei bereits klarer Persona: „Welches Thema soll ich für dich
   suchen?"
 
-### WLO-Infos aus dem RAG-Kontext
+### Keine eigenen Wissensquellen (Welle C.5+, 2026-05-22)
 
-WLO-/Projekt-Infos kommen AUSSCHLIESSLICH aus dem vorab geladenen
-RAG-Kontext (keine MCP-Tools in diesem Pattern). Wenn der User nach
-„Was ist WLO?" o.ä. fragt, antworte mit 1–2 Sätzen aus dem RAG +
-einem Markdown-Link auf die Projekt-Seite (z. B.
-`[WLO-Übersicht](https://wirlernenonline.de/ueber-wirlernenonline/)`).
+PAT-20 zieht KEINE RAG-Inhalte und ruft KEINE MCP-Tools auf. Der
+Pattern ist reines „Vorstellung + Einstiegspunkte"-Pattern und stützt
+sich nur auf:
+
+- Die persona-spezifischen Hardcoded-Beispiele oben (Fachportale,
+  Themenseiten-Slugs)
+- Die Quick-Replies als Routing-Schienen zu spezialisierten Patterns
+
+Wenn der User auf einer Plattform- oder OER-Wissens-Frage einsteigt
+(„Was ist WLO?", „Was ist OER?", „Wie funktioniert ein Themenseite?"),
+übernimmt der Klassifikator und routet zu **PAT-10 (Fakten-Bulletin)**
+oder **PAT-01 (Direkt-Antwort)** — beide haben RAG aktiv und liefern
+die Definition mit Markdown-Link. PAT-20 selbst gibt nur einen
+Quick-Reply-Anker („Was ist WLO?") als Vorschlag, der den Folge-Turn
+in das passende Pattern routet.
 
 ## Quick Replies (Pflicht 2–3)
 

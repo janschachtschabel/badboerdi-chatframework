@@ -2031,8 +2031,18 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     _logger.info("medientyp set — added search_wlo_content to active_tools")
                     break
 
+    # ── Pattern-Sources-Gate (Welle C.5+, 2026-05-22) ─────────────
+    # Wenn das aktive Pattern ``sources`` deklariert hat UND "rag" NICHT
+    # darin steht, schalten wir die RAG-Pipeline komplett aus — weder
+    # Prefetch noch ``query_knowledge``-Tool werden bereitgestellt.
+    # Patterns ohne ``sources``-Deklaration (Default) bekommen alles.
+    _pattern_sources_decl = pattern_output.get("sources")
+    _rag_allowed_for_pattern = (
+        _pattern_sources_decl is None
+        or "rag" in _pattern_sources_decl
+    )
     # ── Add RAG knowledge areas as virtual tools ──────────────────
-    if available_rag_areas and rag_config:
+    if available_rag_areas and rag_config and _rag_allowed_for_pattern:
         area_descriptions = []
         for area in available_rag_areas:
             desc = rag_config.get(area, {}).get("description", f"Wissensbereich: {area}")
@@ -2279,7 +2289,14 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
     _RAG_TOP_K = _rag_settings["top_k"]
     _RAG_MIN_SCORE = _rag_settings["min_score"]
     _RAG_MAX_CHARS_PER_AREA = _rag_settings["max_chars_per_area"]
-    if available_rag_areas and rag_config:
+    # Pattern-Gate-Log + Prefetch-Trigger (siehe Berechnung oben).
+    _logger.info(
+        "rag-prefetch-gate: pattern=%s sources=%r → allowed=%s",
+        pattern_output.get("pattern_id") or pattern_label,
+        _pattern_sources_decl,
+        _rag_allowed_for_pattern,
+    )
+    if available_rag_areas and rag_config and _rag_allowed_for_pattern:
         always_areas = [a for a in available_rag_areas if rag_config.get(a, {}).get("mode") == "always"]
 
         if always_areas:

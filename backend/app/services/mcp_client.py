@@ -530,6 +530,15 @@ import time as _time
 from collections import OrderedDict
 
 _TOOL_CACHE: "OrderedDict[tuple[str, str], tuple[float, str]]" = OrderedDict()
+# Parallel-Cache für die ``_queryMeta``-Blöcke, die das MCP zusammen mit
+# dem Tool-Result emittiert. Müssen separat gecached werden, weil sie
+# beim Response-Parsing aus dem Text-Stream rausgezogen werden (siehe
+# extraction-Loop unten) und der LIVE-Per-Request-Akkumulator
+# (``_query_metas`` ContextVar) bei Cache-Hits sonst leer bliebe.
+# Frontend-Search-CTA + URL-Filter-Synthese (chat.py) sind auf diese
+# Metas angewiesen, sodass cached-Turns sonst keine URI-resolved
+# Filter-Daten mehr hätten.
+_TOOL_META_CACHE: dict[tuple[str, str], list[dict[str, Any]]] = {}
 _TOOL_CACHE_MAX_ENTRIES = 1024  # was 256 — Multi-User-Sessions füllen die alte Größe schnell
 _TOOL_CACHE_TTL_DEFAULT_SECONDS = 300  # 5 Min — fallback, wenn das Tool keine spezifische TTL hat
 _TOOL_CACHE_TTL_NEGATIVE_SECONDS = 60  # Empty-Result-Hits werden nur kurz cached
@@ -732,6 +741,19 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
         cached = _cache_get(cache_key)
         if cached is not None:
             logger.info("MCP tool %s cache HIT (%d entries)", tool_name, len(_TOOL_CACHE))
+            # Cached queryMetas auch wieder in den Per-Request-
+            # Akkumulator zurückspielen — sonst hätten Cache-Hit-Turns
+            # keine URI-resolved Filter-Daten für die Such-CTA-URL.
+            _cached_metas = _TOOL_META_CACHE.get(cache_key) or []
+            if _cached_metas:
+                _cur = _query_metas.get([])
+                for _cm in _cached_metas:
+                    _cur.append(_cm)
+                _query_metas.set(_cur)
+                logger.debug(
+                    "re-emitted %d cached queryMetas for %s",
+                    len(_cached_metas), tool_name,
+                )
             return cached
 
     # Ensure we have a valid session for the resolved server URL
@@ -767,6 +789,7 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
     content_parts = result_data.get("content", [])
 
     texts = []
+    _extracted_metas_this_call: list[dict[str, Any]] = []
     for part in content_parts:
         if isinstance(part, dict) and part.get("type") == "text":
             raw_text = part.get("text", "")
@@ -779,6 +802,7 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
                         metas = _query_metas.get([])
                         metas.append(meta)
                         _query_metas.set(metas)
+                        _extracted_metas_this_call.append(meta)
                         logger.debug("extracted _queryMeta from %s: %s", tool_name, meta.get("queryType"))
                 except (json.JSONDecodeError, AttributeError):
                     texts.append(raw_text)
@@ -808,6 +832,12 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
     # i.e. tool isn't in the blocklist).
     if cache_key is not None:
         _cache_set(cache_key, response)
+        # Auch die extrahierten queryMetas mit-cachen, damit Cache-Hits
+        # die strukturierten Filter-Daten (URI-resolved discipline /
+        # educationalContext / learningResourceType) wieder re-emitten
+        # können — siehe Re-Emit-Logik im Cache-Hit-Zweig oben.
+        if _extracted_metas_this_call:
+            _TOOL_META_CACHE[cache_key] = _extracted_metas_this_call
     return response
 
 
