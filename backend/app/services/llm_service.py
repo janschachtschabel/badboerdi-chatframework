@@ -443,8 +443,15 @@ def _render_personas_block(persona_defs: list[dict]) -> str:
         "konkurrierende Marker einer anderen — Beispiel: 2× P-LER-Marker "
         "(\"kapiere nicht\" + \"Schritt für Schritt\") überstimmt eine vage "
         "Frage zu \"Feedback geben\" → bleib bei P-LER.\n"
-        "- Im Zweifel P-AND, nicht eine spezifische Persona raten — aber "
-        "MIND. 2 Positiv-Marker derselben Persona = nicht mehr Zweifelsfall.\n"
+        "- Im Zweifel P-AND — aber NICHT vorschnell. Die Persona ist gesetzt, "
+        "sobald ENTWEDER (a) EIN eindeutiger ROLLEN-Marker vorliegt, der die "
+        "Rolle des Sprechers benennt statt nur ein Thema (z.B. \"meine "
+        "Unterrichtsstunde/-einheit planen\", \"für meine Klasse\", \"ich "
+        "unterrichte\", \"als Schulleitung\", \"als Abgeordneter\") → DIESE "
+        "Persona; ODER (b) MIND. 2 schwächere Positiv-Marker derselben Persona "
+        "zusammenkommen. NUR Themen-Wörter ohne Rollen-/Ich-Bezug (z.B. "
+        "\"Lehrplan\", \"Schulentwicklung\", \"Statistik\", \"Bildungspolitik\") "
+        "bleiben für sich P-AND.\n"
     )
 
     parts: list[str] = [head, ""]

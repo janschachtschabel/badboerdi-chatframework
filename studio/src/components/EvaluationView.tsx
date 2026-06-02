@@ -545,7 +545,7 @@ function RunDetailView({ run, onBack }: { run: RunDetail; onBack: () => void }) 
       )}
 
       {/* Klassifikations-Metriken (Phase 1: Persona / Intent / Pattern / Tool-Compliance) */}
-      <ClassificationMetricsView metrics={run.summary?.classification_metrics} />
+      <ClassificationMetricsView metrics={run.summary?.classification_metrics} conversations={run.conversations} />
 
       {/* Pattern Usage in this run */}
       {Object.keys(patternUsage).length > 0 && (
@@ -795,11 +795,12 @@ function JudgeScore({ label, v }: { label: string; v: number }) {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: string; color?: string }) {
+function StatCard({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
     <div style={{ padding: 16, background: '#F9FAFB', borderRadius: 8 }}>
       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 700, color: color || '#111', marginTop: 4 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -1092,7 +1093,9 @@ function TurnTrace({ trace }: { trace: TraceEntry[] }) {
 //   • Tool-Compliance (Pattern.tools ∩ tools_called)
 //   • LLM-Pattern-Hint vs Engine-Wahl (Match-Rate + Confusion-Matrix)
 //   • Pattern-Match-Score-Distribution (Judge-Bewertung 0/1/2)
-function ClassificationMetricsView({ metrics }: { metrics?: ClassificationMetrics }) {
+function ClassificationMetricsView(
+  { metrics, conversations }: { metrics?: ClassificationMetrics; conversations?: RunConversation[] },
+) {
   if (!metrics || Object.keys(metrics).length === 0) {
     return null;
   }
@@ -1103,271 +1106,190 @@ function ClassificationMetricsView({ metrics }: { metrics?: ClassificationMetric
 
   const llmMatch = metrics.llm_engine_match_rate;
   const engineApprove = metrics.engine_pattern_judge_ok_rate;
-  const llmApprove = metrics.llm_pattern_judge_ok_lower_bound;
+
+  // Pattern-Trefferquote (Welle E v4+13): wie Persona/Intent eine Treffer-in-%-
+  // Kennzahl. „Treffer" = der Judge stuft das gewählte Pattern als passend ein
+  // (pattern_match >= 1); pattern_match = 0 heißt „klar falsches Pattern" =
+  // Fehlschuss. So steht die Zahl vergleichbar neben der Intent-Trefferquote.
+  // Die strenge Voll-Qualität (pattern_match = 2) erscheint im Qualitäts-Profil
+  // darunter, nicht als konkurrierende Headline.
+  const judged = metrics.judged_turns ?? 0;
+  const dist = metrics.pattern_match_score_distribution || {};
+  const pm0 = dist['0'] || 0;
+  const pm1 = dist['1'] || 0;
+  const pm2 = dist['2'] || 0;
+  const patternHitRate = judged ? (judged - pm0) / judged : undefined;
+
+  // Per-Dimension-Mittelwerte (Judge, 0–2) — clientseitig aus den geladenen
+  // Conversations berechnet (kein Backend-Roundtrip, greift auch für ältere
+  // Runs). Macht sichtbar, WO Punkte verloren gehen (häufig die Tonalität,
+  // nicht das Pattern).
+  const DIMS: { key: keyof TurnJudge; label: string }[] = [
+    { key: 'intent_fit', label: 'Intent-Fit' },
+    { key: 'persona_tone', label: 'Persona-Ton' },
+    { key: 'pattern_match', label: 'Pattern-Match' },
+    { key: 'info_quality', label: 'Info-Qualität' },
+    { key: 'safety', label: 'Safety' },
+  ];
+  const dimStats = (() => {
+    if (!conversations || conversations.length === 0) return null;
+    const sum: Record<string, number> = {};
+    const cnt: Record<string, number> = {};
+    DIMS.forEach((d) => { sum[d.key] = 0; cnt[d.key] = 0; });
+    for (const cv of conversations) {
+      for (const t of cv.turns || []) {
+        const j = t.judge;
+        if (!j) continue;
+        DIMS.forEach((d) => {
+          const v = j[d.key];
+          if (typeof v === 'number') { sum[d.key] += v; cnt[d.key] += 1; }
+        });
+      }
+    }
+    const rows = DIMS.map((d) => ({
+      key: d.key as string,
+      label: d.label,
+      mean: cnt[d.key] ? sum[d.key] / cnt[d.key] : null,
+      n: cnt[d.key],
+    }));
+    return rows.some((r) => r.n > 0) ? rows : null;
+  })();
+  const dimColor = (m: number) => m >= 1.6 ? '#10B981' : m >= 1.2 ? '#F59E0B' : '#EF4444';
 
   return (
     <div style={{ marginBottom: 24 }}>
       <h3>📊 Klassifikations-Metriken (global)</h3>
       <p style={{ fontSize: 12, color: '#6B7280', marginTop: -6, marginBottom: 16 }}>
-        Aggregate über alle bewerteten Turns. Persona/Intent vergleichen die System-
-        Klassifikation gegen das Test-Szenario-Label. Pattern-Metriken nutzen den
-        Judge-Score (<code>pattern_match ≥ 2</code>) als Ground-Truth.
+        Aggregate über alle bewerteten Turns. <strong>Persona</strong> und{' '}
+        <strong>Intent</strong> vergleichen die System-Klassifikation gegen das
+        Test-Szenario-Label. <strong>Pattern</strong> hat kein Soll-Label — Treffer =
+        der Judge stuft das Pattern als passend ein (<code>pattern_match ≥ 1</code>);
+        ein Fehlschuss (<code>= 0</code>) heißt „klar falsches Pattern".
       </p>
 
-      {/* KPI-Karten */}
+      {/* KPI-Karten — alle vier als Treffer-in-% (direkt vergleichbar). */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <StatCard label="Persona-Trefferquote" value={fmt(metrics.persona_correct_rate)} color={colorByRate(metrics.persona_correct_rate)} />
+        <StatCard label="Intent-Trefferquote" value={fmt(metrics.intent_correct_rate)} color={colorByRate(metrics.intent_correct_rate)} />
         <StatCard
-          label="Persona-Trefferquote"
-          value={fmt(metrics.persona_correct_rate)}
-          color={colorByRate(metrics.persona_correct_rate)}
+          label="Pattern-Trefferquote"
+          value={fmt(patternHitRate)}
+          color={colorByRate(patternHitRate)}
+          sub={engineApprove !== undefined ? `davon voll passend: ${fmt(engineApprove)}` : undefined}
         />
-        <StatCard
-          label="Intent-Trefferquote"
-          value={fmt(metrics.intent_correct_rate)}
-          color={colorByRate(metrics.intent_correct_rate)}
-        />
-        <StatCard
-          label="Pattern Judge-Approval (Final)"
-          value={fmt(engineApprove)}
-          color={colorByRate(engineApprove)}
-        />
-        <StatCard
-          label="Tool-Compliance"
-          value={fmt(metrics.tool_compliance_rate)}
-          color={colorByRate(metrics.tool_compliance_rate)}
-        />
+        <StatCard label="Tool-Compliance" value={fmt(metrics.tool_compliance_rate)} color={colorByRate(metrics.tool_compliance_rate)} />
       </div>
 
-      {/* LLM-Pattern-Hint vs Engine — Welle E v3 (2026-05-25):
-          Saubere Aufschlüsselung nach Agreement / Disagreement, weil bei
-          Agreement Engine UND LLM per Definition den GLEICHEN Pattern haben
-          (= gleiche Approval). Der eigentliche Vergleich findet nur bei den
-          Disagreement-Turns statt. */}
-      {(() => {
-        const vc = metrics.pattern_hint_verdict_counts || {};
-        const totalDisagree = metrics.llm_engine_disagreement_count ?? 0;
-        const judged = metrics.judged_turns ?? 0;
-        const totalAgree = judged - totalDisagree;
-
-        // Engine-Approval-Count (gesamt) und Agreement-correct-Count.
-        const engineOkTotal = Math.round((engineApprove ?? 0) * judged);
-        const agreeOkCount = Math.round((llmApprove ?? 0) * judged);
-        const engineOkAtDisagree = engineOkTotal - agreeOkCount;
-
-        // Disagreement-Verdict-Aufschlüsselung.
-        const hintBetterAtDis = vc.hint_better ?? 0;
-        const equivalentAtDis = vc.equivalent ?? 0;
-        const engineBetterAtDis = vc.engine_better ?? 0;
-        const noVerdictAtDis = totalDisagree - hintBetterAtDis - equivalentAtDis - engineBetterAtDis;
-
-        // LLM-Approval-Schätzung bei Disagreement: hint_better + equivalent.
-        const llmOkAtDisagree = hintBetterAtDis + equivalentAtDis;
-        const llmOkTotal = agreeOkCount + llmOkAtDisagree;
-        const llmEstimatedRate = judged ? llmOkTotal / judged : 0;
-
-        const pct = (n: number, total: number) =>
-          total > 0 ? `${Math.round((n / total) * 100)}%` : '–';
-
-        return (
-          <div style={{
-            padding: 14, background: '#EFF6FF', borderRadius: 8,
-            border: '1px solid #BFDBFE', marginBottom: 16,
-          }}>
-            <h4 style={{ marginTop: 0, marginBottom: 8 }}>🧠 LLM-Hint vs. Final-Pattern (nach Rules/Safety)</h4>
-            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 8px' }}>
-              Welle E v4: der LLM-Klassifikator setzt den primären Pattern-Hint;
-              Safety + Routing-Rules können ihn übersteuern. Das <strong>Final-Pattern</strong> ist
-              das Ergebnis dieser Override-Pipeline. Die Disagreement-Statistik zeigt, ob die
-              Routing-Rules den Hint sinnvoll korrigieren — und damit die Daseinsberechtigung
-              jeder einzelnen Rule.
-            </p>
-            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 12px' }}>
-              <strong>Match-Rate {fmt(llmMatch)}</strong> ({totalAgree} agree · {totalDisagree} disagree
-              von {judged} Turns). Bei Agreement-Turns sind Final-Pattern und LLM-Hint identisch
-              (keine Rule hat übersteuert) — der eigentliche Vergleich findet bei den {totalDisagree} Disagreement-
-              Turns statt, wo eine Rule oder Safety den Hint korrigiert hat.
-            </p>
-            <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%', maxWidth: 760 }}>
-              <thead>
-                <tr style={{ background: '#DBEAFE', textAlign: 'right' }}>
-                  <th style={{ padding: '4px 8px', textAlign: 'left' }}></th>
-                  <th style={{ padding: '4px 8px' }}>
-                    Agreement ({totalAgree})
-                    <div style={{ fontSize: 10, fontWeight: 400, color: '#6B7280' }}>
-                      Final = Hint
-                    </div>
-                  </th>
-                  <th style={{ padding: '4px 8px' }}>
-                    Disagreement ({totalDisagree})
-                    <div style={{ fontSize: 10, fontWeight: 400, color: '#6B7280' }}>
-                      Rule-Override
-                    </div>
-                  </th>
-                  <th style={{ padding: '4px 8px' }}>
-                    Gesamt ({judged})
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td style={{ padding: '4px 8px', color: '#374151', fontWeight: 600 }}
-                      title="Wie oft hat der Judge das Final-Pattern (nach Rules/Safety) mit pm=2 bewertet?">
-                    Final-Pattern Judge-OK
-                  </td>
-                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
-                    {agreeOkCount} <span style={{ color: '#6B7280' }}>({pct(agreeOkCount, totalAgree)})</span>
-                  </td>
-                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
-                               color: colorByRate(totalDisagree ? engineOkAtDisagree/totalDisagree : 0) }}>
-                    {engineOkAtDisagree} <span style={{ color: '#6B7280' }}>({pct(engineOkAtDisagree, totalDisagree)})</span>
-                  </td>
-                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
-                               fontWeight: 600, color: colorByRate(engineApprove) }}>
-                    {engineOkTotal} <span style={{ color: '#6B7280' }}>({fmt(engineApprove)})</span>
-                  </td>
-                </tr>
-                <tr style={{ background: '#fff' }}>
-                  <td style={{ padding: '4px 8px', color: '#374151', fontWeight: 600 }}>
-                    LLM-Hint Judge-OK <span style={{ fontSize: 11, color: '#6B7280' }}>(geschätzt)</span>
-                  </td>
-                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
-                    {agreeOkCount} <span style={{ color: '#6B7280' }}>({pct(agreeOkCount, totalAgree)})</span>
-                  </td>
-                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
-                               color: colorByRate(totalDisagree ? llmOkAtDisagree/totalDisagree : 0) }}>
-                    {llmOkAtDisagree} <span style={{ color: '#6B7280' }}>({pct(llmOkAtDisagree, totalDisagree)})</span>
-                  </td>
-                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
-                               fontWeight: 600, color: colorByRate(llmEstimatedRate) }}>
-                    {llmOkTotal} <span style={{ color: '#6B7280' }}>({fmt(llmEstimatedRate)})</span>
-                  </td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '4px 8px', fontSize: 11, color: '#6B7280' }} colSpan={4}>
-                    Bei Agreement sind beide Werte per Definition gleich (Engine = LLM-Hint =
-                    gleicher Pattern). Bei Disagreement: Engine-Wert kommt aus dem Judge-Score
-                    (pattern_match=2); LLM-Wert ist eine Schätzung aus den{' '}
-                    <strong>{hintBetterAtDis} hint_better</strong> +{' '}
-                    <strong>{equivalentAtDis} equivalent</strong> Verdicts
-                    {noVerdictAtDis > 0 && (
-                      <> ({noVerdictAtDis} ohne Judge-Verdict bleiben unbewertet)</>
-                    )}.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <div style={{
-              marginTop: 10, padding: 8, background: '#FFFBEB',
-              borderRadius: 4, fontSize: 12, color: '#92400E',
-            }}>
-              <strong>Kern-Aussage:</strong>{' '}
-              Bei Disagreement Engine{' '}
-              <strong>{pct(engineOkAtDisagree, totalDisagree)}</strong> vs LLM-Hint{' '}
-              <strong>{pct(llmOkAtDisagree, totalDisagree)}</strong> Approval.{' '}
-              {llmOkAtDisagree > engineOkAtDisagree
-                ? 'LLM-Hint trifft bessere Wahl bei Disagreement.'
-                : engineOkAtDisagree > llmOkAtDisagree
-                ? 'Engine trifft bessere Wahl bei Disagreement.'
-                : 'Beide gleichauf bei Disagreement.'}
-              {totalDisagree < 10 && ' Bei nur ' + totalDisagree + ' Disagreements aber statistisch zu klein.'}
-            </div>
+      {/* Qualitäts-Profil (Judge, Ø 0–2) — zeigt, WO Punkte verloren gehen. */}
+      {dimStats && (
+        <div style={{ marginBottom: 16, padding: 14, background: '#F9FAFB', borderRadius: 8, border: '1px solid #E5E7EB' }}>
+          <h4 style={{ marginTop: 0, marginBottom: 4 }}>🎚 Qualitäts-Profil (Judge, Ø 0–2)</h4>
+          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 12px' }}>
+            Mittlere Judge-Bewertung je Dimension über alle Turns. Niedrige Werte
+            zeigen den eigentlichen Hebel — oft nicht das Pattern, sondern die Tonalität.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {dimStats.map((d) => {
+              const m = d.mean ?? 0;
+              const weak = d.mean !== null && m < 1.2;
+              return (
+                <div key={d.key} style={{ display: 'grid', gridTemplateColumns: '130px 1fr 92px', gap: 8, alignItems: 'center', fontSize: 12 }}>
+                  <span style={{ color: '#374151' }}>{d.label}</span>
+                  <div style={{ background: '#EEF0F3', height: 16, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ width: `${(m / 2) * 100}%`, height: '100%', background: dimColor(m), transition: 'width .2s' }} />
+                  </div>
+                  <span style={{ fontFamily: 'monospace', textAlign: 'right', color: dimColor(m) }}>
+                    {d.mean === null ? '—' : m.toFixed(2)}{weak ? ' ⚠' : ''}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        );
-      })()}
+          {judged > 0 && (
+            <p style={{ fontSize: 11, color: '#6B7280', margin: '12px 0 0' }}>
+              Pattern-Match-Split:{' '}
+              <strong style={{ color: '#10B981' }}>{pm2} voll passend</strong> ({fmt(judged ? pm2 / judged : 0)}){' · '}
+              <strong style={{ color: '#F59E0B' }}>{pm1} grenzwertig</strong> ({fmt(judged ? pm1 / judged : 0)}){' · '}
+              <strong style={{ color: '#EF4444' }}>{pm0} falsch</strong> ({fmt(judged ? pm0 / judged : 0)}).
+              {' '}Die Trefferquote oben zählt „voll passend + grenzwertig".
+            </p>
+          )}
+        </div>
+      )}
 
-      {/* Welle E v3 (2026-05-25) — Judge-Verdict bei Disagreement */}
+      {/* Pattern-Nachbehandlung (Welle E v4+13) — kompakt, ersetzt die zwei
+          früheren großen Boxen. Macht klar: das Pattern setzt der LLM-Hint;
+          danach gibt es nur noch (a) Safety-Override und (b) Label-Abgleich an
+          die real ausgeführte Aktion (M09/M10/M03). Routing-Rules existieren
+          seit Sprint K nicht mehr. Die Disagreements zeigen, ob die
+          Nachbehandlung nützt oder schadet. */}
       {(() => {
         const vc = metrics.pattern_hint_verdict_counts || {};
-        const eb = vc.engine_better ?? 0;
         const hb = vc.hint_better ?? 0;
+        const eb = vc.engine_better ?? 0;
         const eq = vc.equivalent ?? 0;
-        const decided = eb + hb + eq;
-        // Echte Disagreement-Anzahl = aus Confusion-Matrix oder
-        // disagreement_count vom Backend. Differenz zu ``decided`` = Turns
-        // wo der Judge KEIN valides Verdict gegeben hat.
-        const totalDisagree = metrics.llm_engine_disagreement_count ?? decided;
-        const judgeMissing = Math.max(0, totalDisagree - decided);
-        if (totalDisagree === 0) return null;
+        const disagree = metrics.llm_engine_disagreement_count ?? 0;
+        const agree = Math.max(0, judged - disagree);
+        const decided = hb + eb + eq;
+        const noVerdict = Math.max(0, disagree - decided);
 
-        const hintRate = metrics.pattern_hint_better_rate ?? 0;
-        const engineRate = metrics.pattern_engine_better_rate ?? 0;
-        // Statistische Aussagekraft (Faustregel: <10 Disagreements = zu wenig).
-        const sampleTooSmall = decided < 10;
-        const margin = Math.abs(hintRate - engineRate);
-        const verdict = sampleTooSmall ? 'zu wenig Daten' :
-          margin < 0.1 ? 'unentschieden' :
-          hintRate > engineRate ? 'LLM-Hint gewinnt' : 'Engine gewinnt';
-        const verdictColor = sampleTooSmall ? '#9CA3AF'
-          : margin < 0.1 ? '#6B7280'
-          : hintRate > engineRate ? '#DC2626' : '#10B981';
+        let verdict: string;
+        let vColor: string;
+        if (disagree === 0) {
+          verdict = 'Keine Nachbehandlung ausgelöst — Final-Pattern = LLM-Hint in allen Turns.';
+          vColor = '#059669';
+        } else if (decided < 10) {
+          const tendency = eb > hb ? 'Tendenz: nützt'
+            : hb > eb ? 'Tendenz: schadet eher (Hint hätte besser gepasst)'
+            : 'Tendenz: neutral';
+          verdict = `Statistisch zu wenig (n=${decided} bewertet) — ${tendency}.`;
+          vColor = '#6B7280';
+        } else if (eb > hb) {
+          verdict = 'Nachbehandlung nützt: das Final-Pattern passt häufiger besser als der Hint.';
+          vColor = '#059669';
+        } else if (hb > eb) {
+          verdict = 'Nachbehandlung schadet eher: der LLM-Hint hätte häufiger besser gepasst.';
+          vColor = '#DC2626';
+        } else {
+          verdict = 'Nachbehandlung neutral (gleich oft besser/schlechter).';
+          vColor = '#6B7280';
+        }
+
         return (
-          <div style={{
-            padding: 14, background: '#FEF3C7', borderRadius: 8,
-            border: '1px solid #FBBF24', marginBottom: 16,
-          }}>
-            <h4 style={{ marginTop: 0, marginBottom: 8 }}>⚖ Judge-Verdict bei Pattern-Disagreement</h4>
-            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 6px' }}>
-              Bei den <strong>{totalDisagree} Turns</strong>, an denen das <strong>Final-Pattern</strong>
-              (nach Rule-/Safety-Override) vom <strong>LLM-Hint</strong> abwich, bewertet der Judge,
-              welches besser zur Bot-Antwort gepasst hätte. Daraus lässt sich ablesen, ob die
-              jeweilige Rule den Hint sinnvoll korrigiert (→ Rule behalten) oder nicht (→ Rule prüfen).
+          <div style={{ padding: 14, background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0', marginBottom: 16 }}>
+            <h4 style={{ marginTop: 0, marginBottom: 6 }}>🔧 Pattern-Nachbehandlung (Safety + Ausführungs-Abgleich)</h4>
+            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 10px' }}>
+              Das Pattern bestimmt der <strong>LLM-Hint</strong>. Danach kann nur noch
+              {' '}(a) <strong>Safety</strong> ein Schutz-Pattern erzwingen oder (b) das Label an die
+              tatsächlich ausgeführte Aktion angeglichen werden (→ M09/M10/M03).
+              {' '}<em>Routing-Rules gibt es seit Sprint K nicht mehr.</em> Weicht das Final-Pattern
+              vom Hint ab, urteilt der Judge, welches besser zur Bot-Antwort passt — daran sieht
+              man, ob die Nachbehandlung nützt oder schadet.
             </p>
-            <p style={{ fontSize: 11, color: '#6B7280', margin: '0 0 12px' }}>
-              📊 Diese Box zeigt nur die {totalDisagree} Disagreement-Turns — <strong>nicht</strong>
-              alle 48 Turns. Die Prozentwerte sind relativ zur Anzahl der vom Judge bewerteten
-              Disagreement-Cases ({decided}). Aussagekräftig ab ~10 Bewertungen.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
-              <StatCard label="Rule-Override besser"
-                value={`${eb} · ${(engineRate * 100).toFixed(0)}%`} color="#10B981" />
-              <StatCard label="LLM-Hint allein besser"
-                value={`${hb} · ${(hintRate * 100).toFixed(0)}%`} color="#DC2626" />
-              <div style={{ padding: 16, background: '#F9FAFB', borderRadius: 8 }}
-                title="Final-Pattern und LLM-Hint sind UNTERSCHIEDLICH, aber der Judge sagt: beide hätten gleich gut zur Antwort gepasst. Beispiel: M05 vs M06 sind beide Such-Pattern, oft austauschbar.">
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  Gleichwertig <span style={{ cursor: 'help', color: '#3B82F6' }}>ⓘ</span>
-                </div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: '#9CA3AF', marginTop: 4 }}>{eq}</div>
-              </div>
-              <div style={{ padding: 16, background: '#F9FAFB', borderRadius: 8 }}
-                title="Disagreement-Turn, aber der Judge hat das pattern_hint_verdict-Feld leer gelassen oder einen ungültigen Wert geliefert (z.B. wegen JSON-Parse-Fehler oder unklarer Anfrage). Diese Cases fließen in keine der drei Rate-Berechnungen ein.">
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {judgeMissing > 0 ? 'Judge ohne Verdict' : '(alle bewertet)'}
-                  {judgeMissing > 0 && <span style={{ cursor: 'help', color: '#3B82F6' }}> ⓘ</span>}
-                </div>
-                <div style={{ fontSize: 24, fontWeight: 700,
-                              color: judgeMissing > 0 ? '#F59E0B' : '#9CA3AF', marginTop: 4 }}>
-                  {judgeMissing}
-                </div>
-              </div>
-              <StatCard label="Disagreements gesamt" value={`${totalDisagree}`} color="#6B7280" />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 10 }}>
+              <StatCard label="Hint = Final" value={`${agree}/${judged}`} color="#059669" sub={`${fmt(llmMatch)} unverändert`} />
+              <StatCard label="Nachkorrigiert" value={`${disagree}`} color={disagree ? '#D97706' : '#9CA3AF'} sub="Label abgewichen" />
+              <StatCard label="davon: Final besser" value={`${eb}`} color="#059669" sub="Abgleich war richtig" />
+              <StatCard label="davon: Hint besser" value={`${hb}`} color="#DC2626" sub="Abgleich unnötig/falsch" />
             </div>
-            <div style={{ fontSize: 13, color: verdictColor, fontWeight: 600, marginBottom: 6 }}>
-              Verdict: {verdict}
-              {sampleTooSmall && (
-                <span style={{ marginLeft: 8, fontWeight: 400, color: '#9CA3AF' }}>
-                  (nur {decided} bewertete Disagreements — Aussage statistisch schwach)
+            <div style={{ fontSize: 13, fontWeight: 600, color: vColor }}>
+              Urteil: {verdict}
+              {(eq > 0 || noVerdict > 0) && (
+                <span style={{ fontWeight: 400, color: '#9CA3AF' }}>
+                  {' '}({eq} gleichwertig{noVerdict > 0 ? `, ${noVerdict} ohne Judge-Urteil` : ''})
                 </span>
               )}
             </div>
-            {judgeMissing > 0 && (
-              <div style={{ fontSize: 11, color: '#92400E', marginBottom: 6 }}>
-                ⚠ Der Judge hat in <strong>{judgeMissing}</strong> Disagreement-Turn(s) kein
-                valides Verdict geliefert (leerer/unbekannter Wert). Diese Cases gehen weder
-                in „Rule-Override besser" noch in „LLM-Hint allein besser" ein. Bei knappen
-                Verdicts kann das die Aussage kippen.
-              </div>
-            )}
             {metrics.pattern_disagreement_pairs && Object.keys(metrics.pattern_disagreement_pairs).length > 0 && (
               <details style={{ marginTop: 10 }}>
                 <summary style={{ cursor: 'pointer', fontSize: 12, color: '#374151' }}>
-                  Top-Konflikt-Paare (Final-Pattern → LLM-Hint)
+                  Details: Konflikt-Paare (Final-Pattern → LLM-Hint)
                 </summary>
                 <table style={{ borderCollapse: 'collapse', fontSize: 12, marginTop: 8, width: '100%', maxWidth: 600 }}>
                   <thead>
-                    <tr style={{ background: '#FFFBEB' }}>
+                    <tr style={{ background: '#F1F5F9' }}>
                       <th style={{ padding: '4px 8px', textAlign: 'left' }}>Final → Hint</th>
-                      <th style={{ padding: '4px 8px', textAlign: 'right' }}>Rule besser</th>
+                      <th style={{ padding: '4px 8px', textAlign: 'right' }}>Final besser</th>
                       <th style={{ padding: '4px 8px', textAlign: 'right' }}>Hint besser</th>
                       <th style={{ padding: '4px 8px', textAlign: 'right' }}>≈</th>
                     </tr>
@@ -1376,21 +1298,14 @@ function ClassificationMetricsView({ metrics }: { metrics?: ClassificationMetric
                     {Object.entries(metrics.pattern_disagreement_pairs)
                       .sort(([, a], [, b]) =>
                         ((b.engine_better || 0) + (b.hint_better || 0) + (b.equivalent || 0)) -
-                        ((a.engine_better || 0) + (a.hint_better || 0) + (a.equivalent || 0))
-                      )
+                        ((a.engine_better || 0) + (a.hint_better || 0) + (a.equivalent || 0)))
                       .slice(0, 8)
                       .map(([pair, counts]) => (
-                        <tr key={pair} style={{ borderTop: '1px solid #F3F4F6' }}>
+                        <tr key={pair} style={{ borderTop: '1px solid #F1F5F9' }}>
                           <td style={{ padding: '4px 8px', fontFamily: 'monospace' }}>{pair}</td>
-                          <td style={{ padding: '4px 8px', textAlign: 'right', color: '#10B981' }}>
-                            {counts.engine_better ?? 0}
-                          </td>
-                          <td style={{ padding: '4px 8px', textAlign: 'right', color: '#DC2626' }}>
-                            {counts.hint_better ?? 0}
-                          </td>
-                          <td style={{ padding: '4px 8px', textAlign: 'right', color: '#6B7280' }}>
-                            {counts.equivalent ?? 0}
-                          </td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', color: '#059669' }}>{counts.engine_better ?? 0}</td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', color: '#DC2626' }}>{counts.hint_better ?? 0}</td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', color: '#6B7280' }}>{counts.equivalent ?? 0}</td>
                         </tr>
                       ))}
                   </tbody>
@@ -1400,15 +1315,6 @@ function ClassificationMetricsView({ metrics }: { metrics?: ClassificationMetric
           </div>
         );
       })()}
-
-      {/* Pattern-Match-Score-Distribution */}
-      {metrics.pattern_match_score_distribution && (
-        <div style={{ marginBottom: 16 }}>
-          <h4 style={{ marginBottom: 6 }}>Pattern-Match-Score-Verteilung (Judge)</h4>
-          <ScoreBars dist={metrics.pattern_match_score_distribution}
-                     total={metrics.judged_turns ?? 0} />
-        </div>
-      )}
 
       {/* Confusion-Matrices */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
@@ -1543,44 +1449,6 @@ function ConfusionMatrix({
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-
-function ScoreBars({ dist, total }: { dist: Record<string, number>; total: number }) {
-  const colors: Record<string, string> = {
-    '0': '#EF4444',  // schlecht
-    '1': '#F59E0B',  // mittel
-    '2': '#10B981',  // gut
-  };
-  const labels: Record<string, string> = {
-    '0': '0 (kein Match)',
-    '1': '1 (teilweise)',
-    '2': '2 (passt)',
-  };
-  const maxV = Math.max(...Object.values(dist), 1);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {['2', '1', '0'].map(k => {
-        const v = dist[k] || 0;
-        const pct = total ? (v / total) * 100 : 0;
-        const widthPct = (v / maxV) * 100;
-        return (
-          <div key={k} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 80px', gap: 8, alignItems: 'center', fontSize: 12 }}>
-            <span>{labels[k]}</span>
-            <div style={{ background: '#F3F4F6', height: 16, borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{
-                width: `${widthPct}%`, height: '100%', background: colors[k],
-                transition: 'width .2s',
-              }} />
-            </div>
-            <span style={{ fontFamily: 'monospace', textAlign: 'right' }}>
-              {v} ({pct.toFixed(0)}%)
-            </span>
-          </div>
-        );
-      })}
     </div>
   );
 }

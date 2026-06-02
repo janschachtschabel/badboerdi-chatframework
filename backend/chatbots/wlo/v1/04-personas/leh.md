@@ -10,6 +10,8 @@ card_text_mode: minimal
 override: true
 positive_markers:
   - Unterricht planen
+  - Unterrichtsplanung
+  - Unterrichtsstunden planen
   - Unterrichtseinheit
   - Unterrichtsstunde
   - Stundenentwurf
@@ -18,6 +20,7 @@ positive_markers:
   - didaktisch
   - Lernziele
   - meine Schüler:innen
+  - meine Klasse
   - meine Klasse unterrichten
   - Klasse [Zahl]
   - ich unterrichte

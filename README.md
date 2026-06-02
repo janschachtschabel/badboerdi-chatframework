@@ -1,5 +1,12 @@
 # BadBoerdi — WLO Chatbot Plattform
 
+> **Stand 2026-05-23 (Welle E):** Canvas-Pane entfernt — Material, Lernpfade und
+> KI-Inhalte werden direkt als gerahmte Inline-Box im Chat-Verlauf gerendert.
+> Lotsen-Modus ist Default an (Repo-Links statt externer URLs). Anzeige-Steuerung
+> liegt zentral in der Studio-pflegbaren [`display-rules.yaml`](backend/chatbots/wlo/v1/01-base/display-rules.yaml) —
+> sichtbar im Studio unter **🎨 Anzeige**. Mehrere Widget-Embed-Attribute
+> sind deprecated (Details in [`docs/05-widget-javascript-api.md`](docs/05-widget-javascript-api.md)).
+
 BadBoerdi ist eine modulare Chatbot-Plattform für [WirLernenOnline](https://wirlernenonline.de).
 Das System ist über das **Schema-Tripel-Modell** (22 Elemente · 31 Tripel · **6 Prompt-Schichten** · 7
 Verarbeitungsphasen) konfiguriert und besteht aus drei Komponenten:
@@ -307,6 +314,46 @@ OER-Erklärung, Edu-Sharing-Verein, WissenLebtOnline-Webseite, Metaventis, WLO-S
 **Backend-Endpoint** für Frontend-Init: `GET /api/config/guide-mode` liefert das parsete
 yaml-Subset (allowed_hosts + default_enabled + max_guide_targets_per_turn). Das Widget
 fetcht es einmal beim Init und cached intern.
+
+---
+
+### 2.8 Webseiten-Tour (geführte Besucherführung)
+
+Optionales Onboarding als **Konversions-Funnel**: Der Besucher wird zielgerichtet von der
+Selbstzuordnung bis zur **Anfrage/Kontakt auf `/mitmachen/`** geführt. Voller Weg ab Startseite:
+**Startseite → Zielgruppenseite → Bildungsinhalte → passende Angebote → Anfrage (Mitmachen)**.
+
+**Einstiegspunkte (Flow-Modell `flows:` in der YAML):** Die Tour kann MITTEN im Funnel starten — `detect_entry(page)` prüft beim Start die aktuelle Seite: Zielgruppenseite → direkt zu den Lösungen (**B1**), Produkt-/Angebotsseite → Lösungen mit Gruppe per Rückwärts-Lookup (**C1**), `/mitmachen/` → direkt ans Ziel (**D1/D2**, nur Prozesssicherheit), sonst voller Funnel ab Startseite (**A1–A3**).
+Gestartet über den festen Startbutton **„Web-Tour starten"** (ersetzt den Vorschlag
+„Erstell mir ein neues Material"; Material-Erstellung bleibt per Texteingabe erreichbar).
+
+**Kern — Ankunfts-Erkennung:** Nach jedem „Bring mich hin"-Button lädt die WP-Seite neu. Die
+Session überlebt das (localStorage / Cookie / `?bsid=`), und das Widget feuert beim Page-Load
+**einen unsichtbaren „Tick"** mit der aktuellen Seite. Erkennt der Bot die erwartete Zielseite,
+liefert er automatisch den nächsten Text + Button. Falsche Seite → sanfter Hinweis; Ankunft auf
+`/mitmachen/` → Tour-Ende.
+
+**Architektur — Domänwissen + Handler, KEIN Pattern:**
+
+- **Inhalt** (Begrüßung, Schritt-Texte, Einstiegs-Texte, das dokumentierte `flows:`-Modell, Ziel-URLs,
+  die 7 Besucher-Gruppen, Gruppe→Angebot-Mapping,
+  Kontakt-Links) liegt in `chatbots/wlo/v1/01-base/website-tour.yaml` — **Studio-pflegbar** unter
+  **Domain-Wissen → „Webseiten-Tour"**, ohne Deploy änderbar.
+- **Verhalten** (State Machine, Ankunfts-Logik, Einstiegspunkt-Erkennung `detect_entry`, Gruppen-Matching) ist deterministischer Code in
+  `app/services/tour_service.py` + `_handle_tour(...)` in `app/routers/chat.py`. Bewusst **kein**
+  Pattern: Patterns sind Einzelturn-LLM-Routing-Einheiten — eine mehrstufige, seiten-stateful
+  Führung mit fixen Texten muss verlässlich/deterministisch sein.
+- Signal-Feld: `environment.tour_action` ∈ `start` | `tick`. Per-Session-State in
+  `sessions.tour_state` (SQLite). Antwort-Echo: `ChatResponse.tour = {active, step, group}`.
+
+**Deployment-Voraussetzungen:**
+
+1. Widget **site-weit** auf den Tour-Zielseiten eingebettet — sonst feuert auf der Zielseite kein
+   Tick und die Ankunfts-Erkennung greift nicht.
+2. `persist-session="true"` (bzw. Cookie / `?bsid=`), damit die Tour den WP-Full-Page-Reload
+   überlebt.
+3. `base_host` in `website-tour.yaml` auf den laufenden Host setzen (Test: `wp-test…`,
+   Prod: `https://wirlernenonline.de`).
 
 ---
 

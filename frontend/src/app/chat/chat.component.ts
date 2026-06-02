@@ -680,6 +680,11 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   private static readonly TOUR_FLAG_KEY = 'boerdi_tour_active';
   /** Verhindert Doppel-Ticks pro Page-Load. */
   private _tourTicked = false;
+  /** True, wenn die Session in DIESEM Page-Load per ?bsid= übernommen wurde
+   *  (Cross-Origin-Handoff). Dann fehlt das origin-gebundene Tour-Flag hier
+   *  (es liegt auf der Quell-Origin) — der Ankunfts-Tick wird trotzdem
+   *  gefeuert, weil der Backend-Tour-State die Wahrheit ist. */
+  private _resumedViaBsid = false;
 
   private _isTourFlagSet(): boolean {
     try { return localStorage.getItem(ChatComponent.TOUR_FLAG_KEY) === '1'; }
@@ -766,7 +771,12 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   /** Nach dem (Re)Start: läuft eine Tour (localStorage-Flag, überlebt den
    *  WP-Reload), EINEN Tick feuern, sobald der initiale Render durch ist. */
   private _maybeStartTourTick(): void {
-    if (this._isTourFlagSet()) {
+    // Tick feuern, wenn (a) lokal eine Tour läuft (Flag, same-origin) ODER
+    // (b) die Session gerade per ?bsid= übernommen wurde (Cross-Origin-
+    // Handoff — Flag liegt ggf. auf der Quell-Origin und fehlt hier). Das
+    // Backend (tour_state der Session) entscheidet dann, ob wirklich eine
+    // Tour läuft, und liefert sonst eine leere Inaktiv-Antwort.
+    if (this._isTourFlagSet() || this._resumedViaBsid) {
       setTimeout(() => this.sendTourTick(), 0);
     }
   }
@@ -2584,6 +2594,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
         url.searchParams.delete('bsid');
         const cleaned = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
         try { history.replaceState({}, '', cleaned); } catch { /* ignore */ }
+        this._resumedViaBsid = true;
         return fromUrl;
       }
     } catch { /* ignore — never fail boot on URL parse */ }

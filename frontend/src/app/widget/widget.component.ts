@@ -52,10 +52,19 @@ interface HeaderNavButton {
         <div class="boerdi-panel-header">
           <!-- Linker Bereich: Avatar + Name + Status -->
           <div class="boerdi-title-block">
-            <img class="boerdi-owl-mini"
-                 [class.is-thinking]="chatRef?.isLoading"
-                 [class.is-speaking]="chatRef?.autoSpeak && chatRef?.isSpeaking"
-                 [src]="boerdiLogo" alt="" />
+            <!-- Boerdi-Kopf = klickbarer Web-Tour-Starter. Hover/Focus:
+                 Kopf wackelt + Sprechblase. aria-label + Button (Tastatur)
+                 als a11y-Fallback. startTour() ist no-op solange er lädt. -->
+            <button type="button" class="boerdi-owl-tour"
+                    [class.is-hinting]="hintActive()"
+                    (click)="chatRef?.startTour()"
+                    aria-label="Web-Tour starten">
+              <img class="boerdi-owl-mini"
+                   [class.is-thinking]="chatRef?.isLoading"
+                   [class.is-speaking]="chatRef?.autoSpeak && chatRef?.isSpeaking"
+                   [src]="boerdiLogo" alt="" />
+              <span class="boerdi-owl-bubble" aria-hidden="true">Klick mich — ich zeig dir die Seite</span>
+            </button>
             <div class="boerdi-title-text">
               <span class="boerdi-title">BOERDi</span>
               <span class="boerdi-status" *ngIf="chatRef?.isLoading">denkt nach …</span>
@@ -355,6 +364,78 @@ interface HeaderNavButton {
     @keyframes boerdi-speaking-bob {
       0%, 100% { transform: translateY(0); }
       50% { transform: translateY(-2px); }
+    }
+
+    /* ── Owl als Web-Tour-Starter ──────────────────────────────
+       Der Kopf oben links ist ein Button → startet die Web-Tour.
+       Hover/Focus: Kopf wackelt (nur wenn er nicht gerade denkt/spricht)
+       + eine Sprechblase erscheint darunter. Tooltip + Tastatur kommen
+       vom nativen <button>. */
+    .boerdi-owl-tour {
+      background: transparent;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      position: relative;
+      display: inline-flex;
+      line-height: 0;
+      flex-shrink: 0;
+      border-radius: 50%;
+    }
+    .boerdi-owl-tour:focus-visible {
+      outline: 2px solid #ffffff;
+      outline-offset: 2px;
+    }
+    .boerdi-owl-tour:hover .boerdi-owl-mini:not(.is-thinking):not(.is-speaking) {
+      animation: boerdi-wiggle 0.6s ease-in-out;
+    }
+    @keyframes boerdi-wiggle {
+      0%, 100% { transform: rotate(0deg); }
+      20% { transform: rotate(-9deg) scale(1.06); }
+      45% { transform: rotate(7deg); }
+      70% { transform: rotate(-4deg); }
+    }
+    .boerdi-owl-bubble {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      background: #ffffff;
+      color: #1e293b;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+      transition: opacity .15s ease, transform .15s ease;
+      z-index: 20;
+    }
+    .boerdi-owl-bubble::before {
+      content: '';
+      position: absolute;
+      bottom: 100%;
+      left: 14px;
+      border: 6px solid transparent;
+      border-bottom-color: #ffffff;
+    }
+    .boerdi-owl-tour:hover .boerdi-owl-bubble,
+    .boerdi-owl-tour:focus-visible .boerdi-owl-bubble {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    /* Einmaliger Auto-Hinweis beim ersten Öffnen (is-hinting): Kopf wackelt +
+       Sprechblase sichtbar; nach 3s entfernt JS die Klasse → Bubble blendet aus. */
+    .boerdi-owl-tour.is-hinting .boerdi-owl-mini:not(.is-thinking):not(.is-speaking) {
+      animation: boerdi-wiggle 0.6s ease-in-out 2;
+    }
+    .boerdi-owl-tour.is-hinting .boerdi-owl-bubble {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     .boerdi-header-actions {
@@ -711,6 +792,14 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  01-base/header-nav.yaml). Leer = keine Buttons. */
   headerNavButtons = signal<HeaderNavButton[]>([]);
 
+  /** Einmaliger „Hallo"-Hinweis am Owl-Kopf beim ersten Öffnen pro Session:
+   *  Kopf wackelt + Sprechblase erscheinen automatisch, nach 3s wieder weg.
+   *  Danach reagiert der Kopf nur noch auf Maus-Over. */
+  hintActive = signal(false);
+  private _owlHintDone = false;
+  private _owlHintTries = 0;
+  private static readonly OWL_HINT_KEY = 'boerdi_owl_hint_session';
+
   // Auto-Open-Policy (Welle E): Das Widget öffnet sich von selbst NUR bei
   // ``?bsid=`` (Cross-TLD-/Tour-Handoff) ODER laufender Web-Tour
   // (localStorage ``boerdi_tour_active``). Die frühere generische Same-Tab-
@@ -840,6 +929,9 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   }
 
   ngAfterViewInit() {
+    // Panel beim Boot schon offen (initial-state / ?bsid= / aktive Tour)?
+    // → einmaligen Owl-Hinweis anstoßen (wartet intern auf chatRef.sessionId).
+    if (this.everExpanded) this._maybeShowOwlHint();
     // Robust fallback: listen for the CustomEvent the chat always dispatches.
     // Runs inside Angular zone so signal updates trigger change detection.
     this._onWindowPageAction = (e: Event) => {
@@ -1122,6 +1214,8 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     // gefüllt). Zweite rAF wartet auf den Layout-Paint — erst dann hat
     // der ``messagesContainer`` seine echte ``scrollHeight``.
     if (open) {
+      // Erstes Öffnen pro Session → einmaliger Owl-Hinweis.
+      this._maybeShowOwlHint();
       try {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
@@ -1130,6 +1224,29 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
         });
       } catch { /* ignore */ }
     }
+  }
+
+  /** Einmaliger Owl-Hinweis beim ersten Öffnen einer Session: Kopf wackelt +
+   *  Sprechblase 3s, dann weg. Pro Session genau einmal — das localStorage-Flag
+   *  ist an die sessionId gekoppelt: „Neuer Chat" (neue sessionId) hintet
+   *  erneut, Reopen/Reload/Seitenwechsel derselben Session nicht. */
+  private _maybeShowOwlHint(): void {
+    if (this._owlHintDone) return;
+    const sid = this.chatRef?.sessionId;
+    if (!sid) {
+      // chatRef/sessionId noch nicht bereit → kurz später erneut (max ~4s).
+      if (this._owlHintTries++ < 20) setTimeout(() => this._maybeShowOwlHint(), 200);
+      return;
+    }
+    this._owlHintDone = true;
+    let last = '';
+    try { last = localStorage.getItem(WidgetComponent.OWL_HINT_KEY) || ''; } catch { /* ignore */ }
+    if (last === sid) return;  // diese Session schon gehinted
+    try { localStorage.setItem(WidgetComponent.OWL_HINT_KEY, sid); } catch { /* ignore */ }
+    this.zone.run(() => {
+      this.hintActive.set(true);
+      setTimeout(() => this.zone.run(() => this.hintActive.set(false)), 3000);
+    });
   }
 
   /**
