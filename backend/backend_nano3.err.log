@@ -1,0 +1,129 @@
+INFO:     Started server process [20812]
+INFO:     Waiting for application startup.
+14:45:38 WARNING startup: ⚠ STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+14:45:38 INFO app.services.database: DB not empty (rag=906 sessions=101 messages=280) — factory skipped
+14:45:38 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+14:45:38 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
+14:45:38 INFO startup: Config warmup done in 75ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+14:45:38 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
+14:45:39 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:45:39 INFO startup: LLM warmup done in 571ms
+C:\Users\jan\miniconda3\Lib\site-packages\torch\cuda\__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+14:45:40 INFO app.services.llm_service: system_prompt[classify] tokens=16055 (was=0, cache-eligible=True)
+14:45:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:45:40 INFO app.services.safety_service: safety stages=openai level=standard took 747ms
+14:45:42 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:45:42 INFO app.services.llm_service: system_prompt[response] tokens=6468 (was=0, cache-eligible=True)
+14:45:42 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] → allowed=True
+14:45:44 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:45:44 INFO app.services.llm_service: DIAG respond_to_user: raw=223 afterReasoning=223 final=223 qr=3 raw_preview='Photosynthese ist der Prozess, bei dem Pflanzen, Algen und manche Bakterien mithilfe von Licht aus **Kohlendioxid (CO₂)** und **Wasser** **Z'
+14:45:44 INFO app.routers.chat: quick_replies.max_count: trimmed 3 → 2
+14:45:44 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist Photosynthese? Antworte kurz.'
+14:45:46 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+14:45:48 INFO app.services.rag_service: Reranker warmup done in 9670ms
+14:46:53 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:46:53 INFO app.services.safety_service: safety stages=openai level=standard took 580ms
+14:46:55 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:46:55 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] → allowed=True
+14:46:58 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:46:58 INFO app.services.llm_service: DIAG respond_to_user: raw=225 afterReasoning=225 final=225 qr=4 raw_preview='Photosynthese ist der Prozess, bei dem Pflanzen, Algen und manche Bakterien mithilfe von Licht aus **Kohlendioxid (CO₂)** und **Wasser** ene'
+14:46:58 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:46:58 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist Photosynthese? Antworte kurz.'
+14:47:24 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:47:24 INFO app.services.safety_service: safety stages=openai level=standard took 468ms
+14:47:26 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:47:26 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] → allowed=True
+14:47:28 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:47:28 INFO app.services.llm_service: DIAG respond_to_user: raw=321 afterReasoning=321 final=321 qr=3 raw_preview='Photosynthese ist der Prozess, bei dem Pflanzen (und viele Algen) mit Hilfe von Licht aus **Kohlendioxid (CO₂)** und **Wasser (H₂O)** **Gluk'
+14:47:28 INFO app.routers.chat: quick_replies.max_count: trimmed 3 → 2
+14:47:28 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist Photosynthese? Antworte kurz.'
+C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'Photosynthese'...st.wirlernenonline.de/'}, input_type=dict])
+  return self.serializer.to_json(
+14:47:28 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:47:29 INFO app.services.safety_service: safety stages=openai level=standard took 560ms
+14:47:31 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:47:31 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Erste Suche im WLO-Bestand nach passenden Inhalten zum Thema Bruchrechnung mit S)
+14:47:31 INFO app.routers.chat: speculative primary=search_wlo_content for intent=I03 hint_pattern=M05 args={'query': 'Bruchrechnung', 'maxResults': 10, 'learningResourceType': 'Arbeitsblatt', 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:47:31 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:47:31 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:47:31 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 10, 'learningResourceType': 'Arbeitsblatt', 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:47:31 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+14:47:31 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:47:31 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+14:47:32 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:47:32 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+14:47:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:32 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:47:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:32 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:47:33 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:47:33 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:47:33 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:47:33 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:47:33 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:47:33 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:47:34 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:47:34 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:34 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+14:47:34 INFO app.services.mcp_client: discipline label→URI cache loaded: 190 entries
+14:47:34 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:47:34 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:47:35 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:35 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:35 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+14:47:35 INFO app.services.mcp_client: discipline label→URI cache loaded: 190 entries
+14:47:35 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:47:35 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:47:35 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars
+14:47:35 INFO app.services.mcp_client: lrt label→URI cache loaded: 100 entries
+14:47:35 INFO app.services.mcp_client: resolved learningResourceType='Arbeitsblatt' → http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45
+14:47:35 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:47:35 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:47:35 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:35 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+14:47:35 INFO app.services.mcp_client: educationalContext label→URI cache loaded: 48 entries
+14:47:35 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:47:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:36 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+14:47:36 INFO app.services.mcp_client: educationalContext label→URI cache loaded: 48 entries
+14:47:36 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:47:36 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+14:47:36 INFO app.services.mcp_client: educationalContext label→URI cache loaded: 48 entries
+14:47:36 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:47:37 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:37 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7235 chars
+14:47:37 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:37 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7235 chars
+14:47:38 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:38 INFO app.services.mcp_client: MCP tool search_wlo_content returned 20106 chars
+14:47:38 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_collections']
+14:47:38 INFO app.services.llm_service: system_prompt[response] tokens=7574 (was=6468, cache-eligible=True)
+14:47:38 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche gefiltert sources=['mcp'] → allowed=False
+14:47:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:47:40 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 4, 'learningResourceType': 'Arbeitsblatt', 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:47:40 INFO app.services.mcp_client: resolved learningResourceType='Arbeitsblatt' → http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45
+14:47:40 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:47:40 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:47:42 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:47:42 INFO app.services.mcp_client: MCP tool search_wlo_content returned 7612 chars
+14:47:44 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:47:44 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Erst passende Sammlung zur Bruchrechnung, danach 3 Arbeitsblätter für Sekundarstufe I/ Klasse 7.
+14:47:46 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:47:46 INFO app.services.llm_service: DIAG respond_to_user: raw=171 afterReasoning=171 final=171 qr=4 raw_preview='Ich habe dir Material zur **Bruchrechnung** für **Klasse 7 (Sekundarstufe I)** herausgesucht – passend als Arbeitsblätter und mit einer them'
+14:47:46 INFO app.routers.chat: type-focus card-strip: 15 → 10 (gefiltert: Sammlungen/Themenseiten raus, Typ-Fokus=['arbeitsblatt'])
+14:47:46 WARNING app.routers.chat: type-focus text-replace (label=Arbeitsblätter): original='Ich habe dir Material zur **Bruchrechnung** für **Klasse 7 (Sekundarstufe I)** herausgesucht – passend als Arbeitsblätter und mit einer thematischen Sammlung als Einstieg.' | replaced='Für Arbeitsblätter zu „Bruchrechnung schau in die Suche unten — dort findest du die gefilterten Treffer.'
+14:47:46 INFO app.routers.chat: type-focus url-filters: lrt=True discipline=True eduCtx=True
+14:47:46 INFO app.routers.chat: type-focus search-url built (lrt_uri=True): https://repository.staging.openeduhub.net/edu-sharing/components/search?q=Bruchrechnung&filters=%7B%22ccm%3Aoeh_lrt_aggregated%22%3A%5B%22http%3A%2F%2Fw3id.org%2Fopeneduhub%2Fvocabs%2Fnew_lrt_aggregat
+14:47:46 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 7
+14:47:46 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:47:46 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:47:46 INFO app.services.safety_service: safety stages=openai level=standard took 508ms
+14:47:49 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:47:49 INFO app.routers.chat: quick_replies.max_count: trimmed 18 → 2
+14:47:49 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Erstelle mir einen kurzen Lernplan fuer Bruchrechnung.'

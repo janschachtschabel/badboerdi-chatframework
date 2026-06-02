@@ -93,6 +93,8 @@ class PrivacyConfig(BaseModel):
     quality: bool = True
     # read-only; shown so the Studio can display it, but PUT ignores it
     safety: bool = True
+    # Welle E v4+12 (Sprint K, 2026-05-27): rules-Toggle entfernt —
+    # Rule-Engine wurde komplett ausgebaut.
 
 
 @router.get("/privacy", response_model=PrivacyConfig)
@@ -385,38 +387,36 @@ async def get_elements():
         load_signal_modulations, load_device_config,
     )
 
-    # Patterns — fields from frontmatter use gate_* and signal_*_fit naming
+    # Patterns — Welle E v4 (2026-05-25): gate_* + signal_*_fit + page_bonus
+    # sind aus dem aktiven Schema raus. Wir liefern weiterhin die alten
+    # Listen-Felder (personas/intents/states/signals_boost) für Studio-UI-
+    # Komponenten, die sie noch anzeigen — aber immer leer, weil die
+    # Pattern-MDs sie nicht mehr setzen.
     patterns = []
     for p in load_pattern_definitions():
-        # Merge all signal fit levels for display
-        all_signals = []
-        for key in ("signal_high_fit", "signal_medium_fit", "signal_low_fit"):
-            val = p.get(key, [])
-            if isinstance(val, list):
-                all_signals.extend(val)
         patterns.append({
             "id": p.get("id"),
             "label": p.get("label", p.get("id")),
-            "personas": p.get("gate_personas", []),
-            "intents": p.get("gate_intents", []),
-            "states": p.get("gate_states", []),
-            "signals_boost": all_signals,
+            "personas": [],
+            "intents": [],
+            "states": [],
+            "signals_boost": [],
             "file": p.get("_source_file", ""),
         })
 
-    # Personas
+    # Personas — Welle E v2 (2026-05-25): alle strukturierten Felder
+    # durchreichen, damit das Studio die Form-Editoren mit Daten füllen
+    # kann. Frühere Variante hat nur id/label/file geliefert und so die
+    # neuen Marker/Diskriminatoren/Ziele/Regeln im UI verschluckt.
+    from app.services.config_loader import _persona_slug
     personas = []
-    persona_map = {
-        "P-W-LK": "lk", "P-W-SL": "sl", "P-W-POL": "pol", "P-W-PRESSE": "presse",
-        "P-W-RED": "red", "P-BER": "ber", "P-VER": "ver", "P-ELT": "elt", "P-AND": "and",
-    }
     for p in load_persona_definitions():
-        slug = persona_map.get(p["id"], p["id"].lower())
-        personas.append({
-            "id": p["id"],
-            "label": p["label"],
-            "file": f"04-personas/{slug}.md",
-        })
+        slug = _persona_slug(p["id"])
+        entry = dict(p)  # alles durchreichen (positive_markers, anti_markers, ...)
+        entry["file"] = f"04-personas/{slug}.md"
+        # Internes Loader-Feld nicht ans Frontend leaken.
+        entry.pop("_source_file", None)
+        personas.append(entry)
 
     # Intents
     intents = load_intents()
@@ -457,6 +457,505 @@ async def get_elements():
             {"label": "Domain-Rules", "file": "02-domain/domain-rules.md"},
         ],
     }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Welle E (2026-05-25) — Strukturierte PUT-Endpoints für die 4 Dimensionen
+#
+# Studio braucht für die neuen Form-Editoren atomic Saves, die alle
+# Felder durchreichen ohne Datenverlust. Der ``/file`` PUT-Endpoint
+# ersetzt die Datei komplett — der ist gut für freie Markdown/YAML-
+# Bearbeitung, aber nicht für GUI-Formulare (Studio müsste YAML im
+# Frontend serialisieren, was fehleranfällig ist).
+#
+# Stattdessen: pro Dimension ein PUT, das eine validierte Liste von
+# Pydantic-Models nimmt und via ruamel.yaml round-trip schreibt —
+# Header-Kommentare bleiben erhalten, Schema-Doku ist sicher.
+# ──────────────────────────────────────────────────────────────────────
+
+
+class IntentNegativeTrigger(BaseModel):
+    phrase: str
+    redirect_to: str | None = None
+    rationale: str | None = None
+    when: str | None = None
+
+
+class IntentDiscriminator(BaseModel):
+    vs: str
+    rule: str
+    example_a: str | None = None
+    example_b: str | None = None
+
+
+class IntentEntry(BaseModel):
+    id: str
+    label: str
+    description: str | None = None
+    examples: list[str] = []
+    trigger_verbs: list[str] = []
+    negative_triggers: list[IntentNegativeTrigger] = []
+    discriminators: list[IntentDiscriminator] = []
+
+
+class StateEntry(BaseModel):
+    id: str
+    label: str
+    description: str | None = None
+    role: str | None = None
+    bot_directive: str | None = None
+    next_likely: list[str] = []
+    selection_criteria: list[str] = []
+
+
+class EntityPositiveExample(BaseModel):
+    text: str
+    value: str | None = None
+
+
+class EntityNegativeExample(BaseModel):
+    text: str
+    rationale: str | None = None
+
+
+class EntityDiscriminator(BaseModel):
+    vs: str
+    rule: str
+    example_a: str | None = None
+    example_b: str | None = None
+
+
+class EntityEntry(BaseModel):
+    id: str
+    label: str | None = None
+    type: str = "string"
+    description: str | None = None
+    examples: list[str] = []
+    positive_examples: list[EntityPositiveExample] = []
+    negative_examples: list[EntityNegativeExample] = []
+    discriminators: list[EntityDiscriminator] = []
+
+
+def _strip_empty(obj: Any) -> Any:
+    """Recursively drop ``None``, ``""``, ``[]``, ``{}`` from a structure.
+
+    Keeps the YAML clean — empty lists and null fields pollute the file
+    and confuse the Studio readers (e.g. `negative_triggers: []` would
+    render an empty section).
+    """
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            cleaned = _strip_empty(v)
+            if cleaned not in (None, "", [], {}):
+                out[k] = cleaned
+        return out
+    if isinstance(obj, list):
+        return [_strip_empty(x) for x in obj if _strip_empty(x) not in (None, "", [], {})]
+    return obj
+
+
+def _dump_intents(entries: list[IntentEntry]) -> list[dict]:
+    """Convert validated Pydantic entries → clean YAML-ready dicts."""
+    cleaned: list[dict] = []
+    for e in entries:
+        d = e.model_dump()
+        d = _strip_empty(d)
+        cleaned.append(d)
+    return cleaned
+
+
+@router.get("/intents")
+async def get_intents_route():
+    """Return all intents with full nested fields (for the Studio form UI)."""
+    from app.services.config_loader import load_intents
+    return {"intents": load_intents()}
+
+
+@router.put("/intents")
+async def put_intents_route(payload: dict):
+    """Replace intents.yaml with a validated list of intents.
+
+    Payload shape: ``{"intents": [<IntentEntry>, ...]}``.
+
+    The header comment block of intents.yaml is preserved via ruamel.yaml
+    round-trip. We rewrite only the ``intents:`` key; if the file is new
+    or empty, we re-create the standard SCHEMA header.
+    """
+    from app.services.config_loader import (
+        load_yaml_roundtrip, save_yaml_roundtrip,
+    )
+    raw = payload.get("intents")
+    if not isinstance(raw, list):
+        raise HTTPException(400, "Payload must be {'intents': [...]}.")
+    # Validate every entry
+    entries = [IntentEntry.model_validate(item) for item in raw]
+    # IDs must be unique
+    if len({e.id for e in entries}) != len(entries):
+        raise HTTPException(400, "Intent IDs must be unique.")
+
+    data = load_yaml_roundtrip("04-intents/intents.yaml")
+    if data is None:
+        # New file — re-instantiate a minimal map; header comments are gone.
+        data = {}
+    data["intents"] = _dump_intents(entries)
+    save_yaml_roundtrip("04-intents/intents.yaml", data)
+    return {"status": "saved", "count": len(entries)}
+
+
+@router.get("/states")
+async def get_states_route():
+    """Return all states with full nested fields."""
+    from app.services.config_loader import load_states
+    return {"states": load_states()}
+
+
+@router.put("/states")
+async def put_states_route(payload: dict):
+    """Replace states.yaml with a validated list of states."""
+    from app.services.config_loader import (
+        load_yaml_roundtrip, save_yaml_roundtrip, _multiline_str,
+    )
+    raw = payload.get("states")
+    if not isinstance(raw, list):
+        raise HTTPException(400, "Payload must be {'states': [...]}.")
+    entries = [StateEntry.model_validate(item) for item in raw]
+    if len({e.id for e in entries}) != len(entries):
+        raise HTTPException(400, "State IDs must be unique.")
+
+    cleaned: list[dict] = []
+    for e in entries:
+        d = _strip_empty(e.model_dump())
+        # bot_directive is multi-line — render as YAML literal block.
+        if "bot_directive" in d:
+            d["bot_directive"] = _multiline_str(d["bot_directive"])
+        cleaned.append(d)
+
+    data = load_yaml_roundtrip("04-states/states.yaml") or {}
+    data["states"] = cleaned
+    save_yaml_roundtrip("04-states/states.yaml", data)
+    return {"status": "saved", "count": len(entries)}
+
+
+# ── Personas (Welle E v2, 2026-05-25) ──────────────────────────────
+#
+# Personas leben als 04-personas/<slug>.md mit YAML-Frontmatter — Body
+# ist nur noch Persönlichkeits-Prosa. Das PUT-Endpoint schreibt das
+# Frontmatter via ruamel-Roundtrip + den Body als Plain-Markdown am Ende.
+
+class PersonaAntiMarker(BaseModel):
+    phrase: str
+    redirect_to: str | None = None
+    rationale: str | None = None
+
+
+class PersonaDiscriminator(BaseModel):
+    vs: str
+    rule: str
+    example_a: str | None = None
+    example_b: str | None = None
+
+
+class PersonaEntry(BaseModel):
+    id: str
+    label: str
+    description: str | None = None
+    tone: str | None = None
+    length_bias: float | None = None
+    formality: str | None = None
+    card_text_mode: str | None = None
+    override: bool | None = None
+    positive_markers: list[str] = []
+    anti_markers: list[PersonaAntiMarker] = []
+    discriminators: list[PersonaDiscriminator] = []
+    goals: list[str] = []
+    rules: list[str] = []
+    typical_intents: list[str] = []
+    personality_text: str | None = None
+
+
+@router.get("/personas")
+async def get_personas_route():
+    """Return all personas with full structured fields."""
+    from app.services.config_loader import load_persona_definitions
+    return {"personas": load_persona_definitions()}
+
+
+@router.put("/personas")
+async def put_personas_route(payload: dict):
+    """Persist all personas. Each one is written as a separate
+    ``04-personas/<slug>.md`` file with YAML-Frontmatter + Markdown body
+    (personality_text).
+    """
+    from app.services.config_loader import (
+        _persona_slug, _validate_config_path, invalidate_yaml_cache, CHATBOT_DIR,
+    )
+    from ruamel.yaml import YAML
+    raw = payload.get("personas")
+    if not isinstance(raw, list):
+        raise HTTPException(400, "Payload must be {'personas': [...]}.")
+    entries = [PersonaEntry.model_validate(item) for item in raw]
+    if len({e.id for e in entries}) != len(entries):
+        raise HTTPException(400, "Persona IDs must be unique.")
+
+    yml = YAML(typ="rt")
+    yml.preserve_quotes = True
+    yml.indent(mapping=2, sequence=4, offset=2)
+    yml.width = 200
+
+    for e in entries:
+        slug = _persona_slug(e.id)
+        rel_path = f"04-personas/{slug}.md"
+
+        # Build frontmatter dict — only set keys that are actually populated
+        # so the YAML stays clean and human-readable.
+        fm: dict[str, Any] = {
+            "element": "persona",
+            "id": e.id,
+            "label": e.label,
+        }
+        if e.description:
+            fm["description"] = e.description
+        # Tonalitäts-Modifier (nur wenn nicht None)
+        for k in ("tone", "length_bias", "formality", "card_text_mode", "override"):
+            v = getattr(e, k)
+            if v is not None:
+                fm[k] = v
+        # Strukturierte Klassifikations-Felder
+        if e.positive_markers:
+            fm["positive_markers"] = list(e.positive_markers)
+        if e.anti_markers:
+            fm["anti_markers"] = [_strip_empty(am.model_dump()) for am in e.anti_markers]
+        if e.discriminators:
+            fm["discriminators"] = [_strip_empty(d.model_dump()) for d in e.discriminators]
+        if e.goals:
+            fm["goals"] = list(e.goals)
+        if e.rules:
+            fm["rules"] = list(e.rules)
+        if e.typical_intents:
+            fm["typical_intents"] = list(e.typical_intents)
+
+        # Render frontmatter as YAML
+        import io
+        buf = io.StringIO()
+        yml.dump(fm, buf)
+        fm_yaml = buf.getvalue().rstrip()
+
+        body = (e.personality_text or "").strip()
+        # Standard-H1 voranstellen, wenn der Body kein eigenes Heading hat
+        if body and not re.match(r"^\s*#\s", body):
+            body = f"# {e.id} — {e.label}\n\n{body}"
+
+        full = f"---\n{fm_yaml}\n---\n\n{body}\n" if body else f"---\n{fm_yaml}\n---\n"
+
+        # Validate path inside CHATBOT_DIR
+        path = _validate_config_path(rel_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(full, encoding="utf-8")
+        invalidate_yaml_cache(rel_path)
+
+    return {"status": "saved", "count": len(entries)}
+
+
+# ── Patterns (Welle E v3, 2026-05-25) ──────────────────────────────
+#
+# Patterns leben als 03-patterns/<id>.md mit YAML-Frontmatter + Body.
+# Frontmatter enthält Gates, Tonality-Defaults UND die strukturierten
+# Felder core_rule/forbidden_phrases/anti_patterns. Body trägt nur noch
+# die Pattern-spezifischen Sektionen (Pflicht-Antwort-Schema, Tabellen,
+# Beispiele) — die generischen Regel-Sektionen sind ins Frontmatter
+# gehoben (Welle-E-v3-Migration).
+
+class PatternEntry(BaseModel):
+    """Pattern-Schema für PUT /api/config/patterns.
+
+    Welle E v4 (2026-05-25): gate_personas/gate_intents/gate_states sind
+    entfernt — Pattern wird vom LLM-Hint gewählt, deterministische Gates
+    sind aus der Engine raus. Falls das Studio noch alte Werte in den
+    Payload schickt, werden sie still verworfen (extra='ignore' Pydantic-
+    Default).
+    """
+    id: str
+    label: str
+    short_purpose: str | None = None
+    priority: int | None = None
+    default_tone: str | None = None
+    default_length: str | None = None
+    response_type: str | None = None
+    sources: list[str] = []
+    rag_areas: list[str] = []
+    tools: list[str] = []
+    output_mode: str | None = None
+    precondition_slots: list[str] = []
+    core_rule: str | None = None
+    forbidden_phrases: list[str] = []
+    anti_patterns: list[str] = []
+    # Welle E v4+7 (2026-05-26): strukturierte Pattern-Auswahl-Regeln
+    # — when_to_use/when_not_to_use/trigger_phrases als String-Listen,
+    # discriminators als Liste {vs, rule, example}.
+    when_to_use: list[str] = []
+    when_not_to_use: list[str] = []
+    trigger_phrases: list[str] = []
+    discriminators: list[dict[str, str]] = []
+    body_md: str | None = None
+
+
+@router.get("/patterns")
+async def get_patterns_route():
+    """Return all patterns with full structured fields."""
+    from app.services.config_loader import load_pattern_definitions
+    patterns = load_pattern_definitions()
+    # Strip internal _source_file from the response (UI doesn't need it).
+    return {"patterns": [
+        {k: v for k, v in p.items() if k != "_source_file"}
+        for p in patterns
+    ]}
+
+
+@router.put("/patterns")
+async def put_patterns_route(payload: dict):
+    """Persist all patterns. Each one is written as a separate
+    ``03-patterns/<slug>.md`` with YAML-Frontmatter + Markdown body.
+
+    File slug is derived from the existing source file (preserves the
+    ``m13-einreichen-melden.md`` naming) or, for new patterns, generated
+    from id + label.
+    """
+    from app.services.config_loader import (
+        load_pattern_definitions, _validate_config_path, invalidate_yaml_cache,
+        CHATBOT_DIR,
+    )
+    from ruamel.yaml import YAML
+    from ruamel.yaml.scalarstring import LiteralScalarString
+    raw = payload.get("patterns")
+    if not isinstance(raw, list):
+        raise HTTPException(400, "Payload must be {'patterns': [...]}.")
+    entries = [PatternEntry.model_validate(item) for item in raw]
+    if len({e.id for e in entries}) != len(entries):
+        raise HTTPException(400, "Pattern IDs must be unique.")
+
+    # Build {id → existing source path} so we keep the original filename.
+    existing_by_id = {
+        p["id"]: p.get("_source_file", "")
+        for p in load_pattern_definitions()
+    }
+
+    yml = YAML(typ="rt")
+    yml.preserve_quotes = True
+    yml.indent(mapping=2, sequence=4, offset=2)
+    yml.width = 200
+
+    for e in entries:
+        rel_path = existing_by_id.get(e.id, "")
+        if not rel_path:
+            # New pattern → derive a filename slug.
+            slug_label = re.sub(r"[^a-z0-9-]+", "-",
+                                 (e.label or e.id).lower()).strip("-")
+            rel_path = f"03-patterns/{e.id.lower()}-{slug_label}.md"
+
+        # Frontmatter dict — only set keys that are actually populated.
+        fm: dict[str, Any] = {"id": e.id, "label": e.label}
+        if e.short_purpose:
+            fm["short_purpose"] = e.short_purpose
+        if e.priority is not None:
+            fm["priority"] = e.priority
+        # Welle E v4: gate_* nicht mehr serialisieren — Hint-Primary
+        # Pattern-Selektion kennt keine Gates mehr.
+        for k in ("default_tone", "default_length", "response_type",
+                  "output_mode"):
+            v = getattr(e, k)
+            if v:
+                fm[k] = v
+        for k in ("sources", "rag_areas", "tools", "precondition_slots"):
+            v = getattr(e, k)
+            if v:
+                fm[k] = list(v)
+        if e.core_rule:
+            cr = e.core_rule.strip()
+            fm["core_rule"] = LiteralScalarString(cr + "\n") if "\n" in cr else cr
+        if e.forbidden_phrases:
+            fm["forbidden_phrases"] = list(e.forbidden_phrases)
+        if e.anti_patterns:
+            fm["anti_patterns"] = list(e.anti_patterns)
+        # Welle E v4+7 (2026-05-26): strukturierte Pattern-Auswahl-Regeln
+        # serialisieren (when_to_use, when_not_to_use, trigger_phrases,
+        # discriminators). Studio kann die jetzt direkt editieren.
+        if e.when_to_use:
+            fm["when_to_use"] = list(e.when_to_use)
+        if e.when_not_to_use:
+            fm["when_not_to_use"] = list(e.when_not_to_use)
+        if e.trigger_phrases:
+            fm["trigger_phrases"] = list(e.trigger_phrases)
+        if e.discriminators:
+            fm["discriminators"] = [
+                {"vs": str(d.get("vs", "")).strip(),
+                 "rule": str(d.get("rule", "")).strip(),
+                 "example": str(d.get("example", "")).strip()}
+                for d in e.discriminators
+                if d.get("vs") and d.get("rule")
+            ]
+
+        import io
+        buf = io.StringIO()
+        yml.dump(fm, buf)
+        fm_yaml = buf.getvalue().rstrip()
+
+        body = (e.body_md or "").strip()
+        # H1 if body doesn't start with one
+        if body and not re.match(r"^\s*#\s", body):
+            body = f"# {e.id} — {e.label}\n\n{body}"
+
+        full = f"---\n{fm_yaml}\n---\n\n{body}\n" if body else f"---\n{fm_yaml}\n---\n"
+
+        path = _validate_config_path(rel_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(full, encoding="utf-8")
+        invalidate_yaml_cache(rel_path)
+
+    return {"status": "saved", "count": len(entries)}
+
+
+@router.get("/entities")
+async def get_entities_route():
+    """Return all entities + accumulation_rules block."""
+    from app.services.config_loader import load_entities, _load_yaml
+    raw = _load_yaml("04-entities/entities.yaml")
+    return {
+        "entities": load_entities(),
+        "accumulation_rules": raw.get("accumulation_rules", {}),
+    }
+
+
+@router.put("/entities")
+async def put_entities_route(payload: dict):
+    """Replace entities.yaml with a validated entity list.
+
+    accumulation_rules block is preserved as-is from the existing file
+    (Studio does not edit those).
+    """
+    from app.services.config_loader import (
+        load_yaml_roundtrip, save_yaml_roundtrip, _multiline_str,
+    )
+    raw = payload.get("entities")
+    if not isinstance(raw, list):
+        raise HTTPException(400, "Payload must be {'entities': [...]}.")
+    entries = [EntityEntry.model_validate(item) for item in raw]
+    if len({e.id for e in entries}) != len(entries):
+        raise HTTPException(400, "Entity IDs must be unique.")
+
+    cleaned: list[dict] = []
+    for e in entries:
+        d = _strip_empty(e.model_dump())
+        # description can be multi-line → use block scalar for readability.
+        if "description" in d:
+            d["description"] = _multiline_str(d["description"])
+        cleaned.append(d)
+
+    data = load_yaml_roundtrip("04-entities/entities.yaml") or {}
+    data["entities"] = cleaned
+    # accumulation_rules block stays untouched (preserved by round-trip).
+    save_yaml_roundtrip("04-entities/entities.yaml", data)
+    return {"status": "saved", "count": len(entries)}
 
 
 # ── MCP Server Registry ──────────────────────────────────────────

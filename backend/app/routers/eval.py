@@ -171,7 +171,9 @@ async def get_trends(
       * cache_hit_rate
       * llm_engine_match_rate
       * persona_correct_rate / intent_correct_rate
-      * tie_breaker.applied_rate
+
+    Welle E v4 (2026-05-25): tie_breaker_trend entfernt — der Hint-
+    Primary-Pfad braucht keinen Tie-Breaker mehr (Phase 2 läuft nicht).
 
     The Studio UI can render these as sparklines per pattern + run-over-run
     deltas without each turn fetching the full conversation transcripts.
@@ -196,7 +198,6 @@ async def get_trends(
     match_rate_trend: list[dict[str, Any]] = []
     persona_rate_trend: list[dict[str, Any]] = []
     intent_rate_trend: list[dict[str, Any]] = []
-    tie_breaker_trend: list[dict[str, Any]] = []
 
     # Reverse so the timeline is oldest → newest (UI-friendly)
     for r in reversed(rows):
@@ -256,13 +257,7 @@ async def get_trends(
             "value": cm.get("intent_correct_rate", 0.0),
             "total": cm.get("intent_total_judged", 0),
         })
-        tb = cm.get("tie_breaker") or {}
-        tie_breaker_trend.append({
-            "run_id": run_id, "created_at": created_at,
-            "applied_rate": tb.get("applied_rate", 0.0),
-            "applied_count": tb.get("applied_count", 0),
-            "evaluated": tb.get("evaluated_turns", 0),
-        })
+        # Welle E v4: tie_breaker_trend entfernt.
 
     # Pad pattern trend with implicit zeros so each series spans every run
     # — keeps line charts honest about coverage.
@@ -292,7 +287,6 @@ async def get_trends(
         "llm_engine_match_trend": match_rate_trend,
         "persona_correct_trend": persona_rate_trend,
         "intent_correct_trend": intent_rate_trend,
-        "tie_breaker_trend": tie_breaker_trend,
     }
 
 

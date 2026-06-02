@@ -1,0 +1,358 @@
+# Klassifikations-Overrides (Welle E v4+6, 2026-05-26)
+# ─────────────────────────────────────────────────────
+# Hard-Override-Regeln, Pattern-Disambiguatoren und Few-Shot-Beispiele für
+# den classify-Prompt. Die Datei steuert wie das LLM-Klassifizier-Modell
+# mehrdeutige User-Eingaben deterministisch auf Persona/Intent/Pattern
+# abbildet. Studio-bearbeitbar — Änderungen wirken beim nächsten Turn
+# ohne Backend-Restart (mtime-Cache).
+
+# ── Persona-Hard-Overrides ────────────────────────────────────────
+# Marker, die UNABHÄNGIG vom Markdown-Body der Persona-Datei eine harte
+# Persona-Entscheidung erzwingen.
+persona_overrides:
+  - id: p_ler_self_id
+    description: Tokens, die eindeutig eine:n Lerner:in/Schüler:in identifizieren.
+    persona: P-LER
+    triggers:
+      - kapiere
+      - kapiere nicht
+      - verstehe nicht
+      - check ich nicht
+      - raff ich nicht
+      - Klausur
+      - Hausaufgabe
+      - Schulaufgabe
+      - ich lerne für
+      - für meine Prüfung
+      - für meinen Test
+    except_explicit_role:
+      - ich bin Lehrer:in
+      - mein Kind
+      - als Journalist:in
+      - für meine Behörde
+
+  - id: p_elt_self_id
+    description: Possessiv-Pronomen für Kinder → Eltern.
+    persona: P-ELT
+    triggers:
+      - mein Kind
+      - meine Tochter
+      - mein Sohn
+      - unsere Kinder
+
+  - id: p_leh_active
+    description: meine Klasse + Verb wie unterrichten/planen → Lehrkraft.
+    persona: P-LEH
+    requires_all:
+      - meine Klasse
+    requires_any:
+      - unterrichten
+      - planen
+      - vorbereiten
+      - Lehrplan
+      - Stundenentwurf
+
+  # ── Welle E v4+12 (2026-05-27): aus routing-rules.yaml migriert ──
+  # Die folgenden Self-ID-Trigger-Sets waren früher Lookup-Rules in der
+  # Rule-Engine. Nach Rules-Removal (Sprint K) bleiben sie hier als
+  # Classifier-Hint-Anker — das LLM bekommt sie als Prompt-Block.
+
+  - id: p_leh_self_id
+    description: Explizite Lehrkraft-Selbstausweisung (Bestätigung der LLM-Wahl).
+    persona: P-LEH
+    triggers:
+      - ich bin Lehrer
+      - ich bin Lehrerin
+      - ich bin Lehrkraft
+      - ich bin Pädagogin
+      - ich bin Pädagoge
+      - ich bin Referendar
+      - ich bin Referendarin
+      - als Lehrkraft
+      - als Lehrer
+      - als Lehrerin
+      - als Referendar
+      - für meinen Unterricht
+      - in meiner Klasse unterrichte
+      - meine Schüler:innen
+      - meinen Stundenentwurf
+      - meine Unterrichtsstunde
+      - meine Unterrichtseinheit
+      - meine Unterrichtsreihe
+      - meinen Lehrplan
+      - Klassenarbeit korrigieren
+      - Klassenarbeit bewerten
+
+  - id: p_red_self_id
+    description: Explizite Redakteur/Journalist/Autor-Selbstausweisung.
+    persona: P-RED
+    triggers:
+      - ich bin Redakteur
+      - ich bin Redakteurin
+      - ich bin Autor
+      - ich bin Autorin
+      - ich bin Journalist
+      - ich bin Journalistin
+      - als Redakteur
+      - als Redakteurin
+      - als Autor
+      - als Autorin
+      - als Journalist
+      - als Journalistin
+      - für unsere Redaktion
+      - für meine Redaktion
+      - für unsere Zeitung
+      - für unsere Leser:innen
+      - für einen Artikel
+      - für meinen Artikel
+      - für einen Bericht
+      - für eine Reportage
+      - kuratieren
+      - Inhalte einstellen
+      - Presseanfrage
+      - Pressekit
+      - Qualitätsprüfung
+
+  - id: p_ent_self_id
+    description: Explizite Entscheider:in / Politik / Verwaltung / Schulleitung.
+    persona: P-ENT
+    triggers:
+      - ich bin Politiker
+      - ich bin Politikerin
+      - ich bin Abgeordnete
+      - ich bin Abgeordneter
+      - ich bin Schulleiter
+      - ich bin Schulleiterin
+      - ich bin in der Schulverwaltung
+      - ich bin in der Schulbehörde
+      - als Politiker
+      - als Politikerin
+      - als Abgeordnete
+      - als Schulleitung
+      - als Berater im Schulbereich
+      - für unsere Verwaltung
+      - für unsere Behörde
+      - für meine Fraktion
+      - für unsere Partei
+      - für meinen Wahlkreis
+      - für unsere Schule
+      - für unseren Schulträger
+      - für unsere Schulentwicklung
+      - für unsere Schulkonferenz
+      - für unser Schulprogramm
+      - für die Bildungspolitik
+      - für unsere Bildungsstrategie
+      - für unser Ministerium
+      - für unser Schulamt
+      - für unser Kollegium
+      - für mein Positionspapier
+      - amtliche Daten
+      - Kennzahlen
+      - KPI
+      - evidenzbasiert
+      - Schulqualität
+      - Schulentwicklung
+
+# ── Intent-Hard-Overrides ─────────────────────────────────────────
+intent_overrides:
+  - id: i07_feedback_bedienung
+    description: Frage zur Bot-Bedienung / Feedback-Mechanik.
+    intent: I07
+    triggers:
+      - wie kann ich Feedback geben
+      - wie melde ich
+      - wie sage ich dir
+      - wie sage ich euch
+      - Feedback geben
+      - Schritt für Schritt feedback
+      - wie funktioniert das hier
+
+  - id: i03_search_verbs
+    description: Such-Verben → I03 (Inhalte-Suchen, aus WLO-Repository).
+    intent: I03
+    triggers:
+      - suche
+      - such mir
+      - ich suche
+      - finde
+      - find mir
+      - zeig mir
+      - hast du
+      - hast du etwas
+      - hast du was
+      - was hast du
+      - gibt es
+      - was gibt es
+      - welches Material
+      - brauche
+      - bereitstellen
+
+  - id: i05_create_verbs
+    description: Create-Verben → I05 (Inhalt-Generieren, KI-neu).
+    intent: I05
+    triggers:
+      - erstelle
+      - erstell mir
+      - generiere
+      - generier mir
+      - mach mir ein
+      - mach mir eine
+      - schreib mir
+      - bau mir
+      - entwirf
+      - produziere
+      - erzeuge
+
+# Konflikt-Regel: Bei beiden Verb-Typen gewinnt das ERSTE in der Nachricht.
+intent_conflict_rule: |
+  Wenn beide Verb-Typen (Such-Verb + Create-Verb) in der Nachricht
+  vorkommen, gewinnt das ERSTE Verb in der Reihenfolge der Nachricht.
+  Beispiel: 'Ich suche, kannst du etwas erstellen' → I03 (Suche
+  kommt zuerst).
+
+# ── Topic-Slot-Overrides ──────────────────────────────────────────
+topic_overrides:
+  phantom_topic_phrases:
+    description: |
+      Wenn der User 'zu einem Thema' / 'zu irgendwas' / 'zu etwas' als
+      Ersatz für ein konkretes Topic nennt, ist topic LEER zu extrahieren.
+    phrases:
+      - einem Thema
+      - ein Thema
+      - irgendeinem Thema
+      - irgendwas
+      - irgendetwas
+      - etwas
+      - irgendein Thema
+      - einem beliebigen Thema
+      - beliebigem Thema
+
+  fach_as_topic_fallback:
+    description: |
+      Wenn der User NUR ein Fach nennt (Mathe, Deutsch, Bio, ...) ohne
+      konkreteres Thema → extrahiere fach=Fach UND topic=Fach
+      (Fach-Fallback). M10/M03/M06 können damit arbeiten.
+    triggers:
+      - Mathe
+      - Mathematik
+      - Deutsch
+      - Englisch
+      - Französisch
+      - Biologie
+      - Bio
+      - Physik
+      - Chemie
+      - Geschichte
+      - Geographie
+      - Politik
+      - Wirtschaft
+      - Religion
+      - Ethik
+      - Sport
+      - Kunst
+      - Musik
+
+# ── Pattern-Disambiguatoren (DEPRECATED — siehe 03-patterns/*.md) ─────
+# Welle E v4+7 (2026-05-26): Diese zentrale Liste ist veraltet. Die
+# Disambiguatoren leben jetzt pro Pattern im Frontmatter der jeweiligen
+# 03-patterns/*.md unter `discriminators:` (Single-Source-of-Truth).
+# Der classify-Prompt rendert sie pro Pattern als Teil des Pattern-Hint-
+# Blocks und der Eval-Judge bekommt sie über `_build_pattern_expectations`.
+#
+# Diese Liste hier wird aktuell IGNORIERT (siehe llm_service.py:_render_
+# pattern_disambiguators_block — die Funktion wird nicht mehr aufgerufen).
+# Wir lassen sie für 1-2 Wochen drin als Migrations-Anker; danach kann
+# der ganze Block raus.
+pattern_disambiguators_legacy:
+  - id: m10_vs_m04
+    label: M10 vs M04 (KI-Create vs Wissens-Antwort)
+    rules:
+      - 'Create-Verb (erstelle/generiere/mach mir/bau/schreib mir) + Material-Typ-Substantiv (Arbeitsblatt/Quiz/Infoblatt/Bericht/Factsheet/Übung) → M10.'
+      - 'Was-Frage (Was ist X?/Wie funktioniert Y?/Wer hat Z entwickelt?) ohne Material-Typ → M04.'
+    examples:
+      - input: Erstell mir ein Quiz zu Photosynthese
+        expected: M10
+        rationale: 'Create-Verb + Material-Typ — NICHT M04, auch wenn Photosynthese ein Wissens-Thema ist.'
+      - input: Was ist Photosynthese?
+        expected: M04
+
+  - id: m10_vs_m03
+    label: M10 vs M03 (Create vs Slot-Klärung)
+    rules:
+      - 'I05 mit konkretem Topic UND Material-Typ → M10.'
+      - 'I05 ohne Topic (oder Phantom-Topic etwas/einem Thema) → M03-Klärung.'
+      - 'I05 ohne Material-Typ → M03-Klärung (Welches Format?).'
+
+  - id: m09_vs_m06
+    label: M09 vs M06 (Lernpfad vs Material-Suche)
+    rules:
+      - 'Plan-Verb (plane/Stundenentwurf/Unterrichtsreihe/Lernpfad/Materialzusammenstellung) → M09.'
+      - 'Such-Verb + Material (zeig mir Material zu X/hast du was zu Y?) → M06 Cascade oder M05 gefiltert.'
+      - 'Material zur Unterrichtseinheit X — Tie-Break: wenn User Material singulär nennt → M06; wenn er Reihe/Sequenz/mehrere Stunden nennt → M09.'
+
+  - id: m06_vs_m05
+    label: M06 vs M05 (Cascade vs gefiltert)
+    rules:
+      - 'Such-Anfrage mit Filter (Fach + Stufe + Medientyp) → M05.'
+      - 'Such-Anfrage mit nur Thema (oder Thema + Fach allein) → M06 Cascade.'
+
+  - id: m11_vs_m10
+    label: M11 vs M10 (Edit vs neu generieren)
+    rules:
+      - 'Edit-Verb (kürzer/einfacher/umformulieren/ergänze/anpassen) + Bezug auf Vor-Inhalt + last_pattern in M09/M10/M11 → M11.'
+      - 'Edit-Verb OHNE Vor-Inhalt (last_pattern leer/anders) → M10 (Bot generiert das Material zum ersten Mal).'
+
+  - id: m14_vs_m03
+    label: M14 vs M03 (Feedback vs Slot-Klärung)
+    rules:
+      - 'Wie kann ich Feedback geben? / Wie melde ich was? → I07 + M14.'
+      - 'User antwortet auf eine Bot-Frage zur Spezifizierung → M03.'
+
+  - id: m02_vs_m04
+    label: M02 vs M04 (Domain-Out vs Wissens-Antwort)
+    rules:
+      - 'Frage zu Bildungs-/OER-/WLO-Themen → M04 (Wissens-Antwort).'
+      - 'Frage AUSSERHALB Bildungsdomäne (Aktienkurse/Rezepte/Politik allgemein) → M02 (Domain-Out, freundlicher Redirect).'
+
+# ── Few-Shot-Beispiele (User → erwartetes Pattern) ────────────────
+few_shot_examples:
+  - input: Hallo, was kann ich hier machen?
+    intent: I01
+    pattern: M15
+  - input: Was bedeutet OER?
+    intent: I02
+    pattern: M04
+  - input: Ich suche Material zu Bruchrechnung
+    intent: I03
+    pattern: M06
+  - input: Zeig mir Videos zur Photosynthese für Klasse 8
+    intent: I03
+    pattern: M05
+    note: gefilterte Suche — Fach+Stufe+Medientyp
+  - input: Plane mir eine Stunde zu Bruchrechnung Klasse 5
+    intent: I04
+    pattern: M09
+  - input: Erstell mir ein Quiz zu Photosynthese
+    intent: I05
+    pattern: M10
+  - input: Mach mir ein Arbeitsblatt zu einem Thema
+    intent: I05
+    pattern: M03
+    note: Topic phantom → Slot-Klärung
+  - input: Mach das Quiz kürzer
+    intent: I06
+    pattern: M11
+    note: nach Bot-Material — Iterative Nachbearbeitung
+  - input: Wie kann ich dir Feedback geben?
+    intent: I07
+    pattern: M14
+  - input: Ich habe ein gutes Video gefunden, wie reiche ich das ein?
+    intent: I08
+    pattern: M13
+  - input: Ich kapiere Photosynthese nicht
+    intent: I02
+    pattern: M04
+    note: Lerner-Frage — P-LER + M04
+  - input: Hast du was zu Klimawandel?
+    intent: I03
+    pattern: M06

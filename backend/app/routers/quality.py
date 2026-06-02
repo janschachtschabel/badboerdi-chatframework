@@ -34,8 +34,8 @@ async def list_quality_logs(
     Query params:
       limit: max rows (default 100)
       session_id: filter to a single session
-      pattern_id: filter by pattern (prefix match, e.g. "PAT-10")
-      intent_id: filter by intent (prefix match, e.g. "INT-W-06")
+      pattern_id: filter by pattern (prefix match, e.g. "M04")
+      intent_id: filter by intent (prefix match, e.g. "I02")
       scope: 'all' / 'production' / 'eval' — excludes eval-* sessions from
              production view and vice versa
     """

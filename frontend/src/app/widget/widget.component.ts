@@ -49,8 +49,6 @@ interface CanvasSnapshot {
   template: `
     <div class="boerdi-widget"
          [class.expanded]="expanded"
-         [class.with-canvas]="canvasOpen() && canvasEnabledBool"
-         [class.mobile-canvas-active]="canvasOpen() && canvasEnabledBool && mobileTab() === 'canvas'"
          [attr.data-position]="position">
 
       <!-- Chat panel: lazy mount on first open, then stays in DOM and
@@ -73,17 +71,9 @@ interface CanvasSnapshot {
             </div>
           </div>
 
-          <!-- Mitte: Mobile-only tab switcher -->
-          <div class="boerdi-tabs" *ngIf="canvasOpen() && canvasEnabledBool">
-            <button type="button"
-                    class="boerdi-tab"
-                    [class.active]="mobileTab() === 'chat'"
-                    (click)="mobileTab.set('chat')">Chat</button>
-            <button type="button"
-                    class="boerdi-tab"
-                    [class.active]="mobileTab() === 'canvas'"
-                    (click)="mobileTab.set('canvas')">Canvas</button>
-          </div>
+          <!-- Welle E (2026-05-23): Mobile-Tab-Switch entfällt — Canvas-Pane
+               wurde entfernt, Material/Lernpfade landen als gerahmte
+               InlineDocument-Box direkt im Chat-Verlauf. -->
 
           <!-- Rechts: Action-Buttons (sound/debug/restart) + Close.
                Icon-Wechsel + solid-vs-outlined-Pill kommunizieren den
@@ -106,18 +96,9 @@ interface CanvasSnapshot {
                     [title]="chatRef?.showDebug ? 'Debug aus' : 'Debug an'">
               <span class="boerdi-icon" [innerHTML]="ICONS.bug_report | safeSvg"></span>
             </button>
-            <!-- Webseiten-Guide-Modus: nur sichtbar auf Allow-Listen-
-                 Hosts (wirlernenonline.de etc.) UND wenn show-guide-button
-                 nicht abgeschaltet wurde. Auf Drittseiten bleibt der
-                 Toggle ausgeblendet (kein Sinn ohne Navigationsziel). -->
-            <button *ngIf="guideModeAvailable() && showGuideButtonBool"
-                    class="boerdi-action-btn"
-                    [class.is-on]="guideMode()"
-                    [class.is-off]="!guideMode()"
-                    (click)="toggleGuideMode()"
-                    [title]="guideMode() ? 'Lotsen-Modus aus (öffnet Links in neuem Tab)' : 'Lotsen-Modus an (führt dich zu den Treffern)'">
-              <span class="boerdi-icon" [innerHTML]="ICONS.explore | safeSvg"></span>
-            </button>
+            <!-- Welle E (2026-05-23): Lotsen-Toggle dauerhaft entfernt.
+                 Lotsen-Modus ist immer aktiv — der Bot leitet auf
+                 Repo-/Themenseiten-Links statt externer URLs. -->
             <button class="boerdi-action-btn boerdi-action-btn--neutral"
                     (click)="chatRef?.restart()"
                     title="Neuer Chat">
@@ -152,38 +133,9 @@ interface CanvasSnapshot {
         </div>
 
         <div class="boerdi-panel-body">
-          <!-- Canvas pane (if open). Order depends on FAB position: canvas lives
-               on the opposite side so it expands toward the page center. -->
-          <div class="boerdi-canvas-pane" *ngIf="canvasOpen() && canvasEnabledBool">
-            <badboerdi-canvas
-              [title]="canvasTitle()"
-              [materialTypeLabel]="canvasMaterialLabel()"
-              [materialTypeCategory]="canvasMaterialCategory()"
-              [markdown]="canvasMarkdown()"
-              [cards]="canvasCards()"
-              [trustedHosts]="parsedTrustedHostList"
-              [sessionId]="chatRef?.sessionId || ''"
-              [inlineResultGrouping]="inlineResultGrouping"
-              [searchCtaUrl]="canvasSearchCtaUrl()"
-              [searchCtaTerm]="canvasSearchCtaTerm()"
-              [viewMode]="canvasMode()"
-              [query]="canvasQuery()"
-              [showTabs]="canvasHasBothPanes()"
-              [previewCard]="canvasPreviewCard()"
-              [canGoBack]="canvasHistory().length > 0"
-              [pagination]="canvasPagination()"
-              [visibleCount]="canvasVisibleCount()"
-              [loadingMore]="canvasLoadingMore()"
-              (closeCanvas)="closeCanvas()"
-              (cardAction)="onCanvasCardAction($event)"
-              (switchView)="onCanvasViewSwitch($event)"
-              (goBack)="onCanvasGoBack()"
-              (showMore)="onCanvasShowMore()"
-              (loadMore)="onCanvasLoadMoreFromServer()"
-              (markdownEdited)="onCanvasMarkdownEdited($event)">
-            </badboerdi-canvas>
-          </div>
-
+          <!-- Welle E (2026-05-23): Canvas-Pane entfernt. Lernpfade /
+               KI-Materialien werden als gerahmte InlineDocument-Box
+               direkt im Chat-Verlauf gerendert. -->
           <div class="boerdi-chat-pane">
             <badboerdi-chat
               #chat
@@ -196,17 +148,8 @@ interface CanvasSnapshot {
               [greeting]="greeting"
               [showDebugButton]="showDebugButton"
               [showLanguageButtons]="showLanguageButtons"
-              [canvasActiveMarkdown]="canvasMode() === 'content' ? canvasMarkdown() : ''"
-              [hideCards]="canvasOpen()"
-              [canvasShowingCards]="canvasOpen() && canvasMode() === 'cards'"
-              [canvasState]="canvasStateForBackend()"
-              [guideModeActive]="guideModeAvailable() && guideMode()"
-              [cardsEnabled]="cardsEnabled"
-              [canvasEnabled]="canvasEnabled"
               [aiContentEnabled]="aiContentEnabled"
-              [quickRepliesEnabled]="quickRepliesEnabled"
               [trustedHosts]="parsedTrustedHostList"
-              [inlineResultGrouping]="inlineResultGrouping"
               [emitGuideSuggestion]="emitGuideSuggestion"
               [emitRoutingDebug]="emitRoutingDebug"
               (pageAction)="handlePageAction($event)"
@@ -711,63 +654,40 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   @Input() trustedDomains = '';
   @Input() greeting = '';
   @Input() autoContext: boolean | string = true;
-  /** Such-Ergebnis-Darstellung (Sprint 7, 2026-05-19, Default-Flip Welle C.5,
-   *  2026-05-21): Chat + Canvas zeigen Treffer NICHT mehr als flache Card-
-   *  Liste, sondern gruppieren pro Bot-Antwort in eigene Boxen:
-   *    - Top 3 Themenseiten
-   *    - Top 3 Sammlungen
-   *    - Webseiten-Inhalte (RAG-Quellen, FAQ etc.)
-   *    - Search-CTA-Box „Alle Treffer in der Suche anzeigen"
-   *      (Einzelinhalte-Kacheln blieben weg; das LLM darf sie noch kennen,
-   *       aber visuell springt der User direkt in die Suche)
-   *
-   *  **Default ``true``** seit Welle C.5. Hosts, die das alte flache
-   *  Card-Layout zurück wollen, setzen ``inline-result-grouping="false"``.
-   *  Wirkt parallel auf Chat-Cards und Canvas-Cards. */
-  @Input() inlineResultGrouping: boolean | string = true;
   /** Show the 🔍 debug-toggle button in the chat header. Default true. */
   @Input() showDebugButton: boolean | string = true;
   /** Show the 🔊 TTS and 🎤 mic buttons. Default true. */
   @Input() showLanguageButtons: boolean | string = true;
 
-  // ── Widget-Embed-Modi ──────────────────────────────────────────
-  // Vier Schalter, mit denen der einbettende Host (WordPress, Edu-Sharing,
-  // Themenseite…) das Widget feature-by-feature minimaler auftreten lässt.
-  // Default jeweils ``true`` — Bestandsintegrationen sehen keine Änderung.
+  // ── Widget-Embed-Modi (Welle E, 2026-05-23 — reduziert) ─────────
+  // Frühere Modi (cards-enabled, canvas-enabled, inline-result-grouping,
+  // quick-replies-enabled, show-guide-button, guide-mode-default) sind
+  // ersatzlos entfernt. Layout-Steuerung liegt jetzt zentral im Studio
+  // (display-rules.yaml, Tab „🎨 Anzeige"). Lotsen-Modus ist immer aktiv.
+  // Canvas-Pane existiert nicht mehr — KI-Material/Lernpfade landen als
+  // gerahmte InlineDocument-Box direkt im Chat-Verlauf.
+  //
+  // Übrig bleibt aiContentEnabled als einziger Host-überschreibbarer Mode,
+  // damit Hosts mit eigener KI-Content-Pipeline die Generierung abschalten
+  // können.
   // HTML-Attribute werden in Angular Custom Elements als Strings übergeben,
   // daher akzeptieren wir auch ``"false"``/``"true"`` neben den Booleans.
-  /** Canvas-Pane (Material-Erstellung, Lernpfad-Anzeige) deaktivieren.
-   *  Bei ``false`` rendert das Backend Material/Lernpfad direkt in den
-   *  Chat-Verlauf, das Canvas öffnet sich nicht mehr. */
-  @Input() canvasEnabled: boolean | string = true;
   /** KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix)
    *  deaktivieren. Bei ``false`` lehnt der Bot Erstell-Anfragen mit der
-   *  Alt-Response aus ``widget-modes.yaml`` freundlich ab. */
+   *  Alt-Response aus ``widget-modes.yaml`` freundlich ab.
+   *
+   *  Bleibt als Embed-Attribut bestehen, weil Hosts es pro Embed
+   *  überschreiben können sollen (z.B. eine WLO-Themenseite, die selbst
+   *  KI-Content-Tools anbietet und keine Doppel-Generierung will). */
   @Input() aiContentEnabled: boolean | string = true;
-  /** Kachel-Anzeige deaktivieren. Bei ``false`` werden Treffer als
-   *  Inline-Markdown-Links in der Bot-Antwort gerendert (max. N aus
-   *  Studio-Setting ``cards_inline_link_limit``). */
-  @Input() cardsEnabled: boolean | string = true;
-  /** Gesprächsvorschläge-Pillen deaktivieren. Bei ``false`` werden alle
-   *  Quick-Reply-Buttons ausgeblendet — Lotsen-`__guide__|…`-QRs werden
-   *  vom Backend stattdessen als Inline-Markdown am Antwort-Ende eingebaut. */
-  @Input() quickRepliesEnabled: boolean | string = true;
 
-  /** Boolean-Coercion für die vier Embed-Mode-Inputs.
-   *  HTML-Custom-Element-Attribute kommen immer als Strings rein
-   *  (``cards-enabled="false"`` → String ``"false"``). Default = true,
-   *  damit eine fehlende Attribut-Setzung das Legacy-Verhalten erhält.
-   *  Nur die expliziten Werte ``false`` (bool) und ``"false"`` (string,
-   *  case-insensitive) deaktivieren das Feature. */
+  /** Boolean-Coercion für HTML-Attribute (kommen als String rein). */
   private modeFlag(v: boolean | string): boolean {
     if (typeof v === 'boolean') return v;
     if (typeof v === 'string') return v.toLowerCase() !== 'false';
     return true;
   }
-  get canvasEnabledBool(): boolean { return this.modeFlag(this.canvasEnabled); }
-  get cardsEnabledBool(): boolean { return this.modeFlag(this.cardsEnabled); }
   get aiContentEnabledBool(): boolean { return this.modeFlag(this.aiContentEnabled); }
-  get quickRepliesEnabledBool(): boolean { return this.modeFlag(this.quickRepliesEnabled); }
   /** When true, link clicks are intercepted: navigation is suppressed and
    *  `linkClicked` is emitted with the path+search (e.g.
    *  `/components/collections?id=…`). Default false = navigate normally. */
@@ -802,25 +722,12 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  this Angular Output. Always active (no opt-in gate). */
   @Output() queryMeta = new EventEmitter<any>();
 
-  // ── Lotsen-Modus-Inputs ─────────────────────────────────────────
-  /** Sichtbarkeit des 🧭-Toggle-Buttons im Header. Default `true`.
-   *  Wenn `false`, wird der Button ausgeblendet — der Lotsen-Modus
-   *  selbst kann aber trotzdem aktiv sein (per `guide-mode-default` oder
-   *  per Backend-Default aus `guide-mode.yaml`). Nützlich für Embeds,
-   *  in denen der Host das Toggling selbst steuert (z.B. über einen
-   *  globalen Settings-Switch) und das Widget keine eigene UI dafür
-   *  anbieten soll. */
-  @Input() showGuideButton: boolean | string = true;
-  /** Initial-State des Lotsen-Modus. Drei Werte:
-   *    - `"true"` / `true`  → an
-   *    - `"false"` / `false` → aus
-   *    - leer / `"auto"`     → wie heute (URL-Param ?bgm → localStorage →
-   *                            Backend-Default aus `guide-mode.yaml`)
-   *  Wird ein expliziter Wert gesetzt, überschreibt er URL und
-   *  localStorage NICHT — heißt, ein User-Toggle hat weiter Vorrang.
-   *  Der Wert dient als Default beim allerersten Boot, wenn weder URL
-   *  noch localStorage etwas hergeben. */
-  @Input() guideModeDefault: boolean | string = 'auto';
+  // ── Lotsen-Modus ────────────────────────────────────────────────
+  // Welle E (2026-05-23): Lotsen-Toggle dauerhaft entfernt. Modus ist
+  // immer aktiv — Backend leitet Card-Links auf Repo-Render-Targets.
+  // Die alten Inputs ``show-guide-button`` und ``guide-mode-default``
+  // existieren nicht mehr; Hosts können den Modus nicht mehr pro Embed
+  // deaktivieren (war redundant zur Allow-List-Logik im Backend).
 
   expanded = false;
   /** Welle C Sprint 7 (2026-05-19): Lazy-Mount-Flag für das Chat-Panel.
@@ -842,40 +749,15 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   everExpanded = false;
   resolvedPageContext: Record<string, any> = {};
 
-  // ── Webseiten-Guide-Modus (Lotsen-Modus) ──────────────────────
-  /** True when this host is on the backend-configured allow-list. The
-   *  toggle is hidden on every other domain — there's nothing to lotse
-   *  to. Re-evaluated once at init from /api/config/guide-mode. */
-  guideModeAvailable = signal(false);
-  /** Toggle state. Persisted in ``localStorage['boerdi.guide_mode']``,
-   *  default from backend config (``default_enabled`` in guide-mode.yaml). */
-  guideMode = signal(false);
-
-  /** Bool-Coercion für ``show-guide-button``. HTML-Attribute kommen als
-   *  String rein — wir erlauben den expliziten ``"false"`` zum Abschalten;
-   *  alles andere (true, "true", undefined, leer) ist an. */
-  get showGuideButtonBool(): boolean {
-    if (typeof this.showGuideButton === 'boolean') return this.showGuideButton;
-    if (typeof this.showGuideButton === 'string') {
-      return this.showGuideButton.toLowerCase() !== 'false';
-    }
-    return true;
-  }
-  /** Tristate für ``guide-mode-default``:
-   *    `true`  → Default = an
-   *    `false` → Default = aus
-   *    `null`  → Backend/URL/localStorage entscheiden (Default-Verhalten)
-   */
-  get guideModeDefaultTristate(): boolean | null {
-    const v = this.guideModeDefault;
-    if (typeof v === 'boolean') return v;
-    if (typeof v === 'string') {
-      const s = v.toLowerCase().trim();
-      if (s === 'true' || s === '1' || s === 'on') return true;
-      if (s === 'false' || s === '0' || s === 'off') return false;
-    }
-    return null;  // 'auto' / leer / unbekannt → Backend-Default greift
-  }
+  // ── Webseiten-Guide-Modus (Lotsen-Modus, Welle E) ──────────────
+  // Toggle ist entfernt — Lotsen-Modus ist immer aktiv. Der host-allow-
+  // list-Check bleibt im Backend als Sicherheitsnetz: auf nicht-allow-
+  // listed Hosts fällt das Backend automatisch auf externe URLs zurück.
+  // ``guideMode`` als Signal-Compatibility-Hülle: einige Pfade lesen es
+  // (Cross-TLD-Handoff in maybeRewriteOutgoingLink), wir setzen es einmal
+  // beim Bootstrap und lassen es konstant.
+  guideMode = signal(true);
+  guideModeAvailable = signal(true);
   /** Hostname snapshot we send to the backend so it knows whether to
    *  attach ``guide_url`` to outgoing cards. Filled at init. */
   private guideHost = '';
@@ -1461,15 +1343,16 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    */
   handlePageAction(pa: { action: string; payload: any }) {
     if (!pa || !pa.action) return;
-    // Defense-in-Depth: bei canvasEnabled=false werden Canvas-PageActions
-    // ignoriert, falls das Backend doch eine durchgelassen hat (alte
-    // Bundle-Version, Race-Condition). Der Backend-Postprocess sollte
-    // sie bereits in den Bot-Text gepatcht haben — hier nur zur Sicherheit.
-    if (!this.canvasEnabledBool && (
+    // Welle E (2026-05-23): Canvas-Pane ist entfernt — alle canvas_*
+    // PageActions sind tot und werden hier zentral verworfen. Material/
+    // Lernpfade kommen als InlineDocument im Chat, nicht mehr als
+    // PageAction-Trigger.
+    if (
       pa.action === 'canvas_open' ||
       pa.action === 'canvas_update' ||
-      pa.action === 'canvas_show_cards'
-    )) {
+      pa.action === 'canvas_show_cards' ||
+      pa.action === 'canvas_close'
+    ) {
       return;
     }
     switch (pa.action) {
@@ -1769,103 +1652,37 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  the toggle should appear here, and apply any saved override from
    *  localStorage. Failures default to "guide off" — never block the
    *  widget. */
+  /** Welle E (2026-05-23): Lotsen-Toggle entfernt. Beim Boot holen wir
+   *  trotzdem die Backend-Konfig (trusted_domains für Cross-TLD-Brücke),
+   *  setzen aber ``guideMode`` immer auf ``true`` — Lotsen ist Standard.
+   *  Auf nicht-allow-listed Hosts ignoriert das Backend den Lotsen-Modus
+   *  ohnehin (Sicherheitsnetz in card_pipeline.build_card_link). */
   private async initGuideMode(): Promise<void> {
-    let allowedHosts: string[] = [];
-    let defaultEnabled = true;
     try {
       const apiBase = (this.apiUrl || '').replace(/\/+$/, '');
       const resp = await fetch(`${apiBase}/api/config/guide-mode`);
       if (resp.ok) {
         const data = await resp.json();
-        allowedHosts = Array.isArray(data?.allowed_hosts) ? data.allowed_hosts : [];
-        defaultEnabled = !!data?.default_enabled;
-        // Backend-trusted_domains in den Cache ziehen — werden bei der
-        // Cross-TLD-Brücke (?bsid=…) mit der HTML-Attribut-Liste gemerged.
-        // Bei späteren Builds liefert das Backend hier optional eine
-        // Liste; alte Backends (<= vor diesem Feature) lassen das Feld
-        // weg → ``[]`` und Verhalten = exakt wie früher (nur Attribut).
         if (Array.isArray(data?.trusted_domains)) {
           this._backendTrustedDomains = data.trusted_domains
             .map((d: unknown) => this._normalizeDomain(String(d || '')))
             .filter((d: string) => d.length > 0);
-          // Cache invalidieren, damit der Merge beim nächsten
-          // ``_parsedTrustedDomains()``-Aufruf neu berechnet wird.
           this._trustedDomainsCache = null;
         }
       }
     } catch {
-      // Backend nicht erreichbar — Toggle bleibt aus.
+      // Backend nicht erreichbar — kein Show-Stopper, nur die Cross-TLD-
+      // Brücke arbeitet dann ohne Backend-Trusted-Domains.
     }
-    // Strip leading "www." and lowercase the host for matching, same
-    // as the backend ``_normalize_host``.
-    const h = this.guideHost.replace(/^www\./, '');
-    const allowed = allowedHosts.some(p => this.hostMatchesPattern(h, p));
-    this.guideModeAvailable.set(allowed);
-
-    if (!allowed) {
-      this.guideMode.set(false);
-      this.api.setGuideEnv(false, this.guideHost);
-      return;
-    }
-
-    // Stage A — URL-Param ?bgm=1/0 als Cross-TLD-Handoff. Wenn der User
-    // gerade von einer anderen WLO-Domain via "Bring mich hin" hierher
-    // navigiert wurde, hängt der Toggle-Wert in der URL. Nach dem Pickup
-    // entfernen wir den Param wieder (kein Bookmark-Leak) und persistieren
-    // in localStorage, sodass spätere Reloads den Wert behalten.
-    let urlOverride: boolean | null = null;
-    try {
-      const url = new URL(window.location.href);
-      const fromUrl = url.searchParams.get('bgm');
-      if (fromUrl === '1') urlOverride = true;
-      else if (fromUrl === '0') urlOverride = false;
-      if (urlOverride !== null) {
-        url.searchParams.delete('bgm');
-        const cleaned = url.pathname
-          + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '')
-          + url.hash;
-        try { history.replaceState({}, '', cleaned); } catch { /* ignore */ }
-        try {
-          localStorage.setItem(
-            WidgetComponent.GUIDE_LS_KEY, urlOverride ? '1' : '0',
-          );
-        } catch { /* ignore */ }
-      }
-    } catch { /* ignore — URL parse failures shouldn't block boot */ }
-
-    // Stage B — localStorage (Origin-spezifisch). Wenn der User auf dieser
-    // Origin schon mal getoggelt hat, gewinnt der Wert.
-    let stored: string | null = null;
-    try { stored = localStorage.getItem(WidgetComponent.GUIDE_LS_KEY); } catch { /* ignore */ }
-
-    // Priorität:
-    //   1. URL-Param ?bgm   (Cross-TLD-Handoff hat höchste Priorität)
-    //   2. localStorage     (vom User selbst getoggelt)
-    //   3. ``guide-mode-default``-Attribut (Embed-spezifischer Default)
-    //   4. Backend-``default_enabled`` (globaler Default aus guide-mode.yaml)
-    const attrDefault = this.guideModeDefaultTristate;
-    let on: boolean;
-    if (urlOverride !== null) on = urlOverride;
-    else if (stored === '1') on = true;
-    else if (stored === '0') on = false;
-    else if (attrDefault !== null) on = attrDefault;
-    else on = defaultEnabled;
-
-    this.guideMode.set(on);
-    // Push into ApiService so subsequent chat requests carry guide_mode
-    // and host in the environment payload.
-    this.api.setGuideEnv(on, this.guideHost);
-  }
-
-  /** Header-Toggle. Persists the new value in localStorage so it
-   *  survives reloads and host-page navigation within the same domain. */
-  toggleGuideMode(): void {
-    const next = !this.guideMode();
-    this.guideMode.set(next);
-    this.api.setGuideEnv(next, this.guideHost);
-    try {
-      localStorage.setItem(WidgetComponent.GUIDE_LS_KEY, next ? '1' : '0');
-    } catch { /* ignore */ }
+    this.guideMode.set(true);
+    this.guideModeAvailable.set(true);
+    this.api.setGuideEnv(true, this.guideHost);
+    // Die Trusted-Domains kamen async an — evtl. NACHDEM die ChatComponent
+    // ihr ``[trustedHosts]``-Input initial (leer) gelesen hat. CD anstoßen,
+    // damit ``parsedTrustedHostList`` neu ausgewertet und durchgereicht wird;
+    // sonst bliebe externalLinkWarning auf der leeren Liste hängen und würde
+    // „Achtung! Externe URL." auch für Whitelist-Hosts zeigen.
+    try { this.cdr?.markForCheck?.(); } catch { /* ignore */ }
   }
 
   /** Direct same-tab navigation to a card's guide URL.

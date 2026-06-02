@@ -48,10 +48,11 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     session_id   TEXT PRIMARY KEY,
     persona_id   TEXT DEFAULT '',
-    state_id     TEXT DEFAULT 'state-1',
+    state_id     TEXT DEFAULT 'S1',
     entities     TEXT DEFAULT '{}',
     signal_history TEXT DEFAULT '[]',
     turn_count   INTEGER DEFAULT 0,
+    tour_state   TEXT DEFAULT '{}',
     created_at   TEXT,
     updated_at   TEXT
 );
@@ -200,6 +201,18 @@ async def init_db():
     # First: create regular tables (no vec extension needed)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(_SCHEMA)
+        # Migration: tour_state additiv ergänzen. CREATE TABLE IF NOT EXISTS
+        # legt die Spalte auf Bestands-DBs nicht nachträglich an, daher
+        # PRAGMA-Check + ALTER. Idempotent.
+        try:
+            _cur = await db.execute("PRAGMA table_info(sessions)")
+            _cols = [r[1] for r in await _cur.fetchall()]
+            if "tour_state" not in _cols:
+                await db.execute(
+                    "ALTER TABLE sessions ADD COLUMN tour_state TEXT DEFAULT '{}'"
+                )
+        except Exception:
+            pass
         await db.commit()
 
     # Second: create vec0 virtual table (needs sqlite-vec extension)
@@ -511,10 +524,11 @@ async def get_or_create_session(session_id: str) -> dict[str, Any]:
         return {
             "session_id": session_id,
             "persona_id": "",
-            "state_id": "state-1",
+            "state_id": "S1",
             "entities": "{}",
             "signal_history": "[]",
             "turn_count": 0,
+            "tour_state": "{}",
             "created_at": now,
             "updated_at": now,
         }
@@ -638,7 +652,7 @@ async def log_quality_event(
             runner_up_id = sorted_scores[1][0]
             score_gap = round(sorted_scores[0][1] - sorted_scores[1][1], 4)
 
-    # Extract pattern ID from "PAT-10 (Fakten-Bulletin)" format
+    # Extract pattern ID from "M04 (Fakten-Bulletin)" format
     pattern_str = debug_info.get("pattern", "")
     pattern_id = pattern_str.split(" ")[0] if pattern_str else ""
     pattern_label = pattern_str
@@ -843,9 +857,15 @@ async def get_quality_stats(scope: str = "all") -> dict:
         stats["degradation_rate"] = round(deg_count / max(stats["total_turns"], 1), 3)
 
         # Tight races (score_gap < 0.02 — patterns almost tied)
+        # 2026-05-23: Welle-E nutzt LLM-Hint-Primary → phase2_score_gap ist
+        # für jeden Turn 0 weil keine Score-Phase mehr läuft. Daher
+        # zusätzlich filtern auf "echte Score-Race" (= phase2_runner_up != '').
+        # Ohne den Filter wären die tight_races identisch zu total_turns
+        # und die Metrik wäre nutzlos.
         c = await db.execute(
             f"SELECT COUNT(*) as cnt FROM quality_logs {where_sql} "
-            f"{'AND' if where_sql else 'WHERE'} phase2_score_gap < 0.02", sc_args,
+            f"{'AND' if where_sql else 'WHERE'} phase2_score_gap < 0.02 "
+            f"AND phase2_runner_up IS NOT NULL AND phase2_runner_up != ''", sc_args,
         )
         stats["tight_races"] = (await c.fetchone())["cnt"]
 
@@ -884,7 +904,7 @@ async def get_state_transitions(
             "total_transitions": int,
             "state_distribution": {"state-X": count, ...},
             "transitions": [
-                {"prev": "state-5", "next": "state-6", "count": 42},
+                {"prev": "S3", "next": "S3", "count": 42},
                 ...
             ]
         }
@@ -971,13 +991,13 @@ async def get_routing_matrix(scope: str = "all", min_count: int = 1) -> dict:
         "total_turns": <int>,
         "cells": [
           {
-            "persona_id": "P-W-LK",
-            "intent_id": "INT-W-03",
-            "top_pattern": "PAT-18",
+            "persona_id": "P-LEH",
+            "intent_id": "I03",
+            "top_pattern": "M09",
             "top_pattern_count": 142,
             "total_count": 287,
             "share": 0.49,
-            "alternatives": [{"pattern_id": "PAT-07", "count": 95}, ...]
+            "alternatives": [{"pattern_id": "M05", "count": 95}, ...]
           },
           ...
         ]
@@ -1240,9 +1260,9 @@ async def get_tight_races_breakdown(
     Returns:
       {
         'pairs': [
-          {'winner': 'PAT-01', 'runner_up': 'PAT-20', 'count': 8,
+          {'winner': 'M04', 'runner_up': 'M15', 'count': 8,
            'avg_gap': 0.012, 'example_message': "...",
-           'example_intent': "INT-W-02", 'example_persona': "P-W-LK"},
+           'example_intent': "I01", 'example_persona': "P-LEH"},
           ...
         ],
         'total_tight': <int>,

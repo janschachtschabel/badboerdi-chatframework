@@ -1,35 +1,24 @@
-INFO:     Will watch for changes in these directories: ['C:\\Users\\jan\\staging\\Windsurf\\wlo-suche\\badboerdi\\backend']
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [26500] using WatchFiles
-INFO:     Started server process [34136]
-INFO:     Waiting for application startup.
-12:10:40 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
-12:10:40 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
-12:10:40 INFO startup: Config warmup done in 43ms
-INFO:     Application startup complete.
-12:10:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
-12:10:41 INFO startup: LLM warmup done in 969ms
-WARNING:  WatchFiles detected changes in 'app\routers\chat.py'. Reloading...
- Traceback (most recent call last):
-  File "<string>", line 1, in <module>
-  File "C:\Users\jan\miniconda3\Lib\multiprocessing\spawn.py", line 122, in spawn_main
-    exitcode = _main(fd, parent_sentinel)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\jan\miniconda3\Lib\multiprocessing\spawn.py", line 132, in _main
-    self = reduction.pickle.load(from_parent)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\jan\miniconda3\Lib\multiprocessing\reduction.py", line 238, in _rebuild_socket
-    return ds.detach()
-           ^^^^^^^^^^^
-  File "C:\Users\jan\miniconda3\Lib\multiprocessing\resource_sharer.py", line 38, in detach
-    with _resource_sharer.get_connection(self._id) as conn:
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\jan\miniconda3\Lib\multiprocessing\resource_sharer.py", line 86, in get_connection
-    c = Client(address, authkey=process.current_process().authkey)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\jan\miniconda3\Lib\multiprocessing\connection.py", line 517, in Client
-    c = PipeClient(address)
-        ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\jan\miniconda3\Lib\multiprocessing\connection.py", line 719, in PipeClient
-    _winapi.WaitNamedPipe(address, 1000)
-FileNotFoundError: [WinError 2] Das System kann die angegebene Datei nicht finden
+INFO:     127.0.0.1:62952 - "GET /api/speech/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62955 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59873 - "GET / HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:59873 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59873 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53607 - "GET /api/config/guide-mode HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53609 - "GET /api/speech/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53611 - "GET /api/sessions/bb-0a857f2b-658f-415e-9df3-4cc659e7a9f6/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53613 - "GET /api/sessions/bb-0a857f2b-658f-415e-9df3-4cc659e7a9f6/canvas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53235 - "GET /api/config/guide-mode HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53238 - "GET /api/speech/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53240 - "GET /api/sessions/bb-0a857f2b-658f-415e-9df3-4cc659e7a9f6/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53241 - "GET /api/sessions/bb-0a857f2b-658f-415e-9df3-4cc659e7a9f6/canvas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59416 - "POST /api/chat/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52709 - "POST /api/chat/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50312 - "POST /api/chat/stream HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/guide-mode HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/elements HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/factory HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/snapshots HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51879 - "POST /api/chat/stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51157 - "POST /api/chat/stream HTTP/1.1" 200 OK

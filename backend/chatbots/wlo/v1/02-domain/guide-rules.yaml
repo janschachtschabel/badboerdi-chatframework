@@ -1,0 +1,157 @@
+# Lotsen-Regeln (Welle E, 2026-05-23)
+#
+# Diese Datei steuert den **deterministischen Webseiten-Lotsen** —
+# d.h. die Quick-Reply-Buttons / Inline-Markdown-Links der Form
+# ``__guide__|<label>|<url>``, die ans Antwort-Ende gehängt werden,
+# wenn der User nach einer bestimmten WLO-Webseite, einem Mitmach-
+# Formular oder einer Themenseite fragt.
+#
+# Zwei Sektionen:
+#   1. ``message_rules``  — Regex matched die User-Nachricht.
+#                            Beispiel: "Was ist eine Themenseite?"
+#                            → Lotsen-QR auf wirlernenonline.de/themenseite/klimawandel
+#   2. ``rag_area_rules`` — Regex matched den Bot-Response-Text.
+#                            Wird verwendet wenn der Bot ein RAG-Wissens-
+#                            Thema in seiner Antwort tatsächlich aufruft
+#                            (siehe ``session_state._rag_areas_used``).
+#
+# Reihenfolge: Höhere ``priority`` gewinnt bei Mehrfach-Match.
+# Regex läuft mit ``re.IGNORECASE``. URLs werden vom Backend per
+# ``_normalize_to_https`` automatisch von ``http://`` auf ``https://``
+# upgegradet.
+#
+# Backend-Loader: ``app/services/config_loader.py:load_guide_rules_config``.
+# Pattern-Frontmatter kann das Feature pro Pattern abschalten:
+#   gate_personas: ["*"]   # bleibt wie ist
+#   guide_allowed: false   # NEU: kein Lotsen-QR bei M02 Refusal etc.
+
+message_rules:
+  # ── Themenseiten — explizite Anfragen mit Thema-Slug ──────────────
+  - pattern: '\bthemenseite[ns]?\s+(?:zu(?:m|r)?|f(?:ü|ue)r|über)\s+klimawandel\b'
+    label: "Themenseite Klimawandel"
+    url: "https://wirlernenonline.de/themenseite/klimawandel"
+    priority: 90
+
+  - pattern: '\bthemenseite[ns]?\s+(?:zu(?:m|r)?|f(?:ü|ue)r|über)\s+photosynthese\b'
+    label: "Themenseite Photosynthese"
+    url: "https://wirlernenonline.de/themenseite/photosynthese"
+    priority: 90
+
+  - pattern: '\bthemenseite[ns]?\s+(?:zu(?:m|r)?|f(?:ü|ue)r|über)\s+nachhaltigkeit\b'
+    label: "Themenseite Nachhaltigkeit"
+    url: "https://wirlernenonline.de/themenseite/nachhaltigkeit"
+    priority: 90
+
+  # ── Was IST eine Themenseite (Konzept-Frage) ──────────────────────
+  - pattern: '\bwas\s+(?:ist|sind|bedeutet)\s+(?:eine|die)?\s*themenseite'
+    label: "Themenseiten-Beispiel"
+    url: "https://wirlernenonline.de/themenseite/klimawandel"
+    priority: 80
+
+  # ── Inhalt einreichen / Quelle vorschlagen ────────────────────────
+  # SPEZIFISCHER als generelles "Mitmachen". Höhere Prio (85 vs. 75).
+  # Mehrere Regex-Pfade weil User es sehr unterschiedlich formulieren.
+  - pattern: |
+      \b(?:material(?:ien)?|oer|inhalt(?:e)?|quelle(?:n)?|link(?:s)?|video(?:s)?|arbeitsblatt|sammlung|seite)\s+(?:vorschlagen|einreichen|hochladen|teilen|empfehlen|melden|tippen|beisteuern|spenden)\b|\b(?:vorschlagen|einreichen|hochladen|empfehlen|beisteuern)\s+(?:ein(?:e|en|er|es)?)?\s*(?:material|inhalt|quelle|link|video|arbeitsblatt|sammlung|seite|oer)\b|\b(?:wo|wie|wohin)\s+kann\s+ich\s+(?:\w+\s+){0,4}?(?:einreichen|vorschlagen|hochladen|empfehlen|beisteuern|reinstellen)\b|\b(?:kann|darf|möchte|will)\s+ich\s+(?:das|es|sowas|so\s+was|den|die|einen|eine|ein|meinen?|meine|hier|sowas)\s*(?:\w+\s+){0,3}?(?:einreichen|vorschlagen|hochladen|empfehlen|beisteuern)\b|\b(?:ich\s+(?:habe|hab|hätte|kenne|will|möchte|würde))\s+(?:einen?|eine|ein)\s+(?:\w+\s+){0,3}?(?:material|inhalt|quelle|link|video|arbeitsblatt|sammlung|seite|oer|fund)\s+(?:gefunden|entdeckt|empfehlung|gesehen|am\s+start|im\s+kopf|parat)\b|\b(?:redaktion(?:s)?(?:einreichen|vorschlag|einsendung|formular)?|inhalt-vorschlagen|einreich-formular)\b
+    label: "Inhalt vorschlagen"
+    url: "https://wp-test.wirlernenonline.de/mitmachen/inhalt-vorschlagen/?type=quelle#esform"
+    priority: 85
+
+  # ── Mitmachen / Beitragen ─────────────────────────────────────────
+  - pattern: '\b(?:mitmachen|mit\s*machen|beitragen|inhalte\s+(?:einreichen|hochladen|teilen)|wie\s+kann\s+ich\s+(?:bei\s+wlo\s+)?(?:helfen|mitwirken))\b'
+    label: "Mitmachen-Seite"
+    url: "https://wirlernenonline.de/mitmachen"
+    priority: 75
+
+  # ── Über WLO / Hintergrund ────────────────────────────────────────
+  - pattern: '\b(?:wer\s+(?:steht|steckt)\s+(?:hinter|dahinter)|(?:über|ueber)\s+wlo|wer\s+macht\s+wlo|über\s+(?:die\s+)?plattform)\b'
+    label: "Über WLO"
+    url: "https://wirlernenonline.de/ueber-uns"
+    priority: 70
+
+  # ── Geschichte / Projekt-Hintergrund ──────────────────────────────
+  - pattern: '\b(?:wie\s+ist\s+wlo\s+entstanden|entstehung|geschichte\s+(?:von\s+)?wlo|projekt(?:hintergrund)?|hintergrund\s+(?:von\s+)?wlo)\b'
+    label: "Hintergrund WLO"
+    url: "https://wirlernenonline.de/projekt"
+    priority: 65
+
+  # ── Fachportale-Übersicht ─────────────────────────────────────────
+  # Akzeptiert alle drei Umlaut-Schreibweisen (ä / ae / a).
+  - pattern: '\b(?:welche\s+f(?:ä|ae|a)cher|alle\s+f(?:ä|ae|a)cher|f(?:ä|ae|a)chportal\w*|alle\s+(?:disziplinen|portale)|f(?:ä|ae|a)cher(?:ü|ue|u)bersicht)\b'
+    label: "Fachportal-Übersicht"
+    url: "https://wirlernenonline.de/fachportale"
+    priority: 70
+
+  # ── OER allgemein ─────────────────────────────────────────────────
+  - pattern: '\bwas\s+(?:ist|sind|bedeutet|bedeuten)\s+oer\b'
+    label: "OER-Erklärung"
+    url: "https://wirlernenonline.de/oer"
+    priority: 60
+
+  # ── Edu-Sharing — nur eindeutige Spezialfälle ─────────────────────
+  - pattern: '\bedu[\s-]*sharing(?:[\s.-]*net)?\s*e\.?\s*v\.?\b'
+    label: "Edu-Sharing-Verein"
+    url: "https://edu-sharing.net/"
+    priority: 60
+
+  - pattern: '\b(?:its[\s-]*)?jointly[\s-]*(projekt|förderprojekt|info)?\b'
+    label: "ITSjointly-Projekt"
+    url: "https://its.jointly.info/"
+    priority: 60
+
+  # ── WissenLebtOnline (Schwester-Plattform) ────────────────────────
+  - pattern: '\bwissen\s*lebt\s*online\b'
+    label: "WissenLebtOnline-Webseite"
+    url: "https://wissenlebtonline.de/"
+    priority: 78
+
+  # ── Metaventis (Firma) ────────────────────────────────────────────
+  - pattern: '\bmetaventis\b'
+    label: "Metaventis"
+    url: "https://metaventis.com/"
+    priority: 65
+
+  # ── Startseite WLO als Fallback ───────────────────────────────────
+  - pattern: '\bwas\s+(?:ist|kann)\s+(?:wir\s*lernen\s*online|wirlernenonline|wlo)\b'
+    label: "WLO-Startseite"
+    url: "https://wirlernenonline.de/"
+    priority: 50
+
+
+# ── RAG-Area-Lotsen ────────────────────────────────────────────────
+# Wenn der Bot eine RAG-Wissens-Area in seiner Antwort tatsächlich
+# verwendet (Bot-Text matched die ``brand_pattern``), bietet das
+# Backend einen Lotsen-QR auf die zugehörige Webseite an.
+# Keys = Area-Namen aus 05-knowledge/rag-config.yaml.
+# Areas ohne eigene Webseite (FAQ, Plattformwissen) sind nicht
+# gelistet und lösen nie einen Lotsen-QR aus.
+rag_area_rules:
+  WissenLebtOnline:
+    label: "WissenLebtOnline-Webseite"
+    url: "https://wissenlebtonline.de/"
+    brand_pattern: '\bwissen\s*lebt\s*online\b|\bwissenlebtonline\b'
+
+  WirLernenOnline:
+    label: "WirLernenOnline-Webseite"
+    url: "https://wirlernenonline.de/"
+    brand_pattern: '\b(?:wir\s*lernen\s*online|wirlernenonline|wlo)\b'
+
+  OER-Wissen:
+    label: "OER-Erklärung"
+    url: "https://wirlernenonline.de/oer"
+    brand_pattern: '\boer\b|\bopen\s+educational\s+resources\b'
+
+  Edu-Sharing-Network:
+    label: "Edu-Sharing-Verein"
+    url: "https://edu-sharing-network.org/"
+    brand_pattern: 'edu[\s-]*sharing(?:[\s.-]*net)?\s*e\.?\s*v\.?|edu[\s-]*sharing[\s-]*verein|edu[\s-]*sharing\.net|edu[\s-]*sharing[\s-]*network'
+
+  Edu-Sharing-Metaventis:
+    label: "Edu-Sharing-Software"
+    url: "https://edu-sharing.com/"
+    brand_pattern: '\bmetaventis\b|edu[\s-]*sharing\.com|edu[\s-]*sharing[\s-]*(plattform|software|cloud|produkt)'
+
+  ITSJOINTLY-Schlussbericht:
+    label: "ITSjointly-Projekt"
+    url: "https://its.jointly.info/"
+    brand_pattern: '\bitsjointly\b|\bjointly[\s-]*(projekt|info|förderprojekt)?\b'

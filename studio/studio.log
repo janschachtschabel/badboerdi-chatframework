@@ -1,0 +1,261 @@
+
+> badboerdi-studio@0.1.0 dev
+> next dev -p 3001
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\jan\pnpm-lock.yaml as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\studio\package-lock.json
+
+   ▲ Next.js 15.5.14
+   - Local:        http://localhost:3001
+   - Network:      http://192.168.178.74:3001
+   - Experiments (use with caution):
+     · proxyTimeout: 180000
+
+ ✓ Starting...
+ ✓ Ready in 2.3s
+ ✓ Compiled /middleware in 232ms (114 modules)
+ ○ Compiling / ...
+ ✓ Compiled / in 1064ms (559 modules)
+ GET / 200 in 1616ms
+ GET / 200 in 83ms
+ GET / 200 in 63ms
+ GET / 200 in 83ms
+ ✓ Compiled /api/[...path] in 411ms (579 modules)
+ GET /api/config/elements 200 in 1191ms
+ GET /api/routing-rules 200 in 29ms
+ GET /api/health 200 in 50ms
+ GET /api/config/factory 200 in 58ms
+ GET /api/config/snapshots 200 in 68ms
+ GET /api/eval/runs 200 in 72ms
+ GET / 200 in 405ms
+ GET /api/config/elements 200 in 63ms
+ GET /api/routing-rules 200 in 19ms
+ GET /api/health 200 in 46ms
+ GET /api/config/factory 200 in 56ms
+ GET /api/config/snapshots 200 in 68ms
+ GET /api/eval/runs 200 in 71ms
+ GET /api/routing-rules 200 in 33ms
+ GET /api/routing-rules/lookups 200 in 86ms
+ GET /api/routing-rules 200 in 23ms
+ GET /api/routing-rules/stats?days=7 200 in 112ms
+ GET /api/routing-rules/lookups 200 in 62ms
+ GET /api/routing-rules/stats?days=7 200 in 34ms
+ GET /api/routing-rules/stats?days=7 200 in 28ms
+ GET /api/routing-rules/stats?days=30 200 in 24ms
+ GET /api/quality/logs?limit=200&scope=all 200 in 82ms
+ GET /api/quality/low-confidence?scope=all&limit=30 200 in 90ms
+ GET /api/quality/stats?scope=all 200 in 97ms
+ GET /api/quality/degradations?scope=all&limit=30 200 in 105ms
+ GET /api/quality/tight-races?scope=all&limit=30 200 in 108ms
+ GET /api/quality/empty-entities?scope=all&limit=30 200 in 121ms
+ GET /api/quality/logs?limit=200&scope=all 200 in 109ms
+ GET /api/quality/tight-races?scope=all&limit=30 200 in 73ms
+ GET /api/quality/low-confidence?scope=all&limit=30 200 in 93ms
+ GET /api/quality/empty-entities?scope=all&limit=30 200 in 55ms
+ GET /api/quality/degradations?scope=all&limit=30 200 in 80ms
+ GET /api/quality/stats?scope=all 200 in 111ms
+ GET /api/eval/runs 200 in 32ms
+ GET /api/eval/runs 200 in 21ms
+ GET /api/safety/stats 200 in 32ms
+ GET /api/safety/logs?limit=200 200 in 51ms
+ GET /api/safety/stats 200 in 74ms
+ GET /api/safety/logs?limit=200 200 in 68ms
+ GET /api/eval/runs 200 in 26ms
+ GET /api/eval/runs 200 in 16ms
+ GET /api/eval/runs/eval-b4169b775129 200 in 28ms
+ GET /api/routing-rules 200 in 34ms
+ GET /api/health 200 in 55ms
+ GET /api/config/factory 200 in 66ms
+ GET /api/config/snapshots 200 in 77ms
+ GET /api/eval/runs 200 in 79ms
+ GET /api/routing-rules 200 in 32ms
+ GET /api/health 200 in 44ms
+ GET /api/config/factory 200 in 38ms
+ GET /api/config/snapshots 200 in 41ms
+ GET /api/eval/runs 200 in 46ms
+ GET / 200 in 88ms
+ GET /api/config/elements 200 in 54ms
+ GET /api/routing-rules 200 in 19ms
+ GET /api/health 200 in 37ms
+ GET /api/config/factory 200 in 44ms
+ GET /api/config/snapshots 200 in 53ms
+ GET /api/eval/runs 200 in 62ms
+ GET /api/config/mcp-servers 200 in 1680ms
+ GET /api/config/mcp-servers 200 in 17ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 25ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 13ms
+ GET / 200 in 103ms
+ GET /api/config/elements 200 in 55ms
+ GET /api/routing-rules 200 in 19ms
+ GET /api/health 200 in 38ms
+ GET /api/config/factory 200 in 45ms
+ GET /api/config/snapshots 200 in 55ms
+ GET /api/eval/runs 200 in 63ms
+ GET /api/config/canvas/material-types 200 in 32ms
+ GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml 200 in 38ms
+ GET /api/config/canvas/material-types 200 in 22ms
+ GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml 200 in 37ms
+ GET /api/rag/areas 200 in 36ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 44ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 272ms
+ GET /api/rag/areas 200 in 297ms
+ GET /api/config/mcp-servers 200 in 1707ms
+ GET /api/config/mcp-servers 200 in 22ms
+ GET /api/routing-rules 200 in 14ms
+ GET /api/routing-rules/lookups 200 in 75ms
+ GET /api/routing-rules/stats?days=7 200 in 101ms
+ GET /api/routing-rules 200 in 61ms
+ GET /api/routing-rules/lookups 200 in 64ms
+ GET /api/routing-rules/stats?days=7 200 in 33ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 22ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 13ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 20ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 29ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 16ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 20ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 21ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 22ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 27ms
+ GET /api/config/file?path=02-domain%2Fwlo-plattform-wissen.md 200 in 27ms
+ GET /api/config/file?path=02-domain%2Fpolicy.yaml 200 in 25ms
+ GET /api/config/file?path=04-contexts%2Fcontexts.yaml 200 in 31ms
+ GET /api/routing-rules 200 in 25ms
+ GET /api/routing-rules/stats?days=7 200 in 46ms
+ GET /api/routing-rules/lookups 200 in 81ms
+ GET /api/routing-rules 200 in 25ms
+ GET /api/routing-rules/stats?days=7 200 in 35ms
+ GET /api/routing-rules/lookups 200 in 36ms
+ GET /api/rag/areas 200 in 32ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 35ms
+ GET /api/config/mcp-servers 200 in 45ms
+ GET /api/config/file?path=05-knowledge/rag-config.yaml 200 in 27ms
+ GET /api/rag/areas 200 in 30ms
+ GET /api/config/mcp-servers 200 in 33ms
+ GET /api/config/canvas/material-types 200 in 22ms
+ GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml 200 in 35ms
+ GET /api/config/canvas/material-types 200 in 22ms
+ GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml 200 in 27ms
+ GET /api/config/file?path=05-canvas%2Fcreate-triggers.yaml 200 in 43ms
+ ✓ Compiled in 757ms (560 modules)
+ ✓ Compiled /api/[...path] in 98ms (346 modules)
+ GET /api/config/elements 200 in 296ms
+ GET /api/config/file?path=05-canvas%2Fcreate-triggers.yaml 200 in 301ms
+ GET /api/config/file?path=05-canvas%2Fcreate-triggers.yaml 200 in 14ms
+ ✓ Compiled in 322ms (579 modules)
+ GET /api/config/file?path=05-canvas%2Fcreate-triggers.yaml 200 in 80ms
+ GET /api/config/elements 200 in 114ms
+ GET /api/config/file?path=05-canvas%2Fcreate-triggers.yaml 200 in 18ms
+ ⨯ ./src/components/DisplayRulesView.tsx
+Error:   [31mx[0m Expected '</', got '.'
+     ,-[[36;1;4mC:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\studio\src\components\DisplayRulesView.tsx[0m:285:1]
+ [2m282[0m |         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+ [2m283[0m |           <Section
+ [2m284[0m |             title="📦 Einzelinhalte-Box (Materialien)"
+ [2m285[0m |             desc="Treffer wie Videos, Arbeitsblätter, interaktive Übungen werden in einer eigenen Box „Materialien" gerendert. Bei aus: nur Sammlungen + Themenseiten sind sichtbar, Materialien erreicht der User über die Such-CTA."
+     : [35;1m                                                                                                                             ^[0m
+ [2m286[0m |           >
+ [2m287[0m |             <Toggle
+ [2m288[0m |               label="Einzelinhalte als Box anzeigen"
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/components/DisplayRulesView.tsx
+./src/app/page.tsx
+ ○ Compiling /_error ...
+ ⨯ ./src/components/DisplayRulesView.tsx
+Error:   [31mx[0m Expected '</', got '.'
+     ,-[[36;1;4mC:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\studio\src\components\DisplayRulesView.tsx[0m:285:1]
+ [2m282[0m |         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+ [2m283[0m |           <Section
+ [2m284[0m |             title="📦 Einzelinhalte-Box (Materialien)"
+ [2m285[0m |             desc="Treffer wie Videos, Arbeitsblätter, interaktive Übungen werden in einer eigenen Box „Materialien" gerendert. Bei aus: nur Sammlungen + Themenseiten sind sichtbar, Materialien erreicht der User über die Such-CTA."
+     : [35;1m                                                                                                                             ^[0m
+ [2m286[0m |           >
+ [2m287[0m |             <Toggle
+ [2m288[0m |               label="Einzelinhalte als Box anzeigen"
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/components/DisplayRulesView.tsx
+./src/app/page.tsx
+ GET / 500 in 5446ms
+ GET / 500 in 1177ms
+ ✓ Compiled /_error in 761ms (907 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET / 200 in 521ms
+ ✓ Compiled /api/[...path] in 417ms (541 modules)
+ GET /api/config/elements 200 in 612ms
+ GET /api/routing-rules 200 in 19ms
+ GET /api/health 200 in 37ms
+ GET /api/config/snapshots 200 in 56ms
+ GET /api/config/factory 200 in 60ms
+ GET /api/eval/runs 200 in 70ms
+ GET / 200 in 311ms
+ GET / 200 in 96ms
+ GET /api/config/elements 200 in 74ms
+ GET /api/routing-rules 200 in 18ms
+ GET /api/health 200 in 36ms
+ GET /api/config/factory 200 in 42ms
+ GET /api/config/snapshots 200 in 49ms
+ GET /api/eval/runs 200 in 55ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 29ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 36ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 20ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 24ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 23ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 13ms
+ GET /api/config/mcp-servers 200 in 1566ms
+ GET /api/config/mcp-servers 200 in 18ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 26ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 15ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 22ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 14ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 27ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 41ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 22ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 24ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 29ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 28ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 20ms
+ PUT /api/config/file 200 in 29ms
+ GET /api/config/elements 200 in 43ms
+ ✓ Compiled in 452ms (907 modules)
+ ✓ Compiled /api/[...path] in 131ms (541 modules)
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 274ms
+ ✓ Compiled in 260ms (926 modules)
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 56ms
+ ✓ Compiled in 227ms (926 modules)
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 61ms
+ GET / 200 in 360ms
+ GET /api/config/elements 200 in 60ms
+ GET /api/routing-rules 200 in 21ms
+ GET /api/health 200 in 47ms
+ GET /api/config/factory 200 in 56ms
+ GET /api/config/snapshots 200 in 66ms
+ GET /api/eval/runs 200 in 73ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 30ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 18ms
+ GET / 200 in 369ms
+ GET /api/config/elements 200 in 1038ms
+ GET /api/health 200 in 27ms
+ GET /api/config/factory 200 in 75ms
+ GET /api/routing-rules 200 in 91ms
+ GET /api/config/snapshots 200 in 200ms
+ GET /api/eval/runs 200 in 1124ms
+ GET / 200 in 132ms
+ GET /api/config/elements 200 in 57ms
+ GET /api/routing-rules 200 in 21ms
+ GET /api/health 200 in 42ms
+ GET /api/config/factory 200 in 49ms
+ GET /api/config/snapshots 200 in 58ms
+ GET /api/eval/runs 200 in 62ms

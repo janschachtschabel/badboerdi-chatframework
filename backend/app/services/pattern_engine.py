@@ -1,7 +1,27 @@
-"""3-Phase Pattern Engine: Gate → Score → Modulate.
+"""Pattern Selection — Hint-Primary (Welle E v4, 2026-05-25).
 
-Implements the full WLO chatbot pattern model as described in the reference documents.
-Patterns are loaded from config files (03-patterns/*.md) and refreshed on each call.
+Schlanke Engine: der LLM-Klassifikator wählt das Pattern via
+``pattern_id_hint``. Phase 1 (Gate) und Phase 2 (Score) wurden entfernt
+— sie waren im aktuellen Setup tot, weil der Hint-Shortcut immer
+griff. Konkrete Belege für die Entfernung in ``eval-c4c0e552dd30``:
+
+  * ``eliminated_count = 0`` in 48/48 Turns  → Phase 1 lief nie
+  * ``phase2_score = 1.0`` einheitlich        → Phase 2 lief nie
+  * ``runner_up = ''`` in 48/48 Turns         → kein Score-Race
+
+Was die schlanke Engine kann:
+
+1.  ``enforced_pattern_id``  (Safety + Pre-Route-Rules)        — höchste Prio
+2.  ``pattern_id_hint``      (LLM-Klassifikator)               — primärer Pfad
+3.  Fallback auf ``M15`` (Orientierung)                        — defensiv
+
+``phase3_modulate`` bleibt erhalten: Persona-Tone-Modifier, Length-Bias,
+Formality, Card-Mode, Tool-Listen, Sources, RAG-Areas, Pattern-Body,
+Slot-Degradation. Das ist die Stil-/Inhalt-Schicht und wird IMMER
+ausgeführt — auch im Safety-Pfad.
+
+Wer das alte 3-Phasen-System wiederhaben will, schaut ins Backup-Repo
+(``backup/backend/app/services/pattern_engine.py``).
 """
 
 from __future__ import annotations
@@ -15,19 +35,20 @@ logger = logging.getLogger(__name__)
 
 
 class PatternDef(BaseModel):
-    """Pattern definition loaded from 03-patterns/*.md config files."""
+    """Pattern definition loaded from ``03-patterns/*.md`` config files.
+
+    Welle E v4 (2026-05-25): Gate-/Signal-/Page-Bonus-Felder entfernt —
+    der LLM-Hint wählt das Pattern, keine deterministische Mathematik
+    mehr. ``priority`` bleibt als Listing-Hint für den Klassifikator-
+    Prompt (Reihenfolge in der Pattern-Liste).
+    """
+
     id: str
     label: str
     priority: int = 400
-    # Phase 1 gates
-    gate_personas: list[str] = Field(default_factory=lambda: ["*"])
-    gate_states: list[str] = Field(default_factory=lambda: ["*"])
-    gate_intents: list[str] = Field(default_factory=lambda: ["*"])
-    # Phase 2 scoring
-    signal_high_fit: list[str] = Field(default_factory=list)
-    signal_medium_fit: list[str] = Field(default_factory=list)
-    signal_low_fit: list[str] = Field(default_factory=list)
-    page_bonus: list[str] = Field(default_factory=list)
+    # Slot-Vorbedingung (für Degradation-Flag in phase3_modulate, NICHT
+    # für Pattern-Selektion). M09 braucht ``topic``, M10 braucht
+    # ``material_type`` + ``topic``.
     precondition_slots: list[str] = Field(default_factory=list)
     # Phase 3 defaults
     default_tone: str = "sachlich"
@@ -42,31 +63,43 @@ class PatternDef(BaseModel):
     tools: list[str] = Field(default_factory=list)
     # When True, the LLM MUST call a tool on the first iteration even if RAG
     # context was prefetched. Use for discovery/listing patterns where the
-    # tool output (cards) is the actual user-facing payload, and a textual
-    # RAG-only answer would be a regression. WLO-MCP calls are cheap so the
-    # extra round-trip is acceptable.
+    # tool output (cards) is the actual user-facing payload.
     force_tool_use: bool = False
-    # Phase B1 — Multi-Step-Tools: when True, the Reflection-Loop in
-    # generate_response insists that ALL listed tools were called (full
-    # coverage), not just one (intersection-non-empty). Use for patterns
-    # that need a deterministic sequence (e.g. lookup_vocab → search_content)
-    # rather than a single-tool answer. Default False = "any one suffices".
+    # Phase B1 — Multi-Step-Tools: when True, the Reflection-Loop insists
+    # that ALL listed tools were called (full coverage), not just one.
     requires_all_tools: bool = False
-    # Welle B.5 (2026-05): When True, the post-LLM cards-list is filtered
-    # to only contain cards whose URL/node_id/title appears in the
-    # response text. Use for patterns where the LLM crafts a narrative
-    # that references specific cards (e.g. PAT-19 Lernpfad). When False
-    # (default), all returned cards are kept — the LLM may reference
-    # only a subset in prose, the rest are shown as additional tiles.
+    # Welle B.5: When True, the post-LLM cards-list is filtered to only
+    # contain cards whose URL/node_id/title appears in the response text.
     card_text_link_required: bool = False
     core_rule: str = ""
+    forbidden_phrases: list[str] = Field(default_factory=list)
+    anti_patterns: list[str] = Field(default_factory=list)
     short_purpose: str = ""
+    # Welle E v4+7 (2026-05-26) — strukturierte Pattern-Auswahl-Regeln.
+    # Ersetzt die zentralen pattern_disambiguators aus classify-overrides.
+    # yaml mit pro-Pattern-Definitionen (Single-Source-of-Truth).
+    when_to_use: list[str] = Field(default_factory=list)
+    when_not_to_use: list[str] = Field(default_factory=list)
+    trigger_phrases: list[str] = Field(default_factory=list)
+    # discriminators: Liste von {vs: M-OtherID, rule: "...", example: "..."}
+    discriminators: list[dict[str, str]] = Field(default_factory=list)
+    # 2026-05-23 — Vollständiger Pattern-Markdown-Body (Anti-Patterns,
+    # persona-spezifische Antwort-Schemas, Quick-Reply-Tabellen).
+    body_md: str = ""
 
 
 # ── Config-driven tables (loaded from YAML on each request) ──────────
 
-def _load_config_tables() -> tuple[dict[str, dict[str, Any]], list[str], dict[str, int], dict[str, str]]:
-    """Load signal modulations, reduce_items_signals, device_max_items, persona_formality from config."""
+def _load_config_tables() -> tuple[
+    dict[str, dict[str, Any]], list[str], dict[str, int], dict[str, str]
+]:
+    """Load signal modulations, reduce_items_signals, device_max_items,
+    persona_formality from config.
+
+    Welle E v4: weiterhin gebraucht von ``phase3_modulate`` für Signal-
+    Tone-Modulationen + Geräte-Limits + Formality-Fallback. Tie-Breaker-
+    Tabelle wurde entfernt.
+    """
     from app.services.config_loader import load_signal_modulations, load_device_config
 
     modulations, reduce_items = load_signal_modulations()
@@ -83,12 +116,24 @@ def _load_config_tables() -> tuple[dict[str, dict[str, Any]], list[str], dict[st
 def _pattern_from_dict(d: dict[str, Any]) -> PatternDef:
     """Create a PatternDef from a frontmatter dict.
 
-    Uses Pydantic's model_validate which applies defaults for missing fields
-    and validates types automatically.
+    Welle E v4: deprecated Felder (``gate_personas``, ``gate_states``,
+    ``gate_intents``, ``signal_high_fit``, ``signal_medium_fit``,
+    ``signal_low_fit``, ``page_bonus``) werden im Loader still ignoriert
+    falls noch in MDs vorhanden (Backward-Compat während der Migration).
     """
     # Ensure label falls back to id if missing
     if "label" not in d:
         d = {**d, "label": d["id"]}
+    # Backward-Compat: deprecated Felder dropen, falls die MD-Datei sie
+    # noch enthält. Pydantic würde sonst extra="ignore" als Default
+    # nutzen — wir machen es explizit, damit Logs sauber bleiben.
+    legacy_fields = (
+        "gate_personas", "gate_states", "gate_intents",
+        "signal_high_fit", "signal_medium_fit", "signal_low_fit",
+        "page_bonus",
+    )
+    if any(k in d for k in legacy_fields):
+        d = {k: v for k, v in d.items() if k not in legacy_fields}
     return PatternDef.model_validate(d)
 
 
@@ -104,134 +149,12 @@ def load_patterns() -> list[PatternDef]:
     return [_pattern_from_dict(d) for d in defs]
 
 
-# Module-level cache (refreshed via get_patterns())
-_cached_patterns: list[PatternDef] | None = None
-
-
 def get_patterns() -> list[PatternDef]:
     """Get current pattern list, reloading from config files each time."""
     return load_patterns()
 
 
-def phase1_gate(
-    patterns: list[PatternDef],
-    persona_id: str,
-    state_id: str,
-    intent_id: str,
-    entities: dict[str, Any] | None = None,
-) -> tuple[list[PatternDef], list[str]]:
-    """Phase 1: Binary elimination. Returns (candidates, eliminated_ids).
-
-    Patterns are eliminated when:
-    - persona/state/intent gates don't match, OR
-    - precondition_slots are defined but NOT ALL filled (hard gate).
-      This prevents patterns like PAT-19 (needs fach+stufe+thema) from
-      firing when only fach+stufe are known — the fallback (PAT-18 or
-      PAT-06) will catch the request instead.
-    """
-    _ents = entities or {}
-    candidates = []
-    eliminated = []
-    for p in patterns:
-        persona_ok = "*" in p.gate_personas or persona_id in p.gate_personas
-        state_ok = "*" in p.gate_states or state_id in p.gate_states
-        intent_ok = "*" in p.gate_intents or intent_id in p.gate_intents
-        # Hard gate: all precondition_slots must be filled
-        precond_ok = True
-        if p.precondition_slots:
-            precond_ok = all(_ents.get(s) for s in p.precondition_slots)
-        if persona_ok and state_ok and intent_ok and precond_ok:
-            candidates.append(p)
-        else:
-            eliminated.append(p.id)
-    return candidates, eliminated
-
-
-def phase2_score(
-    candidates: list[PatternDef],
-    signals: list[str],
-    page: str,
-    entities: dict[str, Any],
-    intent_confidence: float = 0.8,
-) -> dict[str, float]:
-    """Phase 2: Weighted ranking among candidates. Returns {pattern_id: score}."""
-    scores: dict[str, float] = {}
-    for p in candidates:
-        # Signal fit (weight 0.30)
-        signal_score = 0.0
-        for s in signals:
-            if s in p.signal_high_fit:
-                signal_score += 1.0
-            elif s in p.signal_medium_fit:
-                signal_score += 0.5
-            elif s in p.signal_low_fit:
-                signal_score += 0.2
-        if signals:
-            signal_score = min(signal_score / max(len(signals), 1), 1.0)
-
-        # Context match (weight 0.20)
-        context_score = 0.3  # neutral default
-        for bonus_page in p.page_bonus:
-            if bonus_page == page or (bonus_page.endswith("*") and page.startswith(bonus_page[:-1])):
-                context_score = 1.0
-                break
-
-        # Precondition completeness (weight 0.30)
-        if p.precondition_slots:
-            filled = sum(1 for s in p.precondition_slots if entities.get(s))
-            pc_ratio = filled / len(p.precondition_slots)
-            if pc_ratio >= 1.0:
-                pc_score = 1.0
-            elif pc_ratio > 0:
-                pc_score = 0.6
-            else:
-                pc_score = 0.2
-        else:
-            pc_score = 0.8  # no preconditions = mostly fine
-
-        # Intent confidence (weight 0.20)
-        conf_score = intent_confidence
-
-        total = (signal_score * 0.30 + context_score * 0.20 +
-                 pc_score * 0.30 + conf_score * 0.20)
-
-        # Priority bonus (normalized)
-        total += p.priority / 10000.0
-
-        # ── Specificity-Bonus ──────────────────────────────────────
-        # Patterns mit konkreten Gate-Listen (z.B. gate_intents=[INT-W-13])
-        # sollten gegenüber Wildcard-Patterns (gate_intents=["*"]) gewinnen,
-        # wenn beide passen. Sonst bleibt PAT-01 (alle "*") immer am Tisch
-        # und beerbt jeden konkreten Pattern, der sich nicht extra hochsetzt.
-        #
-        # Bonus pro nicht-Wildcard-Gate: 0.01 (3 Gates → max +0.03).
-        # Damit kann ein 3-fach spezifischer Pattern selbst gegen einen
-        # Wildcard-Pattern mit ~30 Punkten höherer priority bestehen,
-        # ein 1-fach spezifischer (z.B. PAT-26 mit gate_intents=[INT-W-13])
-        # gegen einen mit ~10 Punkten höherer priority.
-        #
-        # Hinweis (Kalibrierung 2026-04-28): Vorherige 0.02 hat PAT-08
-        # (priority 380, gate_intents=Such-Intents) systematisch über
-        # PAT-01 (priority 500, alle Wildcards) gehoben — bei 5+ Tight-
-        # Races im Eval-Sample mit gap=0.008 und PAT-08-Misfire bei
-        # erfolgreichen Suchen. Mit 0.01 kompensiert der Spec-Bonus
-        # nicht mehr den 120-Priority-Diff, PAT-08 verliert sauber, aber
-        # PAT-19/21/26/27 (alle nahe priority=470-480) gewinnen weiter
-        # gegen PAT-01, weil deren Priority-Diff zu PAT-01 nur ~20-30
-        # Punkte (= 0.002-0.003) beträgt — der Bonus überdeckt das.
-        spec_bonus = 0.0
-        if "*" not in p.gate_intents:
-            spec_bonus += 0.01
-        if "*" not in p.gate_states:
-            spec_bonus += 0.01
-        if "*" not in p.gate_personas:
-            spec_bonus += 0.01
-        total += spec_bonus
-
-        scores[p.id] = round(total, 4)
-
-    return scores
-
+# ── Phase 3 — Modulate (Stil-/Tool-Schicht) ──────────────────────────
 
 _LENGTH_RANK = {"kurz": 0, "mittel": 1, "lang": 2}
 _LENGTH_BY_RANK = {0: "kurz", 1: "mittel", 2: "lang"}
@@ -261,13 +184,11 @@ def phase3_modulate(
     entities: dict[str, Any],
     persona_id: str = "P-AND",
 ) -> dict[str, Any]:
-    """Phase 3: Deterministic output adjustment. Returns modulated output config.
+    """Phase 3: Deterministische Output-Modulation. Returns modulated config.
 
-    Welle B.3 (2026-05): Persona-bezogene Tonalitäts-Modifier werden hier
-    aus ``01-base/tone-modifiers.yaml`` angewendet. Persona ist nicht mehr
-    First-Class Pattern-Selektor (gate_personas bleibt für hart Persona-
-    spezifische Patterns wie PAT-09 / PAT-14 / PAT-23), sondern primär ein
-    Modifier auf Tone / Length / Formality / card_text_mode.
+    Welle E v4 (2026-05-25): Phase 3 ist die einzige verbliebene
+    deterministische Schicht. Persona wirkt hier ausschließlich auf
+    Stil/Anrede/Länge, nicht auf Pattern-Wahl.
     """
     from app.services.config_loader import get_tone_modifier_for_persona
 
@@ -317,13 +238,20 @@ def phase3_modulate(
         "tools": list(pattern.tools),
         "force_tool_use": pattern.force_tool_use,
         "requires_all_tools": pattern.requires_all_tools,
-        # Welle B.5 (2026-05): Pattern kann verlangen, dass die Cards-Liste
-        # post-LLM auf die im Text referenzierten Cards gefiltert wird
-        # (Lernpfad-Modus). chat.py:_filter_cards_used_in_text liest diesen
-        # Wert. Default False = alle Cards bleiben.
         "card_text_link_required": pattern.card_text_link_required,
         "core_rule": pattern.core_rule,
         "short_purpose": pattern.short_purpose,
+        "body_md": pattern.body_md,
+        # Welle E v4+7 (2026-05-26): strukturierte Pattern-Auswahl-Regeln
+        # durchschleifen, damit Response-Prompt sie als Kontext-Briefing
+        # rendern und Eval-Judge sie zur Pattern-Match-Bewertung nutzen
+        # kann.
+        "when_to_use": list(pattern.when_to_use),
+        "when_not_to_use": list(pattern.when_not_to_use),
+        "trigger_phrases": list(pattern.trigger_phrases),
+        "discriminators": list(pattern.discriminators),
+        "forbidden_phrases": list(pattern.forbidden_phrases),
+        "anti_patterns": list(pattern.anti_patterns),
         "rag_areas": list(pattern.rag_areas),
         "skip_intro": False,
         "one_option": False,
@@ -364,6 +292,12 @@ def phase3_modulate(
     return output
 
 
+# ── Pattern Selection — Hint-Primary ─────────────────────────────────
+
+
+_FALLBACK_PATTERN_IDS: tuple[str, ...] = ("M15", "M03")
+
+
 def select_pattern(
     persona_id: str,
     state_id: str,
@@ -376,119 +310,55 @@ def select_pattern(
     enforced_pattern_id: str | None = None,
     pattern_id_hint: str | None = None,
 ) -> tuple[PatternDef, dict[str, Any], dict[str, float], list[str]]:
-    """Run all 3 phases and return (winner, modulated_output, scores, eliminated).
+    """Welle E v4: Hint-driven pattern selection (Safety → Hint → Fallback).
 
-    If ``enforced_pattern_id`` is given (e.g. from the Safety layer), that
-    pattern is loaded directly and the normal Gate→Score phases are skipped.
-    Its ``core_rule`` and ``tools``/``sources`` are honoured so the LLM gets
-    a proper instruction (instead of just having tone/length overridden on
-    whatever pattern happened to win the scoring phase).
+    Reihenfolge:
+      1. ``enforced_pattern_id`` (Safety + Pre-Route-Rules)
+      2. ``pattern_id_hint`` (Klassifikator-LLM)
+      3. Fallback (``M15`` Orientierung, sonst ``M03`` Klärung, sonst
+         erstes verfügbares Pattern)
 
-    ``pattern_id_hint`` is the LLM-Klassifikator's advisory pattern guess.
-    By default it's pure telemetry (Shadow-Mode). If the tie-breaker config
-    (``01-base/tie-breaker.yaml``) is enabled and the engine score is a
-    tight race, the hint can override the engine choice — selectively per
-    pattern. See the YAML for the calibration knobs.
+    Rückgabe-Tuple (für Kompatibilität mit chat.py):
+      * ``winner``      — PatternDef
+      * ``output``      — phase3-modulierter Output-Dict
+      * ``scores``      — {winner.id: 1.0} (legacy-Form, einziges Pattern
+                          gewinnt mit Score 1.0)
+      * ``eliminated``  — [] (Phase 1 läuft nicht mehr; leere Liste
+                          erhält Kompatibilität mit Trace-Code)
     """
     patterns = get_patterns()
 
-    # ── Safety override: skip gating/scoring, load the enforced pattern ──
+    if not patterns:
+        raise RuntimeError(
+            "No patterns loaded — check 03-patterns/*.md files in active config"
+        )
+
+    # 1. Safety / Pre-Route enforced
     if enforced_pattern_id:
         enforced = next((p for p in patterns if p.id == enforced_pattern_id), None)
         if enforced is not None:
             output = phase3_modulate(enforced, signals, device, entities, persona_id)
             return enforced, output, {enforced.id: 1.0}, []
+        logger.warning(
+            "enforced_pattern_id=%r not in loaded patterns — falling through to hint",
+            enforced_pattern_id,
+        )
 
-    candidates, eliminated = phase1_gate(patterns, persona_id, state_id, intent_id, entities)
+    # 2. LLM-Hint primary
+    if pattern_id_hint:
+        hinted = next((p for p in patterns if p.id == pattern_id_hint), None)
+        if hinted is not None:
+            output = phase3_modulate(hinted, signals, device, entities, persona_id)
+            return hinted, output, {hinted.id: 1.0}, []
+        logger.warning(
+            "pattern_id_hint=%r unknown (not in 03-patterns/) — using fallback",
+            pattern_id_hint,
+        )
 
-    if not candidates:
-        # Fallback: use PAT-20 (Orientierungs-Guide).
-        # Welle B.2 (2026-05): PAT-17 (Sanfter Einstieg) wurde in PAT-20
-        # gemergt. PAT-20 deckt jetzt beide Fälle ab (zögerlicher Einstieg
-        # + strukturierter Plattform-Guide). Wenn PAT-20 fehlt, fällt der
-        # Code defensiv auf das erste verfügbare Pattern zurück.
-        fallback = next((p for p in patterns if p.id == "PAT-20"), patterns[0])
-        output = phase3_modulate(fallback, signals, device, entities, persona_id)
-        return fallback, output, {}, eliminated
-
-    scores = phase2_score(candidates, signals, page, entities, intent_confidence)
-
-    winner_id = max(scores, key=scores.get)
-
-    # ── Tie-Breaker (Bonus 2) — selektiv aktivierbar ────────────────
-    # Override winner with LLM-Hint when:
-    #   * tie_breaker.enabled is true
-    #   * Score-gap (top1 − top2) < max_score_gap
-    #   * LLM-Hint is among the top-N Score-Patterns
-    #   * Engine-Winner OR LLM-Hint is in allow_patterns_winner (= Pattern-
-    #     Cluster, in dem Override erlaubt ist)
-    tie_breaker_log: dict[str, Any] | None = None
-    if pattern_id_hint and pattern_id_hint != winner_id:
-        try:
-            from app.services.config_loader import load_tie_breaker_config
-            tb_cfg = load_tie_breaker_config()
-        except Exception:
-            tb_cfg = {"enabled": False}
-        if tb_cfg.get("enabled"):
-            ranked = sorted(scores.items(), key=lambda kv: -kv[1])
-            top_window = ranked[: max(2, int(tb_cfg.get("top_n_window") or 2))]
-            top_window_ids = {pid for pid, _ in top_window}
-            score_gap = (
-                ranked[0][1] - ranked[1][1] if len(ranked) >= 2 else 1.0
-            )
-            allow = set(tb_cfg.get("allow_patterns_winner") or [])
-            hint_in_window = pattern_id_hint in top_window_ids
-            hint_candidate = any(p.id == pattern_id_hint for p in candidates)
-            cluster_match = (winner_id in allow) or (pattern_id_hint in allow)
-            if (
-                hint_candidate
-                and hint_in_window
-                and cluster_match
-                and score_gap < float(tb_cfg.get("max_score_gap") or 0.05)
-            ):
-                tie_breaker_log = {
-                    "applied": True,
-                    "from": winner_id,
-                    "to": pattern_id_hint,
-                    "score_gap": round(score_gap, 4),
-                    "max_score_gap": tb_cfg.get("max_score_gap"),
-                    "reason": "llm_hint_override",
-                }
-                winner_id = pattern_id_hint
-            else:
-                tie_breaker_log = {
-                    "applied": False,
-                    "engine_winner": winner_id,
-                    "llm_hint": pattern_id_hint,
-                    "score_gap": round(score_gap, 4),
-                    "hint_in_window": hint_in_window,
-                    "hint_candidate": hint_candidate,
-                    "cluster_match": cluster_match,
-                }
-
-    winner = next(p for p in candidates if p.id == winner_id)
-
-    output = phase3_modulate(winner, signals, device, entities, persona_id)
-    if tie_breaker_log is not None:
-        output["tie_breaker"] = tie_breaker_log
-
-    # Propagate missing-slot info from patterns with precondition_slots,
-    # but ONLY when the user's intent actually targets complex tasks
-    # (learning paths, lesson plans). Normal search intents should not
-    # trigger degradation just because PAT-18/19 have preconditions.
-    _COMPLEX_INTENTS = {"INT-W-10"}  # Unterrichtsplanung / Lernpfad
-    _ents = entities or {}
-    if intent_id in _COMPLEX_INTENTS:
-        for p in patterns:
-            if p.precondition_slots:
-                missing = [s for s in p.precondition_slots if not _ents.get(s)]
-                if missing:
-                    output.setdefault("degradation", True)
-                    prev = output.get("missing_slots", [])
-                    output["missing_slots"] = list(set(prev + missing))
-                    output.setdefault("blocked_patterns", [])
-                    output["blocked_patterns"].append(
-                        {"id": p.id, "label": p.label, "missing": missing}
-                    )
-
-    return winner, output, scores, eliminated
+    # 3. Fallback
+    fallback = next(
+        (p for p in patterns if p.id in _FALLBACK_PATTERN_IDS),
+        patterns[0],
+    )
+    output = phase3_modulate(fallback, signals, device, entities, persona_id)
+    return fallback, output, {fallback.id: 1.0}, []

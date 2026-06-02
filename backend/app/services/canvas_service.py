@@ -338,8 +338,11 @@ _DEFAULT_TYPE_ALIASES: dict[str, str] = {
     "übungsaufgaben": "uebung",
     "lerngeschichte": "lerngeschichte",
     "lerngeschichten": "lerngeschichte",
-    "geschichte": "lerngeschichte",
-    "geschichten": "lerngeschichte",
+    # Welle E v4+11 (2026-05-26, eval-f6f56-Befund): "geschichte" und
+    # "geschichten" als Aliase entfernt — kollidieren als Substring mit
+    # dem Schulfach "Geschichte" (z.B. "Quiz zur europäischen Geschichte"
+    # wurde fälschlich als Lerngeschichte erkannt). User muss explizit
+    # "lerngeschichte" sagen.
     "story": "lerngeschichte",
     "stories": "lerngeschichte",
     "versuch": "versuch",
@@ -417,25 +420,41 @@ def extract_material_type_from_message(msg: str) -> str | None:
     """Heuristic scan of a user message for a material type keyword.
 
     Used when the classifier did not extract `material_typ` into `entities`
-    but the intent is INT-W-11. Prefers longer aliases first to avoid
+    but the intent is I05. Prefers longer aliases first to avoid
     mismatches (e.g. 'arbeitsblatt' wins over 'blatt').
 
     Short aliases (< 6 chars) only match with word-boundary awareness so
     that 'test' in 'testen' does NOT hit, but 'test' in 'ein Test zu X'
     does. Long aliases use substring match (safer because of length).
+
+    Welle E v4+12 (eval-316d36-Befund): Bindestriche werden vor dem
+    Match entfernt — „Info-Blatt", „Arbeits-Blatt", „Lehr-Material"
+    treffen so auf dieselben Aliase wie ohne Bindestrich. Hyphenierung
+    ist im Deutschen häufig stilistisch (vor allem Redaktions-/
+    Verwaltungstexte) und sollte die Material-Typ-Erkennung nicht
+    blockieren.
     """
     if not msg:
         return None
     low = msg.lower()
+    # Bindestrich-freie Variante als zweiter Match-Versuch — gleicher Text,
+    # nur ohne ``-``. Wir matchen zuerst gegen das Original (häufigere Form),
+    # fallen erst dann auf die de-hyphenisierte Variante zurück, damit
+    # legitime Multi-Wort-Aliase wie „quiz/test" nicht zerschossen werden.
+    low_nohyp = low.replace("-", "") if "-" in low else None
     aliases = get_type_aliases()
     whitelist = get_short_alias_whitelist()
     for alias in sorted(aliases.keys(), key=len, reverse=True):
         if len(alias) >= 6:
             if alias in low:
                 return aliases[alias]
+            if low_nohyp is not None and alias in low_nohyp:
+                return aliases[alias]
         elif alias in whitelist:
             # Short whitelisted alias: require word boundary on both sides.
             if _phrase_matches(low, alias):
+                return aliases[alias]
+            if low_nohyp is not None and _phrase_matches(low_nohyp, alias):
                 return aliases[alias]
     return None
 
@@ -531,7 +550,7 @@ def looks_like_create_intent(msg: str) -> bool:
     """Return True if the message opens with a clear 'create new material' verb.
 
     Used as a safeguard override for the LLM classifier, which sometimes
-    picks INT-W-10 (Unterrichtsplanung) or INT-W-03 (Inhalte abrufen) even when the
+    picks I04 (Unterrichtsplanung) or I03 (Inhalte abrufen) even when the
     user explicitly says 'Erstelle mir ein Arbeitsblatt'.
     """
     if not msg:
@@ -550,7 +569,7 @@ def looks_like_create_intent(msg: str) -> bool:
 def looks_like_edit_intent(msg: str) -> bool:
     """Return True if the message is a Canvas refinement (edit) request.
 
-    Only meaningful when state-12 is active AND there is existing Canvas
+    Only meaningful when S3 is active AND there is existing Canvas
     markdown. Triggers include 'mach es einfacher', 'füge Lösungen hinzu',
     'kürzer fassen', 'ersetze …', etc.
     """
@@ -564,11 +583,11 @@ def looks_like_edit_intent(msg: str) -> bool:
 
 
 def has_explicit_new_create_override(msg: str) -> bool:
-    """Return True if the user explicitly asks for a NEW create despite state-12.
+    """Return True if the user explicitly asks for a NEW create despite S3.
 
     Examples: 'erstelle mir ein neues Quiz', 'fang nochmal an mit …',
     'zu einem anderen thema: …'. When this is True, we IGNORE the edit
-    heuristic and go to CREATE even if state-12 is active.
+    heuristic and go to CREATE even if S3 is active.
     """
     if not msg:
         return False
@@ -588,11 +607,8 @@ def material_type_quick_replies() -> list[str]:
 # Für diese wird die Quick-Reply-Auswahl im Canvas so sortiert, dass die
 # analytischen Typen zuerst erscheinen.
 _DEFAULT_ANALYTICAL_PERSONAS: frozenset[str] = frozenset({
-    "P-VER",       # Verwaltung
-    "P-W-POL",     # Politik / Multiplikator
-    "P-BER",       # Berater
-    "P-W-PRESSE",  # Presse / Journalist
-    "P-W-RED",     # Redaktion — leicht analytischer Bias (Kuration, Recherche)
+    "P-ENT",       # Entscheider: Verwaltung + Politik + Beratung
+    "P-RED",       # Redaktion & Medien (inkl. Presse / Journalismus)
 })
 
 
@@ -644,8 +660,15 @@ async def generate_canvas_content(
     material_type_key: str,
     session_state: dict[str, Any] | None = None,
     memory_context: str = "",
+    formality: str = "",
 ) -> tuple[str, str]:
     """Generate structured markdown content for a given topic and material type.
+
+    ``formality`` (Welle E v4++ 2026-05-26): Persona-Anrede explizit
+    durchreichen. Akzeptiert "siezen" / "duzen" / "sie" / "du" / "wie_user" /
+    "neutral" — wenn gesetzt, baut der Helper eine harte Anrede-Direktive
+    in den System-Prompt ein, damit P-ENT / P-RED / P-LEH-Anfragen nicht
+    fälschlich geduzt zurückkommen.
 
     Returns (title, markdown_body).
     The title is derived from the first H1 in the response (fallback: topic).
@@ -706,6 +729,27 @@ async def generate_canvas_content(
             "- Wurzeln als 'Wurzel(9) = 3' oder 'sqrt(9)', Potenzen als '3^2' oder '3 hoch 2'.\n"
             "- Mathematische Symbole: x, y, z, pi, +, -, * (für Multiplikation), : (für Division).\n"
             "- Unicode-Sonderzeichen wie °, ², ³, ½, ¼ sind erlaubt, wenn sie besser lesbar sind."
+        )
+
+    # Welle E v4++ (2026-05-26): Persona-Anrede explizit durchreichen.
+    # eval-bd3a zeigte: P-ENT × I05/I03 mit ``formality=siezen`` bekam
+    # geduzte Material-Texte zurück, weil der System-Prompt oben keine
+    # Anrede-Vorgabe machte. Wir hängen jetzt eine harte Direktive an.
+    _formality_low = (formality or "").strip().lower()
+    if _formality_low in ("sie", "siezen", "formal", "foermlich"):
+        system += (
+            "\n\nANREDE — KRITISCH:\n"
+            "Wenn die Aufgaben Aufforderungen an die lesende Person enthalten "
+            '("Erkläre ...", "Berechne ...", "Beantworte ...") UND eine Anrede '
+            "nötig ist, **musst du siezen** ('Erklären Sie ...', 'Berechnen Sie ...', "
+            "'Bitte beantworten Sie ...'). KEINE Du-Form. Auch in einleitenden Sätzen "
+            "des Dokuments ('In diesem Arbeitsblatt lernen Sie ...', nicht 'lernst du ...'). "
+            "Sachliche Aufgaben ohne direkte Anrede sind erlaubt."
+        )
+    elif _formality_low in ("du", "duzen", "informal"):
+        system += (
+            "\n\nANREDE: Du-Form verwenden ('Erkläre ...', 'In diesem Arbeitsblatt "
+            "lernst du ...'). Die Persona ist Schüler:in oder Kind."
         )
 
     mem_block = ""
@@ -855,7 +899,8 @@ _DEFAULT_LRT_TO_MATERIAL_TYPE: dict[str, str] = {
     "audio": "infoblatt",
     "webseite": "infoblatt",
     "lerngeschichte": "lerngeschichte",
-    "geschichte": "lerngeschichte",
+    # Welle E v4+11 (2026-05-26): "geschichte" entfernt — Substring-Match
+    # mit Schulfach Geschichte. User muss explizit "lerngeschichte" sagen.
     "erzählung": "lerngeschichte",
     "checkliste": "checkliste",
 }
@@ -1012,7 +1057,7 @@ def get_edit_triggers() -> tuple[str, ...]:
 
 
 def get_explicit_create_overrides() -> tuple[str, ...]:
-    """Phrases that force CREATE even in state-12 (e.g. 'neues Quiz')."""
+    """Phrases that force CREATE even in S3 (e.g. 'neues Quiz')."""
     try:
         bundle = config_loader.load_canvas_edit_triggers()
     except Exception:

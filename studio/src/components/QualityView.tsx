@@ -162,7 +162,7 @@ function BarChart({ data, color = 'var(--primary)' }: { data: Record<string, num
  * - State-Distribution: wie oft welcher State im Zeitraum aktiv war
  * - Top-Übergänge: häufigste (prev → next) Paare, sortiert nach count
  * - Self-Loops (prev == next) sind farblich abgegrenzt — typisch in
- *   state-2 (mehrere Slot-Runden) und state-12 (mehrere Canvas-Edits)
+ *   S2 (mehrere Slot-Runden) und S3 (mehrere Canvas-Edits)
  */
 function ConversationFlowView({
   flow, loading, days, setDays, minCount, setMinCount, onReload,
@@ -323,10 +323,10 @@ function ConversationFlowView({
             lineHeight: 1.5,
           }}>
             <strong>Lesart:</strong> States sind Verlaufs-Phasen — der Bot wechselt von einer Phase
-            (z.B. <code style={{ background: '#fff', padding: '0 4px', borderRadius: 3 }}>state-5 Suche</code>)
-            in eine plausible Folge-Phase (z.B. <code style={{ background: '#fff', padding: '0 4px', borderRadius: 3 }}>state-6 Ergebnis-Kuratierung</code>).
+            (z.B. <code style={{ background: '#fff', padding: '0 4px', borderRadius: 3 }}>S3 Suche</code>)
+            in eine plausible Folge-Phase (z.B. <code style={{ background: '#fff', padding: '0 4px', borderRadius: 3 }}>S3 Ergebnis-Kuratierung</code>).
             Häufige Übergänge zeigen den typischen Gesprächs-Flow.
-            Self-Loops (z.B. <code style={{ background: '#fff', padding: '0 4px', borderRadius: 3 }}>state-2 ↻</code>)
+            Self-Loops (z.B. <code style={{ background: '#fff', padding: '0 4px', borderRadius: 3 }}>S2 ↻</code>)
             bedeuten mehrere Iterationen in derselben Phase — meist Slot-Erfassung („Welche Stufe?" → User antwortet → noch ein Slot fehlt).
             Implausible Übergänge (siehe Debug-Panel im Chat-Widget) werden separat als Warnung markiert.
           </div>
@@ -367,7 +367,7 @@ function RoutingMatrixView({
   for (const c of cells) cellIndex.set(`${c.persona_id}|${c.intent_id}`, c);
 
   // Stable pastel palette keyed by pattern_id — same color = same pattern
-  // across cells, so the eye can spot "PAT-20 catches everything" trivially.
+  // across cells, so the eye can spot "M15 catches everything" trivially.
   const colorForPattern = (pid: string): string => {
     // Simple hash → hue
     let h = 0;
@@ -522,7 +522,9 @@ function RoutingMatrixView({
 export default function QualityView() {
   const [logs, setLogs] = useState<QualityLog[]>([]);
   const [stats, setStats] = useState<QualityStats | null>(null);
-  const [tightRaces, setTightRaces] = useState<TightRaces | null>(null);
+  // Welle E v4: tightRaces-State entfernt. Score-Phase läuft nicht mehr,
+  // der Endpoint liefert by-design leere Pairs. Disagreement-Analyse
+  // läuft jetzt in der Eval-View.
   const [degradations, setDegradations] = useState<Degradations | null>(null);
   const [emptyEntities, setEmptyEntities] = useState<EmptyEntities | null>(null);
   const [lowConfidence, setLowConfidence] = useState<LowConfidence | null>(null);
@@ -565,10 +567,9 @@ export default function QualityView() {
       if (filterPattern) params.set('pattern_id', filterPattern);
       if (filterIntent) params.set('intent_id', filterIntent);
       if (filterSession) params.set('session_id', filterSession);
-      const [logsRes, statsRes, tightRes, degRes, entRes, confRes] = await Promise.all([
+      const [logsRes, statsRes, degRes, entRes, confRes] = await Promise.all([
         fetch(`/api/quality/logs?${params}`),
         fetch(`/api/quality/stats?scope=${scope}`),
-        fetch(`/api/quality/tight-races?scope=${scope}&limit=30`),
         fetch(`/api/quality/degradations?scope=${scope}&limit=30`),
         fetch(`/api/quality/empty-entities?scope=${scope}&limit=30`),
         fetch(`/api/quality/low-confidence?scope=${scope}&limit=30`),
@@ -578,7 +579,6 @@ export default function QualityView() {
         setLogs(data.logs || []);
       }
       if (statsRes.ok) setStats(await statsRes.json());
-      setTightRaces(tightRes.ok ? await tightRes.json() : null);
       setDegradations(degRes.ok ? await degRes.json() : null);
       setEmptyEntities(entRes.ok ? await entRes.json() : null);
       setLowConfidence(confRes.ok ? await confRes.json() : null);
@@ -762,11 +762,17 @@ export default function QualityView() {
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Degradation-Rate</div>
             </div>
-            <div className="card">
-              <div style={{ fontSize: 28, fontWeight: 700, color: stats.tight_races > 5 ? 'var(--warning)' : undefined }}>
-                {stats.tight_races}
+            <div className="card" title="Welle E v4 (2026-05-25): Pattern-Selection ist Hint-Primary, Phase 1 (Gate) + Phase 2 (Score) wurden aus der Engine entfernt. Tight Races im Score-Sinn gibt es nicht mehr — die echte Pattern-Ambiguität entsteht jetzt bei Engine-Hint-Konflikten oder Klassifikator-Unsicherheit.">
+              <div style={{ fontSize: 28, fontWeight: 700, color: '#9CA3AF' }}>
+                —
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Tight Races (&lt;0.02)</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Tight Races
+                <div style={{ fontSize: 10, marginTop: 2, color: '#9CA3AF' }}>
+                  (Score-Phase entfernt — siehe Eval-View
+                  „LLM-Hint vs Final-Pattern")
+                </div>
+              </div>
             </div>
             <div className="card">
               <div style={{ fontSize: 28, fontWeight: 700 }}>{pct(stats.empty_entity_rate)}</div>
@@ -790,16 +796,13 @@ export default function QualityView() {
             </div>
           </div>
 
-          {/* Alerts */}
-          {(stats.degradation_rate > 0.05 || stats.tight_races > 3 || stats.empty_entity_rate > 0.3) && (
+          {/* Alerts (Welle E v4: tight_races sind by-design 0, kein Alarm mehr) */}
+          {(stats.degradation_rate > 0.05 || stats.empty_entity_rate > 0.3) && (
             <div className="card" style={{ borderLeft: '3px solid var(--warning)', marginBottom: 16 }}>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>⚠️ Hinweise</div>
               <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {stats.degradation_rate > 0.05 && (
                   <div>• Degradation-Rate bei {pct(stats.degradation_rate)} — Patterns oder Slots prüfen</div>
-                )}
-                {stats.tight_races > 3 && (
-                  <div>• {stats.tight_races} Tight Races — siehe Diagnose unten</div>
                 )}
                 {stats.empty_entity_rate > 0.3 && (
                   <div>• {pct(stats.empty_entity_rate)} Turns ohne Entities — Entity-Erkennung prüfen</div>
@@ -812,55 +815,20 @@ export default function QualityView() {
           <div style={{ marginBottom: 16 }}>
             <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Problem-Diagnose</h3>
 
-            {/* 1. Tight Races */}
-            {tightRaces && tightRaces.pairs.length > 0 && (
-              <DetailAccordion
-                title="Tight Races — welche Pattern konkurrieren?"
-                emoji="⚖️"
-                summary={`${tightRaces.total_tight} knappe Entscheidungen · ${tightRaces.pairs.length} eindeutige Paare`}
-                open={openDetail === 'tight'}
-                onToggle={() => setOpenDetail(openDetail === 'tight' ? null : 'tight')}
-                explanation={
-                  <>
-                    Ein <em>Tight Race</em> ist ein Turn, bei dem das gewinnende Pattern nur knapp
-                    (Score-Gap &lt; {tightRaces.threshold}) vor dem Zweitplatzierten lag — die
-                    Pattern-Auswahl war also fast zufällig. Gruppen nach <code>(Gewinner, Verlierer)</code>
-                    zeigen, welche <strong>Pattern-Paare</strong> strukturell kollidieren. Hohe
-                    Kollisions-Counts sind Kandidaten dafür, die <code>signal_high_fit</code>,
-                    <code>gate_intents</code> oder <code>priority</code>-Felder dieser Patterns zu schärfen.
-                  </>
-                }>
-                {tightRaces.pairs.slice(0, 15).map((p, i) => (
-                  <div key={`${p.winner}-${p.runner_up}-${i}`}
-                       style={{ padding: 10, background: '#FFFBEB', borderRadius: 4, borderLeft: '3px solid #F59E0B', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                      <div style={{ fontSize: 13 }}>
-                        <strong>{p.winner || '(leer)'}</strong> vs. <strong>{p.runner_up || '(leer)'}</strong>
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 10 }}>
-                        <span><strong>{p.count}×</strong> kollidiert</span>
-                        <span>Ø Abstand: <strong>{p.avg_gap.toFixed(4)}</strong></span>
-                      </div>
-                    </div>
-                    {p.example_message && (
-                      <div style={{ fontSize: 12, color: '#78350F', fontStyle: 'italic', marginTop: 4 }}>
-                        „{p.example_message}"
-                      </div>
-                    )}
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      {p.example_persona && <span>Persona: <code>{p.example_persona}</code></span>}
-                      {p.example_intent && <span>Intent: <code>{p.example_intent}</code></span>}
-                      {p.example_state && <span>State: <code>{p.example_state}</code></span>}
-                      <button
-                        onClick={() => { setFilterPattern(p.winner); setTab('logs'); }}
-                        style={{ marginLeft: 'auto', background: 'none', border: 0, color: 'var(--primary)', cursor: 'pointer', fontSize: 11, padding: 0 }}>
-                        Alle Turns mit {p.winner} →
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </DetailAccordion>
-            )}
+            {/* 1. Tight Races — Welle E v4: by-design stillgelegt */}
+            <div className="card" style={{ borderLeft: '3px solid #6B7280', marginBottom: 12, fontSize: 13, color: 'var(--text-muted)' }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>⚖️ Tight Races — stillgelegt</div>
+              <strong>Welle E v4 (2026-05-25):</strong> Pattern-Wahl ist Hint-Primary,
+              Phase 1 (Gate) und Phase 2 (Score) wurden aus der Engine entfernt
+              (<code>pattern_engine.py:select_pattern</code>). Damit gibt es keine
+              Score-Race mit Runner-Up mehr — die Metrik ist by-design 0.
+              <br /><br />
+              Echte Pattern-Ambiguität ist jetzt in der <strong>Evaluierungs-View</strong>{' '}
+              sichtbar als „LLM-Hint vs Final-Pattern-Disagreement" — wo der Hint vom
+              Klassifikator und das Final-Pattern (nach Rule-/Safety-Override)
+              auseinanderfallen. Das ist auch die Daseinsberechtigungs-Statistik
+              für jede einzelne Routing-Rule.
+            </div>
 
             {/* 2. Degradation */}
             {degradations && degradations.groups.length > 0 && (
@@ -874,7 +842,7 @@ export default function QualityView() {
                   <>
                     <em>Degradation</em> bedeutet: ein Pattern hat seine reguläre Antwort aufgegeben und
                     auf eine einfachere Rückfrage („Zu welchem Thema genau?") degradiert, weil Pflicht-Slots
-                    nicht gefüllt waren. Beispiel: PAT-21 Canvas-Create braucht <code>thema</code> und
+                    nicht gefüllt waren. Beispiel: M10 Canvas-Create braucht <code>thema</code> und
                     <code>material_typ</code> — fehlt einer, wird degradiert. Gruppen unten zeigen, welche
                     <code>(Pattern × fehlende Slots)</code>-Kombinationen am häufigsten auftreten —
                     dort lohnt es, die Slot-Erkennung im Classifier oder die Fragetechniken des Patterns
@@ -1013,7 +981,7 @@ export default function QualityView() {
             )}
 
             {/* Empty state */}
-            {!(tightRaces?.pairs.length) && !(degradations?.groups.length) &&
+            {!(degradations?.groups.length) &&
              !(emptyEntities?.groups.length) && !(lowConfidence?.turns.length) && (
               <div className="card" style={{ textAlign: 'center', color: 'var(--success)', padding: 16, fontSize: 13 }}>
                 ✓ Keine auffälligen Probleme in diesem Scope.
@@ -1070,14 +1038,14 @@ export default function QualityView() {
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <input
               className="input"
-              placeholder="Pattern-ID (z.B. PAT-10)"
+              placeholder="Pattern-ID (z.B. M04)"
               value={filterPattern}
               onChange={e => setFilterPattern(e.target.value)}
               style={{ padding: '6px 10px', width: 170 }}
             />
             <input
               className="input"
-              placeholder="Intent-ID (z.B. INT-W-06)"
+              placeholder="Intent-ID (z.B. I02)"
               value={filterIntent}
               onChange={e => setFilterIntent(e.target.value)}
               style={{ padding: '6px 10px', width: 170 }}

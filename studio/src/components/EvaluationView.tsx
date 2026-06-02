@@ -33,6 +33,9 @@ interface TurnJudge {
   notes: string;
   issues?: string[];
   missing_info?: string[];
+  // Welle E v3 (2026-05-25): Judge-Verdict bei Engine vs LLM-Hint
+  pattern_hint_verdict?: 'engine_better' | 'hint_better' | 'equivalent' | 'no_disagreement' | '';
+  pattern_hint_reasoning?: string;
 }
 
 interface TraceEntry {
@@ -53,11 +56,18 @@ interface RunTurn {
     tools_called?: string[];
     trace?: TraceEntry[];
     state?: string;
+    state_id?: string;
     intent_confidence?: number;
     persona_confidence?: number;
+    // Welle E v3 (2026-05-25): LLM-Hint vs Engine
+    pattern_id_hint?: string;
+    pattern_reasoning?: string;
+    llm_engine_match?: boolean;
   };
   judge?: TurnJudge;
   error?: string;
+  cards_count?: number;
+  response_length?: number;
 }
 
 interface RunConversation {
@@ -78,7 +88,21 @@ interface ClassificationMetrics {
   intent_confusion?: Record<string, Record<string, number>>;
   llm_hint_present_count?: number;
   llm_engine_match_rate?: number;
+  llm_engine_disagreement_count?: number;
   pattern_confusion_llm_vs_engine?: Record<string, Record<string, number>>;
+  // Welle E v3 (2026-05-25): Judge-Verdict bei Disagreement
+  pattern_hint_verdict_counts?: {
+    engine_better?: number;
+    hint_better?: number;
+    equivalent?: number;
+    no_disagreement?: number;
+    // Welle E v3 (2026-05-25): Disagreement-Turns wo der Judge KEIN
+    // valides Verdict geliefert hat (leerer String / unbekannter Wert).
+    [key: string]: number | undefined;
+  };
+  pattern_hint_better_rate?: number;
+  pattern_engine_better_rate?: number;
+  pattern_disagreement_pairs?: Record<string, Record<string, number>>;
   engine_pattern_judge_ok_rate?: number;
   llm_pattern_judge_ok_lower_bound?: number;
   judged_turns?: number;
@@ -597,14 +621,129 @@ function ConversationView({ conv }: { conv: RunConversation }) {
             <strong>Bot:</strong> {t.bot}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-            Pattern: <code>{t.debug?.pattern || '?'}</code>
+            Persona: <code>{t.debug?.persona || '?'}</code>
+            {t.debug?.persona_confidence !== undefined && (
+              <span style={{ color: '#9CA3AF' }}> ({(t.debug.persona_confidence * 100).toFixed(0)}%)</span>
+            )}
             {' · '}Intent: <code>{t.debug?.intent || '?'}</code>
-            {' · '}Persona: <code>{t.debug?.persona || '?'}</code>
-            {' · '}State: <code>{t.debug?.state || '?'}</code>
+            {t.debug?.intent_confidence !== undefined && (
+              <span style={{ color: '#9CA3AF' }}> ({(t.debug.intent_confidence * 100).toFixed(0)}%)</span>
+            )}
+            {' · '}State: <code>{t.debug?.state_id || t.debug?.state || '?'}</code>
             {t.debug?.tools_called && t.debug.tools_called.length > 0 && (
               <> · Tools: {t.debug.tools_called.join(', ')}</>
             )}
           </div>
+
+          {/* Welle E v3 (2026-05-25) — Pattern: Engine vs LLM-Hint Vergleich.
+              ``debug.pattern`` ist als "M15 (Orientierung)" formatiert,
+              ``pattern_id_hint`` ist nur "M15". Wir vergleichen nur den
+              ID-Teil (= alles vor dem ersten Leerzeichen), sonst zeigt
+              JEDER Turn fälschlich Disagreement an. */}
+          {(() => {
+            const eng = t.debug?.pattern || '?';
+            const engId = eng.split(' ', 1)[0];
+            const hint = t.debug?.pattern_id_hint || '';
+            const reasoning = t.debug?.pattern_reasoning || '';
+            const rawVerdict = t.judge?.pattern_hint_verdict || '';
+            const disagreement = hint && hint !== engId;
+            // Welle E v4 (2026-05-25, eval-c4c0): Judge halluziniert oft
+            // engine_better/hint_better selbst wenn Engine == Hint (~25% der
+            // raw Verdicts). Aggregat-Statistik forciert deshalb schon
+            // no_disagreement bei Agreement; das Per-Turn-Display zeigte
+            // aber bisher das rohe Verdict → verwirrt den Reviewer.
+            // Effektives Verdict ist deshalb hier: bei Agreement IMMER
+            // no_disagreement, bei echtem Disagreement das Judge-Raw.
+            const effectiveVerdict = disagreement ? rawVerdict : 'no_disagreement';
+            const isHallucinated = !disagreement
+              && rawVerdict
+              && rawVerdict !== 'no_disagreement';
+            // Welle E v4 (2026-05-26): "Engine" steht jetzt für die volle
+            // Override-Pipeline (Safety + Pre-Route-Rules + LLM-Hint + Fallback),
+            // nicht mehr für die alte 3-Phasen-Score-Engine. Begriff
+            // umgangssprachlich klarer: "Rule-Override besser" / "Hint allein besser".
+            const verdictBadge: Record<string, { label: string; color: string }> = {
+              engine_better: { label: 'Rule-Override besser', color: '#10B981' },
+              hint_better: { label: 'Hint allein besser', color: '#DC2626' },
+              equivalent: { label: 'gleichwertig', color: '#9CA3AF' },
+              no_disagreement: { label: 'einig', color: '#6B7280' },
+            };
+            return (
+              <div style={{
+                marginTop: 6, padding: 6,
+                background: disagreement ? '#FEF3C7' : '#F0FDF4',
+                border: `1px solid ${disagreement ? '#FBBF24' : '#86EFAC'}`,
+                borderRadius: 4, fontSize: 11,
+              }}>
+                <span
+                  style={{ color: '#374151' }}
+                  title="Final-Pattern nach Safety + Routing-Rules + LLM-Hint + Fallback. Wenn der Hint anders war als das Final-Pattern, hat eine Rule oder Safety übersteuert."
+                >
+                  Pattern: <strong>Final</strong> <code style={{ background: '#FFF', padding: '0 4px', borderRadius: 2 }}>{eng}</code>
+                </span>
+                {' · '}
+                <span style={{ color: '#374151' }}>
+                  <strong>LLM-Hint</strong>{' '}
+                  <code style={{
+                    background: '#FFF', padding: '0 4px', borderRadius: 2,
+                    color: disagreement ? '#B45309' : '#374151',
+                  }}>{hint || '—'}</code>
+                </span>
+                {effectiveVerdict && verdictBadge[effectiveVerdict] && (
+                  <span
+                    style={{
+                      marginLeft: 8, padding: '1px 6px', borderRadius: 3,
+                      background: verdictBadge[effectiveVerdict].color, color: '#FFF', fontWeight: 600,
+                    }}
+                    title={
+                      isHallucinated
+                        ? `Judge lieferte raw "${rawVerdict}", obwohl Engine == Hint. Aggregat-Statistik ignoriert das (= no_disagreement). Halluzinations-Rate im Judge ist eine bekannte Eval-Kalibrations-Herausforderung.`
+                        : undefined
+                    }
+                  >
+                    ⚖ Judge: {verdictBadge[effectiveVerdict].label}
+                    {isHallucinated && (
+                      <span style={{ marginLeft: 4, fontWeight: 400, opacity: 0.85 }}>
+                        (raw {rawVerdict}, korrigiert)
+                      </span>
+                    )}
+                  </span>
+                )}
+                {reasoning && (
+                  <details style={{ marginTop: 4 }}>
+                    <summary style={{ cursor: 'pointer', color: '#6B7280' }}>Hint-Begründung</summary>
+                    <div style={{ marginTop: 2, padding: 4, background: '#FFF', borderRadius: 3, color: '#374151' }}>
+                      {reasoning}
+                    </div>
+                  </details>
+                )}
+                {(() => {
+                  // Welle E v4+6 (2026-05-26, eval-92f0): Judge-Begründung
+                  // jetzt mit Fallback auf judge.notes wenn pattern_hint_
+                  // reasoning leer/halluziniert ist. Sonst sah der User
+                  // bei jedem no_disagreement-Case einen leeren Block —
+                  // notes ist die allgemeine Bewertungs-Bemerkung des
+                  // Judges und passt als Begründung der Wahl genauso gut.
+                  const raw = (t.judge?.pattern_hint_reasoning || '').trim();
+                  const notes = (t.judge?.notes || '').trim();
+                  const hasReason = raw && raw !== '-';
+                  const text = hasReason ? raw : (notes || '');
+                  if (!text) return null;
+                  const isFallback = !hasReason && !!notes;
+                  return (
+                    <details style={{ marginTop: 4 }}>
+                      <summary style={{ cursor: 'pointer', color: '#6B7280' }}>
+                        Judge-Begründung{isFallback ? ' (aus Notes)' : ''}
+                      </summary>
+                      <div style={{ marginTop: 2, padding: 4, background: '#FFF', borderRadius: 3, color: '#374151' }}>
+                        {text}
+                      </div>
+                    </details>
+                  );
+                })()}
+              </div>
+            );
+          })()}
           <TurnTrace trace={t.debug?.trace || []} />
           {t.judge && (
             <>
@@ -988,7 +1127,7 @@ function ClassificationMetricsView({ metrics }: { metrics?: ClassificationMetric
           color={colorByRate(metrics.intent_correct_rate)}
         />
         <StatCard
-          label="Pattern Judge-Approval (Engine)"
+          label="Pattern Judge-Approval (Final)"
           value={fmt(engineApprove)}
           color={colorByRate(engineApprove)}
         />
@@ -999,60 +1138,268 @@ function ClassificationMetricsView({ metrics }: { metrics?: ClassificationMetric
         />
       </div>
 
-      {/* LLM-Pattern-Hint vs Engine-Vergleich */}
-      <div style={{
-        padding: 14, background: '#EFF6FF', borderRadius: 8,
-        border: '1px solid #BFDBFE', marginBottom: 16,
-      }}>
-        <h4 style={{ marginTop: 0, marginBottom: 8 }}>🧠 LLM-Hint vs. Pattern-Engine</h4>
-        <p style={{ fontSize: 12, color: '#374151', margin: '0 0 12px' }}>
-          Phase-1-Shadow-Mode: das LLM schlägt im Klassifikations-Schritt zusätzlich
-          ein Pattern vor. Die deterministische Engine entscheidet aber weiterhin
-          authoritativ. Hier sehen wir, wie oft beide übereinstimmen — und wie hoch
-          die jeweilige Judge-Approval ist.
-        </p>
-        <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%', maxWidth: 600 }}>
-          <tbody>
-            <tr>
-              <td style={{ padding: '4px 8px', color: '#374151' }}>LLM-Hint vorhanden bei</td>
-              <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
-                {metrics.llm_hint_present_count ?? 0} / {metrics.judged_turns ?? 0} Turns
-              </td>
-            </tr>
-            <tr style={{ background: '#fff' }}>
-              <td style={{ padding: '4px 8px', color: '#374151' }}>
-                <strong>LLM ↔ Engine Match-Rate</strong>
-              </td>
-              <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
-                           color: colorByRate(llmMatch), fontWeight: 600 }}>
-                {fmt(llmMatch)}
-              </td>
-            </tr>
-            <tr>
-              <td style={{ padding: '4px 8px', color: '#374151' }}>
-                Judge approves Engine-Wahl
-              </td>
-              <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
-                {fmt(engineApprove)}
-              </td>
-            </tr>
-            <tr style={{ background: '#fff' }}>
-              <td style={{ padding: '4px 8px', color: '#374151' }}>
-                Judge approves LLM-Wahl <span style={{ fontSize: 11, color: '#6B7280' }}>(Lower-Bound)</span>
-              </td>
-              <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
-                {fmt(llmApprove)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p style={{ fontSize: 11, color: '#6B7280', margin: '8px 0 0' }}>
-          ⚠ Lower-Bound: bei Disagreement (LLM ≠ Engine) wissen wir ohne Re-Judge
-          nicht, ob der LLM-Hint richtig gewesen wäre. Wenn diese Lower-Bound
-          deutlich über der Engine-Approval liegt, lohnt sich Phase-2 (LLM-Hint
-          als Tie-Breaker).
-        </p>
-      </div>
+      {/* LLM-Pattern-Hint vs Engine — Welle E v3 (2026-05-25):
+          Saubere Aufschlüsselung nach Agreement / Disagreement, weil bei
+          Agreement Engine UND LLM per Definition den GLEICHEN Pattern haben
+          (= gleiche Approval). Der eigentliche Vergleich findet nur bei den
+          Disagreement-Turns statt. */}
+      {(() => {
+        const vc = metrics.pattern_hint_verdict_counts || {};
+        const totalDisagree = metrics.llm_engine_disagreement_count ?? 0;
+        const judged = metrics.judged_turns ?? 0;
+        const totalAgree = judged - totalDisagree;
+
+        // Engine-Approval-Count (gesamt) und Agreement-correct-Count.
+        const engineOkTotal = Math.round((engineApprove ?? 0) * judged);
+        const agreeOkCount = Math.round((llmApprove ?? 0) * judged);
+        const engineOkAtDisagree = engineOkTotal - agreeOkCount;
+
+        // Disagreement-Verdict-Aufschlüsselung.
+        const hintBetterAtDis = vc.hint_better ?? 0;
+        const equivalentAtDis = vc.equivalent ?? 0;
+        const engineBetterAtDis = vc.engine_better ?? 0;
+        const noVerdictAtDis = totalDisagree - hintBetterAtDis - equivalentAtDis - engineBetterAtDis;
+
+        // LLM-Approval-Schätzung bei Disagreement: hint_better + equivalent.
+        const llmOkAtDisagree = hintBetterAtDis + equivalentAtDis;
+        const llmOkTotal = agreeOkCount + llmOkAtDisagree;
+        const llmEstimatedRate = judged ? llmOkTotal / judged : 0;
+
+        const pct = (n: number, total: number) =>
+          total > 0 ? `${Math.round((n / total) * 100)}%` : '–';
+
+        return (
+          <div style={{
+            padding: 14, background: '#EFF6FF', borderRadius: 8,
+            border: '1px solid #BFDBFE', marginBottom: 16,
+          }}>
+            <h4 style={{ marginTop: 0, marginBottom: 8 }}>🧠 LLM-Hint vs. Final-Pattern (nach Rules/Safety)</h4>
+            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 8px' }}>
+              Welle E v4: der LLM-Klassifikator setzt den primären Pattern-Hint;
+              Safety + Routing-Rules können ihn übersteuern. Das <strong>Final-Pattern</strong> ist
+              das Ergebnis dieser Override-Pipeline. Die Disagreement-Statistik zeigt, ob die
+              Routing-Rules den Hint sinnvoll korrigieren — und damit die Daseinsberechtigung
+              jeder einzelnen Rule.
+            </p>
+            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 12px' }}>
+              <strong>Match-Rate {fmt(llmMatch)}</strong> ({totalAgree} agree · {totalDisagree} disagree
+              von {judged} Turns). Bei Agreement-Turns sind Final-Pattern und LLM-Hint identisch
+              (keine Rule hat übersteuert) — der eigentliche Vergleich findet bei den {totalDisagree} Disagreement-
+              Turns statt, wo eine Rule oder Safety den Hint korrigiert hat.
+            </p>
+            <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%', maxWidth: 760 }}>
+              <thead>
+                <tr style={{ background: '#DBEAFE', textAlign: 'right' }}>
+                  <th style={{ padding: '4px 8px', textAlign: 'left' }}></th>
+                  <th style={{ padding: '4px 8px' }}>
+                    Agreement ({totalAgree})
+                    <div style={{ fontSize: 10, fontWeight: 400, color: '#6B7280' }}>
+                      Final = Hint
+                    </div>
+                  </th>
+                  <th style={{ padding: '4px 8px' }}>
+                    Disagreement ({totalDisagree})
+                    <div style={{ fontSize: 10, fontWeight: 400, color: '#6B7280' }}>
+                      Rule-Override
+                    </div>
+                  </th>
+                  <th style={{ padding: '4px 8px' }}>
+                    Gesamt ({judged})
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '4px 8px', color: '#374151', fontWeight: 600 }}
+                      title="Wie oft hat der Judge das Final-Pattern (nach Rules/Safety) mit pm=2 bewertet?">
+                    Final-Pattern Judge-OK
+                  </td>
+                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
+                    {agreeOkCount} <span style={{ color: '#6B7280' }}>({pct(agreeOkCount, totalAgree)})</span>
+                  </td>
+                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
+                               color: colorByRate(totalDisagree ? engineOkAtDisagree/totalDisagree : 0) }}>
+                    {engineOkAtDisagree} <span style={{ color: '#6B7280' }}>({pct(engineOkAtDisagree, totalDisagree)})</span>
+                  </td>
+                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
+                               fontWeight: 600, color: colorByRate(engineApprove) }}>
+                    {engineOkTotal} <span style={{ color: '#6B7280' }}>({fmt(engineApprove)})</span>
+                  </td>
+                </tr>
+                <tr style={{ background: '#fff' }}>
+                  <td style={{ padding: '4px 8px', color: '#374151', fontWeight: 600 }}>
+                    LLM-Hint Judge-OK <span style={{ fontSize: 11, color: '#6B7280' }}>(geschätzt)</span>
+                  </td>
+                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right' }}>
+                    {agreeOkCount} <span style={{ color: '#6B7280' }}>({pct(agreeOkCount, totalAgree)})</span>
+                  </td>
+                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
+                               color: colorByRate(totalDisagree ? llmOkAtDisagree/totalDisagree : 0) }}>
+                    {llmOkAtDisagree} <span style={{ color: '#6B7280' }}>({pct(llmOkAtDisagree, totalDisagree)})</span>
+                  </td>
+                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', textAlign: 'right',
+                               fontWeight: 600, color: colorByRate(llmEstimatedRate) }}>
+                    {llmOkTotal} <span style={{ color: '#6B7280' }}>({fmt(llmEstimatedRate)})</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '4px 8px', fontSize: 11, color: '#6B7280' }} colSpan={4}>
+                    Bei Agreement sind beide Werte per Definition gleich (Engine = LLM-Hint =
+                    gleicher Pattern). Bei Disagreement: Engine-Wert kommt aus dem Judge-Score
+                    (pattern_match=2); LLM-Wert ist eine Schätzung aus den{' '}
+                    <strong>{hintBetterAtDis} hint_better</strong> +{' '}
+                    <strong>{equivalentAtDis} equivalent</strong> Verdicts
+                    {noVerdictAtDis > 0 && (
+                      <> ({noVerdictAtDis} ohne Judge-Verdict bleiben unbewertet)</>
+                    )}.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div style={{
+              marginTop: 10, padding: 8, background: '#FFFBEB',
+              borderRadius: 4, fontSize: 12, color: '#92400E',
+            }}>
+              <strong>Kern-Aussage:</strong>{' '}
+              Bei Disagreement Engine{' '}
+              <strong>{pct(engineOkAtDisagree, totalDisagree)}</strong> vs LLM-Hint{' '}
+              <strong>{pct(llmOkAtDisagree, totalDisagree)}</strong> Approval.{' '}
+              {llmOkAtDisagree > engineOkAtDisagree
+                ? 'LLM-Hint trifft bessere Wahl bei Disagreement.'
+                : engineOkAtDisagree > llmOkAtDisagree
+                ? 'Engine trifft bessere Wahl bei Disagreement.'
+                : 'Beide gleichauf bei Disagreement.'}
+              {totalDisagree < 10 && ' Bei nur ' + totalDisagree + ' Disagreements aber statistisch zu klein.'}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Welle E v3 (2026-05-25) — Judge-Verdict bei Disagreement */}
+      {(() => {
+        const vc = metrics.pattern_hint_verdict_counts || {};
+        const eb = vc.engine_better ?? 0;
+        const hb = vc.hint_better ?? 0;
+        const eq = vc.equivalent ?? 0;
+        const decided = eb + hb + eq;
+        // Echte Disagreement-Anzahl = aus Confusion-Matrix oder
+        // disagreement_count vom Backend. Differenz zu ``decided`` = Turns
+        // wo der Judge KEIN valides Verdict gegeben hat.
+        const totalDisagree = metrics.llm_engine_disagreement_count ?? decided;
+        const judgeMissing = Math.max(0, totalDisagree - decided);
+        if (totalDisagree === 0) return null;
+
+        const hintRate = metrics.pattern_hint_better_rate ?? 0;
+        const engineRate = metrics.pattern_engine_better_rate ?? 0;
+        // Statistische Aussagekraft (Faustregel: <10 Disagreements = zu wenig).
+        const sampleTooSmall = decided < 10;
+        const margin = Math.abs(hintRate - engineRate);
+        const verdict = sampleTooSmall ? 'zu wenig Daten' :
+          margin < 0.1 ? 'unentschieden' :
+          hintRate > engineRate ? 'LLM-Hint gewinnt' : 'Engine gewinnt';
+        const verdictColor = sampleTooSmall ? '#9CA3AF'
+          : margin < 0.1 ? '#6B7280'
+          : hintRate > engineRate ? '#DC2626' : '#10B981';
+        return (
+          <div style={{
+            padding: 14, background: '#FEF3C7', borderRadius: 8,
+            border: '1px solid #FBBF24', marginBottom: 16,
+          }}>
+            <h4 style={{ marginTop: 0, marginBottom: 8 }}>⚖ Judge-Verdict bei Pattern-Disagreement</h4>
+            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 6px' }}>
+              Bei den <strong>{totalDisagree} Turns</strong>, an denen das <strong>Final-Pattern</strong>
+              (nach Rule-/Safety-Override) vom <strong>LLM-Hint</strong> abwich, bewertet der Judge,
+              welches besser zur Bot-Antwort gepasst hätte. Daraus lässt sich ablesen, ob die
+              jeweilige Rule den Hint sinnvoll korrigiert (→ Rule behalten) oder nicht (→ Rule prüfen).
+            </p>
+            <p style={{ fontSize: 11, color: '#6B7280', margin: '0 0 12px' }}>
+              📊 Diese Box zeigt nur die {totalDisagree} Disagreement-Turns — <strong>nicht</strong>
+              alle 48 Turns. Die Prozentwerte sind relativ zur Anzahl der vom Judge bewerteten
+              Disagreement-Cases ({decided}). Aussagekräftig ab ~10 Bewertungen.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
+              <StatCard label="Rule-Override besser"
+                value={`${eb} · ${(engineRate * 100).toFixed(0)}%`} color="#10B981" />
+              <StatCard label="LLM-Hint allein besser"
+                value={`${hb} · ${(hintRate * 100).toFixed(0)}%`} color="#DC2626" />
+              <div style={{ padding: 16, background: '#F9FAFB', borderRadius: 8 }}
+                title="Final-Pattern und LLM-Hint sind UNTERSCHIEDLICH, aber der Judge sagt: beide hätten gleich gut zur Antwort gepasst. Beispiel: M05 vs M06 sind beide Such-Pattern, oft austauschbar.">
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Gleichwertig <span style={{ cursor: 'help', color: '#3B82F6' }}>ⓘ</span>
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: '#9CA3AF', marginTop: 4 }}>{eq}</div>
+              </div>
+              <div style={{ padding: 16, background: '#F9FAFB', borderRadius: 8 }}
+                title="Disagreement-Turn, aber der Judge hat das pattern_hint_verdict-Feld leer gelassen oder einen ungültigen Wert geliefert (z.B. wegen JSON-Parse-Fehler oder unklarer Anfrage). Diese Cases fließen in keine der drei Rate-Berechnungen ein.">
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {judgeMissing > 0 ? 'Judge ohne Verdict' : '(alle bewertet)'}
+                  {judgeMissing > 0 && <span style={{ cursor: 'help', color: '#3B82F6' }}> ⓘ</span>}
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700,
+                              color: judgeMissing > 0 ? '#F59E0B' : '#9CA3AF', marginTop: 4 }}>
+                  {judgeMissing}
+                </div>
+              </div>
+              <StatCard label="Disagreements gesamt" value={`${totalDisagree}`} color="#6B7280" />
+            </div>
+            <div style={{ fontSize: 13, color: verdictColor, fontWeight: 600, marginBottom: 6 }}>
+              Verdict: {verdict}
+              {sampleTooSmall && (
+                <span style={{ marginLeft: 8, fontWeight: 400, color: '#9CA3AF' }}>
+                  (nur {decided} bewertete Disagreements — Aussage statistisch schwach)
+                </span>
+              )}
+            </div>
+            {judgeMissing > 0 && (
+              <div style={{ fontSize: 11, color: '#92400E', marginBottom: 6 }}>
+                ⚠ Der Judge hat in <strong>{judgeMissing}</strong> Disagreement-Turn(s) kein
+                valides Verdict geliefert (leerer/unbekannter Wert). Diese Cases gehen weder
+                in „Rule-Override besser" noch in „LLM-Hint allein besser" ein. Bei knappen
+                Verdicts kann das die Aussage kippen.
+              </div>
+            )}
+            {metrics.pattern_disagreement_pairs && Object.keys(metrics.pattern_disagreement_pairs).length > 0 && (
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 12, color: '#374151' }}>
+                  Top-Konflikt-Paare (Final-Pattern → LLM-Hint)
+                </summary>
+                <table style={{ borderCollapse: 'collapse', fontSize: 12, marginTop: 8, width: '100%', maxWidth: 600 }}>
+                  <thead>
+                    <tr style={{ background: '#FFFBEB' }}>
+                      <th style={{ padding: '4px 8px', textAlign: 'left' }}>Final → Hint</th>
+                      <th style={{ padding: '4px 8px', textAlign: 'right' }}>Rule besser</th>
+                      <th style={{ padding: '4px 8px', textAlign: 'right' }}>Hint besser</th>
+                      <th style={{ padding: '4px 8px', textAlign: 'right' }}>≈</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(metrics.pattern_disagreement_pairs)
+                      .sort(([, a], [, b]) =>
+                        ((b.engine_better || 0) + (b.hint_better || 0) + (b.equivalent || 0)) -
+                        ((a.engine_better || 0) + (a.hint_better || 0) + (a.equivalent || 0))
+                      )
+                      .slice(0, 8)
+                      .map(([pair, counts]) => (
+                        <tr key={pair} style={{ borderTop: '1px solid #F3F4F6' }}>
+                          <td style={{ padding: '4px 8px', fontFamily: 'monospace' }}>{pair}</td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', color: '#10B981' }}>
+                            {counts.engine_better ?? 0}
+                          </td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', color: '#DC2626' }}>
+                            {counts.hint_better ?? 0}
+                          </td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', color: '#6B7280' }}>
+                            {counts.equivalent ?? 0}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </details>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Pattern-Match-Score-Distribution */}
       {metrics.pattern_match_score_distribution && (
@@ -1082,7 +1429,7 @@ function ClassificationMetricsView({ metrics }: { metrics?: ClassificationMetric
       {metrics.pattern_confusion_llm_vs_engine && Object.keys(metrics.pattern_confusion_llm_vs_engine).length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <ConfusionMatrix
-            title="Pattern — LLM-Hint × Engine-Wahl"
+            title="Pattern — LLM-Hint × Final-Pattern (nach Rule/Safety-Override)"
             data={metrics.pattern_confusion_llm_vs_engine}
             xAxisLabel="Engine"
             yAxisLabel="LLM"

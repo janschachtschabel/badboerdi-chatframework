@@ -28,8 +28,32 @@
              auftauchen, hier rausgestrippt, damit keine Doppelung entsteht. -->
         <div *ngIf="!msg.isLoading && msg.content" [innerHTML]="renderMarkdown(displayContent(msg), msg.sender)" class="msg-content"></div>
 
-        <!-- Lernpfad: prominenter Druck-Button am Ende des Textes -->
-        <div *ngIf="!msg.isLoading && isLearningPath(msg)" class="lp-print-bar">
+        <!-- Inline-Document-Box (Welle E, 2026-05-23):
+             Lernpfade (M09), KI-Materialien (M10), Edits (M11) werden in
+             einer gerahmten Box im Chat-Verlauf gerendert — optisch wie
+             die Webseiten-Inhalte-Box, aber mit etwas kleinerer Schrift
+             (display_rules.inline_documents.font_size_percent). -->
+        <ng-container *ngIf="!msg.isLoading && msg.inlineDocuments?.length">
+          <div *ngFor="let doc of msg.inlineDocuments" class="inline-document"
+               [style.--inline-doc-scale]="inlineDocFontSize(msg) / 100">
+            <div class="inline-document__heading">
+              <span class="bb-icon" [innerHTML]="inlineDocIcon(doc.kind) | safeSvg"></span>
+              <span class="inline-document__title">{{ doc.title || inlineDocFallbackLabel(doc.kind) }}</span>
+              <button type="button" class="inline-document__print-btn"
+                      (click)="printInlineDocument(doc)"
+                      title="Als PDF drucken / speichern">
+                <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
+              </button>
+            </div>
+            <div class="inline-document__body" [innerHTML]="renderMarkdown(doc.content, 'bot')"></div>
+          </div>
+        </ng-container>
+
+        <!-- Welle E (2026-05-24): Print-Button ist jetzt im Header der
+             InlineDocument-Box (oben). Die Legacy-Bars unten greifen nur
+             noch für Bestands-Messages OHNE inlineDocuments (z.B. aus
+             dem Session-Restore). -->
+        <div *ngIf="!msg.isLoading && !msg.inlineDocuments?.length && isLearningPath(msg)" class="lp-print-bar">
           <button class="btn-lp-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
             <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
             <span>Lernpfad drucken / als PDF speichern</span>
@@ -40,7 +64,7 @@
              generierte Inhalte (Arbeitsblatt, Quiz, Bericht, …) genauso
              als PDF abgreifbar sind wie Lernpfade. Backend setzt den
              Sentinel-HTML-Kommentar bei canvas-enabled=false. -->
-        <div *ngIf="!msg.isLoading && isPrintableCanvasMaterial(msg)" class="lp-print-bar">
+        <div *ngIf="!msg.isLoading && !msg.inlineDocuments?.length && isPrintableCanvasMaterial(msg)" class="lp-print-bar">
           <button class="btn-lp-print" (click)="printCanvasMaterial(msg)" title="Material als PDF drucken">
             <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
             <span>{{ printableCanvasLabel(msg) }} drucken / als PDF speichern</span>
@@ -85,7 +109,7 @@
                    [href]="withBsid(card.topic_pages[0].url)"
                    target="_blank"
                    rel="noopener noreferrer"
-                   [title]="externalLinkWarning(card.topic_pages[0].url) || null">
+                   [title]="cardTooltip(card, card.topic_pages[0].url)">
                   <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
                   <span>Themenseite</span>
                 </a>
@@ -115,6 +139,47 @@
              entfallen nur die großen Tile-Karten weiter unten — die Box-
              Übersicht hier bleibt sichtbar, sodass Treffer auch in der
              schlanken Embed-Konfiguration kompakt angeboten werden. -->
+        <!-- ──────── M16: Themenseiten-Inhalte (Schwimmlinien-Boxen) ────────
+             Wenn ``msg.topicPage`` gesetzt ist, rendert das Frontend NUR diese
+             Boxen (je Schwimmlinie eine, max. 3 Karten, Titel + „(Auszug)") +
+             einen Absprung-Button auf die vollständige Themenseite. Die
+             normalen Sammlungs-/Inhalts-Boxen unterdrückt das Backend (cards=[]). -->
+        <ng-container *ngIf="!msg.isLoading && msg.topicPage as tp">
+          <div class="result-groups" *ngIf="tp.swimlanes?.length">
+            <div *ngFor="let sl of tp.swimlanes" class="result-group result-group--topic">
+              <div class="result-group__heading">
+                <span class="bb-icon" [innerHTML]="ICONS.auto_stories | safeSvg"></span>
+                {{ sl.heading || 'Inhalte' }} (Auszug)
+              </div>
+              <div class="result-group__items">
+                <a *ngFor="let card of sl.cards"
+                   class="result-group__item"
+                   [href]="cardUrl(card)"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   [title]="cardTooltip(card)">
+                  <span class="result-group__item-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
+                  <span class="result-group__item-title">{{ card.title }}</span>
+                </a>
+              </div>
+            </div>
+            <!-- Absprung auf die vollständige Themenseite -->
+            <a *ngIf="tp.topic_page_url"
+               class="result-group result-group--cta"
+               [href]="tp.topic_page_url"
+               target="_blank"
+               rel="noopener noreferrer"
+               [title]="'Zur vollständigen Themenseite: ' + tp.variant_title">
+              <span class="result-group__cta-icon" [innerHTML]="ICONS.auto_stories | safeSvg"></span>
+              <span class="result-group__cta-text">
+                <strong>Zur Themenseite „{{ tp.variant_title }}"</strong>
+                <span class="result-group__cta-sub">Alle Inhalte auf der Themenseite ansehen</span>
+              </span>
+              <span class="result-group__cta-arrow" [innerHTML]="ICONS.chevron_right | safeSvg"></span>
+            </a>
+          </div>
+        </ng-container>
+
         <ng-container *ngIf="inlineResultGroupingBool && !hideCards && hasGroupedResults(msg)">
           <div class="result-groups">
             <!-- Themenseiten -->
@@ -129,7 +194,7 @@
                    [href]="cardUrl(card)"
                    target="_blank"
                    rel="noopener noreferrer"
-                   [title]="itemTooltip(card.title, cardUrl(card))">
+                   [title]="cardTooltip(card)">
                   <span class="result-group__item-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
                   <span class="result-group__item-title">{{ card.title }}</span>
                 </a>
@@ -148,7 +213,30 @@
                    [href]="cardUrl(card)"
                    target="_blank"
                    rel="noopener noreferrer"
-                   [title]="itemTooltip(card.title, cardUrl(card))">
+                   [title]="cardTooltip(card)">
+                  <span class="result-group__item-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
+                  <span class="result-group__item-title">{{ card.title }}</span>
+                </a>
+              </div>
+            </div>
+
+            <!-- Materialien (Welle E, 2026-05-23): Einzelinhalte (OER-
+                 Ressourcen wie Videos, Arbeitsblätter, interaktive Übungen)
+                 als eigene Gruppen-Box. Verlinkung über cardUrl() — das ist
+                 die Repo-/Lotsen-URL (build_card_link im Backend), nicht
+                 die externe wwwurl. -->
+            <div *ngIf="groupedContentCards(msg).length" class="result-group result-group--material">
+              <div class="result-group__heading">
+                <span class="bb-icon" [innerHTML]="ICONS.description | safeSvg"></span>
+                Ausgewählte Materialien
+              </div>
+              <div class="result-group__items">
+                <a *ngFor="let card of groupedContentCards(msg)"
+                   class="result-group__item"
+                   [href]="cardUrl(card)"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   [title]="cardTooltip(card)">
                   <span class="result-group__item-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
                   <span class="result-group__item-title">{{ card.title }}</span>
                 </a>
@@ -157,7 +245,9 @@
 
             <!-- Webseiten-Inhalte: Web-Links aus dem Bot-Text (RAG-Quellen
                  wie WLO-Artikel, FAQ, edu-sharing-network.org-Hintergrund-
-                 Texte). Nur sichtbar wenn welche extrahierbar sind. -->
+                 Texte). Nur sichtbar wenn welche extrahierbar sind.
+                 Welle E (2026-05-23): Einzelinhalte landen hier NICHT mehr —
+                 die haben jetzt ihre eigene Materialien-Box (oben). -->
             <div *ngIf="groupedWebLinks(msg).length" class="result-group result-group--web">
               <div class="result-group__heading">
                 <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
@@ -166,11 +256,11 @@
               <div class="result-group__items">
                 <a *ngFor="let link of groupedWebLinks(msg)"
                    class="result-group__item"
-                   [href]="link.url"
+                   [href]="webLinkUrl(link)"
                    target="_blank"
                    rel="noopener noreferrer"
-                   [title]="itemTooltip(link.title, link.url)">
-                  <span class="result-group__item-icon" [innerHTML]="ICONS.description | safeSvg"></span>
+                   [title]="itemTooltip(link.title ? link.title + ' (Webseite)' : 'Webseite', webLinkUrl(link))">
+                  <span class="result-group__item-icon" [innerHTML]="ICONS.language | safeSvg"></span>
                   <span class="result-group__item-title">{{ link.title }}</span>
                 </a>
               </div>
@@ -180,7 +270,7 @@
             <a *ngIf="groupedSearchUrl(msg)"
                class="result-group result-group--cta"
                [href]="groupedSearchUrl(msg)"
-               target="_blank"
+               [attr.target]="isTrustedSearchUrl(msg) ? '_self' : '_blank'"
                rel="noopener noreferrer"
                [title]="searchCtaTooltip(msg)">
               <span class="result-group__cta-icon" [innerHTML]="ICONS.search | safeSvg"></span>
@@ -207,7 +297,7 @@
                [href]="cardUrl(card)"
                target="_blank"
                rel="noopener noreferrer"
-               [title]="externalLinkWarning(cardUrl(card)) || null"
+               [title]="cardTooltip(card)"
                (click)="$event.stopPropagation()">
 
               <!-- Typ-Header: Inhaltstyp-Icon + Label links oben.
@@ -504,8 +594,29 @@
     </div>
     <div class="debug-row" *ngIf="latestDebug.trace && latestDebug.trace.length">
       <span class="debug-label">Trace:</span>
-      <div *ngFor="let t of latestDebug.trace" class="debug-sub">
-        · [{{ t.step }}] {{ t.label }} – {{ t.duration_ms }}ms
+      <div *ngFor="let t of latestDebug.trace" class="debug-trace-entry">
+        <!-- Parallel-Gruppe: horizontaler Stack mit individuellen Bars
+             (Welle E, 2026-05-23). Daten kommen aus
+             trace_service.py:ParallelGroup.finish() — t.data.parallel == true
+             und t.data.tasks = [{name, label, started_at_ms, duration_ms}]. -->
+        <ng-container *ngIf="t.data && t.data['parallel'] === true && t.data['tasks']?.length; else linearTrace">
+          <div class="debug-sub debug-parallel-header">
+            ⟨ {{ t.label || t.step }} – Gesamt {{ t.duration_ms }}ms ⟩
+          </div>
+          <div class="debug-parallel-stack">
+            <div *ngFor="let task of t.data['tasks']"
+                 class="debug-parallel-task"
+                 [style.margin-left.%]="(task.started_at_ms / Math.max(t.duration_ms,1)) * 100"
+                 [style.width.%]="Math.max((task.duration_ms / Math.max(t.duration_ms,1)) * 100, 2)"
+                 [title]="task.label + ' — Start +' + task.started_at_ms + 'ms · Dauer ' + task.duration_ms + 'ms'">
+              <span class="debug-parallel-task__label">{{ task.label || task.name }}</span>
+              <span class="debug-parallel-task__time">{{ task.duration_ms }}ms</span>
+            </div>
+          </div>
+        </ng-container>
+        <ng-template #linearTrace>
+          <div class="debug-sub">· [{{ t.step }}] {{ t.label }} – {{ t.duration_ms }}ms</div>
+        </ng-template>
       </div>
     </div>
     <!-- Pattern-Hint (Shadow-Mode telemetry) — LLM-classifier's pattern guess -->

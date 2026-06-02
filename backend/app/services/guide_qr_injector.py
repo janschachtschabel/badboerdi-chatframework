@@ -174,16 +174,57 @@ _RAG_AREA_URLS: dict[str, tuple[str, str, str]] = {
 
 # Cache der kompilierten Regexen — ohne Re-Compile pro Call.
 _COMPILED: list[tuple[re.Pattern, str, str, int]] | None = None
+_COMPILED_SOURCE: str = ""  # "yaml" | "hardcoded" — fürs Logging
 
 
 def _compiled() -> list[tuple[re.Pattern, str, str, int]]:
-    global _COMPILED
-    if _COMPILED is None:
-        _COMPILED = [
-            (re.compile(pat, re.IGNORECASE), label, url, prio)
-            for (pat, label, url, prio) in _RULES
-        ]
+    """Liefert die kompilierten Lotsen-Regex-Regeln.
+
+    Welle E (2026-05-23) — Vorrang hat ``02-domain/guide-rules.yaml``
+    via ``load_guide_rules_config()``. Wenn die YAML leer ist oder
+    nicht lädt, fallen wir auf die hardcodierten ``_RULES`` zurück
+    (sicherer Fallback — Studio kann YAML versehentlich kaputt machen,
+    ohne dass der Lotsen-Pfad komplett ausfällt).
+    """
+    global _COMPILED, _COMPILED_SOURCE
+    if _COMPILED is not None:
+        return _COMPILED
+
+    rules_source: list[tuple[str, str, str, int]] = []
+    try:
+        from app.services.config_loader import load_guide_rules_config
+        cfg = load_guide_rules_config() or {}
+        yaml_msgs = cfg.get("message_rules") or []
+        for item in yaml_msgs:
+            rules_source.append((
+                item["pattern"], item["label"],
+                item["url"], int(item["priority"]),
+            ))
+        if rules_source:
+            _COMPILED_SOURCE = "yaml"
+            logger.info("guide-rules: %d message_rules loaded from YAML", len(rules_source))
+    except Exception as e:  # pragma: no cover — defensive
+        logger.warning("guide-rules YAML load failed (%s) — using hardcoded fallback", e)
+
+    if not rules_source:
+        rules_source = list(_RULES)
+        _COMPILED_SOURCE = "hardcoded"
+
+    _COMPILED = [
+        (re.compile(pat, re.IGNORECASE), label, url, prio)
+        for (pat, label, url, prio) in rules_source
+    ]
     return _COMPILED
+
+
+def reset_compiled_cache() -> None:
+    """Studio-Hook: nach Edit von 02-domain/guide-rules.yaml den Regex-
+    Cache invalidieren, damit der nächste Request neu lädt. Aufrufbar
+    z.B. aus dem Config-File-Watcher.
+    """
+    global _COMPILED, _COMPILED_SOURCE
+    _COMPILED = None
+    _COMPILED_SOURCE = ""
 
 
 def _has_guide_qr(qrs: Iterable[str]) -> bool:

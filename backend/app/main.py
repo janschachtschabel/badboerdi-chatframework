@@ -5,14 +5,21 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-from app.services.auth import require_studio_key
-from app.services.database import init_db
-from app.routers import chat, config, rag, speech, sessions, safety, quality, widget, eval as eval_router, routing_rules
-
+# WICHTIG: .env MUSS vor den App-Imports geladen werden. Mehrere Services
+# (z.B. llm_service) bauen ihren OpenAI-Client bzw. lesen das Chat-Modell
+# bereits beim IMPORT (Modul-Ebene, via lru_cache / Modul-Globals). Läuft
+# ``load_dotenv()`` erst NACH diesen Imports, cachen die Clients die Defaults
+# VOR .env (nativer OpenAI-Provider, gpt-5.4-mini) und ignorieren
+# LLM_PROVIDER / B_API_BASE_URL / LLM_CHAT_MODEL aus der .env dauerhaft.
 load_dotenv()
+
+from fastapi import Depends, FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+from app.services.auth import require_studio_key  # noqa: E402
+from app.services.database import init_db  # noqa: E402
+from app.routers import chat, config, rag, speech, sessions, safety, quality, widget, eval as eval_router  # noqa: E402
 
 # Configure root logging so INFO-level messages (warmup, safety timings,
 # quality logs) are actually emitted. Override with LOG_LEVEL env var.
@@ -120,11 +127,23 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             log.warning("Reranker warmup skipped: %s", e)
 
+    # O3: Vokabular-Label→URI-Caches (Fächer/Bildungsstufen/LRT/Zielgruppen)
+    # vorwärmen, damit schon der erste Such-Turn keine MCP-Vokabular-Round-Trips
+    # zahlt. Best-effort; bei MCP-Ausfall greift der Lazy-Fallback beim ersten
+    # echten Bedarf.
+    async def _prewarm_vocab():
+        try:
+            from app.services.mcp_client import prewarm_vocabularies
+            await prewarm_vocabularies()
+        except Exception as e:
+            log.warning("Vocabulary prewarm skipped: %s", e)
+
     # All background tasks run concurrently; none blocks request acceptance.
     asyncio.create_task(_embed_seed_chunks())
     asyncio.create_task(_warmup_configs())
     asyncio.create_task(_warmup_llm())
     asyncio.create_task(_warmup_reranker())
+    asyncio.create_task(_prewarm_vocab())
     yield
 
 
@@ -176,7 +195,9 @@ app.include_router(config.public_router, prefix="/api/config", tags=["config"])
 app.include_router(rag.router,     prefix="/api/rag",     tags=["rag"],     dependencies=_studio_deps)
 app.include_router(safety.router,  prefix="/api/safety",  tags=["safety"],  dependencies=_studio_deps)
 app.include_router(quality.router, prefix="/api/quality", tags=["quality"], dependencies=_studio_deps)
-app.include_router(routing_rules.router, prefix="/api/routing-rules", tags=["routing-rules"], dependencies=_studio_deps)
+# Welle E v4+12 (Sprint K, 2026-05-27, rev1): /api/routing-rules entfernt —
+# Rule-Engine wurde komplett ausgebaut, Persona-Self-ID via
+# classify-overrides.yaml + Pattern-Hint-Primary-Architektur.
 # Eval router brings its own /api/eval prefix and per-endpoint Studio guards
 app.include_router(eval_router.router)
 

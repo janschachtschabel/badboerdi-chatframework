@@ -1,0 +1,47 @@
+# Display-Regeln — Studio-pflegbare Steuerung WAS und WIE im Chat
+# angezeigt wird. Diese Datei wird vom Backend bei jedem Chat-Turn neu
+# gelesen (mtime-Cache), Änderungen greifen sofort ohne Neustart.
+
+display_rules:
+  inline_documents:
+    enabled: true
+    font_size_percent: 85
+    per_pattern:
+      M09: true
+      M10: true
+      M11: true
+
+  # ── Einzelinhalte-Box ein/aus ──
+  # Steuert OB die Materialien-Box im Chat angezeigt wird. Bei false
+  # werden Einzelinhalte komplett ausgeblendet — der User erreicht sie
+  # nur noch über die Such-CTA. Maximalzahl steht jetzt in
+  # ``groups.materialien_max`` (vorher: single_content_box.max_count).
+  single_content_box:
+    enabled: true
+    layout: card
+
+  # ── Gruppierte Boxen — Maximalzahl pro Typ ──
+  # Vier Box-Typen, jeweils gleich behandelt. Default je 3 Treffer.
+  #   * themenseiten_max  — kuratierte WLO-Themenseiten (aus MCP)
+  #   * sammlungen_max    — WLO-Sammlungen (aus MCP)
+  #   * materialien_max   — Einzelinhalte / OER-Ressourcen (aus MCP)
+  #   * webseiten_max     — RAG-Quellen / Webseiten-Inhalte (aus RAG)
+  groups:
+    themenseiten_max: 3
+    sammlungen_max: 3
+    materialien_max: 3
+    webseiten_max: 3
+
+  inline_card_links:
+    limit: 3
+    title_max_chars: 70
+
+  quick_replies:
+    max_count: 2
+    inline_fallback_enabled: true
+
+  prompt_anzeige_konsistenz:
+    enabled: true
+    exclude_patterns:
+      - M04
+      - M15

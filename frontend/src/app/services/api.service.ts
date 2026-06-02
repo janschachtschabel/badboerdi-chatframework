@@ -7,29 +7,22 @@ export interface Environment {
   locale: string;
   session_duration: number;
   referrer: string;
-  /** True when the user has the Lotsen-Modus toggle active. The backend
-   *  uses this together with ``host`` to decide whether to attach
-   *  ``guide_url`` to outgoing cards. */
+  /** Welle E (2026-05-23): Lotsen-Modus ist immer aktiv. Das Feld bleibt
+   *  als Backend-Echo erhalten — wir senden ``true`` mit, damit alte
+   *  Backend-Versionen ohne Welle-E-Default-Flip auch greifen. */
   guide_mode?: boolean;
   /** Hostname of the page the widget is embedded in (e.g.
    *  ``wirlernenonline.de``). Sent so the backend can verify the host is
    *  on its allow-list before annotating cards. */
   host?: string;
-  /** Widget-Embed-Modi: vier Schalter, die der einbettende Host setzt,
-   *  damit das Widget feature-by-feature minimaler auftritt.
-   *  ``undefined`` = Feld nicht mitgeschickt → Backend behält das
-   *  Default-Verhalten (alles an). Nur explizites ``false`` schaltet
-   *  ein Feature ab. */
-  cards_enabled?: boolean;
-  canvas_enabled?: boolean;
+  /** Welle E (2026-05-23): einziger verbleibender Embed-Mode. Hosts
+   *  können KI-Material/Lernpfad-Generierung pro Embed abschalten, z.B.
+   *  wenn die Host-Plattform selbst KI-Content-Tools mitbringt. */
   ai_content_enabled?: boolean;
-  quick_replies_enabled?: boolean;
-  /** Welle C.5: Host nutzt gruppierte Treffer-Darstellung (separate Boxen
-   *  für Themenseiten/Sammlungen/Webseiten-Inhalte/CTA). Backend zieht
-   *  dann Inline-Markdown-Links aus dem Bot-Text in ``web_links``, damit
-   *  sie nicht doppelt erscheinen. Default ``undefined``/``false`` → Text
-   *  behält seine Inline-Links (Lotsen-Bullets bleiben sichtbar). */
-  inline_result_grouping?: boolean;
+  /** Webseiten-Tour: "start" (Button "Web-Tour starten") | "tick"
+   *  (unsichtbarer Page-Load-Ping für die Ankunfts-Erkennung). Nur bei
+   *  Tour-Requests gesetzt. */
+  tour_action?: string;
 }
 
 export interface WloCard {
@@ -187,6 +180,44 @@ export interface WebLink {
   url: string;
 }
 
+/**
+ * Gerahmtes Inline-Dokument im Chat-Verlauf — Lernpfade (M09),
+ * KI-generierte Materialien (M10), iterative Edits (M11). Ersetzt
+ * das frühere Canvas-Pane: Markdown wird direkt im Verlauf gerendert,
+ * aber in einer optisch konsistenten Box (gleicher Rahmen wie die
+ * Webseiten-Inhalte-Box, kleinere Schrift).
+ *
+ * Welle E (2026-05-23).
+ */
+export interface InlineDocument {
+  /** "lernpfad" | "ki_material" | "edit" | "bericht" | "remix" */
+  kind: string;
+  /** Box-Header über dem Markdown. */
+  title: string;
+  /** Markdown-Body — wird via existierendem renderMarkdown gerendert. */
+  content: string;
+  /** Optional: material_type, source_node_id, discipline, etc. */
+  meta?: Record<string, any>;
+}
+
+/** Eine Schwimmlinie (Abschnitt) einer Themenseite als eigene Box (M16).
+ *  Box-Titel im Chat = ``heading`` + „(Auszug)"; max. 3 Karten. */
+export interface SwimlaneBox {
+  heading: string;
+  type?: string;
+  cards: WloCard[];
+  has_more?: boolean;
+}
+
+/** Inhalte EINER Themenseite, nach Schwimmlinien gruppiert (Pattern M16).
+ *  Wird ANSTELLE der normalen Boxen gerendert; ``topic_page_url`` ist der
+ *  Absprung-Button auf die vollständige Themenseite. */
+export interface TopicPageView {
+  variant_title: string;
+  topic_page_url: string;
+  swimlanes: SwimlaneBox[];
+}
+
 export interface ChatResponse {
   session_id: string;
   content: string;
@@ -202,6 +233,18 @@ export interface ChatResponse {
    *  der separaten Webseiten-Inhalte-Box. Leer = keine Quellen-Links in
    *  dieser Antwort. */
   web_links?: WebLink[];
+  /** Lernpfade / KI-Materialien / Edits werden als gerahmte Box im Chat
+   *  gerendert (Welle E). Leer = klassische Bot-Bubble. */
+  inline_documents?: InlineDocument[];
+  /** M16 — Themenseiten-Inhalte (Schwimmlinien-Boxen). Wenn gesetzt, rendert
+   *  das Frontend NUR diese Boxen (+ Absprung-Button) statt der normalen. */
+  topic_page?: TopicPageView | null;
+  /** Echo der Studio-pflegbaren Display-Regeln (01-base/display-rules.yaml).
+   *  Frontend stylet Boxen/Schriften anhand dieses Blocks ohne Hard-Coding. */
+  display_rules?: Record<string, any>;
+  /** Webseiten-Tour-Status. Nur bei Tour-Antworten gesetzt: {active, step,
+   *  group}. active=false → Frontend löscht das Tour-Flag (keine Ticks mehr). */
+  tour?: { active: boolean; step: string; group: string } | null;
 }
 
 /**
@@ -239,6 +282,14 @@ export interface ChatMessage {
   visibleCardCount?: number;  // how many cards to show (for client-side paging)
   queryMetas?: QueryMetaEntry[];
   webLinks?: WebLink[];
+  /** Lernpfade / KI-Materialien / Edits als gerahmte Box im Chat (Welle E). */
+  inlineDocuments?: InlineDocument[];
+  /** M16 — Themenseiten-Inhalte (Schwimmlinien-Boxen) statt normaler Boxen. */
+  topicPage?: TopicPageView | null;
+  /** Echo der aktiven Display-Regeln aus dem Backend. Per Message
+   *  übertragen, damit die jeweilige Bubble auch nach späterem
+   *  Studio-Edit ihre Render-Settings behält. */
+  displayRules?: Record<string, any>;
   timestamp: Date;
 }
 
@@ -252,20 +303,9 @@ export class ApiService {
    *  cards. Defaults are off / empty until ``setGuideEnv`` is called. */
   private guideMode = false;
   private guideHost = '';
-  /** Widget-Embed-Modi — gesetzt vom WidgetComponent aus den HTML-Attributen
-   *  ``cards-enabled``, ``canvas-enabled``, ``ai-content-enabled``,
-   *  ``quick-replies-enabled``. ``undefined`` heisst "Attribut nicht
-   *  gesetzt" — wir schicken das Feld dann gar nicht erst mit, damit das
-   *  Backend sein Default-Verhalten beibehält (alles an). Nur explizites
-   *  ``false`` wird durchgereicht und schaltet das Feature backend-seitig
-   *  ab. */
-  private widgetModes: {
-    cards?: boolean;
-    canvas?: boolean;
-    ai?: boolean;
-    qr?: boolean;
-    inlineResultGrouping?: boolean;
-  } = {};
+  /** Welle E (2026-05-23): einziger Embed-Mode der pro Host überschreibbar
+   *  bleibt — KI-Content. ``undefined`` = Default-Backend-Verhalten. */
+  private widgetModes: { ai?: boolean } = {};
 
   constructor() {
     // Allow the hosting page to override the backend URL at runtime by
@@ -289,45 +329,28 @@ export class ApiService {
     this.baseUrl = u;
   }
 
-  /** Updated by ``WidgetComponent`` whenever the user toggles the
-   *  Lotsen-Modus or the page reports its hostname. Both values are
-   *  appended to ``environment`` on every outgoing chat request so the
-   *  backend (``_attach_guide_urls``) can decide whether to enrich
-   *  outgoing cards with a ``guide_url``. */
+  /** Welle E (2026-05-23): host nur als Echo-Feld nötig (Backend nutzt es
+   *  fürs ``guide_url``-Annotieren im Repo-Render-Pfad). Der Lotsen-
+   *  Mode-Bool ist immer ``true`` und wird vom Widget beim Boot einmal
+   *  gesetzt. */
   setGuideEnv(guideMode: boolean, host: string): void {
     this.guideMode = !!guideMode;
     this.guideHost = (host || '').trim().toLowerCase();
   }
 
-  /** Updated by ``WidgetComponent`` whenever one of the four embed-mode
-   *  Inputs is set (or its absence is detected). Pass ``undefined`` for
-   *  any flag the host did not set explicitly — that field is then NOT
-   *  included in the outgoing ``environment`` block, so older backends
-   *  and the default-on flow remain unaffected.
-   */
-  setWidgetModes(
-    cards: boolean | undefined,
-    canvas: boolean | undefined,
-    ai: boolean | undefined,
-    qr: boolean | undefined,
-    inlineResultGrouping?: boolean | undefined,
-  ): void {
-    this.widgetModes = { cards, canvas, ai, qr, inlineResultGrouping };
+  /** Welle E (2026-05-23): nur noch der ``aiContentEnabled``-Slot ist
+   *  pro Embed steuerbar. Andere ehemalige Embed-Modi (cards / canvas /
+   *  inline-result-grouping / quick-replies) sind ersatzlos entfernt —
+   *  Layout-Settings liegen jetzt im Studio (display-rules.yaml). */
+  setWidgetModes(ai: boolean | undefined): void {
+    this.widgetModes = { ai };
   }
 
-  /** Build the optional widget-mode fields for the environment block.
-   *  Only writes a key when the value is an explicit boolean — undefined
-   *  is treated as "host didn't say", and we don't ship that field at all.
-   */
+  /** Build the optional widget-mode fields for the environment block. */
   private widgetModeEnv(): Partial<Environment> {
-    const m = this.widgetModes;
     const out: Partial<Environment> = {};
-    if (typeof m.cards === 'boolean') out.cards_enabled = m.cards;
-    if (typeof m.canvas === 'boolean') out.canvas_enabled = m.canvas;
-    if (typeof m.ai === 'boolean') out.ai_content_enabled = m.ai;
-    if (typeof m.qr === 'boolean') out.quick_replies_enabled = m.qr;
-    if (typeof m.inlineResultGrouping === 'boolean') {
-      out.inline_result_grouping = m.inlineResultGrouping;
+    if (typeof this.widgetModes.ai === 'boolean') {
+      out.ai_content_enabled = this.widgetModes.ai;
     }
     return out;
   }
@@ -349,6 +372,7 @@ export class ApiService {
       referrer: env?.referrer || document.referrer || 'direkt',
       guide_mode: env?.guide_mode ?? this.guideMode,
       host: env?.host ?? this.guideHost,
+      tour_action: env?.tour_action,
       ...this.widgetModeEnv(),
     };
 
@@ -401,6 +425,7 @@ export class ApiService {
       referrer: env?.referrer || document.referrer || 'direkt',
       guide_mode: env?.guide_mode ?? this.guideMode,
       host: env?.host ?? this.guideHost,
+      tour_action: env?.tour_action,
       ...this.widgetModeEnv(),
     };
 
@@ -551,6 +576,22 @@ export class ApiService {
       return (data && typeof data === 'object') ? data : {};
     } catch {
       return {};
+    }
+  }
+
+  /** Welle E v4+13: Backend-Capability-Probe für Sprachfunktion.
+   *  Bei B-API-Anbindung ist Audio (STT/TTS) deaktiviert — das Widget
+   *  blendet dann Mikro-/Lautsprecher-Buttons aus. Fehler/Timeout →
+   *  optimistisch ``true`` (Buttons bleiben sichtbar, einzelne Calls
+   *  schlagen dann ggf. fehl, aber wir sperren die UI nicht grundlos). */
+  async getSpeechEnabled(): Promise<boolean> {
+    try {
+      const resp = await fetch(`${this.baseUrl}/speech/status`);
+      if (!resp.ok) return true;
+      const data = await resp.json();
+      return data?.enabled !== false;
+    } catch {
+      return true;
     }
   }
 

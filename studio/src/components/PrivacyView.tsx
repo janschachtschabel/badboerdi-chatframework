@@ -9,7 +9,9 @@ interface PrivacyConfig {
   safety: boolean;  // always true, read-only
 }
 
-const DEFAULTS: PrivacyConfig = { messages: true, memory: true, quality: true, safety: true };
+const DEFAULTS: PrivacyConfig = {
+  messages: true, memory: true, quality: true, safety: true,
+};
 
 export default function PrivacyView() {
   const [cfg, setCfg] = useState<PrivacyConfig>(DEFAULTS);
@@ -119,7 +121,7 @@ export default function PrivacyView() {
       if (d.quality_logs !== undefined) parts.push(`${d.quality_logs} Quality-Logs`);
       if (d.safety_logs !== undefined) parts.push(`${d.safety_logs} Safety-Logs`);
       if (d.sessions !== undefined) parts.push(`${d.sessions} Sessions`);
-      showFlash(`✅ ${label} gelöscht — ${parts.join(', ')}`);
+      showFlash(`✅ ${label} gelöscht — ${parts.join(', ') || 'OK'}`);
     } catch (e) {
       showFlash(`❌ Fehler: ${e}`);
     } finally {

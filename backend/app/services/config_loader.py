@@ -25,16 +25,84 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
 
 
 def load_persona_prompt(persona_id: str) -> str:
-    """Load persona markdown prompt file."""
-    persona_map = {
-        "P-W-LK": "lk", "P-W-SL": "sl", "P-W-POL": "pol", "P-W-PRESSE": "presse",
-        "P-W-RED": "red", "P-BER": "ber", "P-VER": "ver", "P-ELT": "elt", "P-AND": "and",
-    }
-    slug = persona_map.get(persona_id, "and")
+    """Render the Layer-3 persona block for the response prompt.
+
+    Welle E v2 (2026-05-25): Statt der rohen MD-Datei (die Klassifikations-
+    Marker enthält, die NICHT in den Antwort-Prompt gehören) bauen wir
+    hier eine kompakte Persönlichkeits-Beschreibung aus den Frontmatter-
+    Feldern, die für die Antwort relevant sind:
+
+      * description     — wer ist diese Persona
+      * tone/formality  — wie soll der Bot klingen
+      * goals           — was will diese Persona vom Bot
+      * rules           — Antwort-Stil-Regeln
+      * personality_text — freier Body-Text
+
+    Klassifikations-Felder (positive_markers, anti_markers, discriminators,
+    typical_intents) bleiben AUSSEN VOR — sie würden den Antwort-LLM mit
+    irrelevantem Kontext fluten (~500 Token pro Persona) und ihn dazu
+    verleiten, Marker-Phrasen wörtlich zu rezitieren.
+    """
+    slug = _persona_slug(persona_id)
     path = CHATBOT_DIR / "04-personas" / f"{slug}.md"
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-    return f"Persona: {persona_id} (Standard-Persona)"
+    if not path.exists():
+        return f"Persona: {persona_id} (Standard-Persona)"
+
+    text = path.read_text(encoding="utf-8")
+    meta, body = _parse_frontmatter(text)
+    if not meta:
+        # Old-style file without frontmatter → return raw (best-effort).
+        return text
+
+    label = str(meta.get("label") or persona_id)
+    desc = str(meta.get("description") or "").strip()
+    tone = str(meta.get("tone") or "").strip()
+    formality = str(meta.get("formality") or "").strip()
+    length_bias = meta.get("length_bias")
+
+    parts: list[str] = [f"## Persona: {persona_id} — {label}"]
+    if desc:
+        parts.append(desc)
+
+    # Tone/formality als kompakte Anweisung
+    style_bits: list[str] = []
+    if tone:
+        style_bits.append(f"Tonfall {tone}")
+    if formality:
+        f_label = {
+            "duzen": "duze die Person",
+            "siezen": "sieze die Person",
+            "wie_user": "übernimm die Anrede des Users",
+            "neutral": "halte die Anrede neutral, bis sie klar ist",
+        }.get(formality, formality)
+        style_bits.append(f_label)
+    try:
+        lb = float(length_bias) if length_bias is not None else 0.0
+        if lb > 0.15:
+            style_bits.append("antworte etwas ausführlicher als sonst")
+        elif lb < -0.15:
+            style_bits.append("antworte etwas knapper als sonst")
+    except (TypeError, ValueError):
+        pass
+    if style_bits:
+        parts.append("**Stil**: " + "; ".join(style_bits) + ".")
+
+    goals = [str(x).strip() for x in (meta.get("goals") or []) if str(x).strip()]
+    if goals:
+        parts.append("**Ziele dieser Persona**:")
+        parts.extend(f"- {g}" for g in goals)
+
+    rules = [str(x).strip() for x in (meta.get("rules") or []) if str(x).strip()]
+    if rules:
+        parts.append("**Antwort-Regeln**:")
+        parts.extend(f"- {r}" for r in rules)
+
+    # Persönlichkeits-Prosa aus Body (H1 entfernen, alles andere lassen)
+    body_clean = re.sub(r"^\s*#\s+.*\n", "", body, count=1).strip()
+    if body_clean:
+        parts.append(body_clean)
+
+    return "\n\n".join(parts)
 
 
 def load_domain_rules() -> str:
@@ -143,6 +211,100 @@ def invalidate_yaml_cache(rel_path: str | None = None) -> None:
         _YAML_CACHE.clear()
     else:
         _YAML_CACHE.pop(rel_path, None)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Round-Trip YAML — Welle E (2026-05-25)
+#
+# ruamel.yaml im round-trip-Modus erhält:
+#   - Header-Kommentare (z. B. das SCHEMA-Doku-Block in intents.yaml)
+#   - Inline-Kommentare zwischen Items
+#   - Quote-Stil (single vs double)
+#   - Indentation
+#
+# Nutzen: Studio-PUT-Endpoints (PATCH /api/config/intents etc.) können
+# die GANZE Liste neu setzen, ohne dass die ausführliche YAML-Doku am
+# Anfang der Datei weggeputzt wird. Wir bauen genau einmal pro Save-
+# Request ein neues YAML-Dokument, behalten aber die Top-Level-Struktur.
+# ──────────────────────────────────────────────────────────────────────
+
+try:
+    from ruamel.yaml import YAML
+    from ruamel.yaml.scalarstring import LiteralScalarString
+except ImportError:  # pragma: no cover — ruamel ist in requirements.txt
+    YAML = None  # type: ignore
+    LiteralScalarString = None  # type: ignore
+
+
+def _build_roundtrip_yaml() -> Any:
+    """Build a configured ruamel.yaml instance for our round-trip needs.
+
+    - ``typ='rt'`` enables round-trip mode (comment/quote preservation).
+    - ``indent`` matches the existing 2/4/2 layout of our YAML files.
+    - ``width`` set high so simple scalars stay on one line (no surprise
+      line-wraps mid-bullet that confuse human editors).
+    """
+    if YAML is None:
+        return None
+    y = YAML(typ="rt")
+    y.preserve_quotes = True
+    y.indent(mapping=2, sequence=4, offset=2)
+    y.width = 200
+    return y
+
+
+_ROUNDTRIP_YAML = _build_roundtrip_yaml()
+
+
+def load_yaml_roundtrip(rel_path: str) -> Any:
+    """Load a YAML file in round-trip mode (preserves comments)."""
+    if _ROUNDTRIP_YAML is None:
+        # Fallback: plain pyyaml — comments are lost, but at least
+        # the structural data round-trips.
+        return _load_yaml(rel_path)
+    path = CHATBOT_DIR / rel_path
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as f:
+        return _ROUNDTRIP_YAML.load(f)
+
+
+def save_yaml_roundtrip(rel_path: str, data: Any) -> None:
+    """Persist a YAML structure with round-trip formatting.
+
+    Validates the path is inside CHATBOT_DIR and invalidates both the
+    plain-YAML mtime-cache (so subsequent ``_load_yaml`` calls re-parse)
+    and the round-trip cache (none — we don't cache rt YAMLs, they're
+    written ad-hoc for save events).
+    """
+    path = _validate_config_path(rel_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if _ROUNDTRIP_YAML is None:
+        # Last-resort fallback: pyyaml dump (loses comments).
+        import yaml as _yaml
+        with path.open("w", encoding="utf-8") as f:
+            _yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+    else:
+        with path.open("w", encoding="utf-8") as f:
+            _ROUNDTRIP_YAML.dump(data, f)
+    invalidate_yaml_cache(rel_path)
+
+
+def _multiline_str(s: str) -> Any:
+    """Coerce a string into a YAML literal block scalar (``|``) so multi-
+    line directives (e.g. ``states.yaml:bot_directive``) render readably
+    after a round-trip save.
+
+    Returns a plain string if the input is single-line — block style is
+    only useful for actual multi-line content.
+    """
+    if not isinstance(s, str):
+        return s
+    if "\n" not in s:
+        return s
+    if LiteralScalarString is None:
+        return s
+    return LiteralScalarString(s)
 
 
 def load_signal_modulations() -> tuple[dict[str, dict[str, Any]], list[str]]:
@@ -285,69 +447,270 @@ def load_device_config() -> dict[str, Any]:
     return _load_yaml("01-base/device-config.yaml")
 
 
-def load_persona_definitions() -> list[dict[str, str]]:
-    """Load persona ID→label→description mapping from persona markdown files."""
+# ──────────────────────────────────────────────────────────────────────────
+# Persona-Markdown — strukturierte Sektionen lesen
+#
+# Welle E (2026-05-25): Persona-Dateien haben jetzt strukturierte Sektionen
+# (## Positiv-Marker, ## Anti-Marker, ## Diskriminatoren, ## Ziele, …) die
+# der Klassifizier-Prompt-Builder genau wie YAML-Felder rendern kann.
+#
+# Quote-Tolerance: Phrasen in Bullets dürfen mit "...", '...', „..." oder
+# »...« umrahmt sein — alle Varianten werden extrahiert. Ohne Quotes wird
+# der Bullet-Text selbst als Phrase genommen (für Markdown-Listen ohne
+# typografische Quotes).
+# ──────────────────────────────────────────────────────────────────────────
+
+_PHRASE_QUOTE_RE = re.compile(
+    r'"([^"]+)"|'           # ASCII double
+    r"'([^']+)'|"           # ASCII single
+    r"„([^“]+)“|"  # German „..."
+    r"«([^»]+)»"    # «...»
+)
+
+
+def _extract_md_section(body: str, *names: str) -> str:
+    """Return the body of the first ``## <name>`` section found.
+
+    Tries each ``name`` in order, returns the section body verbatim
+    (without the heading). Section ends at the next ``## `` heading or
+    end-of-file. Sub-headings ``###`` stay inside the returned block.
+    Returns ``""`` if no matching section exists.
+    """
+    for name in names:
+        # Heading match is permissive — allows trailing parentheses,
+        # markers, emoji etc. after the section name.
+        rx = re.compile(
+            rf"^##\s+{re.escape(name)}[^\n]*\n([\s\S]*?)(?=^##\s|\Z)",
+            re.MULTILINE,
+        )
+        m = rx.search(body)
+        if m:
+            return m.group(1)
+    return ""
+
+
+def _extract_bullet_phrases(section_body: str) -> list[str]:
+    """Pull bulleted phrases from a markdown section body.
+
+    Each ``- ...`` bullet is read. Quote-rules:
+      * If the bullet contains one or more quoted spans, every quoted
+        phrase is added (independently — so ``- "a / b"`` adds ``a / b``,
+        ``- "a", "b"`` adds both).
+      * If the bullet has no quotes, its full text (after the dash) is
+        added as a single phrase (with trailing ``— erklärung`` stripped).
+
+    Sub-headings (``### `` lines) and blank lines are ignored.
+    """
+    phrases: list[str] = []
+    for raw_line in (section_body or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        # Skip sub-headings and arbitrary bold lines used as group titles.
+        if line.startswith("#") or (line.startswith("**") and line.endswith("**")):
+            continue
+        # Only proper bullets — skip prose paragraphs between bullets.
+        if not (line.startswith("- ") or line.startswith("* ")):
+            continue
+        bullet = line[2:].strip()
+        if not bullet:
+            continue
+        found_any = False
+        for match in _PHRASE_QUOTE_RE.finditer(bullet):
+            for grp in match.groups():
+                if grp:
+                    phrases.append(grp.strip())
+                    found_any = True
+        if not found_any:
+            # No quotes — take the bullet text itself (drop trailing
+            # ``— note`` / ``-- note`` so the phrase stays tight).
+            clean = re.split(r"\s+[—–-]{1,2}\s+", bullet, maxsplit=1)[0].strip()
+            if clean:
+                phrases.append(clean)
+    return phrases
+
+
+def _extract_section_lines(section_body: str) -> list[str]:
+    """Return non-empty bullet lines from a section (used for ``ziele``,
+    ``regeln``, ``diskriminatoren`` where we keep the full sentence).
+
+    Each line is stripped of its leading dash/asterisk, indent, and
+    trailing whitespace. Sub-headings are dropped. Useful when we want
+    to show whole bullet sentences in the prompt, not just quoted
+    phrases.
+    """
+    out: list[str] = []
+    for raw_line in (section_body or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            continue
+        if line.startswith("**") and line.endswith("**"):
+            # Group sub-headings inside the section — drop.
+            continue
+        if line.startswith("- ") or line.startswith("* "):
+            out.append(line[2:].strip())
+    return out
+
+
+def load_persona_definitions() -> list[dict[str, Any]]:
+    """Load persona definitions from 04-personas/*.md files.
+
+    Welle E v2 (2026-05-25): Alle strukturierten Daten leben jetzt im
+    YAML-Frontmatter — einheitlich mit intents.yaml / states.yaml /
+    entities.yaml. Body ist nur noch optionale Persönlichkeits-Prosa.
+
+    Frontmatter-Felder (alle optional außer id/label):
+      id, label, description
+      tone, length_bias, formality, card_text_mode, override (Modifier)
+      positive_markers      — list[str]
+      anti_markers          — list[{phrase, redirect_to?, rationale?}]
+      discriminators        — list[{vs, rule, example_a?, example_b?}]
+      goals                 — list[str]
+      rules                 — list[str]
+      typical_intents       — list[str]
+
+    Backward-Compat: Wenn ein File noch das v1-Schema (MD-Sektionen) hat,
+    parsen wir die Sektionen als Fallback — damit alte Files bis zur
+    nächsten Bearbeitung weiterleben.
+    """
     personas_dir = CHATBOT_DIR / "04-personas"
     if not personas_dir.exists():
         return []
-    results = []
+    results: list[dict[str, Any]] = []
     for path in sorted(personas_dir.glob("*.md")):
         text = path.read_text(encoding="utf-8")
         meta, body = _parse_frontmatter(text)
         pid = meta.get("id", "")
         if not pid:
             continue
-        # Extract label from first heading: "# Lehrkraft [P-W-LK]"
-        label = pid
-        heading = re.search(r"^#\s+(.+?)(?:\s*\[.*\])?\s*$", body, re.MULTILINE)
-        if heading:
-            label = heading.group(1).strip()
-        # Extract short description from "Primäre Ziele" section
-        desc = ""
-        goals_match = re.search(
-            r"##\s*Prim.re Ziele\s*\n((?:[-*]\s+.*\n?)+)", body
-        )
-        if goals_match:
-            goals = [
-                line.lstrip("-* ").strip()
-                for line in goals_match.group(1).strip().split("\n")
-                if line.strip()
-            ]
-            desc = "; ".join(goals)
 
-        # Extract detection hints from "Erkennungshinweise" section.
-        # Accepts blank lines + bold sub-headings between bullets (e.g. presse.md
-        # / elt.md group hints under "**Self-ID-Phrasen:**" / "**Vokabeln:**").
-        # Section ends at the NEXT heading (## or ### — both must terminate so
-        # that "### Abgrenzung zu …" doesn't pollute hints with cross-persona
-        # markers from the discriminator text).
-        hints: list[str] = []
-        hints_section = re.search(
-            r"##\s*Erkennungshinweise\s*\n([\s\S]*?)(?=\n#{2,}\s|\Z)", body
-        )
-        if hints_section:
-            for line in hints_section.group(1).split("\n"):
-                stripped = line.strip()
-                if not stripped or stripped.startswith("##"):
-                    continue
-                # Pull every quoted phrase from EVERY line — bullets, bold
-                # sub-headings ("**Vokabeln:**"), and prose all welcome.
-                for phrase in re.findall(r'"([^"]+)"', line):
-                    hints.append(phrase)
-        entry = {"id": pid, "label": label, "description": desc, "hints": hints}
-        # Welle C.5 (2026-05): Tonalitäts-Modifier aus Frontmatter
-        # durchreichen, damit ``load_tone_modifiers_config()`` sie
-        # ohne separate YAML-Datei lesen kann. Felder sind optional —
-        # wenn nicht im Frontmatter, fallen Defaults im Coerce.
-        for k in ("tone", "length_bias", "formality",
-                  "card_text_mode", "override"):
+        # Label: Frontmatter > erstes Heading > Fallback ID
+        label = str(meta.get("label") or "").strip()
+        if not label:
+            heading = re.search(r"^#\s+(.+?)\s*$", body, re.MULTILINE)
+            if heading:
+                raw = heading.group(1).strip()
+                # "P-LER — Lerner:in / Schüler:in" → "Lerner:in / Schüler:in"
+                label = re.sub(r"^P-[A-Z]+\s*[—–-]\s*", "", raw).strip() or raw
+            else:
+                label = pid
+
+        desc = str(meta.get("description") or "").strip()
+
+        # ── Strukturierte Klassifikations-Felder ──
+        positive_markers = _normalize_str_list(meta.get("positive_markers"))
+        anti_markers = _normalize_anti_markers(meta.get("anti_markers"))
+        discriminators = _normalize_persona_discriminators(meta.get("discriminators"))
+        goals = _normalize_str_list(meta.get("goals"))
+        rules = _normalize_str_list(meta.get("rules"))
+        typical_intents = _normalize_str_list(meta.get("typical_intents"))
+
+        # ── Backward-Compat: MD-Sektionen lesen wenn Frontmatter leer ──
+        if not positive_markers:
+            pos_body = _extract_md_section(
+                body, "Positiv-Marker", "Erkennungshinweise", "Marker",
+            )
+            positive_markers = _extract_bullet_phrases(pos_body)
+        if not anti_markers:
+            anti_body = _extract_md_section(body, "Anti-Marker")
+            anti_markers = [{"phrase": p} for p in _extract_bullet_phrases(anti_body)]
+        if not discriminators:
+            disc_body = _extract_md_section(body, "Diskriminatoren", "Abgrenzung")
+            discriminators = [
+                {"vs": "", "rule": line}
+                for line in _extract_section_lines(disc_body)
+                if line
+            ]
+        if not goals:
+            goals_body = _extract_md_section(
+                body, "Ziele", "Primäre Ziele", "Primaere Ziele",
+            )
+            goals = _extract_section_lines(goals_body)
+            if not desc and goals_body:
+                desc = "; ".join(goals) if goals else goals_body.strip().split("\n")[0]
+        if not rules:
+            rules_body = _extract_md_section(body, "Regeln")
+            rules = _extract_section_lines(rules_body)
+
+        # Body als Persönlichkeits-Prosa (ohne H1-Heading)
+        personality = re.sub(r"^\s*#\s+.*\n", "", body, count=1).strip()
+
+        entry: dict[str, Any] = {
+            "id": pid,
+            "label": label,
+            "description": desc,
+            "positive_markers": positive_markers,
+            # Backward-Compat-Alias — viele Konsumenten lesen ``hints``.
+            "hints": positive_markers,
+            "anti_markers": anti_markers,
+            "discriminators": discriminators,
+            "goals": goals,
+            "rules": rules,
+            "typical_intents": typical_intents,
+            "personality_text": personality,
+        }
+        # Tonality-Modifier (optional)
+        for k in ("tone", "length_bias", "formality", "card_text_mode", "override"):
             if k in meta:
                 entry[k] = meta[k]
-        # Auch _source_file durchreichen, damit der PUT-Endpoint
-        # weiß, welche Datei er beim Modifier-Update editieren muss.
         entry["_source_file"] = str(path.relative_to(CHATBOT_DIR)).replace("\\", "/")
         results.append(entry)
     return results
+
+
+def _normalize_str_list(raw: Any) -> list[str]:
+    """Coerce a Frontmatter list-of-strings into a clean ``list[str]``."""
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        return [raw.strip()] if raw.strip() else []
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x or "").strip()]
+    return []
+
+
+def _normalize_anti_markers(raw: Any) -> list[dict[str, str]]:
+    """Coerce ``anti_markers`` into a uniform list of dicts.
+
+    Accepts:
+      - list[str] (legacy plain phrases) → dicts with only ``phrase``.
+      - list[dict] with ``phrase`` (req), ``redirect_to``, ``rationale``.
+    """
+    if not raw or not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            out.append({"phrase": item.strip()})
+        elif isinstance(item, dict) and item.get("phrase"):
+            entry = {"phrase": str(item["phrase"]).strip()}
+            if item.get("redirect_to"):
+                entry["redirect_to"] = str(item["redirect_to"]).strip()
+            if item.get("rationale"):
+                entry["rationale"] = str(item["rationale"]).strip()
+            out.append(entry)
+    return out
+
+
+def _normalize_persona_discriminators(raw: Any) -> list[dict[str, str]]:
+    """Coerce ``discriminators`` (vs/rule/example_a/example_b) into dicts."""
+    if not raw or not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict) or not item.get("vs"):
+            continue
+        entry = {
+            "vs": str(item["vs"]).strip(),
+            "rule": str(item.get("rule") or "").strip(),
+        }
+        for k in ("example_a", "example_b"):
+            if item.get(k):
+                entry[k] = str(item[k]).strip()
+        out.append(entry)
+    return out
 
 
 def load_rag_config() -> dict[str, dict[str, Any]]:
@@ -866,6 +1229,227 @@ def load_widget_modes_config() -> dict[str, Any]:
     }
 
 
+def load_website_tour_config() -> dict[str, Any]:
+    """Webseiten-Tour-Skript aus 01-base/website-tour.yaml (Domänwissen).
+
+    Gibt den ``website_tour``-Block zurück (Texte, Ziel-URLs, Gruppen,
+    Gruppe→Angebot-Mapping, Kontakt-Links). Studio-pflegbar — das VERHALTEN
+    (State Machine, Ankunfts-Erkennung) liegt deterministisch im Backend
+    (``tour_service.py`` + ``chat.py``). ``enabled`` default True; mtime-Cache
+    via ``_load_yaml`` wie bei den übrigen Loadern.
+    """
+    data = _load_yaml("01-base/website-tour.yaml") or {}
+    cfg = data.get("website_tour")
+    if not isinstance(cfg, dict):
+        return {"enabled": False, "groups": [], "steps": {}}
+    cfg["enabled"] = bool(cfg.get("enabled", True))
+    return cfg
+
+
+def load_display_rules_config() -> dict[str, Any]:
+    """Studio-pflegbare Display-Regeln aus 01-base/display-rules.yaml.
+
+    Welle E (2026-05-23) — zentralisiert das WAS-und-WIE der Anzeige:
+      * inline_documents     — Lernpfad/KI-Material in gerahmter Box
+      * single_content_box   — Einzelinhalte als Box (default an, max 3)
+      * groups               — Maximal-Anzahl pro Gruppen-Box
+      * inline_card_links    — Inline-Markdown-Limit (wenn Host-Schalter
+                                cards-enabled=false greift)
+      * quick_replies        — max_count + inline_fallback
+      * prompt_anzeige_konsistenz — RAG-Curation an/aus, Pattern-Excludes
+
+    Werte werden auf sane Bounds gewrapt damit eine kaputt editierte YAML
+    nicht die Response brechen kann. Frontend bekommt das Ergebnis als
+    Echo-Feld ``ChatResponse.display_rules`` jeden Turn (kein extra
+    Endpoint nötig), darf aber zusätzlich /api/config/display-rules
+    abfragen wenn es die Settings beim Bootstrap haben will.
+    """
+    data = _load_yaml("01-base/display-rules.yaml") or {}
+    cfg = data.get("display_rules") or {}
+
+    # ── inline_documents ──
+    ind = cfg.get("inline_documents") or {}
+    raw_font = ind.get("font_size_percent")
+    try:
+        font_pct = int(raw_font) if raw_font is not None else 85
+    except (TypeError, ValueError):
+        font_pct = 85
+    font_pct = max(70, min(100, font_pct))
+
+    per_pat_raw = ind.get("per_pattern") or {}
+    per_pattern: dict[str, bool] = {}
+    for k, v in per_pat_raw.items():
+        try:
+            per_pattern[str(k).strip().upper()] = bool(v)
+        except Exception:
+            continue
+    # Defaults für M09/M10/M11 falls fehlend.
+    for _pid in ("M09", "M10", "M11"):
+        per_pattern.setdefault(_pid, True)
+
+    intro_raw = ind.get("intro_text") or {}
+    intro_text: dict[str, str] = {}
+    for k, v in intro_raw.items():
+        s = str(v or "").strip()
+        if s:
+            intro_text[str(k).strip().upper()] = s
+
+    inline_documents = {
+        "enabled": bool(ind.get("enabled", True)),
+        "font_size_percent": font_pct,
+        "per_pattern": per_pattern,
+        "intro_text": intro_text,
+    }
+
+    # ── groups (4 Box-Typen — Welle E konsolidiert) ──
+    # Backward-Compat: ``single_content_box.max_count`` aus alten YAMLs
+    # wird als Fallback für ``groups.materialien_max`` akzeptiert. Wenn
+    # beide Werte gesetzt sind, gewinnt der explizite ``groups``-Eintrag.
+    grp = cfg.get("groups") or {}
+    scb_raw = cfg.get("single_content_box") or {}
+    _legacy_max = scb_raw.get("max_count")
+
+    def _grp_int(key: str, default: int, lo: int, hi: int) -> int:
+        raw = grp.get(key)
+        if raw is None and key == "materialien_max" and _legacy_max is not None:
+            raw = _legacy_max  # Backward-Compat
+        try:
+            v = int(raw) if raw is not None else default
+        except (TypeError, ValueError):
+            v = default
+        return max(lo, min(hi, v))
+
+    groups = {
+        "themenseiten_max": _grp_int("themenseiten_max", 3, 1, 20),
+        "sammlungen_max":   _grp_int("sammlungen_max",   3, 1, 20),
+        "materialien_max":  _grp_int("materialien_max",  3, 1, 8),
+        "webseiten_max":    _grp_int("webseiten_max",    3, 1, 30),
+    }
+
+    # ── single_content_box (nur noch enabled + layout) ──
+    # ``max_count`` lebt jetzt in ``groups.materialien_max``. Wir halten
+    # die Property aber zwecks Echo-Stabilität für ältere Frontend-
+    # Versionen weiter im Output — gemappt aus groups.
+    scb_layout = str(scb_raw.get("layout") or "card").strip().lower()
+    if scb_layout not in ("card", "list"):
+        scb_layout = "card"
+    single_content_box = {
+        "enabled": bool(scb_raw.get("enabled", True)),
+        "max_count": groups["materialien_max"],
+        "layout": scb_layout,
+    }
+
+    # ── inline_card_links ──
+    icl = cfg.get("inline_card_links") or {}
+    raw_lim = icl.get("limit")
+    try:
+        icl_lim = int(raw_lim) if raw_lim is not None else 3
+    except (TypeError, ValueError):
+        icl_lim = 3
+    icl_lim = max(1, min(6, icl_lim))
+    raw_tt = icl.get("title_max_chars")
+    try:
+        icl_tt = int(raw_tt) if raw_tt is not None else 70
+    except (TypeError, ValueError):
+        icl_tt = 70
+    icl_tt = max(30, min(200, icl_tt))
+    inline_card_links = {"limit": icl_lim, "title_max_chars": icl_tt}
+
+    # ── quick_replies ──
+    qr = cfg.get("quick_replies") or {}
+    raw_qrm = qr.get("max_count")
+    try:
+        qr_max = int(raw_qrm) if raw_qrm is not None else 4
+    except (TypeError, ValueError):
+        qr_max = 4
+    qr_max = max(0, min(6, qr_max))
+    quick_replies = {
+        "max_count": qr_max,
+        "inline_fallback_enabled": bool(qr.get("inline_fallback_enabled", True)),
+    }
+
+    # ── prompt_anzeige_konsistenz ──
+    pak = cfg.get("prompt_anzeige_konsistenz") or {}
+    excl_raw = pak.get("exclude_patterns") or []
+    excl: list[str] = []
+    for e in excl_raw:
+        s = str(e or "").strip().upper()
+        if s and s not in excl:
+            excl.append(s)
+    prompt_anzeige_konsistenz = {
+        "enabled": bool(pak.get("enabled", True)),
+        "exclude_patterns": excl,
+    }
+
+    return {
+        "inline_documents": inline_documents,
+        "single_content_box": single_content_box,
+        "groups": groups,
+        "inline_card_links": inline_card_links,
+        "quick_replies": quick_replies,
+        "prompt_anzeige_konsistenz": prompt_anzeige_konsistenz,
+    }
+
+
+def load_guide_rules_config() -> dict[str, Any]:
+    """Lotsen-Regeln aus 02-domain/guide-rules.yaml (Welle E, 2026-05-23).
+
+    Liefert ``message_rules`` (Liste von Dicts mit ``pattern``, ``label``,
+    ``url``, ``priority``) und ``rag_area_rules`` (Dict area→{label, url,
+    brand_pattern}). Wird vom ``guide_qr_injector`` als Datenquelle
+    genutzt — alte Hardcoded-Regeln im Python-Modul bleiben als Fallback,
+    werden aber nicht mehr aktiv verwendet sobald die YAML lädt.
+
+    Defensive Defaults: bei kaputter YAML kommt eine leere Struktur
+    zurück, das Modul fällt dann auf seinen eigenen Hardcoded-Fallback
+    zurück (keine Crash, keine fehlenden Buttons).
+    """
+    data = _load_yaml("02-domain/guide-rules.yaml") or {}
+
+    raw_msgs = data.get("message_rules") or []
+    msg_rules: list[dict[str, Any]] = []
+    for item in raw_msgs:
+        if not isinstance(item, dict):
+            continue
+        pat = str(item.get("pattern") or "").strip()
+        lbl = str(item.get("label") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if not (pat and lbl and url):
+            continue
+        try:
+            prio = int(item.get("priority") or 50)
+        except (TypeError, ValueError):
+            prio = 50
+        msg_rules.append({
+            "pattern": pat,
+            "label": lbl,
+            "url": url,
+            "priority": prio,
+        })
+
+    raw_rag = data.get("rag_area_rules") or {}
+    rag_rules: dict[str, dict[str, str]] = {}
+    if isinstance(raw_rag, dict):
+        for area, cfg in raw_rag.items():
+            if not isinstance(cfg, dict):
+                continue
+            lbl = str(cfg.get("label") or "").strip()
+            url = str(cfg.get("url") or "").strip()
+            bp = str(cfg.get("brand_pattern") or "").strip()
+            if not (lbl and url and bp):
+                continue
+            rag_rules[str(area).strip()] = {
+                "label": lbl,
+                "url": url,
+                "brand_pattern": bp,
+            }
+
+    return {
+        "message_rules": msg_rules,
+        "rag_area_rules": rag_rules,
+    }
+
+
 # Default-Wortliste für den Placeholder-Filter. Wird nur als Fallback
 # verwendet, wenn 01-base/placeholder-topics.yaml fehlt oder keine
 # Liste enthält. Synchron halten mit der YAML-Datei.
@@ -1004,15 +1588,24 @@ def load_tone_modifiers_config() -> dict[str, Any]:
     return {"modifiers": modifiers, "default": default}
 
 
+# Welle E v2 (2026-05-25): 1:1-Mapping persona-id → filename slug.
+# Frühere Slug-Variabilität (lk/sl/pol/presse/ber/ver) wurde aufgeräumt.
 _PERSONA_SLUG_MAP: dict[str, str] = {
-    "P-W-LK": "lk", "P-W-SL": "sl", "P-W-POL": "pol", "P-W-PRESSE": "presse",
-    "P-W-RED": "red", "P-BER": "ber", "P-VER": "ver", "P-ELT": "elt", "P-AND": "and",
+    "P-AND": "and",
+    "P-ELT": "elt",
+    "P-ENT": "ent",
+    "P-LEH": "leh",
+    "P-LER": "ler",
+    "P-RED": "red",
 }
 
 
 def _persona_slug(persona_id: str) -> str:
-    """Map persona-id (``P-W-LK``) to filename slug (``lk``)."""
-    return _PERSONA_SLUG_MAP.get(persona_id, persona_id.lower().replace("p-", ""))
+    """Map persona-id (``P-LEH``) to filename slug (``leh``)."""
+    if persona_id in _PERSONA_SLUG_MAP:
+        return _PERSONA_SLUG_MAP[persona_id]
+    # Default-Fallback: P-XYZ → xyz
+    return persona_id.lower().replace("p-", "", 1)
 
 
 # Header-Block für das Modifier-Frontmatter — wird beim Persona-Update
@@ -1107,29 +1700,53 @@ def get_tone_modifier_for_persona(persona_id: str | None) -> dict[str, Any]:
 
 
 def load_tie_breaker_config() -> dict[str, Any]:
-    """Load Pattern-Engine tie-breaker configuration (Bonus 2).
-
-    Returns the parsed ``tie_breaker`` block from 01-base/tie-breaker.yaml.
-    Missing file or empty block → safe defaults (disabled, empty allow list).
+    """Welle E v4 (2026-05-25): Tie-Breaker entfernt — der Hint-Primary-
+    Pfad in ``pattern_engine.select_pattern`` braucht keine Score-Race-
+    Override-Mechanik mehr. Funktion bleibt als no-op Shim, damit
+    Aufrufer (z.B. ältere Eval-Snapshots) keinen ImportError werfen.
     """
-    data = _load_yaml("01-base/tie-breaker.yaml") or {}
-    cfg = data.get("tie_breaker") or {}
     return {
-        "enabled": bool(cfg.get("enabled", False)),
-        "max_score_gap": float(cfg.get("max_score_gap", 0.05) or 0.05),
-        "top_n_window": int(cfg.get("top_n_window", 2) or 2),
-        "allow_patterns_winner": list(cfg.get("allow_patterns_winner") or []),
+        "enabled": False,
+        "max_score_gap": 0.05,
+        "top_n_window": 2,
+        "allow_patterns_winner": [],
+    }
+
+
+def load_classify_overrides_config() -> dict[str, Any]:
+    """Klassifikations-Overrides aus 01-base/classify-overrides.yaml.
+
+    Welle E v4+6 (2026-05-26): Persona-/Intent-/Topic-Hard-Overrides +
+    Pattern-Disambiguatoren + Few-Shot-Examples für den classify-Prompt.
+    Vorher hartkodiert in llm_service.py; jetzt YAML-bearbeitbar.
+
+    Returns:
+        Dict mit Schlüsseln: persona_overrides, intent_overrides,
+        topic_overrides, pattern_disambiguators, few_shot_examples.
+        Bei kaputter/fehlender YAML alle Listen leer.
+    """
+    data = _load_yaml("01-base/classify-overrides.yaml") or {}
+    return {
+        "persona_overrides": data.get("persona_overrides") or [],
+        "intent_overrides": data.get("intent_overrides") or [],
+        "intent_conflict_rule": data.get("intent_conflict_rule") or "",
+        "topic_overrides": data.get("topic_overrides") or {},
+        "pattern_disambiguators": data.get("pattern_disambiguators") or [],
+        "few_shot_examples": data.get("few_shot_examples") or [],
     }
 
 
 def load_privacy_config() -> dict[str, bool]:
     """Load privacy/logging toggles from 01-base/privacy-config.yaml.
 
-    Returns a flat dict with the four toggles (messages, memory, quality,
-    safety). Missing file or keys default to True (log-all).
-    Safety is hardcoded to True — the YAML value is ignored on read so
-    an accidental `safety: false` in the config file can't silence the
+    Returns a flat dict with four toggles (messages, memory, quality,
+    safety). Missing file or keys default to True (log-all). Safety is
+    hardcoded to True — the YAML value is ignored on read so an
+    accidental `safety: false` in the config file can't silence the
     audit trail.
+
+    Welle E v4+12 (Sprint K, 2026-05-27): ``rules``-Toggle entfernt —
+    Rule-Engine und shadow_router wurden komplett ausgebaut.
     """
     data = _load_yaml("01-base/privacy-config.yaml") or {}
     section = (data.get("logging") if isinstance(data, dict) else None) or {}
@@ -1139,12 +1756,6 @@ def load_privacy_config() -> dict[str, bool]:
         "quality": bool(section.get("quality", True)),
         "safety": True,  # not user-togglable
     }
-
-
-def load_contexts() -> list[dict[str, Any]]:
-    """Load named context definitions (T-04/05) from 04-contexts/contexts.yaml."""
-    data = _load_yaml("04-contexts/contexts.yaml")
-    return data.get("contexts", [])
 
 
 def load_pattern_definitions() -> list[dict[str, Any]]:
@@ -1164,12 +1775,106 @@ def load_pattern_definitions() -> list[dict[str, Any]]:
         if not meta.get("id"):
             continue
 
-        # Extract core_rule from body if not in frontmatter
+        # Welle E v3 (2026-05-25): structured sections live in frontmatter.
+        # If a pattern hasn't been migrated yet, fall back to MD-section parsing.
+
+        # core_rule
         if "core_rule" not in meta:
-            # Look for ## Kernregel section
-            cr_match = re.search(r"## Kernregel\s*\n(.+?)(?:\n##|\Z)", body, re.DOTALL)
+            cr_match = re.search(
+                r"##\s+Kernregel[^\n]*\n(.+?)(?:\n##|\Z)", body, re.DOTALL,
+            )
             if cr_match:
                 meta["core_rule"] = cr_match.group(1).strip()
+
+        # forbidden_phrases (Bullet-Liste mit ❌-Markern)
+        if "forbidden_phrases" not in meta:
+            phrases: list[str] = []
+            for sect in ("Verbotene Formulierungen", "Verbotene Anti-Patterns"):
+                rx = re.compile(
+                    rf"##\s+{re.escape(sect)}[^\n]*\n([\s\S]*?)(?=^##\s|\Z)",
+                    re.MULTILINE,
+                )
+                m = rx.search(body)
+                if not m:
+                    continue
+                for line in m.group(1).splitlines():
+                    s = line.strip()
+                    bm = re.match(r"^[-*]\s+(.*)$", s)
+                    if not bm:
+                        continue
+                    item = re.sub(r"^[❌✕✗]\s*", "", bm.group(1).strip()).strip()
+                    item = re.sub(r'^[„"](.*?)["“]$', r"\1", item).strip()
+                    if item and item not in phrases:
+                        phrases.append(item)
+            if phrases:
+                meta["forbidden_phrases"] = phrases
+
+        # anti_patterns (Bullet-Liste, semantisch verschieden von forbidden_phrases —
+        # anti_patterns sind FALSCHE Handlungen/Strategien, forbidden_phrases sind
+        # konkrete Wortlaute).
+        if "anti_patterns" not in meta:
+            patterns: list[str] = []
+            for sect in ("Anti-Patterns", "Nicht tun"):
+                rx = re.compile(
+                    rf"##\s+{re.escape(sect)}[^\n]*\n([\s\S]*?)(?=^##\s|\Z)",
+                    re.MULTILINE,
+                )
+                m = rx.search(body)
+                if not m:
+                    continue
+                for line in m.group(1).splitlines():
+                    s = line.strip()
+                    bm = re.match(r"^[-*]\s+(.*)$", s)
+                    if not bm:
+                        continue
+                    item = bm.group(1).strip()
+                    if item and item not in patterns:
+                        patterns.append(item)
+            if patterns:
+                meta["anti_patterns"] = patterns
+
+        # Normalize list fields — ensure str-list regardless of YAML quirks
+        for key in ("forbidden_phrases", "anti_patterns"):
+            if key in meta:
+                meta[key] = [str(x).strip() for x in (meta[key] or []) if str(x).strip()]
+
+        # Welle E v4+7 (2026-05-26): strukturierte Pattern-Auswahl-Regeln
+        # (when_to_use, when_not_to_use, trigger_phrases) als Listen,
+        # discriminators als Liste von Dicts {vs, rule, example}. Normalize
+        # damit kaputt-editierte YAML nicht den Loader bricht.
+        for key in ("when_to_use", "when_not_to_use", "trigger_phrases"):
+            if key in meta:
+                meta[key] = [
+                    str(x).strip() for x in (meta[key] or []) if str(x).strip()
+                ]
+        if "discriminators" in meta:
+            cleaned: list[dict] = []
+            for d in (meta["discriminators"] or []):
+                if not isinstance(d, dict):
+                    continue
+                vs = str(d.get("vs") or "").strip()
+                rule = str(d.get("rule") or "").strip()
+                example = str(d.get("example") or "").strip()
+                if vs and rule:
+                    cleaned.append({"vs": vs, "rule": rule, "example": example})
+            meta["discriminators"] = cleaned
+
+        # Body for the Pattern-Brief: strip H1 (= title, already in `label`)
+        # AND strip the sections we've migrated above (so they don't appear
+        # twice in the response prompt — once as structured field, once as raw
+        # markdown). Sections that aren't migrated stay in body_md so things
+        # like ``## Pflicht-Antwort-Schema`` reach the LLM verbatim.
+        body_stripped = re.sub(r"^\s*#\s+.*\n", "", body, count=1)
+        for sect in ("Kernregel \\(HART\\)", "Kernregel",
+                     "Verbotene Formulierungen \\(würden Bug 1 reproduzieren\\)",
+                     "Verbotene Formulierungen", "Verbotene Anti-Patterns",
+                     "Anti-Patterns", "Nicht tun"):
+            body_stripped = re.sub(
+                rf"^##\s+{sect}[^\n]*\n[\s\S]*?(?=^##\s|\Z)",
+                "", body_stripped, flags=re.MULTILINE,
+            )
+        body_stripped = re.sub(r"\n{3,}", "\n\n", body_stripped).strip()
+        meta["body_md"] = body_stripped
 
         meta["_source_file"] = str(path.relative_to(CHATBOT_DIR)).replace("\\", "/")
         results.append(meta)

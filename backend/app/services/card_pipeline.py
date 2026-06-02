@@ -231,16 +231,23 @@ async def fetch_card_pool(
 def _infer_node_type(card: dict[str, Any]) -> NodeType:
     """Drei-Wege-Mapping aus den vorhandenen Card-Feldern.
 
-    * ``topic_pages``-Liste nicht-leer → ``"topic_page"``
+    * Themenseite (``topic_pages`` nicht-leer ODER ``topic_page_url`` gesetzt
+      ODER ``node_type`` bereits ``"topic_page"``) → ``"topic_page"``
     * ``node_type == "collection"`` → ``"collection"``
     * Sonst → ``"content"``
 
-    Die Eingabe-Cards aus dem MCP haben heute nur 2 Werte ("collection" /
-    "content") plus ein topic_pages-Subfield. Wir kollabieren das hier in
-    einen einzigen Drei-Wege-Wert, damit Phase 3 und Phase 4 nicht beide
-    den topic_pages-Check duplizieren müssen.
+    Wichtig: Eine Themenseite OHNE Varianten hat eine LEERE ``topic_pages``-
+    Liste — sie wird trotzdem als Themenseite erkannt, weil sie ein
+    ``topic_page_url`` bzw. den vom Parser gesetzten ``node_type`` trägt.
+    Sonst landete eine variantenlose Themenseite fälschlich als "content"
+    beim render-Permalink (statt beim topic-pages-Renderer). ``topic_page_url``
+    setzt nur der MCP für echte Themenseiten (Sammlung mit page_config_ref).
     """
-    if isinstance(card.get("topic_pages"), list) and card.get("topic_pages"):
+    if (
+        (isinstance(card.get("topic_pages"), list) and card.get("topic_pages"))
+        or str(card.get("topic_page_url") or "").strip()
+        or card.get("node_type") == "topic_page"
+    ):
         return "topic_page"
     if card.get("node_type") == "collection":
         return "collection"
@@ -437,6 +444,18 @@ def _repo_collection_browse_url(
     return base
 
 
+def _repo_topic_page_url(node_id: str, repo_base: str) -> str:
+    """``{repo}/edu-sharing/components/topic-pages?collectionId={uuid}`` —
+    der kuratierte Themenseiten-Renderer von edu-sharing.
+
+    Eine Themenseite ist technisch eine Sammlung (``ccm:map`` mit
+    ``ccm:page_config_ref``), soll aber NICHT über den generischen Sammlungs-
+    Browse-Link geöffnet werden, sondern über diese Themenseiten-Ansicht.
+    Identisch zu dem ``topicPageUrl``, das der MCP-Server via
+    ``buildTopicPageUrl`` liefert (gleiches ``collectionId``)."""
+    return f"{repo_base.rstrip('/')}/edu-sharing/components/topic-pages?collectionId={node_id}"
+
+
 def _card_as_dict(card: Any) -> dict[str, Any] | None:
     """Zieht ein Card-Dict aus dict | Pydantic-Model | beliebigem Objekt.
 
@@ -487,7 +506,7 @@ def build_card_link(
         card: Card-Dict ODER Pydantic-Model (z.B. ``WloCard``), idealerweise
             schon durch :func:`normalize_cards` gegangen.
         guide_mode: True wenn der User im Lotsen-Modus ist (Repo-Links für
-            Einzelinhalte; Themenseiten + Sammlungen verhalten sich gleich).
+            Einzelinhalte; Themenseiten → topic-pages-Renderer, Sammlungen → Browse-Link).
         repo_base: Override für die Repo-Base-URL. Default:
             ``get_repo_base_url()``.
         search_query: Optional. Wird an Sammlungs-Browse-URLs als ``&q=``
@@ -521,10 +540,12 @@ def build_card_link(
                 u = str(tp.get("url") or "").strip()
                 if u:
                     return u
-        # Letzter Fallback: Browse-Ansicht der Sammlung (= Themenseite ohne
-        # kuratierten Link ist semantisch eine Sammlung).
+        # Letzter Fallback: Themenseiten-Renderer aus der node_id bauen —
+        # NICHT der Sammlungs-Browse-Link. Eine Themenseite (ccm:map mit
+        # page_config_ref) soll immer als topic-page geöffnet werden, auch
+        # wenn weder topic_page_url noch eine Variante eine URL mitliefert.
         if node_id:
-            return _repo_collection_browse_url(node_id, repo, search_query)
+            return _repo_topic_page_url(node_id, repo)
         return ""
 
     # ── Sammlungen ─────────────────────────────────────────────────────

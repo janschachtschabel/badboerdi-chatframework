@@ -129,6 +129,9 @@ export interface RoutingDebugPayload {
 export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDestroy {
   /** Material-Symbols-Icon-Set, im Template referenzierbar. */
   readonly ICONS = ICONS;
+  /** Template kann ``Math.max(...)`` nicht direkt aufrufen — daher exposen.
+   *  Wird für die Debug-Trace-Parallel-Bars gebraucht (Welle E). */
+  readonly Math = Math;
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   @ViewChild('inputField') inputField!: ElementRef;
 
@@ -188,51 +191,17 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   /** Show the language/voice buttons in header (🔊 TTS) and footer (🎤 STT).
    *  Default true. Set to false to disable speech features in the UI. */
   @Input() showLanguageButtons: boolean | string = true;
-  /** When the canvas is showing markdown, next user message becomes an edit request. */
-  @Input() canvasActiveMarkdown = '';
-  /** When true, card lists in the chat are hidden (canvas shows them instead). */
-  @Input() hideCards = false;
-  /** True when the canvas is currently showing the *cards* pane.
-   *  Used to suppress the compact collection-shortcuts row that would
-   *  otherwise duplicate the buttons already on the canvas cards. */
-  @Input() canvasShowingCards = false;
-  /** Snapshot of current canvas state — forwarded to backend so the LLM
-   *  can reference what the user sees on the right pane.
-   *  Shape: {mode, title, material_type, markdown, cards_count}
-   */
-  @Input() canvasState: Record<string, any> | null = null;
-  /** Lotsen-Modus aktiv? Frontend-defense-in-depth: das Backend filtert
-   *  Guide-QRs aus, wenn der Toggle aus ist; aber falls doch mal einer
-   *  durchschlägt (alter Cache, Race-Condition), rendern wir ihn HIER
-   *  zusätzlich nicht als hervorgehobenen blauen Button. Stattdessen:
-   *  wir blenden den ``__guide__|...``-Eintrag komplett aus, weil die
-   *  Lotsen-Funktion bewusst deaktiviert wurde. */
-  @Input() guideModeActive = false;
-  /** Widget-Embed-Modi — vom WidgetComponent forwarded. Steuern, ob
-   *  Cards/Canvas/KI-Content/Quick-Replies dieser Embed-Instanz
-   *  überhaupt angezeigt werden. Default jeweils ``true`` — bestehende
-   *  Integrationen sehen keine Änderung.
-   *  Bei ``cardsEnabled=false`` werden Kacheln im Template ausgeblendet;
-   *  das Backend liefert dann ohnehin Inline-Markdown-Links im Bot-Text. */
-  @Input() cardsEnabled: boolean | string = true;
-  @Input() canvasEnabled: boolean | string = true;
+  /** Welle E (2026-05-23): KI-Content abschaltbar pro Embed (Host-Override).
+   *  Bei ``false`` lehnt der Bot Material/Lernpfad-Erstellung mit der
+   *  Alt-Response aus ``widget-modes.yaml`` ab. Das Studio-Default
+   *  ist ``true``. */
   @Input() aiContentEnabled: boolean | string = true;
-  @Input() quickRepliesEnabled: boolean | string = true;
   /** Vom Widget durchgereichte Trusted-Hosts-Whitelist (Backend-Default
    *  aus ``guide-mode.yaml`` + ``trusted-domains``-HTML-Attribut, mergiert).
    *  Verwendung: Inline-Markdown-Links zu Hosts auf dieser Liste öffnen
    *  same-tab (damit das Outgoing-Rewrite ``?bsid=`` greift und die
-   *  Session erhalten bleibt); externe Hosts öffnen target="_blank".
-   *  Empty-Default = alle Markdown-Links bekommen target="_blank". */
+   *  Session erhalten bleibt); externe Hosts öffnen target="_blank". */
   @Input() trustedHosts: string[] = [];
-  /** Treffer-Darstellung: gruppierte Boxen (Top 3 Themenseiten + Top 3
-   *  Sammlungen + Webseiten-Inhalte + „Alle Treffer"-CTA) statt flacher
-   *  Einzelinhalte-Kacheln.
-   *
-   *  **Default ist ``true``** — die neue Box-Darstellung ist seit Welle C.5
-   *  (2026-05) der Standard. Wer explizit das alte flache Kachel-Layout
-   *  möchte, setzt ``inline-result-grouping="false"``. */
-  @Input() inlineResultGrouping: boolean | string = true;
   /** Lotsen-Modus: passive Top-Result-Emission an die Host-Seite.
    *  Bei ``true`` wird bei JEDEM Bot-Turn, der Cards mit Lotsen-Link enthält,
    *  ein ``badboerdi:guide-suggestion``-CustomEvent auf ``window`` gefeuert
@@ -277,19 +246,28 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   constructor(private api: ApiService, private zone: NgZone, private sanitizer: DomSanitizer) {}
 
   /** Coerces a boolean | string input (HTML attributes always arrive as
-   *  strings) into a true boolean. Default = true, so an absent attribute
-   *  preserves the legacy "all features on" behaviour. Only the explicit
-   *  string ``"false"`` (or the literal boolean ``false``) toggles off. */
+   *  strings) into a true boolean. */
   private modeFlag(v: boolean | string): boolean {
     if (typeof v === 'boolean') return v;
     if (typeof v === 'string') return v.toLowerCase() !== 'false';
     return true;
   }
-  get cardsEnabledBool(): boolean { return this.modeFlag(this.cardsEnabled); }
-  get canvasEnabledBool(): boolean { return this.modeFlag(this.canvasEnabled); }
   get aiContentEnabledBool(): boolean { return this.modeFlag(this.aiContentEnabled); }
-  get quickRepliesEnabledBool(): boolean { return this.modeFlag(this.quickRepliesEnabled); }
-  get inlineResultGroupingBool(): boolean { return this.modeFlag(this.inlineResultGrouping); }
+  // Welle E (2026-05-23) — Compat-Hüllen: alte Pfade lesen diese Bools
+  // immer noch. Statt jede Stelle anzufassen, geben wir konstantes ``true``
+  // zurück. Die View-Conditionals werden separat aufgeräumt.
+  get cardsEnabledBool(): boolean { return true; }
+  get canvasEnabledBool(): boolean { return false; }
+  get quickRepliesEnabledBool(): boolean { return true; }
+  get inlineResultGroupingBool(): boolean { return true; }
+  // Welle E: hideCards/canvasShowingCards/guideModeActive/canvasActiveMarkdown
+  // wurden vom alten Canvas-Pane gespeist. Es gibt kein Canvas mehr — alle
+  // diese Felder sind konstant.
+  readonly hideCards: boolean = false;
+  readonly canvasShowingCards: boolean = false;
+  readonly guideModeActive: boolean = true;
+  readonly canvasActiveMarkdown: string = '';
+  readonly canvasState: Record<string, any> | null = null;
 
   /** Wird vom Angular-Bindings-Layer aufgerufen wenn ein ``@Input()`` neu
    *  gesetzt wird. Wir nutzen es, um den ``_renderCache`` zu invalidieren
@@ -313,19 +291,43 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
    *  exakter Match ODER Subdomain (entry "openeduhub.net" matched alle
    *  ``*.openeduhub.net``). Empty list → returns false → all hosts open
    *  in new tab. */
+  /** Such-CTA target=_self wenn URL auf trusted Host zeigt (Welle E,
+   *  2026-05-24) — Repo-Search-Links sollen im selben Tab öffnen, da
+   *  der User danach üblicherweise auf der Treffer-Seite weiterarbeitet
+   *  und nicht den Chat-Kontext verliert. Externe Hosts bleiben _blank. */
+  isTrustedSearchUrl(msg: ChatMessage): boolean {
+    const url = this.groupedSearchUrl(msg);
+    if (!url) return false;
+    try {
+      const u = new URL(url, window.location.href);
+      if (u.origin === window.location.origin) return true;
+      return this.isHostTrusted(u.hostname.toLowerCase());
+    } catch {
+      return false;
+    }
+  }
+
+  /** Kern-WLO-Domains, die IMMER als vertrauenswürdig gelten — unabhängig
+   *  davon, ob die dynamische Trusted-Liste (vom Widget via guide-mode-Config
+   *  ins ``[trustedHosts]``-Input) zum Render-Zeitpunkt schon geladen ist.
+   *  Verhindert, dass „Achtung! Externe URL." fälschlich bei WLO-Repo-/
+   *  Themenseiten-Links erscheint (alle auf ``*.openeduhub.net``), wenn die
+   *  Backend-Liste noch nicht angekommen ist. Die dynamische Liste ergänzt
+   *  zusätzliche Hosts (Dev, localhost, *.nip.io …) on top. */
+  private static readonly CORE_TRUSTED_DOMAINS = [
+    'openeduhub.net', 'wirlernenonline.de', 'openeduhub.de', 'wissenlebtonline.de',
+  ];
+
   isHostTrusted(host: string): boolean {
     const h = (host || '').toLowerCase();
-    if (!h || !Array.isArray(this.trustedHosts) || this.trustedHosts.length === 0) return false;
-    for (const t of this.trustedHosts) {
-      // Defensive: ``*.example.com`` und ``example.com`` als gleichwertig
-      // behandeln. Backend liefert beide Formen — wir normalisieren auf
-      // bare-domain, weil der ``endsWith('.X')``-Check Subdomains schon
-      // automatisch abdeckt. Ohne dieses Stripping würde ``*.openeduhub.net``
-      // nie matchen (kein Host fängt mit ``.*.openeduhub.net`` an).
+    if (!h) return false;
+    const dynamic = Array.isArray(this.trustedHosts) ? this.trustedHosts : [];
+    // ``*.example.com`` und ``example.com`` gleichwertig: ``*.`` strippen,
+    // der ``endsWith('.X')``-Check deckt Subdomains automatisch ab.
+    for (const t of [...ChatComponent.CORE_TRUSTED_DOMAINS, ...dynamic]) {
       const tn = (t || '').toLowerCase().replace(/^\*\./, '');
       if (!tn) continue;
-      if (h === tn) return true;
-      if (h.endsWith('.' + tn)) return true;
+      if (h === tn || h.endsWith('.' + tn)) return true;
     }
     return false;
   }
@@ -336,20 +338,18 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
       this.api.setBaseUrl(this.apiUrl);
     }
 
-    // Tell ApiService which embed modes the host has configured — only
-    // explicit ``false`` values are forwarded to the backend; everything
-    // else is left as undefined so older backends and Bestandsintegrationen
-    // continue to behave exactly as before.
+    // Welle E v4+13: Sprachfunktion-Capability vom Backend abfragen. Bei
+    // B-API-Anbindung ist Audio (STT/TTS) deaktiviert → Buttons ausblenden.
+    // Fire-and-forget; UI startet optimistisch mit Buttons sichtbar.
+    this.api.getSpeechEnabled()
+      .then((ok) => { this.speechBackendEnabled = ok; })
+      .catch(() => { /* optimistisch sichtbar lassen */ });
+
+    // Welle E (2026-05-23): einziger Embed-Override ist aiContentEnabled.
+    // Wir setzen ihn nur dann explizit ``false``, wenn der Host es
+    // aktiv abgeschaltet hat — sonst Backend-Default greift.
     this.api.setWidgetModes(
-      this.cardsEnabledBool ? undefined : false,
-      this.canvasEnabledBool ? undefined : false,
       this.aiContentEnabledBool ? undefined : false,
-      this.quickRepliesEnabledBool ? undefined : false,
-      // ``inline-result-grouping`` ist seit Welle C.5 **Default an**.
-      // Wir senden also nur dann explizit ``false`` ans Backend, wenn der
-      // Host das Feature aktiv abgeschaltet hat — sonst ``undefined``
-      // (= Backend nutzt seinen eigenen Default ``true``).
-      this.inlineResultGroupingBool ? undefined : false,
     );
 
     // Parse page-context attribute (JSON string or already an object)
@@ -389,10 +389,12 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
     }
 
     if (resumed) {
-      // Try to restore the conversation from the backend.
-      this.restoreHistory();
+      // Try to restore the conversation from the backend, then — falls eine
+      // Web-Tour läuft — den Ankunfts-Tick feuern (Bot erkennt die Seite).
+      this.restoreHistory().then(() => this._maybeStartTourTick());
     } else {
       this.showGreeting();
+      this._maybeStartTourTick();
     }
   }
 
@@ -414,7 +416,7 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
       'Wie kannst du mir helfen?',
       'Ich suche etwas zu einem Thema.',
       'Was ist WirLernenOnline?',
-      'Erstell mir ein neues Material.',
+      ChatComponent.TOUR_START_LABEL,
     ];
     this.addBotMessage(text, false, undefined, replies);
   }
@@ -581,7 +583,7 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
 
       // Remove loading, add real response
       this.removeMessage(loadingId);
-      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, resp.query_metas, resp.web_links);
+      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, resp.query_metas, resp.web_links, resp.inline_documents, resp.display_rules, resp.topic_page);
       this.scrollTargetId = botMsgId;
 
       this.latestDebug = resp.debug;
@@ -632,6 +634,11 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   }
 
   onQuickReply(reply: string) {
+    // Web-Tour-Startbutton: kein normaler Chat-Turn, sondern Tour-Einstieg.
+    if (reply === ChatComponent.TOUR_START_LABEL) {
+      this.startTour();
+      return;
+    }
     this.sendMessage(reply);
   }
 
@@ -681,6 +688,100 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   onGuideQuickReply(qr: string): void {
     const url = this.guideQuickReplyUrl(qr);
     if (url) this.onGuideNavigate(url);
+  }
+
+  // ── Webseiten-Tour (geführte Besucherführung) ─────────────────────
+  // Startbutton (showGreeting) → startTour(). Navigation pro Schritt läuft
+  // über die vorhandenen __guide__-Quick-Reply-Buttons (onGuideQuickReply).
+  // Nach jedem Seitenwechsel feuert ngOnInit einen unsichtbaren Tick, damit
+  // der Bot die Ankunft erkennt und den nächsten Schritt liefert.
+  static readonly TOUR_START_LABEL = 'Web-Tour starten';
+  private static readonly TOUR_FLAG_KEY = 'boerdi_tour_active';
+  /** Verhindert Doppel-Ticks pro Page-Load. */
+  private _tourTicked = false;
+
+  private _isTourFlagSet(): boolean {
+    try { return localStorage.getItem(ChatComponent.TOUR_FLAG_KEY) === '1'; }
+    catch { return false; }
+  }
+  private _setTourFlag(on: boolean): void {
+    try {
+      if (on) localStorage.setItem(ChatComponent.TOUR_FLAG_KEY, '1');
+      else localStorage.removeItem(ChatComponent.TOUR_FLAG_KEY);
+    } catch { /* ignore */ }
+  }
+  /** environment-Override für Tour-Requests (tour_action + page_context). */
+  private _tourEnv(action: 'start' | 'tick'): any {
+    const env: any = { tour_action: action };
+    if (Object.keys(this.parsedPageContext).length) {
+      env.page_context = this.parsedPageContext;
+    }
+    return env;
+  }
+  /** Liest resp.tour und pflegt das localStorage-Flag (active=false → löschen). */
+  private _applyTourState(resp: ChatResponse): void {
+    const tour = (resp as any).tour;
+    if (tour && typeof tour === 'object') this._setTourFlag(!!tour.active);
+  }
+  /** Rendert eine Tour-Bot-Antwort wie eine normale Bot-Bubble. */
+  private _renderTourResponse(resp: ChatResponse): void {
+    const id = this.addBotMessage(
+      resp.content, false, resp.cards, resp.quick_replies, resp.debug,
+      resp.pagination, resp.query_metas, resp.web_links,
+      resp.inline_documents, resp.display_rules, resp.topic_page,
+    );
+    this.scrollTargetId = id;
+    this.latestDebug = resp.debug;
+  }
+
+  /** Startet die geführte Web-Tour (Klick auf den Startbutton). */
+  async startTour(): Promise<void> {
+    if (this.isLoading) return;
+    this.addUserMessage(ChatComponent.TOUR_START_LABEL);
+    this.isLoading = true;
+    const loadingId = this.addBotMessage('', true);
+    this.scrollTargetId = loadingId;
+    try {
+      const resp = await this.api.sendMessage(this.sessionId, 'Web-Tour starten', this._tourEnv('start'));
+      this.removeMessage(loadingId);
+      this._setTourFlag(true);
+      this._applyTourState(resp);
+      this._renderTourResponse(resp);
+    } catch {
+      this.removeMessage(loadingId);
+      this.addBotMessage('Entschuldigung, die Tour konnte gerade nicht gestartet werden. Bitte versuch es nochmal.');
+    }
+    this.isLoading = false;
+  }
+
+  /** Unsichtbarer Tour-Tick beim Page-Load: meldet die aktuelle Seite ohne
+   *  User-Bubble. Rendert nur die Bot-Antwort, falls sie Inhalt hat. */
+  async sendTourTick(): Promise<void> {
+    if (this.isLoading || this._tourTicked) return;
+    this._tourTicked = true;
+    this.isLoading = true;
+    const loadingId = this.addBotMessage('', true);
+    this.scrollTargetId = loadingId;
+    try {
+      const resp = await this.api.sendMessage(this.sessionId, '[tour-tick]', this._tourEnv('tick'));
+      this.removeMessage(loadingId);
+      this._applyTourState(resp);
+      const hasContent = !!(resp.content || '').trim()
+        || !!(resp.quick_replies && resp.quick_replies.length);
+      if (hasContent) this._renderTourResponse(resp);
+    } catch {
+      this.removeMessage(loadingId);
+      // Tick-Fehler beim Page-Load still schlucken (kein Error-Bubble).
+    }
+    this.isLoading = false;
+  }
+
+  /** Nach dem (Re)Start: läuft eine Tour (localStorage-Flag, überlebt den
+   *  WP-Reload), EINEN Tick feuern, sobald der initiale Render durch ist. */
+  private _maybeStartTourTick(): void {
+    if (this._isTourFlagSet()) {
+      setTimeout(() => this.sendTourTick(), 0);
+    }
   }
 
   /** Heuristic: is the user message an explicit EDIT instruction for
@@ -749,6 +850,10 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   recordingSeconds = 0;
   private recordingTimer: ReturnType<typeof setInterval> | null = null;
   private speechBusy = false; // guard against double-click
+  /** Welle E v4+13: Backend meldet, ob STT/TTS verfügbar ist. Bei B-API-
+   *  Anbindung ist Audio deaktiviert → Buttons werden ausgeblendet. Start
+   *  optimistisch true; ngOnInit fragt /speech/status ab und korrigiert. */
+  speechBackendEnabled = true;
 
   async toggleRecording() {
     if (this.speechBusy) return; // guard
@@ -857,6 +962,44 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
     this.speakChunked(plain);
   }
 
+  // ── Inline-Document-Box (Welle E, 2026-05-23) ──────────────────
+  /**
+   * Liest die font_size_percent aus den Display-Regeln, die das Backend
+   * mit der Message mitgeschickt hat. Default 85 % (= ~14px bei 16px-
+   * Basis) wenn das Feld fehlt. Geclamped auf [70, 100] damit ein
+   * verkonfiguriertes Studio-Setting die Box nicht unleserlich macht.
+   */
+  inlineDocFontSize(msg: ChatMessage): number {
+    const raw = msg.displayRules?.['inline_documents']?.['font_size_percent'];
+    const n = typeof raw === 'number' ? raw : parseInt(raw, 10);
+    if (!Number.isFinite(n)) return 85;
+    return Math.max(70, Math.min(100, n));
+  }
+
+  /** Icon-Name aus dem Material-Icons-Set für die Inline-Document-Header-Zeile. */
+  inlineDocIcon(kind: string): string {
+    switch ((kind || '').toLowerCase()) {
+      case 'lernpfad':    return this.ICONS.route;
+      case 'ki_material': return this.ICONS.article;
+      case 'edit':        return this.ICONS.edit;
+      case 'bericht':     return this.ICONS.description;
+      case 'remix':       return this.ICONS.refresh;
+      default:            return this.ICONS.description;
+    }
+  }
+
+  /** Fallback-Label wenn das Backend keinen Title liefert. */
+  inlineDocFallbackLabel(kind: string): string {
+    switch ((kind || '').toLowerCase()) {
+      case 'lernpfad':    return 'Lernpfad';
+      case 'ki_material': return 'Material';
+      case 'edit':        return 'Bearbeitete Version';
+      case 'bericht':     return 'Bericht';
+      case 'remix':       return 'Remix';
+      default:            return 'Inhalt';
+    }
+  }
+
   // ── Lernpfad: Detektor + Druckfunktion ─────────────────────────
   /**
    * Detects whether a bot message is a Lernpfad. Both markers are produced
@@ -911,9 +1054,64 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
    * them here to avoid showing two print buttons on the same message.
    */
   isPrintableCanvasMaterial(msg: ChatMessage): boolean {
-    if (msg.sender !== 'bot' || !msg.content) return false;
+    if (msg.sender !== 'bot') return false;
+    // Welle E (2026-05-24): jede InlineDocument-Box mit kind=ki_material
+    // / lernpfad / edit / bericht / remix ist druckbar. Sentinel-im-
+    // ``msg.content``-Pfad bleibt als Fallback für ältere Messages.
+    const docs = msg.inlineDocuments || [];
+    if (docs.length > 0) return true;
+    if (!msg.content) return false;
     if (this.isLearningPath(msg)) return false;
     return this.PRINTABLE_CANVAS_RE.test(msg.content);
+  }
+
+  /**
+   * Welle E (2026-05-24): Druck-Trigger direkt aus der InlineDocument-Box.
+   * Nutzt doc.title als Print-Header und doc.content als Markdown-Body —
+   * keinen Sentinel-Parse nötig.
+   */
+  printInlineDocument(doc: { title: string; content: string; kind: string }): void {
+    if (!doc || !doc.content) return;
+    this._printMarkdown(doc.title || this.inlineDocFallbackLabel(doc.kind), doc.content);
+  }
+
+  /** Gemeinsamer Markdown-Print-Helper für InlineDocument + Legacy-Canvas. */
+  private _printMarkdown(title: string, markdown: string): void {
+    const esc = (s: string) =>
+      (s || '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c] as string));
+    const stripLatex = (t: string): string => this.stripLatex(t);
+    const mdToHtml = (text: string): string => {
+      let html = stripLatex(text)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/\[(.+?)\]\((https?:[^)]+)\)/g,
+          '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      const lines = html.split('\n');
+      const out: string[] = [];
+      for (const raw of lines) {
+        const line = raw.trim();
+        const h = line.match(/^(#{1,6})\s+(.*)$/);
+        if (h) { out.push(`<h${Math.min(h[1].length + 1, 6)}>${h[2]}</h${Math.min(h[1].length + 1, 6)}>`); continue; }
+        const ol = line.match(/^(\d+)\.\s+(.*)$/);
+        if (ol) { out.push(`<div class="ol"><span class="n">${ol[1]}.</span> ${ol[2]}</div>`); continue; }
+        const li = line.match(/^(?:[-•]|\*(?!\*))\s+(.*)/);
+        if (li) { out.push(`<div class="li"><span class="b">•</span> ${li[1]}</div>`); continue; }
+        if (line) out.push(`<p>${line}</p>`);
+      }
+      return out.join('\n');
+    };
+    const body = mdToHtml(markdown || '');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:780px;margin:32px auto;padding:0 24px;color:#111;line-height:1.5}
+h1,h2,h3,h4{color:#1c4587;margin:1em 0 .4em}h1{font-size:1.6em;border-bottom:2px solid #1c4587;padding-bottom:.2em}
+p{margin:.4em 0}.li,.ol{margin:.2em 0 .2em 1em}.n,.b{display:inline-block;width:1.5em;color:#1c4587;font-weight:600}
+a{color:#1c4587}@media print{a{color:inherit;text-decoration:none}}</style></head>
+<body><h1>${esc(title)}</h1>${body}<script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>`;
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); }
   }
 
   /**
@@ -1412,7 +1610,9 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
 
   // ── Cards ────────────────────────────────────────────────
   openCard(card: WloCard) {
-    const url = getCardPrimaryUrl(card);
+    // cardUrl() wendet _withBsid an (Cross-TLD-Handoff). Programmatisches
+    // window.open umgeht den globalen <a>-Rewrite, daher hier explizit.
+    const url = this.cardUrl(card);
     if (url && url !== '#') window.open(url, '_blank');
   }
 
@@ -1422,13 +1622,11 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
    *   <span class="card-content-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
    */
   getCardIcon(card: WloCard): string {
-    if (card.node_type === 'collection') {
-      // Themenseiten bekommen ihr eigenes Icon — sie sind kuratierte
-      // Webseiten, keine reinen Sammlungen, und unterscheiden sich
-      // visuell vom "Stapel"-Symbol der klassischen Sammlung.
-      if (Array.isArray(card.topic_pages) && card.topic_pages.length) return ICONS.topic;
-      return ICONS.auto_stories;
-    }
+    // Themenseiten bekommen ihr eigenes Icon — sie sind kuratierte
+    // Webseiten, keine reinen Sammlungen, und unterscheiden sich
+    // visuell vom "Stapel"-Symbol der klassischen Sammlung.
+    if (this.isThemenseite(card)) return ICONS.topic;
+    if (card.node_type === 'collection') return ICONS.auto_stories;
     const types = card.learning_resource_types || [];
     if (types.some(t => t.toLowerCase().includes('video'))) return ICONS.play_circle;
     if (types.some(t => t.toLowerCase().includes('arbeitsblatt'))) return ICONS.article;
@@ -1447,10 +1645,9 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
    * `learning_resource_types`-Eintrag wenn vorhanden, sonst Fallback.
    */
   getContentTypeLabel(card: WloCard): string {
+    if (this.isThemenseite(card)) return 'Themenseite';
     if (card.node_type === 'collection') {
-      // Sammlungen unterscheiden wir über das Kind-Badge rechts;
-      // hier zeigen wir konkretere Info, falls vorhanden.
-      if (card.topic_pages && card.topic_pages.length) return 'Themenseite';
+      // Sammlungen unterscheiden wir über das Kind-Badge rechts.
       return 'Sammlung';
     }
     const types = (card.learning_resource_types || []).filter(
@@ -1462,6 +1659,12 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
 
   /** Drei-Wege-Klassifikation für visuelle Unterscheidung. */
   isThemenseite(card: WloCard): boolean {
+    // Themenseiten in BEIDEN Repraesentationen erkennen, passend zum
+    // Backend (_is_themenseite_card): neu node_type='topic_page'
+    // (topic-pages-Renderer-Link), alt node_type='collection' mit
+    // topic_pages-Varianten. Sonst landet die Themenseite in der
+    // falschen Box (Regression 2026-06-02: topic_page -> Material-Box).
+    if (card.node_type === 'topic_page') return true;
     return card.node_type === 'collection'
       && Array.isArray(card.topic_pages) && card.topic_pages.length > 0;
   }
@@ -1470,7 +1673,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       && !(Array.isArray(card.topic_pages) && card.topic_pages.length > 0);
   }
   isInhalt(card: WloCard): boolean {
-    return card.node_type !== 'collection';
+    return card.node_type !== 'collection' && card.node_type !== 'topic_page';
   }
 
   // ── Grouped-Result-Display (Sprint 7) ─────────────────────────
@@ -1511,18 +1714,33 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     return out;
   }
 
+  /** Liest einen Box-Limit-Wert aus den Display-Rules der Message.
+   *  Welle E (2026-05-23): pro Box-Typ (themenseiten/sammlungen/
+   *  materialien/webseiten) konfigurierbar via Studio (display-rules.yaml
+   *  → groups). Fallback ist die alte Default-3.
+   */
+  private _groupLimit(msg: ChatMessage, key: string, fallback = 3): number {
+    const v = (msg.displayRules as any)?.['groups']?.[key];
+    const n = typeof v === 'number' ? v : parseInt(v, 10);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  }
+
   /** Top N Themenseiten der Bot-Antwort — dedupliziert per node_id +
-   *  normalisiertem Titel (siehe ``_dedupTake``). */
-  groupedTopicCards(msg: ChatMessage, n = 3): WloCard[] {
+   *  normalisiertem Titel (siehe ``_dedupTake``). Default kommt aus
+   *  display_rules.groups.themenseiten_max. */
+  groupedTopicCards(msg: ChatMessage, n?: number): WloCard[] {
     if (!msg.cards) return [];
-    return this._dedupTake(msg.cards.filter(c => this.isThemenseite(c)), n);
+    const limit = n ?? this._groupLimit(msg, 'themenseiten_max');
+    return this._dedupTake(msg.cards.filter(c => this.isThemenseite(c)), limit);
   }
 
   /** Top N reine Sammlungen (ohne Themenseiten-Markup) — dedupliziert
-   *  per node_id + normalisiertem Titel (siehe ``_dedupTake``). */
-  groupedCollectionCards(msg: ChatMessage, n = 3): WloCard[] {
+   *  per node_id + normalisiertem Titel. Default aus
+   *  display_rules.groups.sammlungen_max. */
+  groupedCollectionCards(msg: ChatMessage, n?: number): WloCard[] {
     if (!msg.cards) return [];
-    return this._dedupTake(msg.cards.filter(c => this.isSammlung(c)), n);
+    const limit = n ?? this._groupLimit(msg, 'sammlungen_max');
+    return this._dedupTake(msg.cards.filter(c => this.isSammlung(c)), limit);
   }
 
   /** Anzahl Einzelinhalte (Content-Cards), die per Search-CTA verfügbar
@@ -1530,6 +1748,16 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
   groupedContentCardsCount(msg: ChatMessage): number {
     if (!msg.cards) return 0;
     return msg.cards.filter(c => this.isInhalt(c)).length;
+  }
+
+  /** Einzelinhalte (Materialien) als eigene Gruppen-Box rendern.
+   *  Welle E (2026-05-23): Bisher landeten Einzelinhalte fälschlicherweise
+   *  in der Webseiten-Inhalte-Box (web_links), obwohl sie eigene OER-
+   *  Ressourcen sind. Default aus display_rules.groups.materialien_max. */
+  groupedContentCards(msg: ChatMessage, n?: number): WloCard[] {
+    if (!msg.cards) return [];
+    const limit = n ?? this._groupLimit(msg, 'materialien_max');
+    return this._dedupTake(msg.cards.filter(c => this.isInhalt(c)), limit);
   }
 
   /** Wählt die "haupt"-relevante MCP-Such-URL aus den Query-Metadata.
@@ -1561,7 +1789,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       || metas.find(m => m.search_url)?.search_url
       || ''
     );
-    if (direct) return direct;
+    if (direct) return this._withBsid(direct);
     // ── Fallback-Komposition (nur edu-sharing) ──────────────────
     // Nimm den ersten nicht-leeren search_term aus den Metas (die Tools
     // schreiben den User-Suchbegriff alle gleich rein, search_wlo_content/
@@ -1577,7 +1805,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       return '';
     }
     const q = encodeURIComponent(term);
-    return `${repo}/edu-sharing/components/search?query=${q}`;
+    return this._withBsid(`${repo}/edu-sharing/components/search?query=${q}`);
   }
 
   /** Such-Begriff für das Search-CTA-Label. Falls in den Metas vorhanden,
@@ -1642,7 +1870,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
    *  rausgezogen — der saubere Pfad). Fallback: Markdown-Link-Regex auf
    *  ``msg.content`` für alte gespeicherte Messages aus der Zeit vor dem
    *  strukturierten Feld. ``?bsid=`` wird auf Trusted-Hosts angehängt. */
-  groupedWebLinks(msg: ChatMessage, n = 3): Array<{ title: string; url: string }> {
+  groupedWebLinks(msg: ChatMessage, n?: number): Array<{ title: string; url: string }> {
     // Type-Focus-Antworten (Material-Typ-Anfrage „nur Videos / hast du
     // Arbeitsblätter / …") rendern NIEMALS eine Webseiten-Inhalte-Box —
     // der Antwortmodus ist „Klick auf die Such-CTA", alles andere
@@ -1654,10 +1882,12 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     if ((msg.debug as any)?._type_focus) return [];
     const _tfPattern = /^\s*Für\s+\S.*\bschau\s+in\s+die\s+Suche\s+unten\b/i;
     if (_tfPattern.test(msg.content || '')) return [];
+    // Welle E (2026-05-23) — Limit aus display_rules.groups.webseiten_max
+    const limit = n ?? this._groupLimit(msg, 'webseiten_max');
     // ── Primärpfad: strukturiertes Backend-Feld ─────────────────
     if (Array.isArray(msg.webLinks) && msg.webLinks.length > 0) {
       return msg.webLinks
-        .slice(0, n)
+        .slice(0, limit)
         .map(l => ({ title: l.title, url: this._withBsid(l.url) }));
     }
     // ── Fallback: ChatMessage hat möglicherweise webLinks im debug-Feld
@@ -1666,7 +1896,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     if (Array.isArray(debugLinks) && debugLinks.length > 0) {
       return debugLinks
         .filter((l: any) => l && l.title && l.url)
-        .slice(0, n)
+        .slice(0, limit)
         .map((l: any) => ({ title: String(l.title), url: this._withBsid(String(l.url)) }));
     }
     // ── Letzter Fallback: Regex auf Content ─────────────────────
@@ -1694,7 +1924,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       if (seen.has(url) || cardUrls.has(url)) continue;
       seen.add(url);
       out.push({ title: label, url: this._withBsid(url) });
-      if (out.length >= n) break;
+      if (out.length >= limit) break;
     }
     return out;
   }
@@ -1719,6 +1949,19 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     if (lbl) return lbl;
     if (warn) return warn;
     return null;
+  }
+
+  /** Tooltip (title-Attribut) für Karten-Links: „Titel (Typ)". Der Typ ist
+   *  der konkrete Inhaltstyp bei Einzelmaterialien (z.B. „Video",
+   *  „Arbeitsblatt"), „Sammlung" bei Sammlungen, „Themenseite" bei
+   *  Themenseiten — geliefert von getContentTypeLabel(). Plus ggf.
+   *  Extern-Warnung (wie itemTooltip). */
+  cardTooltip(card: WloCard | null | undefined, url?: string | null): string | null {
+    if (!card) return null;
+    const title = (card.title || '').trim();
+    const type = this.getContentTypeLabel(card);
+    const label = title && type ? `${title} (${type})` : (title || type);
+    return this.itemTooltip(label, url ?? this.cardUrl(card));
   }
 
   /** Tooltip-Builder für die Search-CTA-Box im Result-Grouping-Modus.
@@ -1748,6 +1991,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     return (
       (hasCards && (this.groupedTopicCards(msg).length > 0
                     || this.groupedCollectionCards(msg).length > 0
+                    || this.groupedContentCards(msg).length > 0
                     || hasSearchCta))
       || hasWebLinks
       || hasSearchCta
@@ -1800,10 +2044,15 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
    */
   onGuideNavigate(url: string | undefined): void {
     if (!url) return;
+    // Guide-CTA ist ein <button> (kein <a>), daher greift der globale
+    // Outgoing-Link-Rewrite NICHT — wir müssen ``?bsid=`` hier selbst
+    // anhängen (Cross-TLD-Session-Handoff zum Trusted-Ziel). Same-origin /
+    // untrusted lässt ``_withBsid`` unverändert.
+    const finalUrl = this._withBsid(url) || url;
     try {
-      window.location.href = url;
+      window.location.href = finalUrl;
     } catch {
-      window.open(url, '_self', 'noopener');
+      window.open(finalUrl, '_self', 'noopener');
     }
   }
 
@@ -1977,7 +2226,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
         this.canvasState,
       );
       this.removeMessage(loadingId);
-      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, undefined, resp.web_links);
+      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, undefined, resp.web_links, resp.inline_documents, resp.display_rules);
       this.scrollTargetId = botMsgId;
       this.latestDebug = resp.debug;
       this.dispatchPageAction(resp.page_action);
@@ -2029,7 +2278,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
         this.canvasState,
       );
       this.removeMessage(loadingId);
-      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, undefined, resp.web_links);
+      const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, undefined, resp.web_links, resp.inline_documents, resp.display_rules);
       this.scrollTargetId = botMsgId;
       this.latestDebug = resp.debug;
       this.dispatchPageAction(resp.page_action);
@@ -2084,7 +2333,7 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       this.removeMessage(loadingId);
       const botMsgId = this.addBotMessage(
         resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination,
-        undefined, resp.web_links,
+        undefined, resp.web_links, resp.inline_documents, resp.display_rules,
       );
       this.scrollTargetId = botMsgId;
       this.latestDebug = resp.debug;
@@ -2120,6 +2369,16 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
   /** Exposed helper so the template can use the typ-aware URL resolver. */
   cardUrl(card: WloCard | null | undefined): string {
     return this._withBsid(getCardPrimaryUrl(card));
+  }
+
+  /** URL für Webseiten-Inhalte-Box-Links (RAG-Quellen, web_links).
+   *  Welle E (2026-05-23) — Bugfix: Vorher landete der bsid-Rewrite erst
+   *  im Capture-Phase-Click-Listener (``_maybeRewriteOutgoingLink``),
+   *  was bei Brave-Shield/Privacy-Browsern dazu führt dass der erste Klick
+   *  noch dem alten ``href`` folgt (URL ohne ``?bsid``). Jetzt schon beim
+   *  Render fertig — kein Doppelklick mehr nötig. */
+  webLinkUrl(link: { url: string } | null | undefined): string {
+    return this._withBsid(link?.url || '');
   }
 
   /** Tooltip-Text für Card-Links und Themenseiten-Buttons, falls die
@@ -2262,9 +2521,13 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
   get debugButtonVisible(): boolean {
     return this.showDebugButton === true || this.showDebugButton === 'true';
   }
-  /** Whether the 🔊 TTS toggle and 🎤 mic-record buttons should render. */
+  /** Whether the 🔊 TTS toggle and 🎤 mic-record buttons should render.
+   *  Welle E v4+13: zusätzlich an die Backend-Capability gekoppelt — bei
+   *  B-API-Anbindung (Audio deaktiviert) bleiben die Buttons aus, auch wenn
+   *  der Host ``show-language-buttons`` nicht explizit gesetzt hat. */
   get languageButtonsVisible(): boolean {
-    return this.showLanguageButtons === true || this.showLanguageButtons === 'true';
+    const hostWants = this.showLanguageButtons === true || this.showLanguageButtons === 'true';
+    return hostWants && this.speechBackendEnabled;
   }
 
   // ── Restart ──────────────────────────────────────────────
@@ -2310,10 +2573,12 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     if (data.kind === 'end') return null;  // ignore end to avoid flicker
     const step = String(data.step || '');
     const map: Record<string, string> = {
-      'safety_classify': 'Klassifiziere die Anfrage …',
+      'safety_classify': 'Verstehe deine Anfrage …',
       'context': 'Lade Sitzungs-Kontext …',
-      'policy': 'Prüfe Datenschutz-Policy …',
-      'pattern': 'Wähle Antwort-Pattern …',
+      'policy': 'Prüfe Datenschutz …',
+      'pattern': 'Wähle die passende Antwort …',
+      'wlo_search': 'Durchsuche WLO-Inhalte …',
+      'topic_content': 'Lade Themenseiten-Inhalte …',
       'response': 'Formuliere Antwort …',
       'query_meta': 'Suchergebnisse zusammengestellt',
     };
@@ -2333,6 +2598,9 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     pagination?: PaginationInfo | null,
     queryMetas?: import('../services/api.service').QueryMetaEntry[],
     webLinks?: import('../services/api.service').WebLink[],
+    inlineDocuments?: import('../services/api.service').InlineDocument[],
+    displayRules?: Record<string, any>,
+    topicPage?: import('../services/api.service').TopicPageView | null,
   ): string {
     const id = this.uid();
     const pageSize = pagination?.page_size || 5;
@@ -2342,6 +2610,9 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       visibleCardCount: pageSize,
       queryMetas: queryMetas || undefined,
       webLinks: webLinks || undefined,
+      inlineDocuments: inlineDocuments && inlineDocuments.length ? inlineDocuments : undefined,
+      topicPage: (topicPage && topicPage.swimlanes && topicPage.swimlanes.length) ? topicPage : undefined,
+      displayRules: displayRules || undefined,
       timestamp: new Date(),
     };
     this.messages.update(msgs => [...msgs, msg]);

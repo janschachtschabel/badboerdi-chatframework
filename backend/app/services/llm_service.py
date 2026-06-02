@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any
 
 from pydantic import ValidationError
@@ -27,12 +28,162 @@ client = get_client()
 MODEL = get_chat_model()
 
 
+def _strip_trailing_option_lines(text: str, quick_replies: list[str]) -> str:
+    """Sicherheitsnetz: Entfernt Quick-Reply-/„Bring mich hin"-Optionszeilen,
+    die das Modell gelegentlich ZUSÄTZLICH ans Ende des Antworttexts schreibt.
+
+    Diese Optionen gehören ausschließlich ins strukturierte ``quick_replies``-
+    Feld (das Frontend rendert sie als Pillen/Buttons UNTER der Antwort) — nicht
+    als fetter Text in die Chat-Blase. Es werden nur Zeilen am ENDE entfernt,
+    die (nach Abzug von Markdown-Deko) exakt einem Quick-Reply entsprechen oder
+    eine „Bring mich hin"-Guide-Zeile sind. Inhaltliche Sätze bleiben unberührt.
+    """
+    if not text:
+        return text
+
+    def _norm(s: str) -> str:
+        s = s.strip().lstrip("-–—•*_ \t").rstrip("*_ \t")
+        return s.rstrip(":：").strip().lower()
+
+    qr_norm = {_norm(q) for q in (quick_replies or []) if q and q.strip()}
+    lines = text.split("\n")
+    while lines:
+        raw = lines[-1].strip()
+        if not raw:
+            lines.pop()
+            continue
+        n = _norm(raw)
+        if n and (n in qr_norm or n.startswith("bring mich hin")):
+            lines.pop()
+            continue
+        break
+    return "\n".join(lines).rstrip()
+
+
+# ── Reasoning / "Thinking"-Filter ─────────────────────────────────────
+# Manche Modelle schreiben ihren Denk-/Reasoning-Block INLINE in den
+# sichtbaren Antworttext. Empirisch (Scan 2026-06-01 gegen b-api.staging)
+# macht das im AcademicCloud-Katalog NUR ``deepseek-r1-distill-llama-70b``
+# (kompletter ``<think>…</think>``-Block in ``message.content``). ALLE
+# anderen Modelle — inkl. des Defaults ``mistral-large-3``, gemma-3,
+# glm-4.7, gpt-oss-120b und die qwen3.5/3.6-Familie — legen Reasoning in
+# ein SEPARATES Feld (``reasoning``/``reasoning_content``), das der
+# Antwort-Pfad nie liest. Für diese ist der Filter ein No-op. Er ist die
+# Versicherung, damit ein Wechsel von ``LLM_CHAT_MODEL`` auf ein
+# Thinking-Modell die Gedankenkette NICHT zum Nutzer durchlässt.
+_THINK_BLOCK_RE = re.compile(
+    r"<(think|thinking|reasoning)\b[^>]*>.*?</\1\s*>", re.DOTALL | re.IGNORECASE
+)
+# Offener Think-Tag ohne Schließen (Modell lief mid-reasoning ins Token-Limit
+# → finish_reason=length): alles ab dem Tag verwerfen.
+_THINK_OPEN_TAIL_RE = re.compile(
+    r"<(think|thinking|reasoning)\b[^>]*>.*\Z", re.DOTALL | re.IGNORECASE
+)
+# Unicode-Variante (manche R1-Distills): ◁think▷ … ◁/think▷
+_THINK_UNI_BLOCK_RE = re.compile(r"◁think▷.*?◁/think▷", re.DOTALL)
+_THINK_UNI_TAIL_RE = re.compile(r"◁think▷.*\Z", re.DOTALL)
+# gpt-oss-„harmony"-Kanalmarker — auf unserer Strecke nie geleakt, aber
+# billig zu neutralisieren, falls ein künftiges Modell sie doch durchreicht.
+_HARMONY_MARKERS = (
+    "<|channel|>", "<|message|>", "<|start|>", "<|end|>",
+    "<|im_start|>", "<|im_end|>", "assistantfinal",
+)
+
+
+def strip_reasoning_markers(text: str) -> str:
+    """Entfernt Chain-of-Thought, die ins SICHTBARE ``content`` geleakt ist.
+
+    Reihenfolge:
+      1. geschlossene ``<think>…</think>`` / ``<thinking>`` / ``<reasoning>``
+         Blöcke (deepseek-r1-distill u.a.),
+      2. ein UNGESCHLOSSENER ``<think>…``-Rest (Token-Limit mitten im Denken),
+      3. die Unicode-Variante ``◁think▷…◁/think▷``,
+      4. gpt-oss-„harmony"-Kanalmarker (defensiv).
+
+    Reasoning im SEPARATEN ``reasoning``/``reasoning_content``-Feld wird NICHT
+    angefasst — der Antwort-Pfad liest nur ``message.content``, die Felder
+    erreichen den Nutzer also ohnehin nie. Für Modelle, die nichts davon
+    emittieren (mistral-large-3, gemma-3, glm-4.7, gpt-oss-120b, qwen3.5/3.6 …),
+    liefert die Fast-Path-Prüfung den Text unverändert zurück.
+    """
+    if not text:
+        return text
+    # Fast path: nichts „thinking"-artiges vorhanden → unverändert.
+    if "<" not in text and "◁" not in text and "assistantfinal" not in text:
+        return text
+    out = _THINK_BLOCK_RE.sub("", text)
+    out = _THINK_OPEN_TAIL_RE.sub("", out)
+    out = _THINK_UNI_BLOCK_RE.sub("", out)
+    out = _THINK_UNI_TAIL_RE.sub("", out)
+    for marker in _HARMONY_MARKERS:
+        out = out.replace(marker, "")
+    return out.strip()
+
+
+class _ThinkSafeStreamer:
+    """Live-Streaming-Schutz: hält ``<think>…</think>`` aus dem Token-Stream —
+    nicht erst aus dem finalen Text.
+
+    Pro Chunk wird der sichtbare Text aus der GESAMTEN Akkumulation via
+    ``strip_reasoning_markers`` neu abgeleitet (Single Source of Truth, robust
+    gegen über Chunk-Grenzen zerschnittene Tags). Weitergereicht wird nur der
+    STABILE Präfix — alles bis auf einen Sicherheits-Tail von ``_HOLDBACK``
+    Zeichen, der noch der ANFANG eines Markers sein könnte (z.B. ``<thi`` bevor
+    ``<think>`` komplett ist). ``flush()`` gibt am Stream-Ende den Rest frei.
+
+    Saubere Modelle (mistral-large-3, gpt-5.4-mini …) streamen praktisch 1:1 —
+    nur die letzten ~16 Zeichen erscheinen gebündelt am Schluss. Ein
+    Thinking-Modell (z.B. deepseek-r1) leakt seinen Denk-Block NIE: weder ein
+    Teil-Tag noch der Inhalt wird je gesendet.
+    """
+    _HOLDBACK = 16  # ≥ längster Marker ("assistantfinal"=14, "<reasoning"=10)
+
+    def __init__(self, on_token: Any):
+        self._on = on_token
+        self._acc = ""
+        self._emitted = 0  # bereits gesendete Zeichen des sichtbaren Texts
+
+    def _emit(self, visible: str, target_len: int) -> None:
+        end = min(target_len, len(visible))
+        if self._on is None or end <= self._emitted:
+            return
+        # Stabiler Präfix: strip betrifft nur den Suffix, wo neue Tags entstehen,
+        # daher ist visible[:self._emitted] über Aufrufe hinweg konstant.
+        piece = visible[self._emitted:end]
+        if not piece:
+            return
+        try:
+            self._on(piece)
+        except Exception:
+            pass
+        self._emitted = end
+
+    def __call__(self, chunk: str) -> None:
+        if chunk:
+            self._acc += chunk
+        if self._on is None:
+            return
+        visible = strip_reasoning_markers(self._acc)
+        self._emit(visible, len(visible) - self._HOLDBACK)
+
+    def flush(self) -> None:
+        if self._on is None:
+            return
+        visible = strip_reasoning_markers(self._acc)
+        self._emit(visible, len(visible))
+
+
+def _make_think_safe_on_token(on_token: Any) -> "_ThinkSafeStreamer":
+    """Factory für den Live-Streaming-Thinking-Filter (siehe _ThinkSafeStreamer)."""
+    return _ThinkSafeStreamer(on_token)
+
+
 # ── State-Conversation-Flow helpers (Welle C Sprint 6) ────────────────
 # Pattern wählt WAS antworten + welche Tools — State sagt in welcher
 # Verlaufs-Phase die Antwort einzahlt. Diese Helper laden die
 # Phase-Direktive aus 04-states/states.yaml und fallen leise zurück,
 # wenn ein State-id unbekannt ist (z.B. veraltete Session-Daten nach
-# state-10-Löschung).
+# S3-Löschung).
 def _get_state_meta_safe(state_id: str) -> dict[str, Any]:
     try:
         return get_state_directive(state_id) or {}
@@ -52,25 +203,25 @@ def _build_classify_tool() -> dict[str, Any]:
     else:
         device_cfg = load_device_config()
         persona_ids = list(device_cfg.get("persona_formality", {}).keys()) or [
-            "P-W-LK", "P-W-SL", "P-W-POL", "P-W-PRESSE", "P-W-RED",
-            "P-BER", "P-VER", "P-ELT", "P-AND",
+            "P-LEH", "P-LER", "P-ENT", "P-RED", "P-RED",
+            "P-ENT", "P-ENT", "P-ELT", "P-AND",
         ]
 
     # Load intents
     intents = load_intents()
     intent_ids = [i["id"] for i in intents] or [
-        "INT-W-01", "INT-W-02", "INT-W-03",
-        "INT-W-04", "INT-W-05", "INT-W-06", "INT-W-08",
-        "INT-W-09", "INT-W-10",
+        "I01", "I01", "I03",
+        "I07", "I08", "I02", "I02",
+        "I02", "I04",
     ]
 
     # Load states. Fallback list mirrors the live states.yaml after Welle C
-    # Sprint 6 — state-10 (Redaktions-Recherche) was removed (redundant to
-    # persona P-W-RED, not a distinct conversation phase).
+    # Sprint 6 — S3 (Redaktions-Recherche) was removed (redundant to
+    # persona P-RED, not a distinct conversation phase).
     states = load_states()
     state_ids = [s["id"] for s in states] or [
-        "state-1", "state-2", "state-3", "state-4", "state-5",
-        "state-6", "state-7", "state-8", "state-9", "state-11", "state-12",
+        "S1", "S2", "S3", "S3", "S3",
+        "S3", "S3", "S3", "S3", "S3", "S3",
     ]
 
     # Load entities
@@ -90,7 +241,22 @@ def _build_classify_tool() -> dict[str, Any]:
     # decides. We log how often the two agree so we can later promote the
     # hint to a Tie-Breaker.
     patterns = load_pattern_definitions()
-    pattern_ids = [p.get("id") for p in patterns if p.get("id")] or ["PAT-01"]
+    pattern_ids = [p.get("id") for p in patterns if p.get("id")] or ["M04"]
+
+    # Welle E (2026-05-23): Distinct MCP-Tools aus allen Pattern-Frontmattern
+    # sammeln. Dient als Enum für den optionalen ``tool_id_hint``-Slot, mit
+    # dem der Klassifikator dem Spec-Prefetch sagt "ruf bevorzugt dieses Tool".
+    tool_hint_ids: list[str] = []
+    for p in patterns:
+        for tool in (p.get("tools") or []):
+            if tool and tool not in tool_hint_ids:
+                tool_hint_ids.append(tool)
+    if not tool_hint_ids:
+        tool_hint_ids = [
+            "search_wlo_topic_pages",
+            "search_wlo_collections",
+            "search_wlo_content",
+        ]
 
     return {
         "type": "function",
@@ -163,6 +329,34 @@ def _build_classify_tool() -> dict[str, Any]:
                             "kam noch in Frage und warum verworfen?"
                         ),
                     },
+                    # Welle E (2026-05-23) — MCP-Tool-Hint für Speculative
+                    # Prefetch. Erlaubt sind nur Tools die in irgendeinem
+                    # Pattern als ``tools:`` deklariert sind (siehe
+                    # ``tool_hint_ids`` oben). Backend prüft zusätzlich,
+                    # dass der Tool-Hint mit den ``tools`` des final gewählten
+                    # Pattern kompatibel ist — sonst fällt es auf Heuristik
+                    # zurück.
+                    "tool_id_hint": {
+                        "type": "string",
+                        "enum": tool_hint_ids,
+                        "description": (
+                            "Optional: Welches MCP-Tool soll als erstes "
+                            "spekulativ aufgerufen werden um den Treffer-"
+                            "Cache zu wärmen? Wähle z.B. search_wlo_topic_pages "
+                            "wenn der User nach einer Themenseite fragt, "
+                            "search_wlo_content bei Medientyp-Filter "
+                            "(\"nur Videos\"), search_wlo_collections bei "
+                            "Sammlungs-Anfragen. Lass leer wenn keine Suche "
+                            "(z.B. reines Q&A) oder unklar."
+                        ),
+                    },
+                    "tool_reasoning": {
+                        "type": "string",
+                        "description": (
+                            "1 Satz: Warum dieses Tool als Primary? Wird im "
+                            "Quality-Log gespeichert zur Auswertung."
+                        ),
+                    },
                 },
                 "required": ["persona_id", "persona_confidence", "intent_id",
                               "intent_confidence", "signals",
@@ -172,154 +366,535 @@ def _build_classify_tool() -> dict[str, Any]:
     }
 
 
-def _build_classify_system_prompt(
-    session_state: dict,
-    environment: dict,
-    canvas_state: dict | None = None,
-) -> str:
-    """Build the classification system prompt from config files."""
-    # Load config-driven element lists
-    device_cfg = load_device_config()
-    persona_formality = device_cfg.get("persona_formality", {})
-    intents = load_intents()
-    states = load_states()
-    modulations, _ = load_signal_modulations()
-    entities = load_entities()
+# ──────────────────────────────────────────────────────────────────────
+# Klassifikator-Prompt — YAML-driven Renderer (Welle E, 2026-05-25)
+#
+# Vorher: ~3500 Tokens hardcoded Persona-/Intent-/Entity-Regeln im
+# Python-String (Zeilen 422–727 alt). Studio konnte davon nichts
+# editieren — Redaktion sah nur ID+Label+Description.
+#
+# Jetzt: Alle Regeln stehen in den YAML/MD-Dateien (intents.yaml,
+# 04-personas/*.md, entities.yaml, states.yaml). Die Renderer hier
+# bauen daraus die Prompt-Blöcke. Was im Code bleibt:
+#   - Generische Scaffold-Sätze ("Erkenne sowohl explizit als auch
+#     implizit", "Prüfe Trigger gegen Negativ-Trigger", …) — die
+#     gelten unabhängig von konkreten Intent-/Persona-IDs.
+#   - Format-Hinweise (Reihenfolge der Sektionen, Tool-Aufruf).
+#   - Dynamic-Block (state, entities, persona, turn, page, canvas).
+# ──────────────────────────────────────────────────────────────────────
 
-    # Format persona list (with labels + descriptions + detection hints from persona files)
-    persona_defs = load_persona_definitions()
-    if persona_defs:
-        persona_parts = []
-        for p in persona_defs:
-            desc = p.get("description", "")
-            hints = p.get("hints", [])
-            line = f"- {p['id']} ({p['label']})"
-            if desc:
-                line += f": {desc}"
-            if hints:
-                line += f"\n  Erkennungshinweise: {', '.join(hints[:20])}"
-            persona_parts.append(line)
-        persona_lines = "\n".join(persona_parts)
-    elif persona_formality:
-        persona_lines = "\n".join(f"- {pid}" for pid in persona_formality.keys())
-    else:
-        persona_lines = "- P-AND (Andere)"
+# Max-Limits pro Renderer — verhindern, dass eine versehentlich groß
+# editierte YAML-Datei den Prompt explodieren lässt. Werte sind weit
+# genug für realistische Konfigurationen, aber begrenzen Worst-Case-
+# Token-Costs sichtbar.
+_MAX_HINTS_PER_PERSONA = 40
+_MAX_ANTI_HINTS_PER_PERSONA = 20
+_MAX_DISCRIMINATORS_PER_DIM = 8
+_MAX_TRIGGER_VERBS = 20
+_MAX_NEGATIVE_TRIGGERS = 8
+_MAX_POSITIVE_EXAMPLES = 8
+_MAX_NEGATIVE_EXAMPLES = 12
+_MAX_EXAMPLES_PER_INTENT = 6
 
-    # Format intent list
-    intent_lines = ", ".join(
-        f"{i['id']} ({i['label']})" for i in intents
-    ) if intents else ""
 
-    # Format signal list by dimension
-    signals_by_dim: dict[str, list[str]] = {}
-    for sig_id, cfg in modulations.items():
-        dim = cfg.get("dimension", "Unbekannt") if isinstance(cfg, dict) else "Unbekannt"
-        signals_by_dim.setdefault(dim, []).append(sig_id)
-    # Reload from YAML for dimension info
-    from app.services.config_loader import _load_yaml
-    sig_data = _load_yaml("04-signals/signal-modulations.yaml")
-    sig_defs = sig_data.get("signals", {})
-    signals_by_dim = {}
-    for sig_id, cfg in sig_defs.items():
-        dim = cfg.get("dimension", "Unbekannt")
-        signals_by_dim.setdefault(dim, []).append(sig_id)
-    signal_lines = "\n".join(
-        f"{dim}: {', '.join(sigs)}" for dim, sigs in signals_by_dim.items()
+def _render_personas_block(persona_defs: list[dict]) -> str:
+    """Render the Personas section of the classifier prompt from
+    persona MD definitions.
+
+    Output structure per persona:
+        ### P-XXX — Label
+        Beschreibung (Ziele).
+        Positiv-Marker: "phrase 1", "phrase 2", ...
+        Anti-Marker (NICHT diese Persona): "phrase A", ...
+        Diskriminatoren:
+          - Bullet 1
+          - Bullet 2
+
+    The generic instruction block (how to use these markers, when
+    self-ID trumps everything, etc.) is emitted ONCE at the top of the
+    section — not duplicated per persona.
+    """
+    if not persona_defs:
+        return "\n(keine Personas konfiguriert — defaulte zu P-AND.)\n"
+
+    head = (
+        "PERSONA-REGELN (gelten für alle Personas, Daten unten):\n"
+        "- Erkenne Personas SOWOHL durch EXPLIZITE Selbst-Aussagen "
+        "(\"Ich bin Lehrer:in / Politikerin / Journalist\") als auch durch "
+        "IMPLIZITE Sprach-Marker (Positiv-Marker-Liste pro Persona).\n"
+        "\n"
+        "**HARTE OVERRIDE-Regel: Explizite Selbst-ID dominiert IMMER.**\n"
+        "Sobald der User sagt \"Ich bin X\" / \"als X\" / \"ich bin "
+        "X:in\" / \"als X:in\" (z.B. \"ich bin Schüler:in\", \"als Lehrkraft\", "
+        "\"ich bin Mutter\"), ist die Persona = X. Diese Self-ID übersteuert\n"
+        "JEDE konkurrierende Topic-Wahl im gleichen Satz, auch wenn der Rest\n"
+        "nach einer anderen Persona klingt.\n"
+        "Beispiel: \"Ich bin Schüler:in und lerne für meine Klausur. Hilf mir\n"
+        "einen Lernpfad für meine Unterrichtseinheit zu bauen.\" → "
+        "**P-LER** (NICHT P-LEH, obwohl \"Unterrichtseinheit\" P-LEH-Marker ist).\n"
+        "Bei Self-ID: turn_type=\"correction\" UND persona_confidence>=0.9.\n"
+        "\n"
+        "- Anti-Marker (False-Positive-Schutz) NIE als Positiv-Treffer "
+        "verwenden — sie sagen, was eine Persona NICHT eindeutig macht.\n"
+        "- Intent ≠ Persona: ein Anfrage-Thema (z.B. \"Statistiken\", "
+        "\"Bildungspolitik\") bestimmt nicht die Persona — Persona kommt "
+        "aus Sprachstil + Selbst-ID + Kontext.\n"
+        "- Mehrere starke Positiv-Marker EINER Persona schlagen einzelne "
+        "konkurrierende Marker einer anderen — Beispiel: 2× P-LER-Marker "
+        "(\"kapiere nicht\" + \"Schritt für Schritt\") überstimmt eine vage "
+        "Frage zu \"Feedback geben\" → bleib bei P-LER.\n"
+        "- Im Zweifel P-AND, nicht eine spezifische Persona raten — aber "
+        "MIND. 2 Positiv-Marker derselben Persona = nicht mehr Zweifelsfall.\n"
     )
 
-    # Format state list
-    state_lines = ", ".join(
-        f"{s['id']} ({s['label']})" for s in states
-    ) if states else ""
+    parts: list[str] = [head, ""]
+    for p in persona_defs:
+        pid = p.get("id", "")
+        if not pid:
+            continue
+        block: list[str] = [f"### {pid} — {p.get('label', '')}"]
+        if p.get("description"):
+            block.append(p["description"])
 
-    # Format pattern list — kompakt: ID + Label + Gates + 1-Liner-Hint.
-    # Vollbeschreibungen würden den Prompt aufblähen; das LLM wählt den
-    # Hint überwiegend nach Persona/Intent-Gates plus Patterntyp-Stimmung.
-    # Bevorzuge `short_purpose` (1-2 Sätze WANN+WOFÜR) wenn im Pattern-File
-    # gesetzt, sonst Fallback auf `core_rule`-Auszug.
-    patterns_for_prompt = load_pattern_definitions()
-    pattern_parts = []
-    for p in patterns_for_prompt:
+        # Welle E v2 (2026-05-25): bevorzugt ``positive_markers`` (neuer Name),
+        # fallback ``hints`` (alter Alias).
+        pos = (p.get("positive_markers") or p.get("hints") or [])[
+            :_MAX_HINTS_PER_PERSONA
+        ]
+        if pos:
+            block.append(
+                "Positiv-Marker: " + ", ".join(f'"{h}"' for h in pos)
+            )
+
+        # ``anti_markers`` ist list[{phrase, redirect_to?, rationale?}];
+        # ``anti_hints`` (legacy list[str]) als Fallback.
+        anti_raw = p.get("anti_markers") or p.get("anti_hints") or []
+        anti_lines: list[str] = []
+        for item in anti_raw[:_MAX_ANTI_HINTS_PER_PERSONA]:
+            if isinstance(item, dict):
+                phrase = str(item.get("phrase") or "").strip()
+                if not phrase:
+                    continue
+                rt = str(item.get("redirect_to") or "").strip()
+                anti_lines.append(f'"{phrase}"' + (f" → {rt}" if rt else ""))
+            elif isinstance(item, str) and item.strip():
+                anti_lines.append(f'"{item.strip()}"')
+        if anti_lines:
+            block.append(
+                "Anti-Marker (NICHT diese Persona): "
+                + ", ".join(anti_lines)
+            )
+
+        # Discriminators: jetzt list[{vs, rule, example_a?, example_b?}]
+        # statt list[str]. Render kompakt als "vs. P-XYZ: rule".
+        disc_raw = p.get("discriminators") or []
+        disc_lines: list[str] = []
+        for d in disc_raw[:_MAX_DISCRIMINATORS_PER_DIM]:
+            if isinstance(d, dict) and d.get("vs"):
+                vs = str(d["vs"]).strip()
+                rule = str(d.get("rule") or "").strip()
+                disc_lines.append(f"vs. {vs}: {rule}" if rule else f"vs. {vs}")
+            elif isinstance(d, str) and d.strip():
+                disc_lines.append(d.strip())
+        if disc_lines:
+            block.append("Diskriminatoren:")
+            block.extend(f"  - {line}" for line in disc_lines)
+
+        parts.append("\n".join(block))
+    return "\n\n".join(parts) + "\n"
+
+
+def _render_intents_block(intent_defs: list[dict]) -> str:
+    """Render the Intents section from intents.yaml.
+
+    Output structure per intent:
+        ### I05 — Inhalt-Generieren
+        Beschreibung.
+        Trigger-Verben: "erstelle", "generiere", ...
+        Negativ-Trigger:
+          - "phrase" → I03 (rationale)
+          - "phrase" → I06 (wenn canvas_state.mode == "material")
+        Diskriminatoren:
+          - vs. I04: rule
+            "Beispiel A" → I05; "Beispiel B" → I04
+        Beispiele: ...
+
+    Generic instruction block (Negativ-Trigger schlagen Positiv-Trigger,
+    create-Verb hat Vorrang vor such-Verb, etc.) wird ONCE oben emittiert.
+    """
+    if not intent_defs:
+        return "\n(keine Intents konfiguriert)\n"
+
+    intent_summary = ", ".join(
+        f"{i.get('id', '?')} ({i.get('label', '')})" for i in intent_defs
+    )
+
+    head = (
+        f"Intent-Übersicht: {intent_summary}\n\n"
+        "INTENT-REGELN (gelten für alle Intents, Daten unten):\n"
+        "- Trigger-Verben sind starke Pro-Signale, ABER Negativ-Trigger "
+        "schlagen Positiv-Trigger. Prüfe zuerst die Negativ-Trigger.\n"
+        "- Wenn ein Negativ-Trigger matcht, route zu `redirect_to` und "
+        "wähle DEN Intent statt diesem.\n"
+        "- Diskriminatoren beantworten Cross-Intent-Verwechslungen — "
+        "konsultiere sie immer bei mehreren plausiblen Intents.\n"
+        "- Bei Edit-Verben (kürzer/ausführlicher/ergänze/…) und aktivem "
+        "Canvas-Inhalt: IMMER der Edit-Intent (I06), egal welche Material-"
+        "Typ-Wörter im Satz stehen.\n"
+        "- Im Zweifel: konservativ klassifizieren, lieber turn_type "
+        "\"clarification\" als ein falscher Intent.\n"
+    )
+
+    parts: list[str] = [head, ""]
+    for i in intent_defs:
+        iid = i.get("id", "")
+        if not iid:
+            continue
+        block: list[str] = [f"### {iid} — {i.get('label', '')}"]
+        if i.get("description"):
+            block.append(str(i["description"]).strip())
+
+        triggers = (i.get("trigger_verbs") or [])[:_MAX_TRIGGER_VERBS]
+        if triggers:
+            block.append(
+                "Trigger-Verben: " + ", ".join(f'"{t}"' for t in triggers)
+            )
+
+        neg = (i.get("negative_triggers") or [])[:_MAX_NEGATIVE_TRIGGERS]
+        if neg:
+            block.append("Negativ-Trigger:")
+            for n in neg:
+                if not isinstance(n, dict):
+                    continue
+                phrase = n.get("phrase", "").strip()
+                target = n.get("redirect_to", "").strip()
+                rationale = n.get("rationale", "").strip()
+                when = n.get("when", "").strip()
+                line = f'  - "{phrase}" → {target}' if target else f'  - "{phrase}"'
+                if when:
+                    line += f" (wenn {when})"
+                if rationale:
+                    line += f" — {rationale}"
+                block.append(line)
+
+        disc = (i.get("discriminators") or [])[:_MAX_DISCRIMINATORS_PER_DIM]
+        if disc:
+            block.append("Diskriminatoren:")
+            for d in disc:
+                if not isinstance(d, dict):
+                    continue
+                vs = d.get("vs", "").strip()
+                rule = d.get("rule", "").strip()
+                ex_a = d.get("example_a", "").strip()
+                ex_b = d.get("example_b", "").strip()
+                if vs and rule:
+                    block.append(f"  - vs. {vs}: {rule}")
+                if ex_a:
+                    block.append(f"      Bsp: {ex_a}")
+                if ex_b:
+                    block.append(f"      Bsp: {ex_b}")
+
+        examples = (i.get("examples") or [])[:_MAX_EXAMPLES_PER_INTENT]
+        if examples:
+            block.append("Beispiele:")
+            block.extend(f'  - "{e}"' for e in examples)
+
+        parts.append("\n".join(block))
+    return "\n\n".join(parts) + "\n"
+
+
+def _render_states_block(state_defs: list[dict]) -> str:
+    """Render the States section from states.yaml.
+
+    Output per state:
+        - S1 (Orientierung): description
+          Wahl-Kriterien:
+            - bullet 1
+            - bullet 2
+    """
+    if not state_defs:
+        return "\n(keine States konfiguriert)\n"
+
+    head = (
+        "STATE-REGELN (Conversation-Phase wählen):\n"
+        "- Wähle den State, der den AKTUELLEN Turn beschreibt — nicht "
+        "den letzten oder erwarteten.\n"
+        "- Wahl-Kriterien pro State unten beachten.\n"
+        "- Default-Übergang: Slot komplett → S3, Slot fehlt → S2, "
+        "kein konkretes Anliegen → S1.\n"
+    )
+
+    parts: list[str] = [head, ""]
+    for s in state_defs:
+        sid = s.get("id", "")
+        if not sid:
+            continue
+        block: list[str] = [f"- {sid} ({s.get('label', '')})"]
+        desc = (s.get("description") or "").strip()
+        if desc:
+            block.append(f"  {desc}")
+        criteria = s.get("selection_criteria") or []
+        if criteria:
+            block.append("  Wahl-Kriterien:")
+            block.extend(f"    - {c}" for c in criteria)
+        parts.append("\n".join(block))
+    return "\n".join(parts) + "\n"
+
+
+def _render_entities_block(entity_defs: list[dict]) -> str:
+    """Render the Entities section from entities.yaml.
+
+    Output per entity:
+        - id: description
+          Positiv-Beispiele:
+            - "Satz" → value
+          Negativ-Beispiele (Slot bleibt leer):
+            - "Satz" — rationale
+          Diskriminator vs. other: rule
+    """
+    if not entity_defs:
+        return "\n(keine Entities konfiguriert)\n"
+
+    head = (
+        "ENTITY-REGELN (Slot-Extraction):\n"
+        "- Slots IMMER LEER lassen, wenn der erwartete Wert nicht "
+        "eigenständig im Satz steht. Lieber leer als Substring-Klau.\n"
+        "- Diskriminatoren unten zeigen Cross-Slot-Fallstricke "
+        "(z.B. fach vs thema).\n"
+        "- Positiv-Beispiele zeigen erwartete Werte; "
+        "Negativ-Beispiele zeigen, wann der Slot LEER bleiben muss.\n"
+    )
+
+    parts: list[str] = [head, ""]
+    for e in entity_defs:
+        eid = e.get("id", "")
+        if not eid:
+            continue
+        desc = (e.get("description") or e.get("label") or "").strip().replace("\n", " ")
+        block: list[str] = [f"- {eid}: {desc}"]
+
+        pos = (e.get("positive_examples") or [])[:_MAX_POSITIVE_EXAMPLES]
+        if pos:
+            block.append("  Positiv-Beispiele:")
+            for ex in pos:
+                if not isinstance(ex, dict):
+                    continue
+                t = ex.get("text", "").strip()
+                v = ex.get("value", "").strip()
+                if t and v:
+                    block.append(f'    - "{t}" → {v}')
+
+        neg = (e.get("negative_examples") or [])[:_MAX_NEGATIVE_EXAMPLES]
+        if neg:
+            block.append("  Negativ-Beispiele (Slot bleibt leer):")
+            for ex in neg:
+                if not isinstance(ex, dict):
+                    continue
+                t = ex.get("text", "").strip()
+                r = ex.get("rationale", "").strip()
+                if t:
+                    block.append(f'    - "{t}" — {r}' if r else f'    - "{t}"')
+
+        disc = (e.get("discriminators") or [])[:_MAX_DISCRIMINATORS_PER_DIM]
+        if disc:
+            for d in disc:
+                if not isinstance(d, dict):
+                    continue
+                vs = d.get("vs", "").strip()
+                rule = d.get("rule", "").strip()
+                if vs and rule:
+                    block.append(f"  Diskriminator vs. {vs}: {rule}")
+
+        parts.append("\n".join(block))
+    return "\n".join(parts) + "\n"
+
+
+def _render_patterns_hint_block(pattern_defs: list[dict]) -> str:
+    """Render the Patterns hint section.
+
+    Welle E v4 (2026-05-25): Der ``pattern_id_hint`` ist primärer
+    Pattern-Selektor (nicht mehr Tie-Breaker). Wir listen Patterns
+    kompakt mit ID + Label + 1-Liner-Purpose — Gate-Spalten sind
+    raus, weil der Hint-Pfad keine Gates mehr kennt.
+    """
+    if not pattern_defs:
+        return (
+            "\nPattern-Hint: (keine Patterns geladen — Hint-Feld leer "
+            "lassen)\n"
+        )
+
+    head = (
+        "PATTERN-HINT (PRIMÄR — wählt das Antwort-Muster):\n"
+        "- Wähle das Pattern, das die beste Reaktion für die Anfrage "
+        "darstellt. Dein Hint ist die Pattern-Wahl, nicht nur Telemetrie.\n"
+        "- Routing-Rules können in eindeutigen Edge-Cases übersteuern "
+        "(z. B. I05 ohne Thema → M03 Slot-Klärung).\n"
+        "- Lass das Feld nur leer, wenn keine Pattern-Beschreibung "
+        "wirklich passt — dann greift M15 (Orientierung) als Fallback.\n"
+        "- `pattern_reasoning`: 1–2 Sätze, warum dieses Pattern und "
+        "welche 1 Alternative noch in Frage kam.\n"
+    )
+
+    # Welle E v4+7 (2026-05-26): Pattern-Hint-Block jetzt RICHTIG strukturiert
+    # — pro Pattern rendern wir:
+    #   - id + label + short_purpose (1 Zeile)
+    #   - when_to_use (positive Trigger, 3-5 Items)
+    #   - when_not_to_use (negative Trigger, 3-5 Items)
+    #   - trigger_phrases (konkrete User-Beispiele, 3-5 Items)
+    #   - discriminators (vs M-Other: Regel + Beispiel)
+    # Diese 4 strukturierten Felder ersetzen die zentrale pattern_disambig-
+    # uators-Sektion aus classify-overrides.yaml (Single-Source-of-Truth in
+    # den Pattern-MDs selbst).
+    lines: list[str] = []
+    for p in pattern_defs:
         pid = p.get("id")
         if not pid:
             continue
         label = p.get("label", "")
-        gp = p.get("gate_personas", ["*"])
-        gi = p.get("gate_intents", ["*"])
-        gs = p.get("gate_states", ["*"])
-        # Compact gate-summary: persona|intent|state separated by /
-        def _g(lst):
-            if not lst or "*" in lst:
-                return "*"
-            if len(lst) <= 4:
-                return ",".join(lst)
-            return f"{','.join(lst[:3])},+{len(lst)-3}"
-        gates = f"{_g(gp)} / {_g(gi)} / {_g(gs)}"
-        # Bevorzugt short_purpose, sonst core_rule-Auszug
         purpose = (p.get("short_purpose") or "").strip().replace("\n", " ")
         if not purpose:
             purpose = (p.get("core_rule") or "").strip().replace("\n", " ")
             if len(purpose) > 100:
                 purpose = purpose[:97] + "…"
-        line = f"- {pid} ({label}) [Gates {gates}]"
+        lines.append(f"\n### {pid} — {label}")
         if purpose:
-            line += f": {purpose}"
-        pattern_parts.append(line)
-    pattern_lines = "\n".join(pattern_parts) if pattern_parts else (
-        "(keine Patterns geladen — Hint-Feld leer lassen)"
+            lines.append(f"_Zweck:_ {purpose}")
+
+        wtu = p.get("when_to_use") or []
+        if wtu:
+            lines.append("**Einsetzen wenn:**")
+            for it in wtu[:5]:
+                lines.append(f"  - {it}")
+
+        wntu = p.get("when_not_to_use") or []
+        if wntu:
+            lines.append("**NICHT einsetzen wenn:**")
+            for it in wntu[:5]:
+                lines.append(f"  - {it}")
+
+        trigs = p.get("trigger_phrases") or []
+        if trigs:
+            lines.append(
+                "**Typische User-Phrasen:** "
+                + " · ".join(f"„{t}"+'"' for t in trigs[:5])
+            )
+
+        discs = p.get("discriminators") or []
+        if discs:
+            lines.append("**Tie-Breaks:**")
+            for d in discs[:5]:
+                vs = d.get("vs", "")
+                rule = d.get("rule", "")
+                ex = d.get("example", "")
+                line = f"  - vs **{vs}**: {rule}"
+                if ex:
+                    line += f" _Beispiel:_ {ex}"
+                lines.append(line)
+
+    return head + "\n" + "\n".join(lines) + "\n"
+
+
+def _render_signals_block() -> str:
+    """Render the Signals section grouped by dimension (Tonalität,
+    Verhalten, …). Reads 04-signals/signal-modulations.yaml directly
+    because the public load function only returns modulations, not
+    the dimension grouping.
+    """
+    from app.services.config_loader import _load_yaml
+    sig_data = _load_yaml("04-signals/signal-modulations.yaml")
+    sig_defs = sig_data.get("signals", {})
+    if not sig_defs:
+        return "\n(keine Signale konfiguriert)\n"
+    by_dim: dict[str, list[str]] = {}
+    for sig_id, cfg in sig_defs.items():
+        dim = cfg.get("dimension", "Unbekannt") if isinstance(cfg, dict) else "Unbekannt"
+        by_dim.setdefault(dim, []).append(sig_id)
+    return "\n".join(
+        f"{dim}: {', '.join(sigs)}" for dim, sigs in by_dim.items()
+    ) + "\n"
+
+
+def _render_canvas_block(canvas_state: dict | None) -> str:
+    """Render the Canvas-context block (only when canvas mode != empty).
+
+    Welle E (2026-05): Canvas pane wurde aus dem Frontend entfernt, aber
+    der Klassifikator nutzt den Canvas-Kontext weiter, um Edit-Anfragen
+    (I06) sicher zu erkennen, wenn der vorherige Bot-Turn ein InlineDoc
+    rendered hat. Daher bleibt der Renderer.
+    """
+    if not (canvas_state and canvas_state.get("mode")
+            and canvas_state.get("mode") != "empty"):
+        return ""
+    c_title = (canvas_state.get("title") or "").strip()
+    c_type = (canvas_state.get("material_type") or "").strip()
+    c_mode = canvas_state.get("mode", "")
+    c_md = (canvas_state.get("markdown") or "")[:800]
+    c_cards = canvas_state.get("cards_count") or 0
+    out = ["\n\n## Canvas-Kontext (was der Nutzer gerade sieht)",
+           f"Modus: {c_mode}"]
+    if c_title:
+        out.append(f"Titel: {c_title}")
+    if c_type:
+        out.append(f"Material-Typ: {c_type}")
+    if c_mode == "cards":
+        out.append(f"Kachel-Anzahl: {c_cards}")
+    if c_md:
+        out.append(f"Auszug aus dem Canvas-Dokument:\n{c_md}")
+    out.append(
+        "\nKRITISCH — Intent-Auswahl bei aktivem Canvas:\n"
+        "- Wenn die Nutzernachricht sich auf den Canvas-Inhalt bezieht "
+        "(\"hier\", \"das\", \"der Text\", \"die Aufgabe\", \"der Titel\") "
+        "ODER Edit-Verben nutzt — IMMER intent_id=\"I06\", "
+        "turn_type=\"follow_up\".\n"
+        "- I05 (NEU erstellen) ist NUR richtig bei explizitem neuem "
+        "Material zu einem ANDEREN Thema (\"Mach mir stattdessen ein "
+        "Quiz zu X\").\n"
+        "- Meta-Fragen zum Canvas-Inhalt (\"Was bedeutet hier X?\") sind "
+        "turn_type=\"clarification\"."
     )
+    return "\n".join(out)
 
-    # Format entity list with descriptions so the LLM distinguishes fach vs thema
-    if entities:
-        entity_lines = "\n".join(
-            f"- {e['id']}: {e.get('description', e.get('label', ''))}"
-            for e in entities
-        )
-    else:
-        entity_lines = (
-            "- fach: Schulfach oder Fachgebiet (z.B. Mathematik, Deutsch, Biologie)\n"
-            "- stufe: Bildungsstufe aus dem WLO-Vokabular (Grundschule, Sekundarstufe I, "
-            "Sekundarstufe II, Berufliche Bildung, Hochschule, Erwachsenenbildung). "
-            "Nennt der Nutzer eine Klassenstufe, MAPPE sie: Klasse 1-4=Grundschule, "
-            "Klasse 5-10=Sekundarstufe I, Klasse 11-13=Sekundarstufe II. "
-            "Eine Filter-Ebene 'Klassenstufe' gibt es auf WLO nicht.\n"
-            "- thema: Konkretes Thema oder Lerngegenstand (z.B. Bruchrechnung, Fotosynthese)\n"
-            "- medientyp: Art des Materials (z.B. Video, Arbeitsblatt)\n"
-            "- lizenz: Gewünschte Lizenz (z.B. CC BY, CC0)"
-        )
 
+def _build_classify_system_prompt(
+    session_state: dict,
+    environment: dict,
+    canvas_state: dict | None = None,
+) -> str:
+    """Build the classification system prompt from config files.
+
+    Welle E (2026-05-25): Alle Persona-/Intent-/Entity-/State-Regeln
+    leben in den YAML/MD-Konfigurationsdateien. Diese Funktion
+    assembliert sie zu einem System-Prompt — das ist alles, was hier
+    noch hardcoded ist:
+
+      1. Fester Header (Aufgabe + Eingangsdimensionen).
+      2. Generische Scaffold-Sätze pro Sektion (Renderer liefern sie).
+      3. Daten-Blöcke pro Dimension (Renderer aus YAML-Werten gebaut).
+      4. Dynamic-Block (state, entities, persona, turn, page, canvas).
+
+    Das LEGACY-Layout (DYNAMIC zuerst) bleibt hinter ``CLASSIFY_PROMPT_
+    LEGACY_ORDER=1`` erhalten als Rollback-Switch.
+    """
+    intents = load_intents()
+    states = load_states()
+    entities = load_entities()
+    persona_defs = load_persona_definitions()
+    patterns_for_prompt = load_pattern_definitions()
+
+    # Static blocks — alle aus YAML/MD geladen, durch Renderer formatiert.
+    personas_block = _render_personas_block(persona_defs)
+    intents_block = _render_intents_block(intents)
+    signals_block = _render_signals_block()
+    states_block = _render_states_block(states)
+    entities_block = _render_entities_block(entities)
+    patterns_block = _render_patterns_hint_block(patterns_for_prompt)
+
+    # Persona-/Canvas-Snippets im Dynamic-Block
     persona_prompt = ""
     if session_state.get("persona_id"):
         persona_prompt = f"\nAktuelle Persona: {session_state['persona_id']}"
 
-    canvas_prompt = ""
-    if canvas_state and canvas_state.get("mode") and canvas_state.get("mode") != "empty":
-        c_title = (canvas_state.get("title") or "").strip()
-        c_type = (canvas_state.get("material_type") or "").strip()
-        c_mode = canvas_state.get("mode")
-        c_md = (canvas_state.get("markdown") or "")[:800]
-        c_cards = canvas_state.get("cards_count") or 0
-        canvas_prompt = (
-            f"\n\n## Canvas-Kontext (was der Nutzer gerade sieht)"
-            f"\nModus: {c_mode}"
-            + (f"\nTitel: {c_title}" if c_title else "")
-            + (f"\nMaterial-Typ: {c_type}" if c_type else "")
-            + (f"\nKachel-Anzahl: {c_cards}" if c_mode == "cards" else "")
-            + (f"\nAuszug aus dem Canvas-Dokument:\n{c_md}" if c_md else "")
-            + "\n\nKRITISCH — Intent-Auswahl bei aktivem Canvas:"
-              "\n- Wenn die Nutzernachricht sich auf den Canvas-Inhalt bezieht"
-              " (\"hier\", \"das\", \"der Text\", \"die Aufgabe\", \"der Titel\")"
-              " ODER Edit-Verben nutzt (\"mach es\", \"kürzer\", \"ausführlicher\","
-              " \"ändere\", \"ergänze\", \"entferne\", \"fasse präziser\",  \"einfacher\","
-              " \"anpassen\", \"umformulieren\", \"schreib um\"):"
-              " → intent_id = \"INT-W-12\" (Canvas-Edit), turn_type=\"follow_up\"."
-              "\n- INT-W-11 (NEU erstellen) ist NUR richtig, wenn der Nutzer"
-              " explizit ein NEUES Material zu einem ANDEREN Thema will"
-              " (\"Mach mir stattdessen ein Quiz zu X\")."
-              "\n- Zurückfragen oder Meta-Fragen zum Canvas-Inhalt (\"Was bedeutet"
-              " hier X?\") sind turn_type=\"clarification\", Intent wie aus der"
-              " Sachfrage ableitbar (meist INT-W-06 Faktenfragen)."
-        )
+    canvas_prompt = _render_canvas_block(canvas_state)
 
     # Semantic page-context block (populated if the widget is embedded on a
     # theme page and page_context_service resolved its metadata).
@@ -348,21 +923,14 @@ def _build_classify_system_prompt(
                  "page_type", "widget", "detection_source")
     }
 
-    # A2.2 — Cache-Maximierung: dynamische Felder (state, entities, persona,
-    # turn count, page, canvas, page_block) werden ans ENDE des System-Prompts
-    # verschoben. So bleibt der lange statische Prefix (Personas-Liste,
-    # Intent-Regeln, State-Beschreibungen, Tool-Schema) zwischen Turns
-    # identisch → OpenAI Prompt-Cache greift auf 5000+ Tokens.
-    #
-    # Achtung: Inhalt unverändert. Nur Reihenfolge im Prompt geändert:
-    # STATIC → DYNAMIC statt DYNAMIC → STATIC. Falls je ein Klassifikator-
-    # Regression beobachtet wird, mit env CLASSIFY_PROMPT_LEGACY_ORDER=1
-    # auf die alte Reihenfolge zurückrollen.
-    _legacy_order = (os.getenv("CLASSIFY_PROMPT_LEGACY_ORDER") or "").strip() == "1"
-
+    # Cache-Maximierung: dynamische Felder (state, entities, persona,
+    # turn count, page, canvas, page_block) stehen am ENDE des System-
+    # Prompts. So bleibt der lange statische Prefix (Personas, Intents,
+    # States, Entities, Patterns) zwischen Turns identisch → OpenAI
+    # Prompt-Cache greift auf 5000+ Tokens.
     _dynamic_block = (
         f"\n## Aktueller Turn-Kontext\n"
-        f"State: {session_state.get('state_id', 'state-1')}\n"
+        f"State: {session_state.get('state_id', 'S1')}\n"
         f"Bekannte Entities: {json.dumps(session_state.get('entities', {}))}"
         f"{persona_prompt}\n"
         f"Turn: {session_state.get('turn_count', 0) + 1}\n"
@@ -373,366 +941,183 @@ def _build_classify_system_prompt(
         f"{_page_block}"
     ).rstrip()
 
-    _static_block = f"""
-{persona_lines}
+    # Statischer Prefix — alle Daten kommen aus YAML/MD, die Renderer
+    # liefern Generisches + Daten. Tool-Aufruf-Hinweis am Ende.
+    _static_block = (
+        "\n## Personas (WICHTIG: Genau zuordnen!)\n"
+        + personas_block
+        + "\n## Intents\n"
+        + intents_block
+        + "\n## Signale\n"
+        + signals_block
+        + "\n## States\n"
+        + states_block
+        + "\n## Entities\n"
+        + entities_block
+        + "\n## Patterns (Hint-Feld, optional)\n"
+        + patterns_block
+        + "\nRufe classify_input auf mit den erkannten Werten."
+    )
 
-PERSONA-REGELN:
-- Erkenne Personas SOWOHL durch EXPLIZITE Aussagen als auch durch IMPLIZITE Hinweise.
-- EXPLIZIT: "Ich bin Lehrer/Politiker/Journalist/..." → direkte Zuordnung.
-- IMPLIZIT: Nutze die Erkennungshinweise oben! Wenn der Nutzer Woerter/Phrasen verwendet
-  die zu einer Persona passen, waehle diese Persona auch ohne explizite Selbstidentifikation.
-
-  P-W-SL (Schueler:in/Lerner) — WICHTIGE Signale:
-  - "fuer meine Pruefung", "fuer den Test", "fuer meinen Jahrgang", "fuer mich"
-  - "fuer meine Klasse" (gemeint "die Klasse in die ICH gehe", nicht "die ich unterrichte")
-  - "ich lerne", "ich verstehe nicht", "erklaer mir", "hab ich", "ich hab"
-  - "Hausaufgaben", "Schulaufgabe", "Klausur"
-  - Typisch: Du-Form, informeller Ton, kurze Saetze, "hey"/"hi"/"ne"/"ok"/"hab"
-  - Altersgerechte Vagheit: "wie geht das?", "was ist X?"
-  - Bei P-W-SL NIEMALS annehmen, dass eine ganze Klasse unterrichtet wird!
-
-  P-W-LK (Lehrkraft) — SPEZIFISCHE Signale (nicht Default!):
-  - "Unterricht planen", "Unterrichtseinheit", "Unterrichtsstunde", "Stundenentwurf"
-  - "meine SchueleR:innen" (Plural, BESITZ-Relation), "meine Klasse unterrichten"
-  - "Lehrplan", "Curriculum", "didaktisch", "Lernziele"
-  - Typisch: Siezen, sachlich-professionell, Fachvokabular
-  - "Arbeitsblatt" ALLEIN reicht NICHT — auch Eltern/Schueler suchen Arbeitsblaetter
-
-  P-ELT (Eltern):
-  - "mein Kind", "meine Tochter", "mein Sohn", "fuer meinen [Alter]-Jaehrigen"
-  - "Nachhilfe", "Hausaufgaben meines Kindes"
-  - Siezen, Sorge-Unterton
-
-  P-W-RED (Redaktion/Autor:in):
-  - "Ich bin Redakteur:in", "Artikel schreiben", "kuratieren"
-  - "Inhalte einstellen", "Materialien hochladen"
-  - "Quellen recherchieren"
-
-  P-W-POL (Politik):
-  - "Bildungspolitik", "Ministerium", "Gesetzgebung", "Positionspapier"
-  - "aus Sicht der Politik", "fuer unsere Partei", "Multiplikator:in"
-
-  P-W-PRESSE (Presse):
-  - "Artikel schreiben", "Journalist", "Pressemitteilung", "zitierfähig"
-  - "fuer meine Leser:innen", "Presseanfrage"
-
-  P-BER (Berater:in):
-  - "fuer unsere Schule evaluieren", "Vergleich verschiedener Angebote"
-  - "Beratungsprozess", "Empfehlung"
-
-  P-VER (Verwaltung):
-  - "fuer unsere Verwaltung", "amtliche Daten", "in der Behoerdenarbeit"
-  - "Kennzahlen fuer das Ministerium", "Bezirksauswertung"
-  - WICHTIG: das blosse Wort "Statistiken"/"Zahlen"/"KPIs" macht NICHT
-    automatisch P-VER — auch Lehrkraefte fragen nach Klassen-Statistiken,
-    Eltern nach Hausaufgaben-Zahlen, Schueler:innen nach ihren Noten.
-    P-VER ONLY wenn explizit Verwaltungs-/Behoerden-Kontext erkennbar ist.
-
-- **KRITISCH — Intent != Persona**: Eine Frage nach **Statistiken**,
-  **Reporting** oder **Zahlen** (Intent: INT-W-09) bedeutet NICHT
-  automatisch P-VER. Persona kommt aus **Sprachstil + Selbst-ID +
-  Kontext**, nicht aus dem Anfrage-Thema. Beispiele:
-  - "Kannst du mir die Statistiken zu Hausaufgaben meiner Tochter zeigen"
-    → P-ELT (mein/meine Tochter ist die Persona-Signal, NICHT "Statistiken")
-  - "Statistiken zu meinen Pruefungen" → P-W-SL (mein/Pruefungen)
-  - "Reichweitenstatistiken meiner Artikel" → P-W-RED (meine Artikel)
-  - "Statistiken zur Bezirksauswertung" → P-VER (Bezirksauswertung)
-
-- **KRITISCH — Bildungspolitik-THEMA != P-W-POL-PERSONA**: Das Wort
-  "Bildungspolitik" alleine macht jemanden NICHT zu P-W-POL. Auch
-  Lehrkraefte, Beratende, Verwaltung und Redaktion fragen nach
-  bildungspolitischen Themen. P-W-POL nur waehlen wenn EXPLIZITE
-  Selbst-ID ("ich bin Politikerin", "als Abgeordneter") ODER
-  unmissverstaendliche Politik-Kontext-Woerter (Wahlkreis, Fraktion,
-  Plenum, Anhoerung, Antrag, Positionspapier) auftauchen. Bei "Wie
-  funktioniert WLO fuer Bildungspolitik" ist die Persona NICHT
-  ableitbar — defaulte zu P-AND statt P-W-POL.
-
-- **KRITISCH — "Statistik" ist eine Frage, kein Persona-Signal**:
-  "Welche Statistiken zu X" / "Aktuelle Zahlen" / "Reichweite" sind
-  Intent-W-09-Signale. Sie machen NIEMALS automatisch P-VER. Auch
-  Lehrkraefte, Eltern, Schueler:innen und Pressevertreter:innen fragen
-  nach Statistiken. Persona separat aus Sprache und Self-ID ableiten.
-
-- **KRITISCH — P-W-LK ist KEIN Default!** Wenn keine eindeutigen Lehrkraft-Signale
-  vorliegen (siehe Liste oben), waehle P-AND statt P-W-LK. Besser unklar als falsch
-  zugewiesen. Viele "Lehrer-klingende" Nachrichten ("fuer die Klasse", "Lernpfad",
-  "Material zu X") kommen auch von Eltern, SchuelerInnen oder Beratenden.
-
-- **Szenario-Hinweis**: Nach "Ich bin Journalist und..." → IMMER P-W-PRESSE
-  (auch wenn der Rest nach Redaktion klingt). Explicit self-id trumps topic.
-
-- Bei expliziter Selbstidentifikation: turn_type = "correction" setzen.
-- Wenn die aktuelle Persona P-AND ist und der Nutzer klare spezifische Signale
-  sendet → umklassifizieren. Aber im Zweifel P-AND bleiben.
-- WICHTIG: "Lernpfad erstellen" ALLEIN macht noch keine Lehrkraft — auch Eltern,
-  SchuelerInnen und Beratende koennen Lernpfade wollen. Nur mit zusaetzlichem
-  Lehrkraft-Signal ("meine SchuelerInnen", "Unterricht planen") wird es P-W-LK.
-
-## Intents
-{intent_lines}
-
-INTENT-REGELN:
-- "Ich will mich erst mal umschauen", "ich schau erst mal", "was gibt es hier",
-  "was kannst du", "ich orientiere mich", "erstmal schauen" → INT-W-02 (Soft Probing)
-  Signal: orientierungssuchend. State: state-1.
-- "Was ist WLO", "Was ist WirLernenOnline" → INT-W-01 (WLO kennenlernen)
-- Wenn der Nutzer auf die Begruessung mit Orientierungswunsch antwortet → INT-W-02.
-
-- INT-W-05 (Routing Redaktion) — Nutzer:in meldet einen Fehler, Inhaltsluecke,
-  Wunsch oder bittet um Weiterleitung an das Redaktionsteam.
-  TYPISCHE TRIGGER:
-  - "an die Redaktion weiterleiten", "an Redaktion schicken", "an die Redaktion melden"
-  - "Ich habe einen Fehler gefunden" (in Materialien / Texten / Übungen)
-  - "Hier ist was falsch", "Da stimmt etwas nicht", "Ungereimtheiten entdeckt"
-  - "Es fehlen Materialien zu X", "Koennt ihr das ergaenzen?"
-  - "Wo kann ich einen Inhaltswunsch einreichen?"
-  - "Wie kann ich eigene Materialien hochladen?" (Redakteur:in-Upload-Flow)
-  TYPISCHE BEISPIELE:
-  - "Ich habe einen Fehler in dem Artikel über nachhaltige Energie gefunden,
-     könnten Sie das bitte an die Redaktion weiterleiten?" → INT-W-05
-  - "Hey, ich habe hier ein paar Fehler in den Übungen gefunden, könntet ihr
-     das mal checken?" → INT-W-05 (nicht INT-W-04 Feedback, nicht INT-W-11!)
-  - "Kann ich einen Hinweis an die Redaktion schicken, weil ich einen Fehler
-     in den Matheaufgaben gefunden habe?" → INT-W-05
-  - "Wie kann ich meine eigenen Unterrichtsmaterialien hochladen?" → INT-W-05
-
-  ABGRENZUNG INT-W-05 vs. INT-W-04 (Feedback):
-  - INT-W-04 = allgemeine Meinung/Einschätzung zum Chatbot/Ergebnis, kein
-    Weiterleitungs-Wunsch: "Das war hilfreich", "Die Ergebnisse sind nicht gut"
-  - INT-W-05 = konkrete Meldung/Wunsch MIT impliziertem Weiterleitungs-Wunsch
-    an die Redaktion: "Fehler gefunden + weiterleiten", "Inhalt fehlt"
-
-- INT-W-11 (Inhalt erstellen) — Nutzer:in will ein NEUES Material KI-generieren lassen.
-
-  ⚠️ ACHTUNG: INT-W-11 ist SELTENER als auf den ersten Blick. Der häufigste
-  Classifier-Fehler ist: jeder Satz mit "Arbeitsblatt", "Quiz", "Pressemitteilung"
-  etc. wird zu INT-W-11 gestempelt. Das ist FALSCH. Nur mit echtem
-  CREATE-VERB am Satz-Anfang ist es INT-W-11. Bei folgenden Signalen
-  ist ein anderer Intent richtig:
-
-    * "runterladen", "herunterladen", "zur Verfügung stellen",
-      "bereitstellen", "liefern", "geben", "bekommen" → INT-W-03 (der Bot
-      sucht im Repo, gibt dir den Original-Link — kein eigener File-
-      Stream-Download. Welle C Sprint 4: INT-W-07 entfernt.)
-    * "bewerten", "überprüfen", "prüfen", "wie gut ist", "ist X geeignet"
-      → INT-W-08 (Inhalte evaluieren)
-    * "Statistiken", "Zahlen", "Übersicht zu ... Daten", "wie viele",
-      "aktuelle Nutzungsdaten", "Reporting" → INT-W-09 (Analyse & Reporting)
-    * "kürzer", "ausführlicher", "mach es einfacher", "ergänze",
-      "ändere den Titel", "umformulieren" (wenn Canvas aktiv) → INT-W-12 (Canvas-Edit)
-    * "Fehler gefunden", "falsch", "weiterleiten an Redaktion" → INT-W-04/05
-    * "Was ist X", "Wer ist", "Was macht" (Fakten/Info) → INT-W-06 (Faktenfragen)
-
-  TRIGGER-VERBEN für INT-W-11: "erstelle", "erstell mir", "generiere", "mach mir ein(e)",
-  "schreib ein(e)", "bau mir", "entwirf", "fasse zusammen als", "produziere".
-  Typische Beispiele:
-  - "Erstelle ein Arbeitsblatt zu ..."
-  - "Mach mir ein Quiz zu ..."
-  - "Generiere ein Infoblatt ueber ..."
-  - "Schreib eine Lerngeschichte zum Thema ..."
-  - "Bau mir ein Rollenspiel zu ..."
-  next_state: state-12 (Canvas-Arbeit).
-  Zusaetzliches Entity: wenn Material-Typ erkennbar (Arbeitsblatt/Quiz/Glossar/etc.),
-  speichere ihn unter entities.material_typ.
-
-- ABGRENZUNG INT-W-11 vs. INT-W-10 (Unterrichtsplanung):
-  - INT-W-10 = Lehrkraft plant eine komplette Unterrichtseinheit / Stunde / Lernpfad,
-    erwartet STRUKTURIERTE MATERIALZUSAMMENSTELLUNG aus bestehenden Quellen.
-    Trigger: "Lernpfad", "Stundenentwurf", "Unterrichtsplanung", "Unterrichtseinheit",
-    "Unterrichtsstunde", "plane eine Stunde".
-    **AUCH INT-W-10**: "Materialzusammenstellung", "Material zusammenstellen",
-    "strukturierte Sammlung", "Sammlung zusammenstellen", "Materialpaket",
-    "Übersicht von/aus Materialien", "mehrere Materialien zu ..." —
-    der Plural + "Zusammenstellung/Sammlung" signalisiert kuratierte Mehrfach-
-    Quellen, NICHT ein einzelnes neues Dokument.
-  - INT-W-11 = einzelnes, neu generiertes Material wird gewuenscht.
-    Trigger: siehe oben (Verb + konkreter Material-Typ, SINGULAR).
-  - Faustregel: "Lernpfad"/"Stunde"/"Einheit"/"Zusammenstellung"/"Sammlung" → INT-W-10;
-    konkreter SINGULÄRER Typ wie "Arbeitsblatt"/"Quiz"/"Glossar" ohne Stunden- oder
-    Zusammenstellungs-Kontext → INT-W-11.
-  - Beispiel: "Erstelle eine Materialzusammenstellung zu X" → INT-W-10 (mehrere
-    Materialien aus dem Bestand). "Erstelle ein Arbeitsblatt zu X" → INT-W-11
-    (ein neues Dokument).
-
-- ABGRENZUNG INT-W-11 vs. INT-W-03 (Inhalte abrufen):
-  - INT-W-03 = Nutzer:in SUCHT/BROWST bestehende Materialien im WLO-Bestand
-    (egal welcher Typ: Themenseite/Sammlung/Einzelinhalt). Trigger:
-    "Zeig mir", "Suche", "Finde", "Gibt es", "Hast du", "Welche ... gibt es",
-    "Themenseite/Sammlung zu X", "Material/Arbeitsblatt/Video zu Y".
-  - INT-W-11 = Nutzer:in will ein NEUES Material ERSTELLEN lassen.
-    Trigger: aktive Verben (erstelle, generiere, mach mir, schreib mir, baue).
-  - Faustregel: "Zeig mir Arbeitsblaetter zu X" → INT-W-03;
-    "Erstelle ein Arbeitsblatt zu X" → INT-W-11.
-
-- KRITISCHE NEGATIV-ABGRENZUNG für INT-W-11 (setze NICHT INT-W-11 wenn):
-  Auch wenn ein Material-Typ-Wort ("Arbeitsblatt", "Quiz", "Übung", "Material",
-  "Lernpfad", "Übersicht", "Pressemitteilung", "Vergleich") im Text auftaucht,
-  ist INT-W-11 oft FALSCH. Prüfe zuerst diese Ausschlüsse:
-
-  * Wenn Downloaden / Herunterladen / Bereitstellen:
-    "Kann ich X runterladen?", "Stellen Sie mir X zum Download bereit",
-    "Wo finde ich X zum Download?", "Können Sie mir X liefern?"
-    → INT-W-03 (Inhalte abrufen), NICHT INT-W-11. Der Bot sucht im
-    Repo und gibt den Original-Link — Download passiert beim User
-    auf der Repo-Seite.
-
-  * Wenn Bewertung / Qualitätsprüfung / Review:
-    "Wie gut ist dieses X?", "Kannst du die Qualität von X bewerten?",
-    "Überprüfe mal bitte X", "Ist X geeignet für Y?"
-    → INT-W-08 (Inhalte evaluieren), NICHT INT-W-11.
-
-  * Wenn Statistik / Daten / Zahlen / Reporting:
-    "Wie viele X gibt es?", "Statistiken zu X", "Übersicht über Nutzung",
-    "Leistungsdaten", "Wochendaten", "aktuelle Zahlen"
-    → INT-W-09 (Analyse & Reporting), NICHT INT-W-11.
-    Auch wenn Wort "Übersicht" vorkommt — "Übersicht über aktuelle Zahlen"
-    ist KEIN Canvas-Create-Request für eine Strukturübersicht-Material!
-
-  * Wenn Canvas-Edit (User arbeitet bereits mit einem Canvas-Inhalt):
-    "Mach X kürzer", "fasse X präziser", "ergänze X um Y",
-    "Kannst du X ausführlicher gestalten?", "Ändere den Titel im Canvas"
-    → INT-W-12 (Canvas-Edit), NICHT INT-W-11.
-    Siehe Canvas-Kontext oben — wenn Canvas aktiv ist und der User
-    Änderungs-Verben nutzt: IMMER INT-W-12.
-
-  * Wenn Feedback / Fehlermeldung / Routing:
-    "Ich hab einen Fehler gefunden", "Könnten Sie das an Redaktion
-    weiterleiten", "Hier ist was falsch", "Meine Frage zum Test von gestern"
-    → INT-W-04 (Feedback) oder INT-W-05 (Routing Redaktion), NICHT INT-W-11.
-
-  FAUSTREGEL: INT-W-11 nur wenn ein klares CREATE-Verb ("erstelle", "mach mir",
-  "generiere", "bau mir", "schreib mir", "entwirf", "produziere") mit einem
-  konkreten Thema (NICHT Substring, siehe Thema-Regeln) vorliegt.
-  Wenn der Satz auf Frage-/Review-/Meta-Verb endet ("bewerten", "überprüfen",
-  "runterladen", "bereitstellen", "liefern", "bekommen", "zur Verfügung"):
-  NICHT INT-W-11.
-
-- INHALTE ABRUFEN — alle drei Inhaltsschichten in EINEM Intent (INT-W-03):
-  Welle C Sprint 4 (2026-05-15) hat die früheren INT-W-03a/b/c in INT-W-03
-  zusammengefasst, weil sie semantisch alle "WLO-Inhalte abrufen" sind. Die
-  Sub-Typ-Wahl (Themenseite vs Sammlung vs Einzelinhalt) entscheiden jetzt
-  Pattern-Engine + Anker-Rules nach folgendem Schema:
-    - "Themenseite/Hauptseite/Fachseite/Sammlung zu KONKRETEM Thema/Fach" →
-      Pattern PAT-28 (search_wlo_topic_pages) wird automatisch gewählt.
-    - Schüler:in/Eltern + Selbst-Lern-Anker ("verstehe nicht / Schritt für
-      Schritt / mein Kind / für meine Hausaufgaben") →
-      Pattern PAT-14 (Lerner-Empfehlung).
-    - Profi-Personas (P-W-RED/PRESSE/POL/BER) + Thema →
-      Pattern PAT-09 (Recherche).
-    - Lehrkraft + Thema, kein Lernpfad-Wunsch →
-      Pattern PAT-07 (Ergebnis-Kuratierung) oder PAT-05 (Profi-Filter).
-    - Vage Anfrage ohne thema/fach →
-      Pattern PAT-20 (Orientierung).
-  Du musst dich NICHT festlegen, welcher Sub-Typ — wähle einfach INT-W-03.
-
-## Signale
-{signal_lines}
-
-## States
-{state_lines}
-
-## Entities
-{entity_lines}
-
-ENTITY-REGELN:
-- fach und thema sind VERSCHIEDENE Slots! Ein Fach (Mathematik, Deutsch, Biologie) ist KEIN Thema.
-- thema ist ein konkreter Lerngegenstand INNERHALB eines Fachs (z.B. Bruchrechnung, Fotosynthese, Lyrik der Romantik).
-- "Mathe", "Biologie", "Geschichte" → fach setzen, thema LEER lassen.
-- "Bruchrechnung", "Dreisatz", "Zellteilung" → thema setzen (und ggf. fach ableiten).
-- "Mathe Bruchrechnung" → fach="Mathematik", thema="Bruchrechnung".
-
-KRITISCHE REGEL FÜR `thema` (Lerninhalt):
-Niemals einen Substring der Nachricht als thema verwenden, nur weil dort ein
-Material-Typ auftaucht. `thema` ist ein eigenständiger Lerngegenstand, NICHT
-ein Satzfragment. Wenn kein klarer Lerngegenstand erkennbar ist, LASSE `thema`
-komplett LEER. Dann fragt das System degradierend nach.
-
-POSITIV (thema korrekt füllen):
-- "Erstelle ein Arbeitsblatt zur **Photosynthese**" → thema="Photosynthese"
-- "Quiz zu **Bruchrechnung** für Klasse 6" → thema="Bruchrechnung"
-- "Material zum **Klimawandel**" → thema="Klimawandel"
-- "Lerngeschichte über die **Römer**" → thema="die Römer"
-
-NEGATIV (thema MUSS leer bleiben — sonst landet Müll im Canvas-Titel):
-- "Kannst du mir das Arbeitsblatt runterladen?" → thema="" (kein Lerninhalt genannt!)
-- "Ich brauche Ideen für ein neues Arbeitsblatt" → thema="" (nur Absicht, kein Thema)
-- "Hey, ich hab ne Frage zu den Übungen für mein Kind" → thema="" (vages Feedback)
-- "Gibt's ne Übersicht zu den aktuellen Statistiken?" → thema="" (Meta-Frage)
-- "Hilf mir die Qualität des Arbeitsblatts zu bewerten" → thema="" (Review, kein Lerninhalt)
-- "Erstelle mir ein neues Material" → thema="" (kein Thema genannt → degradieren)
-- "Mach mir ein Quiz" (ohne Thema) → thema="" (Material-Typ klar, Thema fehlt)
-- "Ich brauche Hilfe bei Mathe" → fach="Mathematik", thema="" (nur Fach!)
-- "Ich lerne Biologie" → fach="Biologie", thema="" (kein Thema darin)
-- "Kannst du mir bei Deutsch helfen?" → fach="Deutsch", thema="" (Fach, kein Thema)
-- "Ich suche Materialien" → thema="" (keine Lerngegenstand-Nennung)
-- "Ich will Infos" → thema="" (kein Inhalt, kein Fach)
-
-WICHTIG — Unterschied Fach vs. Thema nochmal explizit:
-  Schulfächer (Mathe/Mathematik, Deutsch, Biologie, Chemie, Physik, Englisch,
-  Geschichte, Erdkunde, Geographie, Sport, Kunst, Musik, Informatik, Religion,
-  Ethik, Politik, Wirtschaft, Sozialkunde) → IMMER fach, NIE thema.
-  Nur eigenständige Lerngegenstände wie "Bruchrechnung", "Photosynthese",
-  "Mittelalter", "Satz des Pythagoras", "Gedichtanalyse" sind thema.
-
-FAUSTREGEL: Wenn du die Frage "Worum geht das thematisch?" nicht mit einem
-EIGENSTÄNDIGEN Lerngegenstand beantworten kannst (der ohne Umgebungstext für
-sich steht und ein Inhaltsthema bezeichnet), lasse `thema` LEER. Ein Thema
-wird durch Substantive wie "Photosynthese", "Mittelalter", "Bruchrechnung"
-markiert — nicht durch Füllwörter, Verben oder Pronomen wie "das", "diese(s)",
-"Ideen für ...", "eine Frage zu ...".
-
-## Patterns (Hinweis-Feld, optional)
-
-Schau dir nach Persona/Intent-Bestimmung NOCHMAL die Anfrage an und wähle
-zusätzlich das Pattern, das für dich holistisch am besten passt. Das ist
-ein optionales Hinweis-Feld (Telemetrie/Mess-Modus) — die deterministische
-Pattern-Engine entscheidet weiterhin authoritativ. Wir loggen nur, wie oft
-deine Wahl mit der Engine-Wahl übereinstimmt.
-
-Wann hilft dein Hint? Bei Tight-Races, wenn Engine-Score zwei Patterns
-fast gleich rankt (z.B. PAT-08 vs PAT-01, PAT-13 vs PAT-14). Du siehst
-die volle Anfrage holistisch — die Engine sieht nur abgeleitete Signale.
-
-{pattern_lines}
-
-Wähl ein Pattern dessen Gates passen (`gate_personas`/`gate_intents`/
-`gate_states`-Liste oder `*` für Wildcard). Wenn du unsicher bist, lass
-das Feld leer.
-
-Begründe dein Pattern-Hint kurz im `pattern_reasoning`-Feld (1-2 Sätze):
-warum dieses Pattern, welche 1 Alternative kam noch in Frage und warum
-verworfen.
-
-Rufe classify_input auf mit den erkannten Werten."""
-
-    if _legacy_order:
-        # Original layout (DYNAMIC at the very top, before personas) — kept
-        # behind an env flag so we can rollback instantly if the new order
-        # ever degrades classifier accuracy.
-        return f"""Du bist der Klassifikations-Modul des WLO-Chatbots.
-Analysiere die Nutzernachricht und klassifiziere sie in die 7 Input-Dimensionen.
-
-Aktueller State: {session_state.get('state_id', 'state-1')}
-Bekannte Entities: {json.dumps(session_state.get('entities', {}))}{persona_prompt}
-Turn: {session_state.get('turn_count', 0) + 1}
-Seite: {environment.get('page', '/')}
-Seitenkontext (Rohdaten): {json.dumps(_raw_pc)}
-Device: {environment.get('device', 'desktop')}{canvas_prompt}
-{_page_block}
-
-## Personas (WICHTIG: Genau zuordnen!){_static_block}"""
-
-    # New cache-friendly order: long static prefix first, dynamic context last.
-    # Same content; only the placement of the dynamic block moves to the end
-    # so the OpenAI prompt cache can match the unchanging prefix between turns.
-    return (
+    header = (
         "Du bist der Klassifikations-Modul des WLO-Chatbots.\n"
-        "Analysiere die Nutzernachricht und klassifiziere sie in die 7 Input-Dimensionen.\n\n"
-        "## Personas (WICHTIG: Genau zuordnen!)"
+        "Analysiere die Nutzernachricht und klassifiziere sie in die "
+        "Input-Dimensionen Persona, Intent, Signale, State, Entities. "
+        "Optional: Pattern-Hint + Tool-Hint.\n"
+    )
+
+    # Welle E v4+6 (2026-05-26): Hard-Overrides + Pattern-Disambiguatoren
+    # + Few-Shot-Examples werden aus YAML (01-base/classify-overrides.yaml)
+    # geladen. Vorher inline hartkodiert — jetzt Studio-bearbeitbar via den
+    # YAML-Editor im RoutingRulesView/Display-Rules-Tab.
+    from app.services.config_loader import load_classify_overrides_config
+    co = load_classify_overrides_config()
+    override_block = _render_classify_overrides_block(co)
+    pattern_disambig_block = _render_pattern_disambiguators_block(
+        co.get("pattern_disambiguators") or []
+    )
+    fewshot_block = _render_fewshot_block(
+        co.get("few_shot_examples") or []
+    )
+
+    return (
+        header
         + _static_block
+        + override_block
+        + pattern_disambig_block
+        + fewshot_block
         + _dynamic_block
     )
+
+
+def _render_classify_overrides_block(co: dict) -> str:
+    """Render Persona-/Intent-/Topic-Hard-Overrides aus classify-
+    overrides.yaml.
+
+    Welle E v4+6: ersetzt den hartkodierten override_block. Wenn die YAML
+    fehlt/leer ist, kommt ein leerer String raus — Klassifizier fällt
+    dann auf Persona-Markdown + Intent-YAML zurück.
+    """
+    if not co:
+        return ""
+    out = ["\n## HARD-OVERRIDE-REGELN (überschreiben Persona/Intent-Defaults im Zweifel)\n"]
+
+    pers = co.get("persona_overrides") or []
+    if pers:
+        out.append("\n### Persona-Override\n")
+        for rule in pers:
+            persona = rule.get("persona", "")
+            trig = rule.get("triggers") or []
+            ex_role = rule.get("except_explicit_role") or []
+            req_all = rule.get("requires_all") or []
+            req_any = rule.get("requires_any") or []
+            label_parts = []
+            if trig:
+                label_parts.append(
+                    "Tokens {"
+                    + ", ".join(f'"{t}"' for t in trig[:12])
+                    + "}"
+                )
+            if req_all:
+                label_parts.append(
+                    "+ alle von ["
+                    + ", ".join(req_all)
+                    + "]"
+                )
+            if req_any:
+                label_parts.append(
+                    "+ eines von ["
+                    + ", ".join(req_any)
+                    + "]"
+                )
+            head = " ".join(label_parts) or "(keine Trigger)"
+            line = f"- {head} → Persona = {persona}"
+            if ex_role:
+                line += (
+                    ", AUSSER explizite Selbst-ID: "
+                    + ", ".join(f'„{r}"' for r in ex_role)
+                )
+            out.append(line + ".\n")
+
+    ints = co.get("intent_overrides") or []
+    if isinstance(ints, list) and ints:
+        out.append("\n### Intent-Override (Verb-Disambiguation)\n")
+        for rule in ints:
+            intent = rule.get("intent", "")
+            desc = rule.get("description", "")
+            trig = rule.get("triggers") or []
+            if trig:
+                out.append(
+                    f"- {desc} → Intent = {intent}. Trigger: "
+                    + ", ".join(f"`{t}`" for t in trig[:14])
+                    + ".\n"
+                )
+
+    # Konflikt-Regel auf Top-Level (aus classify-overrides.yaml)
+    conf_rule = (co.get("intent_conflict_rule") or "").strip()
+    if conf_rule:
+        out.append("\n**Konflikt-Regel:** " + conf_rule + "\n")
+
+    topic = co.get("topic_overrides") or {}
+    if topic:
+        out.append("\n### Topic-Slot-Override\n")
+        phantom = topic.get("phantom_topic_phrases") or {}
+        if phantom.get("phrases"):
+            out.append(
+                "- Phantom-Topic-Phrasen "
+                + ", ".join(f'„{p}"' for p in phantom["phrases"][:8])
+                + " → extrahiere `topic` als LEERES Feld (führt zu M03-Slot-Klärung).\n"
+            )
+        fach_fb = topic.get("fach_as_topic_fallback") or {}
+        if fach_fb.get("triggers"):
+            out.append(
+                "- Wenn der User NUR ein Fach nennt ("
+                + ", ".join(fach_fb["triggers"][:8])
+                + ", ...) ohne konkreteres Thema → extrahiere `fach`=Fach UND `topic`=Fach.\n"
+            )
+
+    return "".join(out)
+
+
+def _render_pattern_disambiguators_block(disambs: list) -> str:
+    """Render Pattern-Konflikt-Regeln aus classify-overrides.yaml."""
+    if not disambs:
+        return ""
+    out = ["\n## PATTERN-KONFLIKTE (deterministische Tie-Breaks)\n"]
+    for d in disambs:
+        label = d.get("label") or d.get("id", "")
+        out.append(f"\n**{label}**\n")
+        for r in (d.get("rules") or []):
+            out.append(f"- {r}\n")
+        for ex in (d.get("examples") or []):
+            inp = ex.get("input", "")
+            expected = ex.get("expected", "")
+            rationale = ex.get("rationale", "")
+            line = f"- Beispiel: „{inp}" + "\" → " + expected
+            if rationale:
+                line += f" ({rationale})"
+            out.append(line + "\n")
+    return "".join(out)
+
+
+def _render_fewshot_block(examples: list) -> str:
+    """Render Few-Shot-Examples aus classify-overrides.yaml."""
+    if not examples:
+        return ""
+    out = [
+        "\n## FEW-SHOT-BEISPIELE (User → erwartetes Pattern)\n",
+        "Diese Beispiele sind verbindlich — bei ähnlichen Inputs nimm dasselbe Pattern.\n\n",
+    ]
+    for i, ex in enumerate(examples, 1):
+        inp = ex.get("input", "")
+        intent = ex.get("intent", "")
+        pat = ex.get("pattern", "")
+        note = ex.get("note", "")
+        line = f"{i}. „{inp}" + f"\" → {intent}, {pat}"
+        if note:
+            line += f" ({note})"
+        out.append(line + "\n")
+    return "".join(out)
 
 
 def _formality_guidance(formality: str, persona_id: str) -> str:
@@ -742,22 +1127,65 @@ def _formality_guidance(formality: str, persona_id: str) -> str:
     into casual "hey, schön dass du da bist" even for journalists and civil
     servants. This helper expands the terse token into explicit examples
     and NEVER-lists, which the LLM follows much more reliably.
+
+    2026-05-25 (eval-c4c0): Vocabulary erweitert — die Pattern-Engine
+    liefert das Token aus drei Quellen mit unterschiedlichen Schreibweisen:
+      - Persona-MD-Frontmatter:  "siezen" / "duzen" / "neutral" / "wie_user"
+      - device-config.yaml:      "Sie" / "du" / "neutral" (Großschreibung!)
+      - Tone-Modifier override:  "siezen" / "duzen"
+    Vorher matched der Helper nur ``sie/formal/foermlich`` und ``du/informal/duzen``
+    → "siezen" und "Sie" fielen durch zum Neutral-Block → Bot bekam keine
+    explizite Anrede-Anweisung → duzte trotz P-ENT/P-RED/P-LEH/P-ELT.
     """
     f = (formality or "").strip().lower()
     # Formal personas: strict Sie + professional register
-    if f in ("sie", "formal", "foermlich"):
-        # Extra strictness for personas whose scores were worst in the eval
-        strict = persona_id in (
-            "P-W-POL", "P-W-PRESSE", "P-VER",  # Politik, Presse, Verwaltung
-            "P-BER", "P-W-LK",                   # Berater, Lehrkraft
-        )
+    # Akzeptiert: "sie" (device-config), "siezen" (Persona-MD), formal/foermlich (Alt-Synonyme)
+    if f in ("sie", "siezen", "formal", "foermlich"):
+        # Extra strictness for personas whose scores were worst in the eval.
+        # 2026-05-25 (eval-c4c0): Liste war doppelt + P-ELT fehlte — aufgeräumt.
+        strict = persona_id in ("P-ENT", "P-RED", "P-LEH", "P-ELT")
+        # Welle E v4++++ (2026-05-26, eval-bce3): Anrede-Priorität verschärft.
+        # eval-bce3 zeigte M13/M11/M03 mit P-ENT/P-LEH duzten trotz siezen-
+        # Modifier, weil die Pattern-Body-Beispiele oft "du" enthalten und
+        # der LLM diese mimt. Wir ergänzen einen expliziten Override-Hinweis:
+        # die Anrede aus dem Modifier hat IMMER Priorität gegenüber
+        # Pattern-Body-Beispielen.
         base = (
-            "Schreibe ausschließlich in der Sie-Form (\"Ich kann Ihnen …\", "
-            "\"Haben Sie …\", \"Möchten Sie …\"). KEINE Du-Formen."
+            "Schreibe ausschließlich in der Sie-Form (\"Ich kann Ihnen ...\", "
+            "\"Haben Sie ...\", \"Möchten Sie ...\"). KEINE Du-Formen.\n"
+            "\n"
+            "**WICHTIG -- diese Sie-Anrede überschreibt alle Pattern-Body-\n"
+            "Beispiele.** Falls das Pattern-Schema (z.B. M03/M13/M14) "
+            "Du-Form-Beispiele enthält (\"Danke, du möchtest ...\", "
+            "\"Du kannst ...\"), übersetze sie automatisch in die Sie-Form "
+            "(\"Vielen Dank -- Sie möchten ...\", \"Sie können ...\"). "
+            "Die Modifier-Anrede ist verbindlich."
         )
         if strict:
+            extra_leh = ""
+            if persona_id == "P-LEH":
+                # Welle E v4+11 (2026-05-26, eval-f6f56): P-LEH driftete in
+                # M15/M11/M13 trotz formality=siezen — Pattern-Body-Beispiele
+                # mit „dir/du" wurden vom LLM mimt. Extra-strikte Anweisung
+                # für die schwächste Persona aus den letzten 4 Eval-Runs.
+                extra_leh = (
+                    "\n"
+                    "P-LEH SPEZIAL — Lehrkräfte-Register zwingend:\n"
+                    "- Begrüßung IMMER: \"Schön, dass Sie da sind\" (NIE \"Schön, dass du da bist\")\n"
+                    "- Begleitung IMMER: \"ich begleite Sie\" / \"ich unterstütze Sie\"\n"
+                    "  (NIE \"ich begleite dich\" / \"ich helfe dir\")\n"
+                    "- Material-Anbieten IMMER: \"ich kann Ihnen ... raussuchen\" /\n"
+                    "  \"ich erstelle Ihnen\" (NIE \"ich kann dir\" / \"ich erstell dir\")\n"
+                    "- Übergabe IMMER: \"Hier ist Ihr Material\" / \"Ich habe Ihnen ein\n"
+                    "  Quiz erstellt\" (NIE \"Hier ist dein Material\")\n"
+                    "- Edit-Bestätigung IMMER: \"Ich habe den Text gekürzt\" / \"für Ihre\n"
+                    "  Unterrichtseinheit gekürzt\" (NIE \"habe ich für dich gekürzt\")\n"
+                    "- Anwendungs-Hinweis IMMER: \"Sie können das Material direkt in\n"
+                    "  Ihrer Unterrichtseinheit verwenden\" (NIE \"du kannst es nutzen\")\n"
+                )
             return (
                 f"{base}\n"
+                "\n"
                 "KRITISCH — Register professionell halten:\n"
                 "- KEINE Grußfloskeln wie \"Hey\", \"Oh\", \"Ah\", \"Hi\", \"Klar doch\"\n"
                 "- KEINE Füllwörter wie \"echt\", \"voll\", \"cool\", \"ok\", \"einfach mal\",\n"
@@ -772,13 +1200,16 @@ def _formality_guidance(formality: str, persona_id: str) -> str:
                 "- Fachbegriffe (OER, Lizenz, Bildungsstufe) unkommentiert verwenden — "
                 "die Persona kennt sie\n"
                 "- Satz-Enden mit konkreter Info oder Frage, keine Emoji/Smileys"
+                + extra_leh
             )
         return base
     # Informal personas: du but still respectful
-    if f in ("du", "informal", "duzen"):
-        # P-W-SL wants explicitly jugendlich-friendly tone; eval showed it was
+    # ``lower()`` oben fängt schon "Du" → "du" ab; Liste deckt die drei
+    # konfig-Vokabulare ab (device-config, Persona-MD, Alt-Synonym).
+    if f in ("du", "duzen", "informal"):
+        # P-LER wants explicitly jugendlich-friendly tone; eval showed it was
         # getting over-formal responses.
-        if persona_id == "P-W-SL":
+        if persona_id == "P-LER":
             return (
                 "Schreibe in der Du-Form, einfach und freundlich. Kurze Sätze, "
                 "keine Fachchinesisch-Häufung.\n"
@@ -1086,6 +1517,9 @@ async def _stream_completion(
     aggregate = _StreamedResponse()
     msg = aggregate.choices[0].message
     content_parts: list[str] = []
+    # Live-Streaming-Schutz: <think>…</think> wird schon WÄHREND des Streamens
+    # unterdrückt (nicht erst im finalen Text). Saubere Modelle streamen 1:1.
+    _safe_on_token = _make_think_safe_on_token(on_token)
     # tc_index → {"id": str, "name": str, "args_buf": str, "extractor": _RespondToUserExtractor | None}
     tool_calls_accum: dict[int, dict[str, Any]] = {}
 
@@ -1110,10 +1544,7 @@ async def _stream_completion(
             msg.role = delta.role
         if getattr(delta, "content", None):
             content_parts.append(delta.content)
-            try:
-                on_token(delta.content)
-            except Exception:
-                pass
+            _safe_on_token(delta.content)
         if getattr(delta, "tool_calls", None):
             for tc_delta in delta.tool_calls:
                 idx = getattr(tc_delta, "index", 0) or 0
@@ -1137,6 +1568,8 @@ async def _stream_completion(
                         if slot["extractor"] is not None:
                             slot["extractor"].feed(fn.arguments)
 
+    # Live-Stream-Filter leeren — letzten Sicherheits-Tail (Hold-back) freigeben.
+    _safe_on_token.flush()
     # Reconstitute the message
     if content_parts:
         msg.content = "".join(content_parts)
@@ -1187,32 +1620,19 @@ async def classify_input(
     raw = json.loads(tool_call.function.arguments)
 
     # ── Deterministic post-classifier overrides ────────────────
-    # The LLM-classifier systematically over-selects INT-W-11 when a
+    # The LLM-classifier systematically over-selects I05 when a
     # material-type word like "Arbeitsblatt" or "Pressemitteilung"
     # appears in the message, even when the actual intent is clearly
     # routing, download or evaluation. These regex-based overrides
     # catch the unambiguous cases and force the correct intent.
 
-    # ── Persona + Intent overrides — MIGRATED to YAML rule engine ──
-    # All deterministic post-classifier overrides now live in
-    # ``chatbots/wlo/v1/06-rules/routing-rules.yaml`` and apply via the
-    # pre-route engine pass in chat.py:
-    #
-    #   * R-PSI-1..R-PSI-8 — persona self-id ("ich bin Lehrer", "als
-    #     Redakteur", "für unsere Verwaltung", …)
-    #   * R-6b — persona_confidence < 0.40 → P-AND fallback
-    #   * R-3                — INT-W-11 + Materialzusammenstellung → INT-W-10
-    #   * rule_intent_w11_to_w05 — INT-W-11 + Redaktion-Trigger → INT-W-05
-    #   * rule_intent_w11_to_w07 — gelöscht (W-07 → W-03, Welle C Sprint 4)
-    #   * rule_intent_w11_to_w08 — INT-W-11 + Eval-Trigger        → INT-W-08
-    #   * rule_intent_w11_to_w09 — INT-W-11 + Statistik-Trigger   → INT-W-09
-    #   * rule_intent_w11_to_w06 — INT-W-11 + Faktenfrage-Trigger → INT-W-06
-    #   * rule_intent_w11_to_w02 — INT-W-11 + Orientierungs-Trigger → INT-W-02
-    #
-    # The chat router applies the resulting ``intent_override`` /
-    # ``persona_override`` values via the pre-route hook before pattern
-    # selection. To debug a specific override, see the Studio Routing
-    # Rules tab → Test-Bench (no LLM call needed).
+    # ── Persona + Intent overrides ────────────────────────────────
+    # Welle E v4+12 (Sprint K, 2026-05-27): Die Rule-Engine wurde
+    # komplett entfernt. Deterministische Hard-Overrides leben jetzt
+    # ausschließlich in ``chatbots/wlo/v1/01-base/classify-overrides.yaml``
+    # und werden vom Classifier-System-Prompt als Hint-Anker geladen
+    # (siehe ``_render_classify_overrides_block``). Kein Runtime-Pfad
+    # mehr — das LLM bekommt die Trigger als Prompt-Beispiele.
     try:
         return ClassificationResult.model_validate(raw)
     except ValidationError as e:
@@ -1223,6 +1643,55 @@ async def classify_input(
             k: v for k, v in raw.items()
             if k in ClassificationResult.model_fields
         })
+
+
+def _render_pattern_brief(pattern_output: dict[str, Any]) -> str:
+    """Welle E v3 (2026-05-25): structured Pattern-Brief block.
+
+    Renders the active pattern as four explicit sections — Kernregel,
+    Verbotene Formulierungen, Anti-Patterns, Pattern-Brief (body_md) —
+    so the response-LLM gets each piece labelled instead of one flat
+    Markdown block. Sections without content are omitted.
+    """
+    label = pattern_output.get("label") or pattern_output.get("id") or "?"
+    core_rule = (pattern_output.get("core_rule") or "").strip()
+    forbidden = pattern_output.get("forbidden_phrases") or []
+    anti = pattern_output.get("anti_patterns") or []
+    body_md = (pattern_output.get("body_md") or "").strip()
+    resp_type = pattern_output.get("response_type", "answer")
+    tone = pattern_output.get("tone", "sachlich")
+    # Welle E v4+7 (2026-05-26): when_to_use als Kontext-Briefing —
+    # erklärt dem Response-LLM WARUM dieses Pattern gewählt wurde.
+    # Hilft das Verhalten konsistent zum Klassifizier-Trigger zu halten.
+    when_to_use = pattern_output.get("when_to_use") or []
+
+    parts: list[str] = [
+        f"## Aktives Pattern: {label}",
+        f"Response-Typ: {resp_type}  ·  Ton: {tone}",
+    ]
+    if when_to_use:
+        parts.append(
+            "### Warum dieses Pattern (Kontext-Briefing)\n"
+            + "Du wurdest gewählt, weil eine dieser Bedingungen zutrifft:\n"
+            + "\n".join(f"- {w}" for w in when_to_use[:5])
+        )
+    if core_rule:
+        parts.append("### Kernregel (HART)\n" + core_rule)
+    if forbidden:
+        parts.append(
+            "### Verbotene Formulierungen — NICHT verwenden\n"
+            + "\n".join(f'- "{p}"' for p in forbidden)
+        )
+    if anti:
+        parts.append(
+            "### Anti-Patterns — diese Handlungen vermeiden\n"
+            + "\n".join(f"- {p}" for p in anti)
+        )
+    if body_md:
+        parts.append("### Pattern-Brief (verbindlich)\n" + body_md)
+    elif not (core_rule or forbidden or anti):
+        parts.append("_(kein Pattern-Brief — folge der Kernregel)_")
+    return "\n\n".join(parts)
 
 
 async def generate_response(
@@ -1264,9 +1733,9 @@ async def generate_response(
 
     # Welle C Sprint 6 — State als Verlaufs-Phase. Pattern wählt WAS antworten
     # + welche Tools, State sagt WIE in der aktuellen Verlaufs-Phase
-    # einzuzahlen ist (z.B. "stelle EINE Frage" in state-2 Slot-Erfassung,
-    # "frage nach Pass" in state-6 Ergebnis-Kuratierung).
-    _resp_state_id = classification.get('next_state', 'state-1')
+    # einzuzahlen ist (z.B. "stelle EINE Frage" in S2 Slot-Erfassung,
+    # "frage nach Pass" in S3 Ergebnis-Kuratierung).
+    _resp_state_id = classification.get('next_state', 'S1')
     _resp_state_meta = _get_state_meta_safe(_resp_state_id)
     _resp_state_directive = (
         _resp_state_meta.get('bot_directive')
@@ -1282,10 +1751,13 @@ async def generate_response(
         # Layer 3: Persona-specific prompt
         persona_prompt,
         # Layer 4: Active pattern + intent
-        f"""## Aktives Pattern: {pattern_label}
-Kernregel: {pattern_output.get('core_rule', '')}
-Response-Typ: {pattern_output.get('response_type', 'answer')}
-Ton: {pattern_output.get('tone', 'sachlich')}
+        # Welle E v3 (2026-05-25): Pattern-Brief wird strukturiert gerendert.
+        # core_rule + forbidden_phrases + anti_patterns kommen aus den
+        # Frontmatter-Feldern; body_md enthält nur noch das Pflicht-Antwort-
+        # Schema + pattern-spezifische Tabellen (die zu unique sind, um sie
+        # zu schematisieren).
+        _render_pattern_brief(pattern_output)
+        + f"""
 
 ### Anrede-Form (STRIKT einhalten — Persona-abhängig)
 Formality: {pattern_output.get('formality', 'neutral')}
@@ -1354,6 +1826,40 @@ Rolle in dieser Phase: {_resp_state_meta.get('role', '—')}
     except Exception:
         pass
 
+    # Welle E v4++++ (2026-05-26, eval-bce3): M11 Edit braucht den Vor-Inhalt
+    # explizit, nicht nur in der Conversation-History. eval-bce3 zeigte: bei
+    # 4 von 6 Personas hat der LLM trotz vorhandenem ~3000-Zeichen Vor-Turn
+    # in der History den M11-Fallback "Ich habe gerade nichts zum Anpassen"
+    # gewählt — der Pattern-Body-Fallback war zu prominent formuliert.
+    # Lösung: wenn pattern_id == M11, packe ``_canvas_last_markdown`` direkt
+    # als System-Block in den Prompt. Dann hat der LLM keine Ausrede mehr.
+    _pattern_id_for_m11 = (pattern_output.get("pattern_id")
+                            or pattern_output.get("short_purpose", "").split()[0]
+                            or "")
+    # Heuristisch: der Caller setzt ``pattern_output["_pattern_id"]`` oder
+    # ähnlich nicht zuverlässig — wir prüfen daher ``output_mode == "rerender"``,
+    # was nur M11 hat.
+    if pattern_output.get("output_mode") == "rerender":
+        _prev_md = (
+            (session_state.get("entities") or {}).get("_canvas_last_markdown")
+            or ""
+        ).strip()
+        if _prev_md:
+            system_parts.append(
+                "## Aktueller Inhalt zum Editieren\n\n"
+                "Der User möchte den folgenden Inhalt anpassen (Vor-Turn-"
+                "Material aus dieser Session). **Lies ihn vollständig**, "
+                "wende die Edit-Anweisung der aktuellen User-Nachricht an "
+                "und gib den kompletten überarbeiteten Markdown-Block zurück "
+                "— NICHT 'Ich habe gerade nichts zum Anpassen'. Der Inhalt "
+                "IST hier:\n\n"
+                "```markdown\n"
+                + _prev_md[:8000]  # Hard-Cap auf 8k chars für Token-Budget
+                + ("\n```\n" if len(_prev_md) <= 8000
+                   else "\n…\n```\n(Inhalt gekürzt, vollständig in der "
+                        "Conversation-History sichtbar.)\n")
+            )
+
     # Card-text-mode: how to handle overlap between text and material cards
     _card_mode = pattern_output.get("card_text_mode", "minimal")
     # Host-Flag cards-enabled=false signalisiert: das Frontend rendert
@@ -1380,6 +1886,16 @@ Rolle in dieser Phase: {_resp_state_meta.get('role', '—')}
         _cards_inline_mode
         and environment.get("inline_result_grouping") is not False
     )
+
+    # Pattern-ID aus dem Label extrahieren ("M05 (Material-Suche...)") → "M05"
+    # Nur Such-Pattern (M05/M06/M07/M08) kriegen den ausführlichen
+    # "Material-Typ-Anfragen / Such-CTA"-Block angehängt. Für M04 (Wissens-
+    # Antwort), M09 (Lernpfad), M10 (KI-Inhalt), M11 (Nachbearbeitung),
+    # M13 (Einreichen), M14 (Feedback), M15 (Orientierung) ist dieser
+    # Block irreführend — sie sollen NIE "Für Videos zum Thema schau in
+    # die Suche unten" antworten. Bug-Fix aus Eval eval-b2cd4e274be9.
+    _pattern_id = ((pattern_label or "").strip().split(" ")[0] or "").upper()
+    _is_search_pattern = _pattern_id in {"M05", "M06", "M07", "M08"}
     if _card_mode == "minimal":
         system_parts.append("""
 ## Darstellungsregel: Materialien als Kacheln (Modus: minimal)
@@ -1443,7 +1959,7 @@ Disciplines). Bei Klärungs-Turn / leeren Tool-Results: NICHT aufrufen.""")
     # Rueckfrage am Ende fuehlt sich dann wie eine Sackgasse an
     # ("der Bot fragt schon wieder?") statt wie ein hilfreicher Folge-Schritt.
     # In diesem Modus sollst du direkt liefern, nicht zurueckfragen.
-    if _inline_grouping_mode:
+    if _inline_grouping_mode and _is_search_pattern:
         system_parts.append("""
 ## Inline-Result-Grouping-Mode (Host-Setting inline-result-grouping=true, Default seit Welle C.5)
 Die Treffer werden in DREI nach Typ getrennten Boxen angezeigt:
@@ -1582,6 +2098,33 @@ User: "Hast du was zu Klimawandel?"
 NIEMALS Markdown-Links zu URLs in deinem Antwort-Text schreiben. Das gilt
 absolut, auch wenn du URLs aus Wissensquellen oder Training-Daten siehst.
 URLs werden vom System automatisch über Kacheln/Boxen/CTAs gerendert.
+""")
+    elif _inline_grouping_mode and not _is_search_pattern:
+        # Pattern ist KEIN Such-Pattern (also M04 Wissens-Antwort, M09
+        # Lernpfad, M10 KI-Inhalt, M11 Nachbearbeitung, M13 Einreichen,
+        # M14 Feedback, M15 Orientierung). Diese Pattern liefern eigene
+        # Antwort-Templates aus dem Pattern-Markdown — der globale
+        # Material-Suche-Block würde nur Halluzinationen erzeugen
+        # ("Für Videos schau in die Suche unten"). Statt dessen knapper
+        # Anti-Halluzinations-Hinweis:
+        system_parts.append("""
+## Pattern-Modus: KEIN Suche-Antworten
+
+Das aktive Pattern liefert eine eigene Antwort-Struktur (siehe Kernregel
+oben). **NIEMALS** folgende Formulierungen verwenden:
+
+  ❌ "Für Videos zum Thema schau in die Suche unten"
+  ❌ "Hier sind passende Sammlungen / Themenseiten"
+  ❌ "Klick auf die Such-CTA darunter"
+  ❌ "Such-Treffer in der gefilterten Auflistung"
+
+Diese gehören zu Material-Such-Patterns (M05/M06/M07/M08), nicht zu
+diesem Pattern. Halte dich strikt an die im Pattern-Markdown
+beschriebene Antwort-Form (Wissens-Antwort / Lernpfad-Plan / KI-Inhalt /
+Submit-Link / Feedback-Echo / Orientierungs-Optionen).
+
+Such-Tools (`search_wlo_*`) NICHT aufrufen — das aktive Pattern braucht
+sie nicht.
 """)
     elif _cards_inline_mode:
         system_parts.append("""
@@ -1776,7 +2319,7 @@ liefert, übergib sie NICHT als Text — das System verlinkt die Kachel.
 
 Antworte auf Deutsch. Formatiere mit Markdown.""")
         else:
-            # Pattern like PAT-20 Orientierungs-Guide: pure text, no tool calls
+            # Pattern like M15 Orientierungs-Guide: pure text, no tool calls
             system_parts.append("""
 ## Antwort-Regeln
 - Antworte NUR mit flieszendem Text.
@@ -1959,6 +2502,28 @@ SCHRITT 2 — REGELN:
 
 Antworte auf Deutsch. Formatiere mit Markdown.""")
 
+    # ── Recency-Anker (2026-05-23) — Pattern-Brief noch einmal ans Ende ──
+    # Bei 22k+ Token Prompt sinkt die Befolgung der Layer-4-Direktive. Das
+    # LLM liest die letzten Anweisungen am genauesten (recency bias). Wir
+    # spiegeln deshalb den Kern des Pattern-Briefs hier als „LETZTE
+    # ERINNERUNG" — Anti-Patterns und Antwort-Schema bleiben dominant.
+    _body_recap = (pattern_output.get("body_md") or "").strip()
+    if _body_recap:
+        system_parts.append(f"""
+## ⚡ LETZTE ERINNERUNG — verbindlich vor jeder Antwort
+
+Aktives Pattern: **{pattern_label}**.
+
+Du musst dich strikt an folgenden Pattern-Brief halten. Andere
+Direktiven in diesem Prompt (z.B. „nutze RAG reich aus", „füge
+URL-Links ein") gelten NUR im Rahmen dessen, was der Pattern-Brief
+zulässt. Wenn der Pattern-Brief sagt „max. 2 Sätze" oder „keine
+Material-Aufzählung", dann **gilt das**, auch wenn das Wissen für eine
+lange Antwort vorhanden wäre.
+
+{_body_recap}
+""")
+
     system = "\n".join(system_parts)
     _log_system_prompt_size("response", system)
 
@@ -1984,7 +2549,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         tool_names = set(pattern_output["tools"]) | INFO_TOOLS
         active_tools = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in tool_names]
     elif has_explicit_tools and not pattern_output["tools"]:
-        # Pattern explicitly set tools=[] → NO tools (e.g. PAT-20 Orientierungs-Guide)
+        # Pattern explicitly set tools=[] → NO tools (e.g. M15 Orientierungs-Guide)
         active_tools = []
     elif has_mcp_source:
         active_tools = TOOL_DEFINITIONS
@@ -2168,7 +2733,18 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
             },
         },
     }
-    active_tools.append(select_cards_tool)
+    # Perf-Schalter: select_top_cards ist im Kachel-Modus nur ein OPTIONALER
+    # Re-Rank-Hint (sonst wählt das Backend deterministisch nach MCP-Ranking).
+    # Mit CHAT_DISABLE_SELECT_TOP_CARDS=1 lässt sich dieser zusätzliche
+    # LLM-Tool-Turn abschalten → ~1 Round-Trip/Such-Turn schneller (zum
+    # Messen/Tunen). Default: an (Verhalten unverändert).
+    if (os.getenv("CHAT_DISABLE_SELECT_TOP_CARDS") or "").strip() not in ("1", "true", "True"):
+        active_tools.append(select_cards_tool)
+    else:
+        _logger.info(
+            "select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — "
+            "Backend nutzt deterministische Karten-Auswahl (MCP-Ranking)."
+        )
 
     # Combined-output tool (opt-in) — see env CHAT_INLINE_QUICK_REPLIES.
     # When enabled, the model is instructed to call ``respond_to_user`` for
@@ -2216,7 +2792,16 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "Die Markdown-formatierte Antwort an den Nutzer.",
+                            "description": (
+                                "Die Markdown-formatierte Antwort an den Nutzer. "
+                                "WICHTIG: Schreibe die Folgevorschläge (quick_replies) "
+                                "und den ``__guide__``-Link NICHT zusätzlich in den "
+                                "text — die erscheinen separat als Pillen/Buttons UNTER "
+                                "der Antwort. Der text endet mit dem letzten "
+                                "inhaltlichen Satz; KEINE aufgelisteten Klick-Optionen "
+                                "am Ende (kein 'Zeig mir mehr' / 'Anderes Thema wählen' "
+                                "und keine 'Bring mich hin:'-Zeile)."
+                            ),
                         },
                         "quick_replies": {
                             "type": "array",
@@ -2498,7 +3083,19 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
         _args = prefetched_tool.get("arguments") or {}
         _txt = prefetched_tool["result_text"]
         try:
-            mcp_prefetch_cards = parse_wlo_cards(_txt) or []
+            # Welle E v4+12 (Sprint K rev2, 2026-05-27): Topic-Pages-
+            # Primary-Prefetch braucht ``parse_wlo_topic_page_cards``,
+            # damit das ``topic_pages``-Variant-Array gefüllt wird — sonst
+            # rendert das Frontend die Cards als „Sammlung" statt
+            # „Themenseite". Bug-Befund: bei „Klimawandel"-Suche feuerte
+            # der Primary-Tool ``search_wlo_topic_pages`` korrekt, aber
+            # ``parse_wlo_cards`` verlor die Variant-Annotation → keine
+            # Themenseiten-Box im Chat-Widget.
+            if _name == "search_wlo_topic_pages":
+                from app.services.mcp_client import parse_wlo_topic_page_cards as _ptp
+                mcp_prefetch_cards = _ptp(_txt) or []
+            else:
+                mcp_prefetch_cards = parse_wlo_cards(_txt) or []
             await resolve_discipline_labels(mcp_prefetch_cards)
             if _name == "search_wlo_collections":
                 for c in mcp_prefetch_cards:
@@ -2776,14 +3373,48 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                         "select_top_cards: %d IDs picked — %s",
                         len(clean_ids), reasoning[:120],
                     )
+                    # Welle E (2026-05-23) — Konsistenz Prompt ↔ Anzeige:
+                    # nach der Auswahl bekommt der LLM einen verschärften
+                    # Reminder, dass er NUR über diese IDs sprechen darf.
+                    # Backend-seitiges Trunken der älteren Tool-Results
+                    # wäre noch sauberer (siehe TODO), würde aber den
+                    # OpenAI-Tool-Call-Chain brechen.
+                    _consistency_tail = ""
+                    try:
+                        from app.services.config_loader import (
+                            load_display_rules_config as _ldrc,
+                        )
+                        _dr_pak = (_ldrc().get("prompt_anzeige_konsistenz") or {})
+                        _pak_excl = set(_dr_pak.get("exclude_patterns") or [])
+                        if (
+                            _dr_pak.get("enabled", True)
+                            and (pattern_output.get("id") or "") not in _pak_excl
+                            and clean_ids
+                        ):
+                            _consistency_tail = (
+                                "\n\nWICHTIG: Im nächsten ``respond_to_user``-"
+                                "Aufruf darfst du NUR über genau diese "
+                                f"{len(clean_ids)} ausgewählten IDs sprechen. "
+                                "Material, Sammlungen oder Themenseiten, die "
+                                "in vorigen Tool-Results stehen aber NICHT in "
+                                "dieser Auswahl, NICHT erwähnen — der User "
+                                "sieht im Frontend nur diese gewählten Treffer. "
+                                "Wenn du im Text auf Treffer Bezug nimmst: "
+                                "ausschließlich auf die gewählten."
+                            )
+                    except Exception:  # pragma: no cover — defensive
+                        _consistency_tail = ""
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "content": (
-                            f"OK — Auswahl gespeichert ({len(clean_ids)} IDs). "
-                            "Rufe jetzt respond_to_user mit der Prosa-Antwort auf."
-                            if _inline_qr_enabled
-                            else f"OK — Auswahl gespeichert ({len(clean_ids)} IDs)."
+                            (
+                                f"OK — Auswahl gespeichert ({len(clean_ids)} IDs). "
+                                "Rufe jetzt respond_to_user mit der Prosa-Antwort auf."
+                                if _inline_qr_enabled
+                                else f"OK — Auswahl gespeichert ({len(clean_ids)} IDs)."
+                            ) + _consistency_tail
                         ),
                     })
                     continue
@@ -2793,11 +3424,18 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                 # definition above. Treat this as the equivalent of a
                 # finish_reason == "stop" with the extracted text.
                 if tool_name == "respond_to_user":
-                    _inline_response_text = (tool_args.get("text") or "").strip()
+                    _inline_response_text = strip_reasoning_markers((tool_args.get("text") or "").strip())
                     qr = tool_args.get("quick_replies") or []
                     _inline_quick_replies = [
                         str(r).strip() for r in qr if isinstance(r, str) and str(r).strip()
                     ][:4]
+                    # Safety net: the model occasionally ALSO writes the quick-
+                    # replies / "Bring mich hin"-link as bold lines at the END of
+                    # the answer text. They belong only in quick_replies (rendered
+                    # as pills/buttons), not as text in the bubble — strip them.
+                    _inline_response_text = _strip_trailing_option_lines(
+                        _inline_response_text, _inline_quick_replies
+                    )
                     # OpenAI requires every tool call to be followed by a
                     # role=tool message in the chain. Acknowledge briefly.
                     messages.append({
@@ -3040,7 +3678,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
             response_text = _inline_response_text
             session_state["_inline_quick_replies"] = _inline_quick_replies
         else:
-            response_text = choice.message.content or ""
+            response_text = strip_reasoning_markers(choice.message.content or "")
 
         # ── Final-answer path — runs for BOTH content-only and inline
         #    respond_to_user tool calls. Phase A1 Reflection check gates the
@@ -3120,7 +3758,7 @@ Antworte auf Deutsch. Formatiere mit Markdown.""")
                     temperature=0.4,
                 )
             )
-            text = (summary_resp.choices[0].message.content or "").strip()
+            text = strip_reasoning_markers((summary_resp.choices[0].message.content or "").strip())
             if text:
                 return text, all_cards, tools_called, outcomes
         except Exception as e:
@@ -3149,7 +3787,7 @@ _CAPABILITY_HINTS_DIDACTIC = [
     "Mach mir ein Quiz dazu",
     "Erstell mir eine Praesentation zu {thema}",
     "Bau mir einen Lernpfad daraus",
-    # Canvas-Edit (wenn state-12)
+    # Canvas-Edit (wenn S3)
     "Mach es einfacher",
     "Fuege Loesungen hinzu",
     "Kuerzer fassen",
@@ -3222,12 +3860,12 @@ async def generate_quick_replies(
     """
     persona_id = classification.get("persona_id", "P-AND")
     intent_id = classification.get("intent_id", "")
-    state_id = classification.get("next_state", session_state.get("state_id", "state-1"))
+    state_id = classification.get("next_state", session_state.get("state_id", "S1"))
     entities = classification.get("entities", {}) or {}
     # Drop internal keys (prefix _) — they would confuse the LLM.
     public_entities = {k: v for k, v in entities.items() if not str(k).startswith("_")}
 
-    in_canvas = state_id == "state-12"
+    in_canvas = state_id == "S3"
     thema = public_entities.get("thema") or public_entities.get("topic") or ""
     fach = public_entities.get("fach") or ""
     has_topic = bool(thema or fach)
@@ -3258,7 +3896,7 @@ async def generate_quick_replies(
         _page_line = ""
 
     persona_salute = "Sie" if persona_id in {
-        "P-W-LK", "P-ELT", "P-VER", "P-W-POL", "P-BER", "P-W-PRESSE", "P-W-RED",
+        "P-LEH", "P-ELT", "P-ENT", "P-ENT", "P-ENT", "P-RED", "P-RED",
     } else "du"
 
     # Welle C Sprint 6: State-spezifische QR-Direktive ergänzen.
@@ -3295,7 +3933,7 @@ in der Bewertung & Feedback eine Probing-Frage, in der Slot-Erfassung wahrschein
    Lerngeschichte, Versuchsanleitung, Diskussionskarten, Rollenspiel, **Lernpfad**.
    Analytisch: Bericht, Factsheet, Projektsteckbrief, Pressemitteilung, Vergleich.
 6. **Canvas-Edits** — bestehenden Canvas-Inhalt verfeinern (einfacher, kuerzer,
-   ausfuehrlicher, Loesungen ergaenzen, formeller, etc.) — NUR wenn State=state-12.
+   ausfuehrlicher, Loesungen ergaenzen, formeller, etc.) — NUR wenn State=S3.
 
 ## Realistische Vorschlag-Beispiele fuer diese Persona
 (Inspiration — nicht woertlich uebernehmen, auf den konkreten Kontext anpassen.)
@@ -3343,7 +3981,7 @@ Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien)
   (b) **Canvas-Ausgabe** — neues Material erstellen lassen (zieht den aktuellen
       Kontext als Thema heran)
       z.B. "Mach mir ein Quiz daraus", "Erstell mir einen Lernpfad"
-  (c) **Canvas-Edit** — NUR wenn state-12 aktiv: bestehenden Inhalt aendern
+  (c) **Canvas-Edit** — NUR wenn S3 aktiv: bestehenden Inhalt aendern
       z.B. "Mach es einfacher", "Fuege Loesungen hinzu"
   (d) **Richtungswechsel** — anderes Thema / andere Fachrichtung
       z.B. "Anderes Thema: Klimawandel", "Was gibt's zu Physik?"
@@ -3370,12 +4008,12 @@ Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien)
 1. Genau 4 Vorschlaege, einer pro Zeile, KEINE Nummerierung, KEINE Bullets.
 2. Jeder Vorschlag max 6-8 Woerter.
 3. Anrede strikt {persona_salute}.
-4. Wenn Canvas aktiv (state-12) ist: mindestens EIN Edit-Vorschlag (Kategorie c).
+4. Wenn Canvas aktiv (S3) ist: mindestens EIN Edit-Vorschlag (Kategorie c).
 5. Wenn Themenseite bekannt: mindestens EIN Vorschlag der den Seiten-Kontext nutzt.
-6. Wenn Persona analytisch ist (P-VER/P-W-POL/P-W-PRESSE/P-BER/P-W-RED):
+6. Wenn Persona analytisch ist (P-ENT/P-ENT/P-RED/P-ENT/P-RED):
    bevorzuge Bericht/Factsheet/Steckbrief/Pressemitteilung/Vergleich und
    Plattform-/Projekt-/Statistik-Fragen. Weniger klassische Lehrmaterialien.
-7. Wenn Persona didaktisch (P-W-LK/P-W-SL/P-ELT/P-AND): klassische Lehrmaterialien
+7. Wenn Persona didaktisch (P-LEH/P-LER/P-ELT/P-AND): klassische Lehrmaterialien
    + Lernpfad + Medienvielfalt. Keine Berichte/Factsheets.
 8. Wenn der Bot eine Rueckfrage stellt, liefere KONKRETE Antworten (Kategorie f) —
    KEINE generischen Phrasen wie "Was kannst du noch?".
@@ -3444,7 +4082,7 @@ Gib NUR die 4 Zeilen zurueck, sonst nichts."""
         )
         if usage_acc is not None:
             usage_accumulator_add(usage_acc, _extract_usage(resp), phase="quick_replies")
-        text = resp.choices[0].message.content or ""
+        text = strip_reasoning_markers(resp.choices[0].message.content or "")
         replies = [line.strip().lstrip("-•*0123456789. ") for line in text.strip().split("\n") if line.strip()]
         # Drop duplicates while preserving order
         seen: set[str] = set()
@@ -3478,7 +4116,7 @@ async def generate_learning_path_text(
     # If fach/stufe are missing, the LLM should infer plausible defaults
     # from the topic (e.g. "Photosynthese" → Biologie, Sek I) AND state
     # this assumption transparently in the response. Eval-Befund Run 10:
-    # ohne dieses Hinzunehmen liefert PAT-19 leere Schritt 1/2/3-Templates.
+    # ohne dieses Hinzunehmen liefert M09 leere Schritt 1/2/3-Templates.
     has_fach = bool(entities.get("fach"))
     has_stufe = bool(entities.get("stufe"))
     default_hint = ""
@@ -3578,6 +4216,6 @@ um Luecken zu fuellen."""
                 max_tokens=2000,
             )
         )
-        return resp.choices[0].message.content or "Lernpfad konnte nicht erstellt werden."
+        return strip_reasoning_markers(resp.choices[0].message.content or "") or "Lernpfad konnte nicht erstellt werden."
     except Exception as e:
         return f"Fehler beim Erstellen des Lernpfads: {e}"

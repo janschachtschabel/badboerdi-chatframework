@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 
 from app.services.auth import require_studio_key
 from app.services.database import (
@@ -72,6 +75,10 @@ async def purge_sessions(
                     calls from dev tooling or misconfigured scripts.
 
     Returns row counts per table.
+
+    Welle E v4+12 (Sprint K): ``rules_logs`` Parameter entfernt — die
+    Rule-Engine wurde komplett ausgebaut, es entstehen keine
+    ``shadow_router_*.jsonl``-Logs mehr.
     """
     if not confirm:
         raise HTTPException(
@@ -98,7 +105,7 @@ async def get_session(session_id: str):
     return {
         "session_id": session["session_id"],
         "persona_id": session.get("persona_id", ""),
-        "state_id": session.get("state_id", "state-1"),
+        "state_id": session.get("state_id", "S1"),
         "entities": json.loads(session.get("entities", "{}")),
         "signal_history": json.loads(session.get("signal_history", "[]")),
         "turn_count": session.get("turn_count", 0),

@@ -82,3 +82,74 @@ class Tracer:
 
     def total_ms(self) -> int:
         return int((time.monotonic() - self._t0) * 1000)
+
+    # ── Welle E (2026-05-23) — Parallel-Gruppen ──────────────────────
+    # Wenn mehrere Tasks via asyncio.gather parallel laufen (z.B. Safety +
+    # Classify + Memory-Fetch), wollen wir im Studio nicht einen einzigen
+    # "parallel"-Step sehen, sondern eine Gruppe mit den individuellen
+    # Laufzeiten pro Task — damit man sieht, welcher Task die Phase
+    # verlängert. Verwendung:
+    #
+    #   group = tracer.parallel_group("safety_classify", "Safety+Classify+Memory")
+    #   t1 = group.task_start("safety", "OpenAI Moderation")
+    #   ...
+    #   group.task_end(t1, {"escalated": False})
+    #   ... weitere parallel ...
+    #   group.finish()  # schreibt Gruppen-Header + alle Tasks als entries
+    def parallel_group(self, step: str, label: str = "") -> "ParallelGroup":
+        return ParallelGroup(self, step, label or step)
+
+
+class ParallelGroup:
+    """Misst mehrere parallel laufende Tasks innerhalb eines asyncio.gather
+    und schreibt sie als Gruppe in den Tracer. Jeder Task hat seinen eigenen
+    Start/End-Timestamp (Walltime ist nicht-blocking gemessen — wall clock
+    relativ zum gather-Start).
+
+    Sicher gegen nicht-aufgerufenes ``finish()``: bei Garbage-Collection
+    bleiben die akkumulierten Tasks im Tracer-Log, der parent_step wird
+    aber nur dann eingefügt wenn ``finish()`` explizit gerufen wird.
+    """
+
+    def __init__(self, parent: "Tracer", step: str, label: str) -> None:
+        self._parent = parent
+        self._step = step
+        self._label = label
+        self._t0 = time.monotonic()
+        self._tasks: list[dict[str, Any]] = []
+
+    def task_start(self, name: str, label: str = "") -> dict[str, Any]:
+        h = {
+            "name": name,
+            "label": label or name,
+            "started_at_ms": int((time.monotonic() - self._t0) * 1000),
+            "duration_ms": 0,
+            "data": {},
+        }
+        return h
+
+    def task_end(self, handle: dict[str, Any], data: dict[str, Any] | None = None) -> None:
+        handle["duration_ms"] = (
+            int((time.monotonic() - self._t0) * 1000) - handle["started_at_ms"]
+        )
+        if data:
+            handle["data"] = data
+        self._tasks.append(handle)
+
+    def finish(self, data: dict[str, Any] | None = None) -> None:
+        """Group-Wrapper als TraceEntry schreiben — enthält ``tasks`` mit den
+        pro-Task-Zeiten. Studio rendert das als horizontalen Stack mit
+        individuellen Bars."""
+        total = int((time.monotonic() - self._t0) * 1000)
+        wrap = {
+            **(data or {}),
+            "parallel": True,
+            "task_count": len(self._tasks),
+            "tasks": list(self._tasks),
+            "duration_ms": total,
+        }
+        self._parent.entries.append(TraceEntry(
+            step=self._step, label=self._label,
+            duration_ms=total, data=wrap,
+        ))
+        self._parent._emit("end", self._step, self._label, wrap)

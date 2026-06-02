@@ -175,7 +175,7 @@ export default function CanvasFormatsEditor() {
         <div className="page-title">🎨 Canvas-Formate</div>
         <div className="page-subtitle">
           18 Material-Typen, die der Bot in der Canvas-Arbeitsfläche erzeugen kann.
-          Schicht 5 — wirken nur bei Intent <code>INT-W-11 Canvas-Create</code>.
+          Schicht 5 — wirken nur bei Intent <code>I05 Canvas-Create</code>.
         </div>
       </div>
 

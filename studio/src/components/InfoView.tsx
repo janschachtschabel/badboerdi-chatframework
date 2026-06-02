@@ -40,7 +40,6 @@ function Section({ title, icon, children, defaultOpen = false }: { title: string
 interface SystemInfo {
   health: { status?: string; provider?: string; chat_model?: string; embed_model?: string } | null;
   factory: { exists: boolean; size?: number; mtime?: number; has_db?: boolean; config_files?: number } | null;
-  rules: { rule_count: number; live_count: number; shadow_count: number } | null;
   snapshotCount: number | null;
 }
 
@@ -62,25 +61,22 @@ function fmtRel(mtimeSec: number | undefined): string {
 }
 
 function SystemStatus() {
-  const [info, setInfo] = useState<SystemInfo>({ health: null, factory: null, rules: null, snapshotCount: null });
+  // Welle E v4+12 (Sprint K): Routing-Engine-Card entfernt. Die Rule-
+  // Engine wurde komplett ausgebaut, daher kein /api/routing-rules-
+  // Endpoint mehr und kein ``rules``-Feld im SystemInfo-Objekt.
+  const [info, setInfo] = useState<SystemInfo>({ health: null, factory: null, snapshotCount: null });
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [h, f, r, s] = await Promise.allSettled([
+      const [h, f, s] = await Promise.allSettled([
         fetch('/api/health').then(r => r.json()),
         fetch('/api/config/factory').then(r => r.json()),
-        fetch('/api/routing-rules').then(r => r.json()),
         fetch('/api/config/snapshots').then(r => r.json()),
       ]);
       if (cancelled) return;
       setInfo({
         health: h.status === 'fulfilled' ? h.value : null,
         factory: f.status === 'fulfilled' ? f.value : null,
-        rules: r.status === 'fulfilled' ? {
-          rule_count: r.value.total ?? 0,
-          live_count: r.value.live_count ?? 0,
-          shadow_count: r.value.shadow_count ?? 0,
-        } : null,
         snapshotCount: s.status === 'fulfilled' && Array.isArray(s.value) ? s.value.length : null,
       });
     })();
@@ -106,12 +102,6 @@ function SystemStatus() {
           <div style={{ color: 'var(--text-muted)' }}>{info.factory?.config_files ?? 0} Configs · {info.factory?.has_db ? 'mit DB' : 'ohne DB'}</div>
         </div>
         <div>
-          <div style={{ fontWeight: 700, color: '#0369A1', marginBottom: 4 }}>Routing-Engine</div>
-          <div style={{ color: 'var(--text-muted)' }}>Total: <strong>{info.rules?.rule_count ?? '—'}</strong> Regeln</div>
-          <div style={{ color: 'var(--text-muted)' }}>Live: <strong style={{ color: '#10B981' }}>{info.rules?.live_count ?? '—'}</strong></div>
-          <div style={{ color: 'var(--text-muted)' }}>Shadow: <strong style={{ color: '#94A3B8' }}>{info.rules?.shadow_count ?? '—'}</strong></div>
-        </div>
-        <div>
           <div style={{ fontWeight: 700, color: '#0369A1', marginBottom: 4 }}>User-Snapshots</div>
           <div style={{ color: 'var(--text-muted)' }}>Anzahl: <strong>{info.snapshotCount ?? '—'}</strong></div>
           <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
@@ -135,17 +125,15 @@ export default function InfoView() {
       {/* ═══════════════ PIPELINE OVERVIEW ═══════════════ */}
       <Section title="Die Verarbeitungs-Pipeline" icon="⚡" defaultOpen={true}>
         <p style={pStyle}>
-          Jede Nutzernachricht durchläuft <strong>7 Phasen</strong>. Die Architektur ist so aufgebaut, dass deterministische Regeln (Patterns, Gates, Signale) den LLM gezielt steuern — nicht umgekehrt.
+          Jede Nutzernachricht durchläuft <strong>7 Phasen</strong>. Klassifikation und Pattern-Auswahl laufen strukturiert (LLM-Hint plus deterministische Anker), bevor die finale Antwort generiert wird.
         </p>
         <div className="card" style={{ background: '#f8fafc', padding: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {[
-              { step: '1', label: 'Safety-Check', desc: 'Regex, Moderation, Legal-Classifier prüfen die Nachricht', color: '#ef4444' },
-              { step: '2', label: 'Klassifikation (LLM)', desc: 'Persona, Intent, Signals, Entities, State, Turn-Type erkennen', color: '#3b82f6' },
-              { step: '3a', label: 'Pre-Route Engine', desc: 'YAML-Regeln korrigieren Persona/Intent/State (z.B. explizite Self-IDs, low-confidence-Fallback)', color: '#0EA5E9' },
-              { step: '3b', label: 'Policy-Prüfung', desc: 'Tool-Blockaden & Disclaimers anhand von Persona+Intent', color: '#f59e0b' },
-              { step: '4', label: 'Pattern-Engine (3 Phasen)', desc: 'Gate → Score → Modulate — wählt das beste Gesprächsmuster', color: '#8b5cf6' },
-              { step: '4b', label: 'Post-Route Engine', desc: 'YAML-Regeln können Pattern überschreiben (Tiebreaker, intent-spezifische Patterns)', color: '#0EA5E9' },
+              { step: '1', label: 'Safety-Check', desc: 'Regex, Moderation, Legal-Classifier prüfen die Nachricht; Crisis/Threat-Marker erzwingen M01/M02', color: '#ef4444' },
+              { step: '2', label: 'Klassifikation (LLM)', desc: 'Persona, Intent, Pattern-Hint, Signals, Entities, State, Turn-Type erkennen — classify-overrides.yaml liefert Hard-Override-Anker', color: '#3b82f6' },
+              { step: '3', label: 'Policy-Prüfung', desc: 'Tool-Blockaden & Disclaimers anhand von Persona+Intent', color: '#f59e0b' },
+              { step: '4', label: 'Pattern-Selection', desc: 'Safety > LLM-Hint > Fallback (M15). Single-Source-of-Truth-Architektur, keine Rule-Engine mehr.', color: '#8b5cf6' },
               { step: '5', label: 'Prompt-Zusammensetzung', desc: '5 Schichten werden zum System-Prompt kombiniert', color: '#2B6CB0' },
               { step: '6', label: 'LLM-Aufruf + MCP-Tools', desc: 'LLM antwortet, ruft bei Bedarf externe Tools auf', color: '#10b981' },
               { step: '7', label: 'Nachbereitung', desc: 'Karten extrahieren, Quality-Log schreiben, State speichern', color: '#6b7280' },
@@ -182,15 +170,15 @@ export default function InfoView() {
           <tbody>
             <tr>
               <td style={tdStyle}><strong>Persona</strong></td>
-              <td style={tdStyle}>9</td>
+              <td style={tdStyle}>6</td>
               <td style={tdStyle}>Wer spricht? (Lehrkraft, Schüler, Eltern, Presse…)</td>
-              <td style={tdStyle}>Anrede (Sie/du), Pattern-Gate, Policy-Regeln, Tool-Zugang</td>
+              <td style={tdStyle}>Anrede (Sie/du), Pattern-Auswahl, Policy-Regeln, Tool-Zugang</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>Intent</strong></td>
-              <td style={tdStyle}>13</td>
-              <td style={tdStyle}>Was will der Nutzer? (Inhalte abrufen, Fakten, Inhalt erstellen, Canvas-Edit, Feedback…)</td>
-              <td style={tdStyle}>Pattern-Gate, MCP-Tool-Präferenz, spekulative Vorab-Abfragen, Canvas-Routing</td>
+              <td style={tdStyle}>8</td>
+              <td style={tdStyle}>Was will der Nutzer? (Inhalte abrufen, Fakten, Inhalt erstellen, Material-Bearbeitung, Feedback…)</td>
+              <td style={tdStyle}>Pattern-Auswahl, MCP-Tool-Präferenz, spekulative Vorab-Abfragen, Pattern-Routing</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>Signals</strong></td>
@@ -206,9 +194,9 @@ export default function InfoView() {
             </tr>
             <tr>
               <td style={tdStyle}><strong>State</strong></td>
-              <td style={tdStyle}>12</td>
-              <td style={tdStyle}>Gesprächszustand: Orientierung → Suche → Kuratierung → Feedback → Canvas-Arbeit</td>
-              <td style={tdStyle}>Pattern-Gate, zustandsabhängiges Verhalten</td>
+              <td style={tdStyle}>3</td>
+              <td style={tdStyle}>Gesprächszustand: Orientierung → Suche → Kuratierung → Feedback → Material-Erstellung</td>
+              <td style={tdStyle}>Pattern-Auswahl, zustandsabhängiges Verhalten</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>Turn-Type</strong></td>
@@ -223,30 +211,30 @@ export default function InfoView() {
       {/* ═══════════════ PATTERN ENGINE ═══════════════ */}
       <Section title="Pattern-Engine (3 Phasen)" icon="🧩">
         <p style={pStyle}>
-          Die Pattern-Engine wählt aus 23 Gesprächsmustern <strong>genau eines</strong> aus. Nur das Gewinner-Pattern wird in den Prompt eingefügt.
+          Die Pattern-Engine wählt aus 16 Gesprächsmustern <strong>genau eines</strong> aus. Nur das Gewinner-Pattern wird in den Prompt eingefügt.
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
           <div className="card" style={{ borderTop: '3px solid #ef4444' }}>
-            <div style={h3Style}>Phase 1: Gate</div>
+            <div style={h3Style}>Phase 1: Klassifikation</div>
             <p style={pStyle}>
-              <strong>Eliminierung</strong> — Patterns werden entfernt, wenn Persona, Intent oder State nicht zu den <code style={codeStyle}>gate_*</code>-Listen passen. Hard Gate: fehlende <code style={codeStyle}>precondition_slots</code> eliminieren ebenfalls.
+              <strong>Einordnung</strong> — Der Input wird in Intent, Persona, State und Entities klassifiziert; der Klassifikator liefert zugleich einen <code style={codeStyle}>pattern_id_hint</code>.
             </p>
-            <p style={mutedStyle}>Ergebnis: Kandidatenliste (oft 10-16 von 23)</p>
+            <p style={mutedStyle}>Ergebnis: Klassifikation + Pattern-Vorschlag</p>
           </div>
           <div className="card" style={{ borderTop: '3px solid #f59e0b' }}>
-            <div style={h3Style}>Phase 2: Score</div>
+            <div style={h3Style}>Phase 2: Pattern-Wahl</div>
             <p style={pStyle}>
-              <strong>Gewichtung</strong> — Verbleibende Patterns werden nach Signal-Fit bewertet: <code style={codeStyle}>high_fit</code> = 1.0, <code style={codeStyle}>medium_fit</code> = 0.5, <code style={codeStyle}>low_fit</code> = 0.2. Dazu: Page-Bonus und Entity-Vollständigkeit.
+              <strong>Auswahl</strong> — Der <code style={codeStyle}>pattern_id_hint</code> bestimmt das Pattern; <code style={codeStyle}>classify-overrides.yaml</code> dient als deterministischer Hard-Anker.
             </p>
-            <p style={mutedStyle}>Ergebnis: Gewinner-Pattern + Score-Gap zum Zweitplatzierten</p>
+            <p style={mutedStyle}>Ergebnis: gewähltes Pattern</p>
           </div>
           <div className="card" style={{ borderTop: '3px solid #10b981' }}>
             <div style={h3Style}>Phase 3: Modulate</div>
             <p style={pStyle}>
               <strong>Anpassung</strong> — Die Defaults des Gewinners (Ton, Länge, Detail…) werden durch aktive Signale überschrieben. Kürzere Länge gewinnt bei Konflikten.
             </p>
-            <p style={mutedStyle}>Ergebnis: 19 finale Steuerungsfelder für den Prompt</p>
+            <p style={mutedStyle}>Ergebnis: die finalen Steuerungsfelder für den Prompt</p>
           </div>
         </div>
 
@@ -302,107 +290,87 @@ export default function InfoView() {
         </div>
       </Section>
 
-      {/* ═══════════════ ROUTING-RULES ENGINE ═══════════════ */}
-      <Section title="Routing-Rules Engine (deklarativ)" icon="⚙️">
+      {/* ═══════════════ HARD-OVERRIDES (classify-overrides.yaml) ═══════════════ */}
+      <Section title="Hard-Overrides im Classifier (classify-overrides.yaml)" icon="🎚️">
         <p style={pStyle}>
-          Über der Pattern-Engine läuft eine zweite, vollständig <strong>YAML-getriebene</strong> Regel-Engine.
-          Sie hat zwei Funktionen:
-        </p>
-        <ol style={{ ...pStyle, paddingLeft: 20 }}>
-          <li>
-            <strong>Pre-Route</strong> — vor der Pattern-Auswahl: korrigiert Persona, Intent
-            oder State des Classifiers (z.B. explizite Self-IDs wie &quot;ich bin Lehrerin&quot;
-            oder Confidence-basierte Fallbacks).
-          </li>
-          <li>
-            <strong>Post-Route</strong> — nach der Pattern-Auswahl: kann Tiebreaker bei knappen
-            Score-Differenzen anwenden oder intent-spezifische Patterns (PAT-22 Feedback,
-            PAT-23 Redaktions-Routing) durchsetzen, die sonst von Universal-Patterns
-            überstimmt würden.
-          </li>
-        </ol>
-        <p style={pStyle}>
-          Eine Regel hat <code style={codeStyle}>when</code> (Bedingungen) und <code style={codeStyle}>then</code> (Effekte).
-          Beispiel:
-        </p>
-        <pre style={{ background: '#0F172A', color: '#E2E8F0', padding: 12, borderRadius: 6, fontSize: 12, overflowX: 'auto' }}>
-{`- id: rule_personal_data_request
-  description: "Pers. Datenfragen → PAT-03"
-  priority: 60
-  live: true
-  when:
-    all:
-      - intent: { in: ["INT-W-09", "INT-W-08"] }
-      - message: { regex: "\\\\bmein\\\\s+(sohn|tochter|kind)\\\\b" }
-  then:
-    enforced_pattern_id: "PAT-03"`}
-        </pre>
-        <p style={pStyle}>
-          <strong>Live vs Shadow:</strong> Jede Regel hat ein <code style={codeStyle}>live</code>-Flag.
-          <code style={codeStyle}>true</code> = wirkt sofort, <code style={codeStyle}>false</code> = nur in
-          Shadow-Log gemessen. Das ermöglicht kontrollierte Rollouts neuer Regeln ohne Risiko.
+          <strong>Welle E v4+12 (Sprint K, 2026-05-27):</strong> Die separate Routing-
+          Rule-Engine wurde komplett ausgebaut. Eval-355c lieferte den empirischen
+          Nachweis: ohne Live-Rules <strong>+3.8 % avg_score</strong> und <strong>+20 % pattern_match=2</strong>{' '}
+          gegenüber dem vorherigen Run mit aktiver Rule-Engine.
         </p>
         <p style={pStyle}>
-          <strong>Verfügbare Komparatoren:</strong> <code style={codeStyle}>eq, neq, in, not_in, regex,
-          not_regex, empty, non_empty, exists, lt, gt, lte, gte</code> + boolesche Kombinatoren <code style={codeStyle}>all, any, not</code>.
+          Was die Rules an Mehrwert hatten — explizite Persona-Self-ID („Ich bin Lehrer",
+          „als Redakteurin"), Verb-Disambiguatoren (Such-Verb vs Create-Verb) und
+          Phantom-Topic-Erkennung — lebt jetzt in einer einzigen Datei:
+          <code style={codeStyle}>01-base/classify-overrides.yaml</code>. Der
+          Classifier-System-Prompt rendert sie als Hint-Anker, das LLM bekommt sie als
+          deterministische Trigger-Liste mit Erwartungswerten.
         </p>
         <p style={pStyle}>
-          Direkter Zugang: <strong>Routing Rules</strong> in der Sidebar. Dort sind alle Regeln auflistbar,
-          via Test-Bench ausführbar (kein LLM-Aufruf, sub-millisekunden), und es gibt Statistiken über
-          Fire-Counts und Override-Rates pro Regel.
+          Vorteil: <strong>eine</strong> Schicht statt Pre-Route + Post-Route + Lookup-
+          Gruppen + Shadow-Logs. Studio-Editor: Im Studio über das „Settings"/
+          „Architektur-Configs"-Menü direkt als YAML editierbar — Änderungen wirken
+          beim nächsten Turn ohne Backend-Restart (mtime-Cache).
         </p>
       </Section>
 
-      {/* ═══════════════ GATES ═══════════════ */}
-      <Section title="Gates — Wer darf was?" icon="🚧">
+      {/* ═══════════════ PATTERN-SELEKTION (Welle E v4) ═══════════════ */}
+      <Section title="Pattern-Selektion — wer wählt das Pattern?" icon="🎯">
         <p style={pStyle}>
-          Gates sind Filter, die bestimmte Patterns eliminieren, <strong>bevor</strong> das Scoring stattfindet. Es gibt 4 Gate-Typen:
+          Seit <strong>Welle E v4 (2026-05-25)</strong> trifft die Pattern-Wahl primär
+          das Klassifikator-LLM via <code style={codeStyle}>pattern_id_hint</code>. Die
+          frühere 3-Phasen-Engine (Gate → Score → Modulate) wurde auf Hint-Primary
+          reduziert.
         </p>
         <table style={tableStyle}>
           <thead>
             <tr>
-              <th style={thStyle}>Gate</th>
-              <th style={thStyle}>Feld im Pattern</th>
-              <th style={thStyle}>Logik</th>
-              <th style={thStyle}>Beispiel</th>
+              <th style={thStyle}>Schritt</th>
+              <th style={thStyle}>Quelle</th>
+              <th style={thStyle}>Effekt</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td style={tdStyle}><strong>Persona-Gate</strong></td>
-              <td style={tdStyle}><code style={codeStyle}>gate_personas</code></td>
-              <td style={tdStyle}><code style={codeStyle}>["*"]</code> = alle erlaubt, oder explizite Liste</td>
-              <td style={tdStyle}>PAT-09 nur für <code style={codeStyle}>["P-W-RED","P-W-PRESSE","P-W-POL","P-BER"]</code> (Recherche-Personas); PAT-14 nur für <code style={codeStyle}>["P-ELT","P-W-SL"]</code> (Lerner-Empfehlung)</td>
+              <td style={tdStyle}><strong>1. Safety-Override</strong></td>
+              <td style={tdStyle}><code style={codeStyle}>safety.enforced_pattern</code></td>
+              <td style={tdStyle}>M01 bei Selbstgefährdung, M02 bei Drohungen — gewinnt immer.</td>
             </tr>
             <tr>
-              <td style={tdStyle}><strong>Intent-Gate</strong></td>
-              <td style={tdStyle}><code style={codeStyle}>gate_intents</code></td>
-              <td style={tdStyle}><code style={codeStyle}>["*"]</code> = alle, oder explizite Liste</td>
-              <td style={tdStyle}>PAT-21 nur für <code style={codeStyle}>["INT-W-11"]</code> (Canvas-Create); PAT-10 für <code style={codeStyle}>["INT-W-01","INT-W-06","INT-W-09"]</code> (Fakten-Bulletin)</td>
+              <td style={tdStyle}><strong>2. LLM-Hint</strong></td>
+              <td style={tdStyle}><code style={codeStyle}>classification.pattern_id_hint</code></td>
+              <td style={tdStyle}>Primärer Pfad in praktisch 100 % der Turns. Wird von <code>01-base/classify-overrides.yaml</code> über Hint-Anker im System-Prompt geleitet.</td>
             </tr>
             <tr>
-              <td style={tdStyle}><strong>State-Gate</strong></td>
-              <td style={tdStyle}><code style={codeStyle}>gate_states</code></td>
-              <td style={tdStyle}><code style={codeStyle}>["*"]</code> = alle, oder explizite Liste</td>
-              <td style={tdStyle}>PAT-07 nur in <code style={codeStyle}>["state-5", "state-6"]</code> (Suche/Ergebnis-Kuratierung)</td>
+              <td style={tdStyle}><strong>3. Fallback</strong></td>
+              <td style={tdStyle}>defensiv hardcoded</td>
+              <td style={tdStyle}>M15 (Orientierung), wenn weder Safety noch Hint ein gültiges Pattern liefern.</td>
             </tr>
             <tr>
-              <td style={tdStyle}><strong>Slot-Gate (Hard)</strong></td>
-              <td style={tdStyle}><code style={codeStyle}>precondition_slots</code></td>
-              <td style={tdStyle}>Alle Slots müssen gefüllt sein, sonst eliminiert</td>
-              <td style={tdStyle}>PAT-19 braucht <code style={codeStyle}>["thema"]</code> (Welle B: gelockert von <code>fach+stufe+thema</code> → nur <code>thema</code>, weil Lehrkraft Fach/Stufe aus dem Thema ableiten kann)</td>
+              <td style={tdStyle}><strong>4. phase3_modulate</strong></td>
+              <td style={tdStyle}>Persona-Modifier + Pattern-Defaults + Signale</td>
+              <td style={tdStyle}>Stil/Tonalität/Tool-Liste/Slot-Degradation. Persona greift hier — <em>nicht</em> bei der Pattern-Wahl.</td>
             </tr>
           </tbody>
         </table>
         <p style={{ ...pStyle, marginTop: 12 }}>
-          <strong>Wichtig:</strong> Gates eliminieren — sie reduzieren nicht den Score. Ein Pattern, das am Gate scheitert, kann nicht gewinnen, egal wie gut die Signale passen.
+          <strong>Was es nicht mehr gibt:</strong>{' '}
+          <code style={codeStyle}>gate_personas</code>,{' '}
+          <code style={codeStyle}>gate_states</code>,{' '}
+          <code style={codeStyle}>gate_intents</code>,{' '}
+          <code style={codeStyle}>signal_*_fit</code>,{' '}
+          <code style={codeStyle}>page_bonus</code>, Tie-Breaker.
+          Pattern-Frontmatter braucht nur noch Antwort-Form, Tools und Inhalt-Regeln.{' '}
+          <code style={codeStyle}>precondition_slots</code> bleibt — wirkt aber nur noch
+          als Degradation-Flag in <code>phase3_modulate</code> (M09 braucht{' '}
+          <code>topic</code>, M10 braucht <code>material_type</code> + <code>topic</code>),
+          nicht als Pattern-Eliminator.
         </p>
 
-        <div style={{ ...h3Style, marginTop: 20 }}>So wirkt Persona heute — 4 Ebenen</div>
+        <div style={{ ...h3Style, marginTop: 20 }}>Persona-Wirkung — 2 Ebenen (Welle E v4)</div>
         <p style={pStyle}>
-          Mit Welle B/C wurde der Persona-Einfluss bewusst <strong>aus den Intent-Gates rausgezogen</strong> und auf
-          mehrere deterministische Stellen verteilt. INT-W-03 ist jetzt universell („Inhalte abrufen") —
-          welches Pattern gewinnt, entscheidet die Kombination aus Persona + Anker-Wörtern + State.
+          Persona-Entkopplung ist abgeschlossen: die Persona steuert <strong>Stil und
+          Anrede</strong>, nicht die Pattern-Wahl.
         </p>
         <table style={tableStyle}>
           <thead>
@@ -414,39 +382,29 @@ export default function InfoView() {
           </thead>
           <tbody>
             <tr>
-              <td style={tdStyle}><strong>1. Eliminierung</strong></td>
-              <td style={tdStyle}><code style={codeStyle}>gate_personas</code> im Pattern</td>
-              <td style={tdStyle}>Hartes „nicht für diese Persona". Beispiel: PAT-09 (Redaktions-Recherche) ist für Schüler:innen unsichtbar — egal welche Frage.</td>
+              <td style={tdStyle}><strong>1. Tonalitäts-Modulation</strong></td>
+              <td style={tdStyle}>Persona-Frontmatter (<code style={codeStyle}>tone</code>, <code>length_bias</code>, <code>formality</code>, <code>card_text_mode</code>, <code>override</code>)</td>
+              <td style={tdStyle}>In <code>phase3_modulate</code> nach gewähltem Pattern. P-ENT bekommt <code>formality=siezen</code> + <code>tone=formell</code>, P-LER bekommt <code>formality=duzen</code> + <code>tone=ermutigend</code>. Editor: Personas-Tab.</td>
             </tr>
             <tr>
-              <td style={tdStyle}><strong>2. Disambiguierung</strong></td>
-              <td style={tdStyle}>Routing-Rules (<code style={codeStyle}>06-rules/routing-rules.yaml</code>)</td>
-              <td style={tdStyle}>Persona + Intent + Anker-Wort enforced ein bestimmtes Pattern. Beispiel: <code>rule_recherche_personas_force_pat09</code> setzt PAT-09 wenn Persona ∈ {`{RED, PRESSE, POL, BER}`} + INT-W-03 + thema gefüllt.</td>
-            </tr>
-            <tr>
-              <td style={tdStyle}><strong>3. Scoring-Boost</strong></td>
-              <td style={tdStyle}>Pattern-Engine Phase 2</td>
-              <td style={tdStyle}>Persona-Signale (z.B. „erfahren", „proaktiv") boosten passende Patterns: P-W-LK + erfahren → PAT-05 (Profi-Filter) gewinnt knappes Rennen gegen PAT-07.</td>
-            </tr>
-            <tr>
-              <td style={tdStyle}><strong>4. Tonalitäts-Modulation</strong></td>
-              <td style={tdStyle}>Persona-Frontmatter (<code style={codeStyle}>tone</code>, <code>length_bias</code>, <code>formality</code>, <code>card_text_mode</code>)</td>
-              <td style={tdStyle}>Nach gewähltem Pattern moduliert die Persona den Output: P-W-VER bekommt formell + sachlich + max. 5 Karten, P-W-SL bekommt locker + niedrigschwellig + max. 3 Karten — selbes Pattern, anderer Ton. Editor unter Personas-Tab.</td>
+              <td style={tdStyle}><strong>2. Selbst-ID-Korrektur</strong></td>
+              <td style={tdStyle}>Routing-Rules (<code style={codeStyle}>lookup_persona_self_id__*</code>)</td>
+              <td style={tdStyle}>Explizite Selbst-ID-Phrasen („ich bin Lehrkraft …") überstimmen den Klassifikator. Setzt <code>persona_override</code>, nicht Pattern.</td>
             </tr>
           </tbody>
         </table>
         <div style={{ ...mutedStyle, marginTop: 8 }}>
-          Faustregel: <strong>Welche Persona-Beispiele</strong> stehen im Pattern-Markdown-Body? Steht
-          P-W-LK explizit drin, sagt das Pattern „so antworte ich Lehrkräften". Das ergänzt das harte
-          <code style={codeStyle}>gate_personas</code> um weiche Persona-Spezifik im Text — der LLM
-          liest das mit.
+          <strong>Was die Persona für die Pattern-Wahl bewirkt:</strong> nichts direkt.
+          Der Klassifikator-LLM bekommt aber die Persona-Beschreibung +{' '}
+          <code>typical_intents</code> aus den Persona-MDs als Kontext — das hilft ihm,
+          plausiblere Hints zu setzen.
         </div>
       </Section>
 
       {/* ═══════════════ 6 LAYERS ═══════════════ */}
       <Section title="Die 6 Architektur-Schichten" icon="🏗️">
         <p style={pStyle}>
-          Der System-Prompt wird aus mehreren Schichten zusammengesetzt. Jede Schicht hat eine Priorität — bei Token-Knappheit werden niedrig-priorisierte Schichten zuerst entladen. Schicht 5 (Canvas-Formate) steuert Ausgabe-Formate und wird nur bei Create-/Edit-Intents geladen.
+          Der System-Prompt wird aus mehreren Schichten zusammengesetzt. Jede Schicht hat eine Priorität — bei Token-Knappheit werden niedrig-priorisierte Schichten zuerst entladen. Schicht 5 (Material-Formate) steuert Ausgabe-Formate und wird nur bei Create-/Edit-Intents geladen.
         </p>
         <table style={tableStyle}>
           <thead>
@@ -473,8 +431,8 @@ export default function InfoView() {
             <tr>
               <td style={tdStyle}><strong>3 — Patterns</strong></td>
               <td style={tdStyle}><span style={{ color: '#8b5cf6', fontWeight: 700 }}>500-800</span></td>
-              <td style={tdStyle}>Das gewählte Gesprächsmuster (nur 1 von 26)</td>
-              <td style={tdStyle}>Kann auf PAT-06 (Degradation) zurückfallen.</td>
+              <td style={tdStyle}>Das gewählte Gesprächsmuster (nur 1 von 16)</td>
+              <td style={tdStyle}>Kann auf M12 (Degradation) zurückfallen.</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>4 — Dimensionen</strong></td>
@@ -483,10 +441,10 @@ export default function InfoView() {
               <td style={tdStyle}>Kann teilweise entladen werden.</td>
             </tr>
             <tr>
-              <td style={tdStyle}><strong>5 — Canvas-Formate</strong></td>
+              <td style={tdStyle}><strong>5 — Material-Formate</strong></td>
               <td style={tdStyle}><span style={{ color: '#ec4899', fontWeight: 700 }}>200-400</span></td>
               <td style={tdStyle}>Struktur-Vorgabe des gewählten Material-Typs, Alias-Mapping, Edit-/Create-Trigger</td>
-              <td style={tdStyle}>Nur bei INT-W-11/12 (Create/Edit) geladen — sonst nicht im Prompt.</td>
+              <td style={tdStyle}>Nur bei I05/I06 (Create/Edit) geladen — sonst nicht im Prompt.</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>6 — Wissen</strong></td>
@@ -503,7 +461,7 @@ export default function InfoView() {
           <div>├─ Schicht 2: domain-rules.md + Plattform-Wissen <span style={{ color: 'var(--text-muted)' }}>← immer</span></div>
           <div>├─ Schicht 4: Persona-Prompt + Intent + Signale <span style={{ color: 'var(--text-muted)' }}>← nur erkannte</span></div>
           <div>├─ Schicht 3: Pattern-Block <span style={{ color: 'var(--text-muted)' }}>← nur der Gewinner</span></div>
-          <div>├─ Schicht 5: Canvas-Material-Struktur <span style={{ color: 'var(--text-muted)' }}>← nur bei INT-W-11/12</span></div>
+          <div>├─ Schicht 5: Material-Format-Struktur <span style={{ color: 'var(--text-muted)' }}>← nur bei I05/I06</span></div>
           <div>├─ Schicht 6: RAG-Kontext <span style={{ color: 'var(--text-muted)' }}>← always-on Areas</span></div>
           <div>├─ Aktuelle Themenseite <span style={{ color: 'var(--text-muted)' }}>← wenn node_id auflösbar (page_context_service)</span></div>
           <div>└─ Schicht 1: guardrails.md <span style={{ color: 'var(--text-muted)' }}>← immer am Ende!</span></div>
@@ -517,11 +475,11 @@ export default function InfoView() {
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           {[
-            { from: 'Persona', arrows: ['→ Pattern-Gate (filtert)', '→ Policy (Disclaimers, Tool-Sperren)', '→ Anrede (Sie/du/neutral)', '→ Prompt (persona-spezifischer Abschnitt)'] },
-            { from: 'Intent', arrows: ['→ Pattern-Gate (filtert)', '→ Spekulative MCP-Vorab-Abfrage', '→ Tool-Präferenz (Collections vs. Content)', '→ Entity-Erwartung (welche Slots?)'] },
-            { from: 'Signals', arrows: ['→ Pattern-Scoring (high/medium/low fit)', '→ Modulation (überschreibt Ton, Länge)', '→ Flags (skip_intro, one_option, add_sources)', '→ max_items-Reduktion bei Stress'] },
-            { from: 'Entities', arrows: ['→ MCP-Tool-Parameter (Suchbegriffe)', '→ Precondition-Gate (Hard Gate)', '→ Entity-Memory (über Turns akkumuliert)', '→ Turn-Type steuert Akkumulation'] },
-            { from: 'State', arrows: ['→ Pattern-Gate (filtert)', '→ Wird pro Turn vom LLM gesetzt', '→ Zustandsabhängiges Verhalten'] },
+            { from: 'Persona', arrows: ['→ Pattern-Auswahl (LLM-Hint)', '→ Policy (Disclaimers, Tool-Sperren)', '→ Anrede (Sie/du/neutral)', '→ Prompt (persona-spezifischer Abschnitt)'] },
+            { from: 'Intent', arrows: ['→ Pattern-Auswahl (LLM-Hint)', '→ Spekulative MCP-Vorab-Abfrage', '→ Tool-Präferenz (Collections vs. Content)', '→ Entity-Erwartung (welche Slots?)'] },
+            { from: 'Signals', arrows: ['→ Pattern-Hint (Klassifikator)', '→ Modulation (überschreibt Ton, Länge)', '→ Flags (skip_intro, one_option, add_sources)', '→ max_items-Reduktion bei Stress'] },
+            { from: 'Entities', arrows: ['→ MCP-Tool-Parameter (Suchbegriffe)', '→ Slot-Prüfung (Rückfrage bei Lücke)', '→ Entity-Memory (über Turns akkumuliert)', '→ Turn-Type steuert Akkumulation'] },
+            { from: 'State', arrows: ['→ Pattern-Auswahl (LLM-Hint)', '→ Wird pro Turn vom LLM gesetzt', '→ Zustandsabhängiges Verhalten'] },
             { from: 'Pattern', arrows: ['→ Antwortstruktur (Ton, Länge, Detail)', '→ Tool-Zugang (sources + tools)', '→ Wird von Signalen moduliert', '→ Core-Rule als LLM-Anweisung'] },
           ].map(item => (
             <div key={item.from} className="card" style={{ padding: 12 }}>
@@ -573,10 +531,10 @@ export default function InfoView() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {[
             { step: 'Safety', result: 'risk = low, keine Blockaden', color: '#ef4444' },
-            { step: 'Klassifikation', result: 'Persona: P-W-LK (Lehrkraft) · Intent: INT-W-03 (Inhalte abrufen) · Entities: fach=Mathe, stufe=Kl.7, medientyp=Video · Signals: zielgerichtet, erfahren · State: state-5', color: '#3b82f6' },
+            { step: 'Klassifikation', result: 'Persona: P-LEH (Lehrkraft) · Intent: I03 (Inhalte abrufen) · Entities: fach=Mathe, stufe=Kl.7, medientyp=Video · Signals: zielgerichtet, erfahren · State: S3', color: '#3b82f6' },
             { step: 'Policy', result: 'Keine Blockaden für Lehrkraft + Material-Suche', color: '#f59e0b' },
-            { step: 'Pattern-Engine', result: 'Gate: 14 von 23 passieren · Score: PAT-05 (Profi-Filter) gewinnt — erfahren + zielgerichtet in signal_high_fit · Modulate: tone=kollegial (aus Persona-Frontmatter), length=kurz, skip_intro=true', color: '#8b5cf6' },
-            { step: 'Prompt', result: 'base-persona + domain-rules + LK-Persona + PAT-05 + Signal-Overrides + guardrails', color: '#2B6CB0' },
+            { step: 'Pattern-Selektion', result: 'Klassifikator-Hint: M05 (Material-Suche gefiltert) — Slots vollständig, Filter (Medientyp, Stufe) gesetzt. Rules greifen nicht (kein Slot-fehlt-Case). phase3_modulate: tone=kollegial (Persona-Modifier), length=kurz, skip_intro=true (Signal "zielgerichtet")', color: '#8b5cf6' },
+            { step: 'Prompt', result: 'base-persona + domain-rules + P-LEH-Persona + M05 + Signal-Overrides + guardrails', color: '#2B6CB0' },
             { step: 'LLM + MCP', result: 'search_wlo_content(query="Mathematik", stufe="Klasse 7", medientyp="Video") → 8 Treffer', color: '#10b981' },
             { step: 'Antwort', result: 'Knappe, sachliche Auflistung von Mathe-Videos — keine Einleitung, Quellenkarten', color: '#6b7280' },
           ].map((phase, i) => (
@@ -629,11 +587,11 @@ export default function InfoView() {
         </div>
       </Section>
 
-      {/* ═══════════════ Canvas Material-Typen (full list) ═══════════════ */}
-      <Section title="Canvas-Material-Typen (alle 18)" icon="📋">
+      {/* ═══════════════ Material-Typen (full list) ═══════════════ */}
+      <Section title="Material-Typen (alle 18)" icon="📋">
         <p style={pStyle}>
           Schicht 5 (<code style={codeStyle}>05-canvas/material-types.yaml</code>) definiert
-          18 Output-Formate. Bei <code style={codeStyle}>INT-W-11 Canvas-Create</code> wählt der
+          18 Output-Formate. Bei <code style={codeStyle}>I05 Material-Erstellung</code> wählt der
           Classifier einen Typ; bei <code style={codeStyle}>auto</code> entscheidet der LLM
           anhand des Kontexts.
         </p>
@@ -688,9 +646,9 @@ export default function InfoView() {
       {/* ═══════════════ Snapshots & Werkseinstellungen ═══════════════ */}
       <Section title="Snapshots & Werkseinstellungen" icon="💾">
         <p style={pStyle}>
-          Das Studio kennt zwei Arten von Snapshots — beide enthalten <strong>alle 58
-          Config-Dateien</strong> aus den 13 Layer-Ordnern (Patterns, Rules, Personas, Intents,
-          States, Signale, Canvas-Formate, Privacy etc.) und optional die SQLite-DB
+          Das Studio kennt zwei Arten von Snapshots — beide enthalten <strong>alle
+          Config-Dateien</strong> aus den Layer-Ordnern (Patterns, Personas, Intents,
+          States, Signale, Material-Formate, Privacy etc.) und optional die SQLite-DB
           (RAG-Embeddings + Sessions + Eval-Historie).
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -742,11 +700,9 @@ export default function InfoView() {
 <!-- Minimal-Einbindung (alle Defaults) -->
 <boerdi-chat api-url="https://api.example.de"></boerdi-chat>
 
-<!-- Themenseiten-Embed: nur Chat + Inline-Links, kein Canvas -->
+<!-- Schlanke Einbindung: Debug-Button aus -->
 <boerdi-chat
   api-url="https://api.example.de"
-  cards-enabled="false"
-  canvas-enabled="false"
   show-debug-button="false">
 </boerdi-chat>
 
@@ -788,13 +744,7 @@ export default function InfoView() {
               ['Kontext', 'page-context', '—', 'JSON-Objekt mit zusätzlichem Kontext'],
               ['Header-UI', 'show-debug-button', 'true', '🔍 Debug-Toggle in Header anzeigen'],
               ['Header-UI', 'show-language-buttons', 'true', '🔊 TTS und 🎤 Mic-Buttons anzeigen'],
-              ['Header-UI', 'show-guide-button', 'true', '🧭 Lotsen-Toggle in Header anzeigen (Default-Steuerung bleibt aktiv)'],
-              ['Embed-Modi', 'cards-enabled', 'true', 'Bei "false": Treffer als Inline-Markdown-Links statt Kacheln (max. N aus widget-modes.yaml)'],
-              ['Embed-Modi', 'canvas-enabled', 'true', 'Bei "false": Canvas-Pane wird nicht geöffnet; Material/Lernpfad rendert im Chat-Verlauf'],
-              ['Embed-Modi', 'ai-content-enabled', 'true', 'Bei "false": Erstell-Anfragen (PAT-19/21) werden mit Alt-Response aus widget-modes.yaml abgelehnt'],
-              ['Embed-Modi', 'quick-replies-enabled', 'true', 'Bei "false": Quick-Reply-Pillen ausgeblendet; Lotsen-QRs werden inline angehängt'],
-              ['Embed-Modi', 'inline-result-grouping', 'true', 'Default seit Welle C.5 (2026-05-21): Treffer in separaten Boxen (Top-3 Themenseiten + Top-3 Sammlungen + Webseiten-Inhalte) plus Card-Button "Treffer zur Suche". Einzelinhalte nicht mehr als Kacheln. Wirkt auch im Canvas. Opt-out via "inline-result-grouping=\\"false\\"" bringt das alte Flat-Card-Layout zurück.'],
-              ['Lotsen', 'guide-mode-default', 'auto', 'Initial-State: "true" | "false" | "auto" (URL-Param → localStorage → Backend)'],
+              ['Embed-Modi', 'ai-content-enabled', 'true', 'Bei "false": Erstell-Anfragen (M09/M10) werden mit Alt-Response aus widget-modes.yaml abgelehnt'],
               ['Integration', 'intercept-edu-sharing-links', 'false', 'Bei "true": Link-Klicks emitten (linkClicked)-Event statt zu navigieren'],
               ['Integration', 'emit-guide-suggestion', 'false', 'Bei "true": Bot-Turns mit Lotsen-Treffer feuern badboerdi:guide-suggestion CustomEvent'],
               ['Integration', 'emit-routing-debug', 'false', 'Bei "true": Pro Bot-Turn ein badboerdi:routing-debug CustomEvent mit Pattern/Intent/State/Tools'],
@@ -820,7 +770,7 @@ export default function InfoView() {
           verwenden können:
         </p>
         <ul style={{ fontSize: 12, lineHeight: 1.8, marginLeft: 16, marginBottom: 0 }}>
-          <li><code style={codeStyle}>badboerdi:page-action</code> — <strong>immer aktiv</strong>. Backend-page_actions: <code>navigate</code>, <code>show_results</code>, <code>canvas_open</code>, <code>canvas_update</code>, <code>canvas_show_cards</code>, <code>canvas_close</code>. Payload: <code>{`{action, payload}`}</code>.</li>
+          <li><code style={codeStyle}>badboerdi:page-action</code> — <strong>immer aktiv</strong>. Backend-page_actions: <code>navigate</code>, <code>show_results</code>. Payload: <code>{`{action, payload}`}</code>.</li>
           <li><code style={codeStyle}>badboerdi:guide-suggestion</code> — nur wenn <code>emit-guide-suggestion="true"</code>. Feuert pro Bot-Turn mit Lotsen-eligible Cards. Payload: <code>{`{url, title, node_id, node_type, query, alternatives[]}`}</code>.</li>
           <li><code style={codeStyle}>badboerdi:routing-debug</code> — nur wenn <code>emit-routing-debug="true"</code>. Routing-Telemetrie pro Bot-Turn. Payload: <code>{`{pattern, intent, state, persona, tools_called[], sources[], modifier{}}`}</code>.</li>
           <li><code style={codeStyle}>badboerdi:query-meta</code> — <strong>immer aktiv</strong>. MCP-Suchanfragen-Metadaten. Payload: <code>{`{queries[]{tool_name, search_term, criteria[], pagination, search_url}}`}</code>.</li>
@@ -833,21 +783,21 @@ export default function InfoView() {
         </div>
       </Section>
 
-      {/* ═══════════════ Canvas & Privacy (operational additions) ═══════════════ */}
-      <Section title="Canvas-Arbeitsfläche & Datenschutz" icon="🎨">
+      {/* ═══════════════ Material & Datenschutz (operational additions) ═══════════════ */}
+      <Section title="Material-Erstellung & Datenschutz" icon="🎨">
         <p style={pStyle}>
           Zwei operative Ergänzungen zur Kern-Pipeline:
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="card" style={{ borderTop: '3px solid #ec4899' }}>
-            <div style={h3Style}>Canvas-Intents & -Formate</div>
+            <div style={h3Style}>Material-Intents & -Formate</div>
             <p style={pStyle}>
               Schicht 5 definiert <strong>18 Material-Typen</strong> (13 didaktisch + 5 analytisch:
               Bericht/Factsheet/Steckbrief/Pressemitteilung/Vergleich).
             </p>
             <div style={{ fontSize: 12 }}>
-              <div><strong>INT-W-11 Canvas-Create</strong> → PAT-21 erzeugt Markdown + <code style={codeStyle}>page_action: canvas_open</code></div>
-              <div style={{ marginTop: 4 }}><strong>INT-W-12 Canvas-Edit</strong> → direkter Handler, verfeinert <code style={codeStyle}>_canvas_last_markdown</code> bei „mach es einfacher" / „Lösungen hinzu"</div>
+              <div><strong>I05 Material-Erstellung</strong> → M10 erzeugt das Material als InlineDocument-Box im Chat-Verlauf</div>
+              <div style={{ marginTop: 4 }}><strong>I06 Material-Bearbeitung</strong> → direkter Handler, verfeinert <code style={codeStyle}>_canvas_last_markdown</code> bei „mach es einfacher" / „Lösungen hinzu"</div>
               <div style={{ marginTop: 4 }}><strong>Type-/Topic-Priorität:</strong> aktueller Turn &gt; Classifier &gt; sticky Session (verhindert Stale-Wins bei Chip-Klicks)</div>
             </div>
           </div>

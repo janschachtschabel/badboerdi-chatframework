@@ -85,5 +85,5 @@ def derive_state_hint(outcomes: list[ToolOutcome]) -> str:
     # Successful results → move to result curation
     successful = [o for o in outcomes if o.status == "success" and o.item_count > 0]
     if successful:
-        return "state-6"  # result curation
+        return "S3"  # result curation
     return ""

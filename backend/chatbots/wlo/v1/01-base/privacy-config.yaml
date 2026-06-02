@@ -6,5 +6,7 @@ logging:
   messages: true
   memory: true
   quality: true
+  # Welle E v4+12 (Sprint K, 2026-05-27): routing-rules / shadow_router
+  # komplett entfernt. ``rules``-Toggle daher obsolet — Eintrag entfernt.
   # safety is hardcoded ON in code — this value is informative only.
   safety: true

@@ -1,0 +1,327 @@
+INFO:     Started server process [36904]
+INFO:     Waiting for application startup.
+14:48:45 WARNING startup: ⚠ STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+14:48:45 INFO app.services.database: DB not empty (rag=906 sessions=106 messages=290) — factory skipped
+14:48:45 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+14:48:45 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
+14:48:45 INFO startup: Config warmup done in 112ms
+INFO:     Application startup complete.
+14:48:45 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+14:48:46 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:48:46 INFO startup: LLM warmup done in 956ms
+C:\Users\jan\miniconda3\Lib\site-packages\torch\cuda\__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+14:48:47 INFO app.services.llm_service: system_prompt[classify] tokens=16055 (was=0, cache-eligible=True)
+14:48:47 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:48:47 INFO app.services.safety_service: safety stages=openai level=standard took 841ms
+14:48:49 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:48:49 INFO app.services.llm_service: system_prompt[response] tokens=6455 (was=0, cache-eligible=True)
+14:48:49 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] → allowed=True
+14:48:51 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:48:51 INFO app.routers.chat: quick_replies.max_count: trimmed 3 → 2
+14:48:51 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Nenne kurz drei Tipps fuers Vokabellernen.'
+14:48:52 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+14:48:55 INFO app.services.rag_service: Reranker warmup done in 9129ms
+14:49:47 INFO app.routers.chat: chat_stream START session=bb-e52a9bfa-0721-4731-814b-96da2a8ec40a msg='Ich suche etwas zu einem Thema.' action=-
+14:49:48 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:49:48 INFO app.services.safety_service: safety stages=openai level=standard took 696ms
+14:49:49 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:49:49 INFO app.services.llm_service: system_prompt[response] tokens=8727 (was=6455, cache-eligible=True)
+14:49:49 INFO app.services.llm_service: rag-prefetch-gate: pattern=Slot-Klärung sources=['mcp'] → allowed=False
+14:49:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:49:52 INFO app.services.guide_qr_injector: guide-rules: 15 message_rules loaded from YAML
+14:49:52 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:49:52 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich suche etwas zu einem Thema.'
+14:49:52 INFO app.routers.chat: chat_stream END session=bb-e52a9bfa-0721-4731-814b-96da2a8ec40a pattern=M03 (Slot-Klärung) tokens=24464/195 cached=15360
+14:49:54 INFO app.routers.chat: chat_stream START session=bb-e52a9bfa-0721-4731-814b-96da2a8ec40a msg='Bruchrechnung' action=-
+14:49:54 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:49:54 INFO app.services.safety_service: safety stages=openai level=standard took 541ms
+14:49:57 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:49:57 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_topic_pages (reasoning=Zuerst Themenseite/Topic-Knoten zu Bruchrechnung ermitteln, um anschließend kura)
+14:49:57 INFO app.routers.chat: speculative primary=search_wlo_topic_pages for intent=I03 hint_pattern=M06 args={'query': 'Bruchrechnung', 'maxResults': 10, 'discipline': 'Mathematik'}
+14:49:57 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik'}
+14:49:57 INFO app.routers.chat: speculative extra=search_wlo_content args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik'}
+14:49:57 INFO app.routers.chat: speculative extra=search_wlo_content args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik'}
+14:49:57 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5}
+14:49:57 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik'}
+14:49:57 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+14:49:57 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik'}
+14:49:57 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+14:49:58 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik'}
+14:49:58 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+14:49:58 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:49:58 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:49:59 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:49:59 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:49:59 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:49:59 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:49:59 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:49:59 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:50:00 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:50:00 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:50:00 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:50:00 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:50:00 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:50:00 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:50:00 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:50:01 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:50:01 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:01 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+14:50:01 INFO app.services.mcp_client: discipline label→URI cache loaded: 190 entries
+14:50:01 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:50:02 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:02 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:02 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+14:50:02 INFO app.services.mcp_client: discipline label→URI cache loaded: 190 entries
+14:50:02 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:50:02 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+14:50:02 INFO app.services.mcp_client: discipline label→URI cache loaded: 190 entries
+14:50:02 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:50:02 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:02 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7235 chars
+14:50:02 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Bruchrechnung', 'maxResults': 10, 'discipline': 'Mathematik'}
+14:50:03 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:03 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7235 chars
+14:50:03 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:03 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 141 chars
+14:50:03 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'maxResults': 20, 'discipline': 'Mathematik'}
+14:50:05 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:05 INFO app.services.mcp_client: MCP tool search_wlo_content returned 14845 chars
+14:50:05 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:05 INFO app.services.mcp_client: MCP tool search_wlo_content returned 14845 chars
+14:50:16 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:50:16 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 8430 chars
+14:50:16 INFO app.routers.chat: topic_pages global-fallback (no title match): returning 5 TP-cards as suggestions for 'Bruchrechnung'
+14:50:16 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_content', 'search_wlo_content']
+14:50:16 INFO app.services.llm_service: system_prompt[response] tokens=7647 (was=8727, cache-eligible=True)
+14:50:16 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] → allowed=False
+14:50:18 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:50:18 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Erst passende Sammlung „Bruchrechnung“, dann eine weitere Sammlung mit Bruchbezug, danach zwei konkrete Video-Einstiege 
+14:50:20 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:50:20 INFO app.routers.chat: groups.themenseiten_max: kept 3, dropped 2
+14:50:20 INFO app.routers.chat: groups.sammlungen_max: kept 3, dropped 2
+14:50:20 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 2
+14:50:20 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:50:20 INFO app.routers.chat: chat_stream END session=bb-e52a9bfa-0721-4731-814b-96da2a8ec40a pattern=M06 (Material-Suche Cascade) tokens=42660/409 cached=28416
+14:52:55 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:52:55 INFO app.services.safety_service: safety stages=openai level=standard took 952ms
+14:52:56 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:52:56 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Erste Suche im WLO-Bestand nach passenden Inhalten zu Bruchrechnung mit Stufenfi)
+14:52:56 INFO app.routers.chat: speculative primary=search_wlo_content for intent=I03 hint_pattern=M05 args={'query': 'Bruchrechnung', 'maxResults': 10, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:52:56 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:52:56 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 10, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:52:56 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:52:56 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:52:57 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:52:57 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:52:57 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:52:57 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:52:57 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+14:52:57 INFO app.services.mcp_client: educationalContext label→URI cache loaded: 48 entries
+14:52:57 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:52:57 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:52:57 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+14:52:57 INFO app.services.mcp_client: educationalContext label→URI cache loaded: 48 entries
+14:52:57 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:52:59 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:52:59 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7235 chars
+14:52:59 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:52:59 INFO app.services.mcp_client: MCP tool search_wlo_content returned 23155 chars
+14:52:59 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections']
+14:52:59 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche gefiltert sources=['mcp'] → allowed=False
+14:53:01 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:01 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+14:53:01 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:01 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars
+14:53:02 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:02 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I', 'maxResults': 4}
+14:53:02 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:53:02 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:53:05 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:05 INFO app.services.mcp_client: MCP tool search_wlo_content returned 10521 chars
+14:53:07 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:07 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Reihenfolge: 3 passende Bruchrechnungs-Videos für Sek I, danach die thematische Sammlung/Übersicht „Bruchrechnung“.
+14:53:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:09 INFO app.routers.chat: groups.sammlungen_max: kept 3, dropped 2
+14:53:09 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 7
+14:53:09 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:53:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:53:09 INFO app.services.safety_service: safety stages=openai level=standard took 561ms
+14:53:11 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:11 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Zuerst nach passenden Video-Inhalten zum Thema Photosynthese im WLO-Bestand such)
+14:53:11 INFO app.routers.chat: speculative primary=search_wlo_content for intent=I03 hint_pattern=M06 args={'query': 'Photosynthese', 'maxResults': 10, 'learningResourceType': 'Video', 'discipline': 'Biologie'}
+14:53:11 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Photosynthese', 'maxResults': 5, 'discipline': 'Biologie'}
+14:53:11 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Photosynthese', 'maxResults': 5, 'discipline': 'Biologie'}
+14:53:11 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Photosynthese', 'maxResults': 10, 'learningResourceType': 'Video', 'discipline': 'Biologie'}
+14:53:11 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+14:53:11 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary cache HIT (11 entries)
+14:53:11 INFO app.services.mcp_client: lrt label→URI cache loaded: 100 entries
+14:53:11 INFO app.services.mcp_client: resolved learningResourceType='Video' → http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/38774279-af36-4ec2-8e70-811d5a51a6a1
+14:53:11 INFO app.services.mcp_client: resolved discipline='Biologie' → http://w3id.org/openeduhub/vocabs/discipline/080
+14:53:12 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Photosynthese', 'maxResults': 5, 'discipline': 'Biologie'}
+14:53:12 INFO app.services.mcp_client: resolved discipline='Biologie' → http://w3id.org/openeduhub/vocabs/discipline/080
+14:53:12 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Photosynthese', 'maxResults': 5, 'discipline': 'Biologie'}
+14:53:12 INFO app.services.mcp_client: resolved discipline='Biologie' → http://w3id.org/openeduhub/vocabs/discipline/080
+14:53:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:13 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 6313 chars
+14:53:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:13 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 6313 chars
+14:53:14 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:14 INFO app.services.mcp_client: MCP tool search_wlo_content returned 10979 chars
+14:53:14 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_collections']
+14:53:14 INFO app.services.llm_service: medientyp='Video' → removed ['search_wlo_collections', 'search_wlo_topic_pages'] from active_tools to force content search
+14:53:14 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] → allowed=False
+14:53:17 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:17 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Videos zur Photosynthese zuerst (2 Treffer), dann ein weiterer thematisch passender Video-Treffer, danach eine passende 
+14:53:18 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:18 INFO app.routers.chat: type-focus card-strip: 9 → 4 (gefiltert: Sammlungen/Themenseiten raus, Typ-Fokus=['video'])
+14:53:18 WARNING app.routers.chat: type-focus text-replace (label=Videos): original='Ich habe Videos zur Photosynthese gefunden, passend für Biologie.' | replaced='Für Videos zu „Photosynthese schau in die Suche unten — dort findest du die gefilterten Treffer.'
+14:53:18 INFO app.routers.chat: type-focus url-filters: lrt=True discipline=True eduCtx=False
+14:53:18 INFO app.routers.chat: type-focus search-url built (lrt_uri=True): https://repository.staging.openeduhub.net/edu-sharing/components/search?q=Photosynthese&filters=%7B%22ccm%3Aoeh_lrt_aggregated%22%3A%5B%22http%3A%2F%2Fw3id.org%2Fopeneduhub%2Fvocabs%2Fnew_lrt_aggregat
+14:53:18 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 1
+14:53:18 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:53:19 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:53:19 INFO app.services.safety_service: safety stages=openai level=standard took 585ms
+14:53:21 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:21 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Zuerst gezielte Content-Suche nach Thema und Medientyp, um passende Arbeitsblätt)
+14:53:21 INFO app.routers.chat: speculative primary=search_wlo_content for intent=I03 hint_pattern=M06 args={'query': 'Mittelalter', 'maxResults': 10, 'learningResourceType': 'Arbeitsblatt', 'discipline': 'Geschichte'}
+14:53:21 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Mittelalter', 'maxResults': 5, 'discipline': 'Geschichte'}
+14:53:21 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Mittelalter', 'maxResults': 5, 'discipline': 'Geschichte'}
+14:53:21 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Mittelalter', 'maxResults': 10, 'learningResourceType': 'Arbeitsblatt', 'discipline': 'Geschichte'}
+14:53:21 INFO app.services.mcp_client: resolved learningResourceType='Arbeitsblatt' → http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45
+14:53:21 INFO app.services.mcp_client: resolved discipline='Geschichte' → http://w3id.org/openeduhub/vocabs/discipline/240
+14:53:21 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Mittelalter', 'maxResults': 5, 'discipline': 'Geschichte'}
+14:53:21 INFO app.services.mcp_client: resolved discipline='Geschichte' → http://w3id.org/openeduhub/vocabs/discipline/240
+14:53:22 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Mittelalter', 'maxResults': 5, 'discipline': 'Geschichte'}
+14:53:22 INFO app.services.mcp_client: resolved discipline='Geschichte' → http://w3id.org/openeduhub/vocabs/discipline/240
+14:53:23 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:23 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 9665 chars
+14:53:23 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:23 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 8588 chars
+14:53:26 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:26 INFO app.services.mcp_client: MCP tool search_wlo_content returned 24544 chars
+14:53:26 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_collections']
+14:53:26 INFO app.services.llm_service: medientyp='Arbeitsblatt' → removed ['search_wlo_collections', 'search_wlo_topic_pages'] from active_tools to force content search
+14:53:26 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] → allowed=False
+14:53:28 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:28 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Arbeitsblatt-Treffer zuerst (passend zu Mittelalter), danach kuratierte Sammlung für Überblick.
+14:53:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:36 INFO app.routers.chat: type-focus card-strip: 19 → 10 (gefiltert: Sammlungen/Themenseiten raus, Typ-Fokus=['arbeitsblatt'])
+14:53:36 WARNING app.routers.chat: type-focus text-replace (label=Arbeitsblätter): original='Ich suche jetzt gezielt nach **Arbeitsblättern zum Mittelalter** und passenden Ergänzungen aus der WLO-Sammlung.' | replaced='Für Arbeitsblätter zu „Mittelalter schau in die Suche unten — dort findest du die gefilterten Treffer.'
+14:53:36 INFO app.routers.chat: type-focus url-filters: lrt=True discipline=True eduCtx=False
+14:53:36 INFO app.routers.chat: type-focus search-url built (lrt_uri=True): https://repository.staging.openeduhub.net/edu-sharing/components/search?q=Mittelalter&filters=%7B%22ccm%3Aoeh_lrt_aggregated%22%3A%5B%22http%3A%2F%2Fw3id.org%2Fopeneduhub%2Fvocabs%2Fnew_lrt_aggregated
+14:53:36 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 7
+14:53:36 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:53:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:53:36 INFO app.services.safety_service: safety stages=openai level=standard took 509ms
+14:53:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:40 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Gezielte Suche nach Inhalten zum Thema mit Stufenfilter (Klasse 9/Sek I) und pas)
+14:53:40 INFO app.routers.chat: speculative primary=search_wlo_content for intent=I03 hint_pattern=M05 args={'query': 'Wahrscheinlichkeitsrechnung', 'maxResults': 10, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:53:40 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Wahrscheinlichkeitsrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:53:41 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Wahrscheinlichkeitsrechnung', 'maxResults': 10, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:53:41 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:53:41 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:53:41 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Wahrscheinlichkeitsrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:53:41 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:53:41 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:53:42 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:42 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 2839 chars
+14:53:44 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:44 INFO app.services.mcp_client: MCP tool search_wlo_content returned 25215 chars
+14:53:44 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections']
+14:53:44 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche gefiltert sources=['mcp'] → allowed=False
+14:53:46 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:46 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:53:46 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary cache HIT (17 entries)
+14:53:47 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:47 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Wahrscheinlichkeitsrechnung', 'maxResults': 4, 'discipline': 'Mathematik', 'educationalContext': 'http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1'}
+14:53:47 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:53:49 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:53:49 INFO app.services.mcp_client: MCP tool search_wlo_content returned 10963 chars
+14:53:51 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:51 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Reihenfolge: passende Sek-I-Stochastik-Videos zuerst, dann weitere Wahrscheinlichkeitsrechnung-Videos, danach eine thema
+14:53:53 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:53 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 7
+14:53:53 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:53:54 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:53:54 INFO app.services.safety_service: safety stages=openai level=standard took 546ms
+14:53:55 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:55 INFO app.services.llm_service: system_prompt[response] tokens=6449 (was=7647, cache-eligible=True)
+14:53:55 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] → allowed=True
+14:53:57 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:53:57 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist die Hauptstadt von Frankreich? Kurz.'
+14:54:27 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:54:27 INFO app.services.safety_service: safety stages=openai level=standard took 580ms
+14:54:30 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:54:30 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Erste Suche im WLO-Content-Bestand nach Geometrie für Sekundarstufe I, um passen)
+14:54:30 INFO app.routers.chat: speculative primary=search_wlo_content for intent=I03 hint_pattern=M06 args={'query': 'Geometrie', 'maxResults': 10, 'discipline': 'Geometrie', 'educationalContext': 'Sekundarstufe I'}
+14:54:30 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Geometrie', 'maxResults': 5, 'discipline': 'Geometrie', 'educationalContext': 'Sekundarstufe I'}
+14:54:30 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Geometrie', 'maxResults': 10, 'discipline': 'Geometrie', 'educationalContext': 'Sekundarstufe I'}
+14:54:30 INFO app.services.mcp_client: resolved discipline='Geometrie' via fuzzy 'geo' → http://w3id.org/openeduhub/vocabs/discipline/220
+14:54:30 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:54:30 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Geometrie', 'maxResults': 5, 'discipline': 'Geometrie', 'educationalContext': 'Sekundarstufe I'}
+14:54:30 INFO app.services.mcp_client: resolved discipline='Geometrie' via fuzzy 'geo' → http://w3id.org/openeduhub/vocabs/discipline/220
+14:54:30 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:54:31 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:54:31 INFO app.services.mcp_client: MCP tool search_wlo_content returned 1487 chars
+14:54:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:54:32 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7335 chars
+14:54:32 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections']
+14:54:32 INFO app.services.llm_service: system_prompt[response] tokens=7649 (was=6449, cache-eligible=True)
+14:54:32 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] → allowed=False
+14:54:33 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:54:33 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Geometrie', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:54:33 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:54:33 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:54:34 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:54:34 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7335 chars
+14:54:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:54:36 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Geometrie-Suche: zuerst passende Sek-I-Sammlungen (räumliche Geometrie, Kugel), dann eine weitere Figuren-Sammlung (Prim
+14:54:38 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:54:38 INFO app.routers.chat: off-topic-filter: 6 → 5 cards (signal-tokens=['finde', 'fuer', 'geometrie', 'klasse', 'material'], dropped=['Fläche'])
+14:54:38 INFO app.routers.chat: groups.sammlungen_max: kept 3, dropped 2
+14:54:38 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:55:26 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:55:26 INFO app.services.safety_service: safety stages=openai level=standard took 1057ms
+14:55:28 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:55:28 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Zuerst nach passenden Video-Inhalten zum Thema Vulkanismus im WLO-Bestand suchen)
+14:55:28 INFO app.routers.chat: speculative primary=search_wlo_content for intent=I03 hint_pattern=M06 args={'query': 'Vulkanismus', 'maxResults': 10, 'learningResourceType': 'Video', 'discipline': 'Geographie'}
+14:55:28 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Vulkanismus', 'maxResults': 5, 'discipline': 'Geographie'}
+14:55:28 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Vulkanismus', 'maxResults': 5, 'discipline': 'Geographie'}
+14:55:28 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Vulkanismus', 'maxResults': 10, 'learningResourceType': 'Video', 'discipline': 'Geographie'}
+14:55:28 INFO app.services.mcp_client: resolved learningResourceType='Video' → http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/38774279-af36-4ec2-8e70-811d5a51a6a1
+14:55:28 INFO app.services.mcp_client: resolved discipline='Geographie' → http://w3id.org/openeduhub/vocabs/discipline/220
+14:55:29 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Vulkanismus', 'maxResults': 5, 'discipline': 'Geographie'}
+14:55:29 INFO app.services.mcp_client: resolved discipline='Geographie' → http://w3id.org/openeduhub/vocabs/discipline/220
+14:55:29 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Vulkanismus', 'maxResults': 5, 'discipline': 'Geographie'}
+14:55:29 INFO app.services.mcp_client: resolved discipline='Geographie' → http://w3id.org/openeduhub/vocabs/discipline/220
+14:55:30 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:55:30 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 1482 chars
+14:55:30 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:55:30 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 1482 chars
+14:55:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:55:32 INFO app.services.mcp_client: MCP tool search_wlo_content returned 22914 chars
+14:55:32 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_collections']
+14:55:32 INFO app.services.llm_service: medientyp='Video' → removed ['search_wlo_collections', 'search_wlo_topic_pages'] from active_tools to force content search
+14:55:32 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] → allowed=False
+14:55:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:55:35 INFO app.services.mcp_client: MCP tool get_node_details args: {'nodeId': '662547fb-9496-4fe5-87a6-17b09deace3f'}
+14:55:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:55:36 INFO app.services.mcp_client: MCP tool get_node_details returned 1386 chars
+14:55:36 WARNING app.services.mcp_client: parse_wlo_cards: JSON did not match v2 envelope shape
+14:55:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:55:37 INFO app.services.llm_service: select_top_cards: 3 IDs picked — Erste zwei sind passende Videos zum Thema Vulkanismus; die Sammlung ergänzt als Überblick über weitere Materialien.
+14:55:39 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:55:39 INFO app.routers.chat: type-focus card-strip: 11 → 10 (gefiltert: Sammlungen/Themenseiten raus, Typ-Fokus=['video'])
+14:55:39 WARNING app.routers.chat: type-focus text-replace (label=Videos): original='Ich habe dir Lernvideos und eine passende Material-Sammlung zum Thema Vulkanismus zusammengestellt.' | replaced='Für Videos zu „Vulkanismus schau in die Suche unten — dort findest du die gefilterten Treffer.'
+14:55:39 INFO app.routers.chat: type-focus url-filters: lrt=True discipline=True eduCtx=False
+14:55:39 INFO app.routers.chat: type-focus search-url built (lrt_uri=True): https://repository.staging.openeduhub.net/edu-sharing/components/search?q=Vulkanismus&filters=%7B%22ccm%3Aoeh_lrt_aggregated%22%3A%5B%22http%3A%2F%2Fw3id.org%2Fopeneduhub%2Fvocabs%2Fnew_lrt_aggregated
+14:55:39 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 7
+14:55:39 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+15:11:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+15:11:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+15:11:14 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+16:46:09 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+16:46:10 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+16:46:10 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"

@@ -1,0 +1,84 @@
+INFO:     Started server process [18772]
+INFO:     Waiting for application startup.
+14:36:56 WARNING startup: ⚠ STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+14:36:57 INFO app.services.database: DB not empty (rag=906 sessions=97 messages=272) — factory skipped
+14:36:57 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+14:36:57 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
+14:36:57 INFO startup: Config warmup done in 241ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+14:36:57 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
+14:36:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:36:58 INFO startup: LLM warmup done in 1227ms
+C:\Users\jan\miniconda3\Lib\site-packages\torch\cuda\__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+14:37:07 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+14:37:10 INFO app.services.rag_service: Reranker warmup done in 12969ms
+14:38:02 INFO app.services.llm_service: system_prompt[classify] tokens=16055 (was=0, cache-eligible=True)
+14:38:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:38:04 INFO app.services.safety_service: safety stages=openai level=standard took 1627ms
+14:38:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:38:05 INFO app.services.llm_service: system_prompt[response] tokens=6463 (was=0, cache-eligible=True)
+14:38:05 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] → allowed=True
+14:38:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:38:06 INFO app.routers.chat: quick_replies.max_count: trimmed 3 → 2
+14:38:06 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist Photosynthese? Antworte kurz.'
+C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'WLO', 'url': '...rlernenonline.de/home/'}, input_type=dict])
+  return self.serializer.to_json(
+14:38:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:38:08 INFO app.services.safety_service: safety stages=openai level=standard took 1229ms
+14:38:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:38:08 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Primär ist eine Inhalts-Suche nach vorhandenen WLO-Materialien mit Thema und Stu)
+14:38:08 INFO app.routers.chat: speculative primary=search_wlo_content for intent=I03 hint_pattern=M05 args={'query': 'Bruchrechnung', 'maxResults': 10, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:38:08 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:38:09 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 10, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:38:09 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+14:38:09 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+14:38:09 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+14:38:10 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:38:10 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:38:11 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:38:11 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:38:11 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:38:11 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:38:11 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:38:11 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:38:12 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:38:12 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+14:38:12 INFO app.services.mcp_client: discipline label→URI cache loaded: 190 entries
+14:38:12 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:38:12 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:38:12 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:38:12 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+14:38:12 INFO app.services.mcp_client: discipline label→URI cache loaded: 190 entries
+14:38:12 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:38:12 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:38:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:38:13 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+14:38:13 INFO app.services.mcp_client: educationalContext label→URI cache loaded: 48 entries
+14:38:13 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:38:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:38:13 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+14:38:13 INFO app.services.mcp_client: educationalContext label→URI cache loaded: 48 entries
+14:38:13 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:38:14 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:38:14 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7235 chars
+14:38:18 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:38:18 INFO app.services.mcp_client: MCP tool search_wlo_content returned 23155 chars
+14:38:18 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections']
+14:38:18 INFO app.services.llm_service: system_prompt[response] tokens=7496 (was=6463, cache-eligible=True)
+14:38:18 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche gefiltert sources=['mcp'] → allowed=False
+14:38:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:38:19 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I', 'maxResults': 4}
+14:38:19 INFO app.services.mcp_client: resolved discipline='Mathematik' → http://w3id.org/openeduhub/vocabs/discipline/380
+14:38:19 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' → http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+14:38:22 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:38:22 INFO app.services.mcp_client: MCP tool search_wlo_content returned 10521 chars
+14:38:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:38:25 INFO app.routers.chat: groups.sammlungen_max: kept 3, dropped 2
+14:38:25 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 7
+14:38:25 INFO app.routers.chat: quick_replies.max_count: trimmed 4 → 2
+14:39:53 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:39:53 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:39:54 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"

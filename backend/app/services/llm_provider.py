@@ -61,7 +61,7 @@ b-api-openai
     chat   = gpt-4.1-mini
     embed  = text-embedding-3-small
 b-api-academiccloud
-    chat   = Qwen/Qwen3.5-122B-A10B-GPTQ-Int4
+    chat   = mistral-large-3-675b-instruct-2512
     embed  = e5-mistral-7b-instruct
 """
 
@@ -134,16 +134,23 @@ _PROVIDER_DEFAULTS = {
         "embed": "text-embedding-3-small",
     },
     "b-api-openai": {
-        # B-API proxy does not yet forward GPT-5-only parameters → keep the
-        # classic GPT-4.1-mini default there.
-        "chat": "gpt-4.1-mini",
+        # Welle E v4+13 (2026-05-27): Die erweiterte B-API leitet jetzt die
+        # GPT-5-Familie inkl. ``verbosity``/``reasoning_effort`` auf
+        # ``/chat/completions`` durch (getestet gegen b-api.staging). Default
+        # daher auf gpt-5.4-mini gehoben — analog zur nativen OpenAI-Anbindung.
+        "chat": "gpt-5.4-mini",
         "embed": "text-embedding-3-small",
     },
     "b-api-academiccloud": {
-        # Default Qwen 3.5 model on the OEH B-API → AcademicCloud
-        # endpoint. Name as published by the upstream model registry
-        # (lowercase, no quantisation suffix). Probed 2026-04-27.
-        "chat": "qwen3.5-122b-a10b",
+        # Default chat model on the OEH B-API → AcademicCloud endpoint.
+        # mistral-large-3 is a DIRECT (non-reasoning) model: fastest of the
+        # tested AcademicCloud models on b-api.staging (~0.6 s for a short
+        # answer, 2026-06-01) and — crucially — it emits NO hidden reasoning
+        # tokens that eat the output budget. The qwen3.5 reasoning family in
+        # contrast returned EMPTY answers (finish=length, 0 visible chars)
+        # for short prompts because the whole token budget was spent on
+        # silent reasoning. Name as published by the upstream registry.
+        "chat": "mistral-large-3-675b-instruct-2512",
         "embed": "e5-mistral-7b-instruct",
     },
 }
@@ -312,32 +319,51 @@ def reset_client_cache() -> None:
 
 @lru_cache(maxsize=1)
 def get_moderation_client() -> AsyncOpenAI | None:
-    """Native-OpenAI client for the free /v1/moderations endpoint.
+    """Client for the /v1/moderations endpoint (omni-moderation-latest).
 
-    Returns:
-      - on ``LLM_PROVIDER=openai``: same instance as ``get_client()``
-        (avoids two separate connection pools when the chat client
-        already points at api.openai.com).
-      - on ``LLM_PROVIDER=b-api-*`` *and* ``OPENAI_API_KEY`` set:
-        a fresh native-OpenAI client using OPENAI_API_KEY +
-        OPENAI_BASE_URL (or SDK default). Lets B-API operators still
-        run the safety floor.
-      - ``None`` when no usable OpenAI key is available — callers
-        should treat that as "skip moderation" (the regex-based
-        safety floor remains).
+    Welle E v4+13 (2026-05-27): Moderation läuft jetzt — wo möglich — über
+    DENSELBEN Provider wie der Chat, statt zwingend über einen nativen
+    OpenAI-Seitenkanal:
+
+      - ``LLM_PROVIDER=openai``: dieselbe Instanz wie ``get_client()``
+        (kein zweiter Connection-Pool — Chat zeigt schon auf api.openai.com).
+      - ``LLM_PROVIDER=b-api-openai``: der **B-API-Client**. Die erweiterte
+        B-API leitet ``/moderations`` durch (verifiziert auf b-api.staging).
+        Falls die Erweiterung auf einem Ziel noch fehlt (z.B. b-api.prod →
+        401), degradiert ``safety_service`` per try/except sauber auf den
+        Regex-Safety-Floor.
+      - ``LLM_PROVIDER=b-api-academiccloud``: AcademicCloud (GWDG) hat keinen
+        Moderations-Endpunkt → nativer OpenAI-Seitenkanal, falls
+        ``OPENAI_API_KEY`` gesetzt; sonst ``None`` (Regex-Floor).
+      - ``None`` = "Moderation überspringen" (Regex-Floor bleibt).
     """
-    # Native: just reuse the chat client, same provider, same pool.
-    if get_provider() == "openai":
+    provider = get_provider()
+
+    # Native: reuse the chat client, same provider, same pool.
+    if provider == "openai":
         api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
         return get_client() if api_key else None
 
-    # B-API path: only build a moderation client if the operator has
-    # explicitly opted in by providing an OpenAI key.
+    # B-API → OpenAI: Moderation über die B-API (Passthrough zu OpenAI).
+    if provider == "b-api-openai":
+        b_key = (os.getenv("B_API_KEY") or "").strip()
+        if b_key:
+            return get_client()
+        # Kein B-API-Key, aber evtl. nativer OpenAI-Key als Notnagel.
+        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        if not api_key:
+            return None
+        base = (
+            (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
+            or "https://api.openai.com/v1"
+        )
+        return AsyncOpenAI(api_key=api_key, base_url=base)
+
+    # B-API → AcademicCloud: kein Moderations-Endpunkt upstream → nativer
+    # OpenAI-Seitenkanal, falls ein Key vorhanden ist.
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
         return None
-    # Empty OPENAI_BASE_URL must not reach the SDK — see comment in
-    # get_client() above.
     base = (
         (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
         or "https://api.openai.com/v1"
@@ -348,6 +374,48 @@ def get_moderation_client() -> AsyncOpenAI | None:
 def has_moderation() -> bool:
     """True iff a usable OpenAI moderation client can be built."""
     return get_moderation_client() is not None
+
+
+# ── Speech (STT/TTS) availability gate ───────────────────────────────
+#
+# Welle E v4+13 (2026-05-27): Die B-API-Audio-Endpunkte (/audio/speech,
+# /audio/transcriptions) sind defekt — der Spring/Kotlin-Proxy reicht weder
+# binäre Audio-Responses (TTS → 406/500) noch multipart/form-data-Requests
+# (STT → 415) durch (siehe docs/b-api-audio-bug-report.md). Solange das nicht
+# gefixt ist, deaktivieren wir die Sprachfunktion bei B-API-Nutzung KOMPLETT
+# — bewusst auch dann, wenn ein nativer OPENAI_API_KEY vorhanden wäre. So ist
+# das Verhalten deterministisch an den Provider gekoppelt; sobald die B-API
+# repariert ist, fällt dieser Gate weg und Speech läuft wieder.
+
+def speech_enabled() -> bool:
+    """Whether STT/TTS endpoints are available for the active provider.
+
+    * ``LLM_PROVIDER=openai`` → True, sofern ein OpenAI-Key vorhanden ist
+      (Speech spricht direkt mit api.openai.com).
+    * ``LLM_PROVIDER=b-api-*`` → **False** (Audio-Passthrough defekt; siehe
+      Bug-Report). Bewusster Hard-Gate bis zum B-API-Fix.
+
+    Override: ``SPEECH_FORCE_ENABLE=1`` erzwingt True (Debug/Übergang, falls
+    der B-API-Audio-Fix da ist, bevor der Code-Gate entfernt wird).
+    """
+    if (os.getenv("SPEECH_FORCE_ENABLE") or "").strip() in ("1", "true", "True"):
+        return True
+    provider = get_provider()
+    if provider != "openai":
+        return False
+    return bool((os.getenv("OPENAI_API_KEY") or "").strip())
+
+
+def speech_disabled_reason() -> str:
+    """Kurzbegründung für die UI/API, wenn Speech aus ist (sonst leer)."""
+    if speech_enabled():
+        return ""
+    if get_provider() != "openai":
+        return (
+            "Sprachfunktion bei B-API-Anbindung vorübergehend deaktiviert "
+            "(Audio-Endpunkte werden noch nicht durchgeleitet)."
+        )
+    return "Sprachfunktion nicht verfügbar (kein OpenAI-Key konfiguriert)."
 
 
 # ── Embedding-Client side-channel ────────────────────────────────────
@@ -429,14 +497,19 @@ def is_gpt5_model(model: str | None = None) -> bool:
 
 
 def supports_gpt5_params(model: str | None = None) -> bool:
-    """The new parameters only travel over the native OpenAI endpoint.
+    """Whether to send GPT-5 params (``verbosity``/``reasoning_effort``).
 
-    The B-API proxy (``b-api-openai`` / ``b-api-academiccloud``) does not yet
-    forward ``verbosity`` or ``reasoning_effort`` — sending them there either
-    fails the request or is silently ignored. We gate the parameters behind
-    both the model family and the provider.
+    Welle E v4+13 (2026-05-27): Die erweiterte B-API leitet die GPT-5-Familie
+    inkl. dieser Parameter auf ``/chat/completions`` durch — verifiziert gegen
+    b-api.staging.openeduhub.net (verbosity, reasoning_effort, beide, auch mit
+    Tools). Daher sind die Parameter jetzt für BEIDE OpenAI-Backends frei:
+    native ``openai`` UND ``b-api-openai``.
+
+    ``b-api-academiccloud`` bleibt ausgenommen: dort laufen Qwen/GLM/Mistral-
+    Modelle ohne GPT-5-Kontrakt (das ``is_gpt5_model``-Gate würde sie zwar
+    ohnehin nicht treffen, aber wir schließen den Provider explizit aus).
     """
-    return is_openai_native() and is_gpt5_model(model)
+    return is_gpt5_model(model) and get_provider() in ("openai", "b-api-openai")
 
 
 def get_verbosity() -> str:

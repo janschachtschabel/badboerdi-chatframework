@@ -7,13 +7,15 @@ device_max_items:
   mobile: 4
 
 # Persona-Ansprache (du/Sie/neutral)
+# Fallback wenn Persona-MD `formality: wie_user` setzt — gilt initial
+# bevor der User selbst eine Anrede-Form gewählt hat.
+# 2026-05-25 (eval-c4c0): Duplikate P-RED:du und 3× P-ENT entfernt —
+# durch das aiosqlite-/YAML-Merging hat die letzte Definition gewonnen,
+# was P-RED fälschlich auf "du" gesetzt hat (P-RED soll siezen).
 persona_formality:
-  P-W-LK: Sie
-  P-W-SL: du
-  P-W-POL: Sie
-  P-W-PRESSE: Sie
-  P-W-RED: du
-  P-BER: Sie
-  P-VER: Sie
+  P-LEH: Sie
+  P-LER: du
+  P-ENT: Sie
+  P-RED: Sie
   P-ELT: Sie
   P-AND: neutral

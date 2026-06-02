@@ -1,69 +1,383 @@
-# Intent-Definitionen
-# Jeder Intent hat eine ID, ein Label und eine Beschreibung.
-# Diese werden für die LLM-Klassifikation und im Studio verwendet.
+# ─────────────────────────────────────────────────────────────────────
+# Intent-Definitionen — Welle E (2026-05-25)
+#
+# SCHEMA pro Intent:
+#   id:                Pflicht. Stabiler Identifier.
+#   label:             Pflicht. Anzeigename (Studio + Logs).
+#   description:       1–2 Sätze. WAS deckt der Intent ab.
+#
+#   examples:          3–6 positive Mustersätze (Gold-Set).
+#                      Werden 1:1 im Klassifizier-Prompt aufgelistet UND
+#                      vom Evaluator als Test-Set genutzt.
+#
+#   trigger_verbs:     (optional) Verben/Phrasen, die diesen Intent stark
+#                      anziehen. Reine Hinweise an den Klassifikator.
+#
+#   negative_triggers: (optional) Phrasen, die den Intent AUSSCHLIESSEN,
+#                      plus wohin sie statt dieses Intents routen.
+#                        phrase:      Pipe-separierte Alternativen oder
+#                                     Regex-Fragment.
+#                        redirect_to: andere Intent-ID.
+#                        rationale:   1 Satz, warum die Umleitung.
+#                        when:        (optional) Bedingung, z. B.
+#                                     "canvas_state.mode == 'material'".
+#
+#   discriminators:    (optional) Cross-Intent-Disambig gegen den häufig-
+#                      verwechselten Nachbarn.
+#                        vs:          andere Intent-ID.
+#                        rule:        Faustregel, 1 Satz.
+#                        example_a:   Beispielsatz → dieser Intent.
+#                        example_b:   Beispielsatz → vs-Intent.
+#
+# Alles unterhalb `description` ist optional. Wenn Felder fehlen, fällt
+# der Prompt-Builder auf den Default-Renderer zurück (id + label + desc
+# + examples). Disambig läuft sonst über die `description` allein.
+# ─────────────────────────────────────────────────────────────────────
 
 intents:
-  - id: INT-W-01
-    label: WLO kennenlernen
-    description: "Nutzer:in begegnet WLO ZUM ERSTEN MAL und will einen ÜBERBLICK was die Plattform für ihn LEISTEN kann (Handlungs-Orientierung, nicht Faktenfrage). Typische Trigger: 'Was kann ich hier?', 'Worum geht es auf dieser Seite?', 'Stell dich vor', 'Was kannst du?', 'Wie funktioniert das hier?', 'Wofür ist diese Plattform?', 'Hilf mir loszulegen'. **KRITISCHE ABGRENZUNG (Welle C Sprint 6)**: 'Was ist WLO?' / 'Was ist WirLernenOnline?' als reine DEFINITION-Frage ohne Handlungs-Bezug -> INT-W-06 (Faktenfragen), NICHT INT-W-01. Denn dort erwartet der User eine knappe Erklärung 'WLO ist eine offene Bildungsplattform für ...', keine Einstiegs-Optionen-Liste. INT-W-01 greift erst, wenn der User aktiv NACH HANDLUNGSMÖGLICHKEITEN fragt ('was kann ich machen?'), nicht nach einer bloßen Definition. Konkrete Detail-Fragen über WLO-Konzepte (was ist eine Themenseite, was ist OER, wie funktioniert Schule.cloud-Anbindung) gehen ebenfalls nach INT-W-06."
 
-  - id: INT-W-02
-    label: Erst-Orientierung ohne Anliegen
-    description: "Nutzer:in schaut sich nur um und hat KEIN konkretes Anliegen — keinerlei Material-, Fach- oder Themen-Anker in der Nachricht. Reine Plattform-Erkundung VOR der eigentlichen Entscheidung. Typische Trigger (nur diese, KEIN Anker daneben): 'Was kann ich hier?', 'Ich schau mal', 'Erstmal umsehen', 'Was gibt es?', 'Ich orientiere mich gerade', 'Ich überleg noch was', 'Ich bin neu hier'. **GANZ HARTE NEGATIVE LISTE — wenn auch nur EINES der folgenden Wörter in der Nachricht steht, ist es NIE INT-W-02:** Fach (Mathe/Mathematik/Biologie/Chemie/Physik/Deutsch/Geschichte/...), Thema (Bruchrechnen/Klimawandel/Photosynthese/...), Material-Wort (Material/Arbeitsblatt/Quiz/Video/Übung/Aufgabe/Lernpfad/Stundenentwurf/Themenseite/Sammlung/Infoblatt/Pressekit/Bericht/Lizenz), Such-Verb (suche/finde/zeig/zeige/such/zeigst/hast du), Erstell-Verb (erstelle/generiere/mach mir/bau/schreib), Download-Verb (herunterladen/runterladen/PDF/Download/Link/schicken/zusenden), Bewertungs-Verb (bewerten/prüfen/evaluieren/ist das gut). 'Ich bin neu hier, was gibt's denn für Unterrichtsmaterial?' = INT-W-03 (Material-Wort 'Unterrichtsmaterial'!), NICHT INT-W-02. 'Ich bin neu hier, kannst du mir was erstellen?' = INT-W-11 (Erstell-Verb). 'Was kann ich hier alles entdecken, gerade zur Bildungspolitik?' = INT-W-06 oder INT-W-13 (Thema 'Bildungspolitik'). **INT-W-02 ist ein extrem schmaler Bucket — er greift NUR bei pur generischen 'Was geht hier'-Anfragen ohne IRGENDEINEN inhaltlichen Anker. Im Zweifel den konkreteren Intent wählen.** Signal: orientierungssuchend, neugierig. State: meist state-1. Pattern: PAT-20 (Orientierungs-Guide) ohne MCP-Tools."
-
-  # Welle C Sprint 4 (2026-05-15): Konsolidiert aus INT-W-03 (Themenseite)
-  # + INT-W-03 (Unterrichtsmaterial) + INT-W-03 (Lerninhalt). Drei
-  # Intents mit semantisch ähnlicher Aktion ("WLO-Inhalte abrufen"), die
-  # sich nur in Sub-Typ + Persona unterschieden — Disambig läuft jetzt
-  # über Pattern-Wahl (Anker im Text + Persona), nicht über Intent.
-  - id: INT-W-03
-    label: Inhalte abrufen
-    description: "Nutzer:in will WLO-Inhalte abrufen — egal welcher Inhaltstyp (Themenseite, Sammlung, Fachportal, Einzelinhalt) und egal mit welchem Lern-/Beruf-Zweck. Universeller Such-/Browse-Intent über alle drei Inhaltsschichten von WLO. **TECHNISCHE INHALTSSCHICHTEN** (Pattern entscheidet welche aktiviert wird): (1) Themenseiten = kuratierte Schaufenster für Sammlungen (search_wlo_topic_pages). (2) Sammlungen = thematisch gruppierte Material-Container, Fachportale sind Top-Level-Sammlungen (search_wlo_collections). (3) Einzelinhalte = einzelne Materialien wie Videos/Arbeitsblätter/Übungen (search_wlo_content). **Typische Trigger** (alle gehören zu INT-W-03): 'Themenseite/Hauptseite zu X', 'Sammlung zu Y', 'Material/Arbeitsblatt/Video zu Z', 'ich brauche was zu W', 'zeig mir Inhalte zu V', 'such mir was zu U', 'ich verstehe X nicht — gibt's ein Video?', 'mein Kind hat Probleme mit Bruchrechnung', 'Erklärung Schritt für Schritt zu Y', 'Hast du was zur Vorbereitung von Z?'. **PATTERN-AUSWAHL** (deterministisch über Anker-Wörter + Persona): (a) 'Themenseite/Hauptseite/Fachseite/Sammlung zu KONKRETEM Thema' → **PAT-28** (search_wlo_topic_pages). (b) Schüler/Eltern mit Selbst-Lern-Anker ('verstehe nicht', 'Schritt für Schritt', 'für mein Kind/meine Hausaufgaben') → **PAT-14** (Lerner-Empfehlung). (c) Profi-Persona (Redaktion/Presse/Politik/Beratung) + Thema → **PAT-09** (Recherche). (d) Lehrkraft + thema, kein Lernpfad-Wunsch → **PAT-07** (Ergebnis-Kuratierung) oder **PAT-05** (Profi-Filter). (e) Vage Anfrage ohne thema/fach → **PAT-20** (Orientierung). **KRITISCHE ABGRENZUNG**: (1) NICHT INT-W-11 (Inhalt erstellen) — das wäre 'erstelle / generiere / mach mir' für NEU GENERIERTES Material. (3) NICHT INT-W-10 (Unterrichtsplanung) — das wäre eine MEHRSTUFIGE Stunde/Reihe/Lernpfad. (4) NICHT INT-W-13 (Fachportal-Plural) — das wäre 'ALLE Fächer/Fachportale' (Plural). (5) NICHT INT-W-14 (Drilldown) — das wäre 'Unterthemen UNTER X / Bereiche IN X' (in eine bekannte Sammlung tiefer). (6) NICHT INT-W-06 (Faktenfrage) — das wäre 'Was IST/BEDEUTET X' ohne Lernmaterial-Wunsch. Faustregel: User will Inhalte ABRUFEN (Material, Themenseiten, Sammlungen, irgendetwas zum Anschauen/Lesen/Lernen) = INT-W-03. Pattern-Engine + Anker-Rules entscheiden welcher Pattern aktiv wird."
-
-  - id: INT-W-04
-    label: Feedback
-    description: "Nutzer:in gibt RÜCKMELDUNG (positiv oder negativ) zum Bot, zur Antwort, zur UX oder zur Plattform — KEINE Inhalts-Anfrage, sondern eine Bewertung/Anmerkung. Typische Trigger: 'Das war hilfreich', 'Das hat nicht geklappt', 'Tipps fand ich gut', 'Das ist verwirrend', 'Du hast nicht verstanden was ich meinte', 'Funktioniert nicht', 'Schade dass...', 'Danke'. **KRITISCHE ABGRENZUNG**: NICHT INT-W-05 (Routing Redaktion) — das wäre 'Bitte an Redaktion weiterleiten' / 'Fehler im Inhalt'. NICHT INT-W-08 (Inhalte evaluieren) — das wäre 'Wie gut ist DAS Material?'. INT-W-04 ist immer eine Aussage über die Interaktion/Plattform/UX selbst. Reagiere bestätigend + Frage nach mehr Detail wenn negativ."
-
-  - id: INT-W-05
-    label: Routing Redaktion
-    description: "Nutzer:in MELDET einen INHALTLICHEN Fehler/eine Lücke, bittet um Weiterleitung an die Redaktion, ODER **will eigenes Material/eine externe Quelle bei WLO einreichen/vorschlagen**. **Zwei Spielarten (beide INT-W-05)**: (a) FEHLER/LÜCKE: 'an die Redaktion weiterleiten', 'an Redaktion melden', 'Ich habe einen Fehler gefunden', 'Hier ist was falsch', 'Da stimmt was nicht', 'Es fehlen Materialien zu X', 'Könnt ihr ergänzen?', 'Wo melde ich Bug?'. (b) INHALT EINREICHEN/VORSCHLAGEN: 'Ich habe ein gutes Video gefunden', 'Ich möchte ein Material vorschlagen', 'Wo kann ich eine Quelle einreichen?', 'Ich habe ein OER, das ich euch zukommen lassen will', 'Wie kann ich Inhalte hochladen?', 'Material/Link/Arbeitsblatt empfehlen/einreichen/teilen'. Pattern PAT-23 unterscheidet beide Spielarten und routet im Vorschlag-Fall direkt auf das Einreich-Formular ``https://wp-test.wirlernenonline.de/mitmachen/inhalt-vorschlagen/?type=quelle#esform`` (deterministischer Guide-QR via ``guide_qr_injector``). **KRITISCHE ABGRENZUNG**: NICHT INT-W-04 (Feedback) — das wäre 'Bot/UX hat nicht funktioniert'. NICHT INT-W-11 (Inhalt erstellen) — das wäre 'erstelle/generiere/mach mir ein Arbeitsblatt' für NEU GENERIERTES KI-Material; INT-W-05 ist EXTERN VORHANDENES Material einreichen. INT-W-05 ist immer ein KONKRETER FEHLER/WUNSCH zu KONTENT der weitergeleitet/dokumentiert/eingereicht werden soll. Faustregel: 'Fehler/Lücke/einreichen/vorschlagen/weiterleiten' im Trigger = INT-W-05."
-
-  - id: INT-W-06
-    label: Faktenfragen
-    description: "Nutzer:in fragt nach einer KONKRETEN, KURZ beantwortbaren FAKTISCHEN Auskunft (Definition, Zahl, Datum, Eigenschaft, Lizenz, Beziehung zwischen Begriffen) OHNE Verstehen-Defizit. Typische Trigger: 'Was ist X?', 'Was ist WLO/WirLernenOnline?', 'Was ist eine Themenseite?', 'Was ist OER?', 'Was bedeutet [Begriff]?', 'Wie groß/viele/lang ist Y?', 'Wer hat X erfunden?', 'Was bedeutet die Lizenz CC BY?', 'Was ist der Unterschied zwischen Themenseite und Sammlung?', 'Wie heißt der Anbieter von X?'. **NEU Welle C Sprint 6**: Plattform-Definitions-Fragen wie 'Was ist WLO?' sind INT-W-06 (Faktenfragen), NICHT INT-W-01 — der User will eine knappe Antwort, keine Handlungs-Optionen-Liste. INT-W-01 greift erst bei 'Was kann ich hier machen?'-Fragen mit Handlungs-Bezug. **HARTE NEGATIV-REGEL gegen INT-W-03**: Sobald die Nachricht ein VERSTEHEN-DEFIZIT-Verb enthält ('verstehe nicht', 'check ich nicht', 'kapiere ich nicht', 'kommt nicht an', 'rafft nicht', 'ist mir unklar', 'mein Kind versteht nicht') ODER um eine Schritt-für-Schritt-/Erklär-/Lerngabe bittet ('Schritt für Schritt', 'einfach erklärt', 'mit Beispielen', 'so dass ich es verstehe') → IMMER INT-W-03, NIEMALS INT-W-06. Beispiel: 'Ich verstehe Mathe nicht, kannst du das mit Bruchrechnung Schritt für Schritt erklären?' = INT-W-03 (zwei Defizit-/Lerntrigger), NIE INT-W-06. **KRITISCHE ABGRENZUNG**: NICHT INT-W-01 (WLO kennenlernen) — das ist nur 'Was ist WLO/WirLernenOnline?' als Erst-Begegnungs-Frage. NICHT INT-W-09 (Analyse & Reporting) — das sind Stat-Berichte, Dashboard-Ausgaben, größere Zahlen-Aggregate ('Wie viele OER hat WLO insgesamt?', 'Reichweite-Statistik'). NICHT INT-W-03 (Lerninhalt) — siehe oben (Defizit-/Lerntrigger). Faustregel: Wenn der User eine FAKTISCHE Antwort in 1-3 Sätzen erwartet OHNE Lern-Kontext → INT-W-06. Wenn der User EXPLIZIT signalisiert 'ich verstehe es nicht / erklär mir Schritt für Schritt / mein Kind kapiert es nicht' und LERN-RESSOURCEN braucht → INT-W-03. Faktenfragen sind atomar (eine konkrete Frage, kurze Antwort), Analysen sind aggregiert (Berichte, Verläufe, Vergleiche). Bei Faktenfragen über die Plattform-Konzepte (was ist eine Themenseite, was bedeutet OER, wie funktioniert die WLO-Suche) ist es INT-W-06, nicht INT-W-01."
-
-  # ── INT-W-07 GELÖSCHT (Welle C Sprint 4 — 2026-05-15) ────────────
-  # "Material herunterladen" war technisch identisch zu INT-W-03
-  # (Inhalte abrufen): der Bot hat KEINE Download-Funktion, sondern
-  # sucht im Repo und gibt dem User den Original-Link — exakt das,
-  # was INT-W-03 macht. Sub-Modus "Download" wird jetzt im selben
-  # Pattern erkannt (Download-Anker im Text → Pattern-Antwort
-  # erwähnt explizit den Repo-Link mit Download-Button).
-
-  - id: INT-W-08
-    label: Inhalte evaluieren
-    description: "Nutzer:in fragt nach BEWERTUNG/EIGNUNG/QUALITÄT eines KONKRETEN Materials — z.B. ob es passt, gut ist, korrekt ist, lizenz-konform ist. Typische Trigger: 'Ist das Material gut?', 'Passt das für Klasse 6?', 'Wie gut ist DAS hier?', 'Welche Lizenz hat dieses Video?', 'Kann ich das verwenden?', 'Ist das didaktisch sinnvoll?', 'Beurteile mir X'. **KRITISCHE ABGRENZUNG**: NICHT INT-W-03/c (Material suchen) — das wäre eine offene Such-Anfrage. NICHT INT-W-04 (Feedback) — das wäre Rückmeldung zum Bot. NICHT INT-W-09 (Statistik) — das wären Aggregate. INT-W-08 ist immer ein konkretes Single-Material das beurteilt werden soll. Antwort: Bewertungskriterien anbieten + nach dem Material/Link fragen, falls nicht im Kontext."
-
-  - id: INT-W-09
-    label: Analyse & Reporting
-    description: "Nutzer:in braucht AGGREGIERTE Statistiken, Reports, Verläufe oder Mehr-Dimensionale Übersichten — keine atomare Einzelfakten. Typische Trigger: 'Reichweite letzten Quartal', 'Anzahl OER nach Bildungsstufe', 'Wie viele Materialien insgesamt?', 'Statistik zu X', 'Trend der Nutzung', 'Wie haben sich die Treffer entwickelt?'. ABGRENZUNG: Eine einzelne Zahlen-Frage wie 'Wie heißt der Anbieter?' oder 'Was kostet X?' ist INT-W-06 (Faktenfragen). INT-W-09 sind Dashboard-/Report-artige Anfragen mit mehrfachen Dimensionen (Zeit + Stufe + Fach), oft für Verwaltung, Berater, Politik."
-
-  - id: INT-W-10
-    label: Unterrichtsplanung
-    description: "Nutzer:in (typischerweise Lehrkraft) plant eine STRUKTURIERTE Unterrichts-Einheit, Stunde oder einen Lernpfad — kein Einzel-Material. Typische Trigger: 'Plane mir eine Stunde zu X', 'Unterrichtsentwurf für Y', 'Lernpfad zu Z', 'Reihe zu W in 4 Stunden', 'Stundenentwurf', 'Unterrichts-Einheit zu Q', 'Welche Schritte für eine Stunde zu V?'. **KRITISCHE ABGRENZUNG**: NICHT INT-W-03 (Unterrichtsmaterial) — das wäre ein einzelnes Arbeitsblatt/Video/Aufgabe. INT-W-10 ist immer eine MEHRSCHRITTIGE STRUKTURIERUNG (Plan, Pfad, Reihe). Faustregel: 'Plane / Strukturiere / Stunde / Einheit / Pfad / Reihe' im Trigger = INT-W-10. 'Arbeitsblatt / Video / Material zu X' = INT-W-03. Bei Hybriden ('Arbeitsblätter für eine Reihe') tendiere zu INT-W-10, weil der Plan die übergeordnete Anfrage ist."
-
-  - id: INT-W-11
-    label: Inhalt erstellen
-    description: "Nutzer:in möchte ein neues Material KI-generiert erstellen lassen (Arbeitsblatt, Infoblatt, Quiz, Präsentation, Checkliste, Glossar, Strukturübersicht, Übungsaufgaben, Lerngeschichte, Versuchsanleitung, Diskussionskarten, Rollenspielkarten, Bericht, Factsheet, Projektsteckbrief, Pressemitteilung, Vergleich). **KRITISCHE ABGRENZUNG zu INT-W-03 (Suchen)**: 'Zeig mir / Suche / Finde / Brauche / Hast du Material zu X' ist INT-W-03 (Suchen). 'Erstelle / Generiere / Mach mir / Schreib mir / Bau ein neues Material zu X' ist INT-W-11. Diskriminator: ERSTELLUNGS-VERB ('erstelle', 'generiere', 'mach mir', 'schreib mir', 'baue', 'fertige an', 'lass dir was einfallen') → INT-W-11. SUCH-VERB ('suche', 'finde', 'zeig', 'hast du', 'gib mir', 'brauche') → INT-W-03. Bei Hybriden ('Brauche ein Arbeitsblatt zu X — kannst du mir eines erstellen?') hat das ERSTELLUNGS-VERB Vorrang → INT-W-11. **NICHT INT-W-10 (Unterrichtsplanung)**: das ist eine MEHRSCHRITTIGE Stunde/Reihe/Lernpfad. INT-W-11 ist EIN Material. **NICHT INT-W-09 (Analyse)**: 'erstelle einen Bericht/Statistik' (mit Daten-Aggregation) ist eher INT-W-09, wenn aggregierte Zahlen rauskommen sollen — INT-W-11 ist content-fokussiert (Lehrmaterial). **NICHT INT-W-02 (Soft Probing)**: ein Erstellungs-Verb ist NIE soft, immer harte Aktion."
-
-  - id: INT-W-12
-    label: Canvas-Edit
-    description: "Nutzer:in möchte den bereits im Canvas befindlichen Inhalt VERFEINERN oder ÄNDERN (nicht neu erstellen). Typische Trigger: 'mach es einfacher', 'kürzer', 'ausführlicher', 'füge X hinzu', 'formuliere Y um', 'streiche Z', 'ändere den Titel', 'nochmal, aber mit Lösung'. Voraussetzung: state-12 (Canvas-Arbeit) ist aktiv und es existiert bereits Canvas-Content. ABGRENZUNG: Wenn state-12 NICHT aktiv oder kein Canvas-Content vorhanden, ist es INT-W-11 (Erstellen)."
-
-  - id: INT-W-13
-    label: Fachportale entdecken
-    description: "Nutzer:in möchte einen Überblick über ALLE bei WLO verfügbaren Fachportale / Schulfächer / Top-Level-Sammlungen sehen — als Einstiegspunkt für eine geführte Drilldown-Navigation oder zur Orientierung, was die Plattform abdeckt. Typische Trigger: 'welche Fächer gibt es?', 'zeig mir alle Fachportale', 'was kann ich auf WLO entdecken?', 'gibt es ein Portal für Sport?', 'Übersicht der Fächer'. **KRITISCHE ABGRENZUNG**: (1) Wenn der Nutzer EIN KONKRETES Fach nennt UND nach Unter-Bereichen / Unter-Themen / Aufgliederung fragt ('welche Unterthemen für Mathematik?', 'Bereiche unter Biologie?', 'wie ist Informatik gegliedert?', 'welche Unterkategorien gibts bei X?'), ist es **INT-W-14 (Drilldown in EIN Fach)**, NICHT INT-W-13 (Übersicht ALLER Fächer). (2) Wenn der Nutzer 'Themenseite zu / für [konkretes Fach oder Thema]', 'Hauptseite [Thema]', 'Sammlung zu [Thema]', 'ich suche die Themenseite zu X' sagt, ist es **INT-W-03 (Themenseite entdecken)**, NICHT INT-W-13 — der User sucht eine SPEZIFISCHE Themenseite, nicht die Fachportal-Übersicht. **Negativ-Beispiele für INT-W-13**: 'Themenseite zu Mathematik' = INT-W-03 ❌ INT-W-13. 'Ich suche die Themenseite zu Photosynthese' = INT-W-03 ❌ INT-W-13. 'Hauptseite Klimawandel' = INT-W-03 ❌ INT-W-13. 'Welche Themen gibt es unter Mathematik?' = INT-W-14 ❌ INT-W-13. 'Zeig mir Material zu Mathe' = INT-W-03 ❌ INT-W-13. **Faustregel**: PLURAL/EXISTENZ-Frage nach ALLEN Fächern = INT-W-13. SINGULAR-Fach-Frage mit Drilldown-Verb = INT-W-14. SINGULAR-Frage 'Themenseite/Sammlung zu [X]' = INT-W-03. 'Erklär mir was Themenseiten sind' = INT-W-06 (Faktenfragen über Plattform-Konzept). MCP-Tool für INT-W-13: get_subject_portals."
-
-  - id: INT-W-14
-    label: Themen-Drilldown
-    description: "Nutzer:in hat eine Sammlung/Fachportal gefunden und möchte tiefer rein navigieren — die Sub-Themen / Sub-Sammlungen sehen, BEVOR konkrete Materialien angezeigt werden. Typische Trigger: 'welche Themen gibt es unter Mathematik?', 'zeig mir Bereiche unter Informatik', 'gliedere Biologie auf', 'in welche Unterthemen ist X aufgeteilt?', 'wie ist Informatik gegliedert?', 'wie ist X aufgebaut/strukturiert?', 'welche Kapitel/Teilbereiche hat X?', 'welche Themen sind unter Mathematik aufgeteilt für meinen Artikel?'. **KRITISCHE ABGRENZUNG zu INT-W-13 (Fachportale-Übersicht)**: INT-W-13 ist die PLURAL-Frage 'welche Fächer gibt es überhaupt?' — also der Top-Level-Überblick. INT-W-14 ist SINGULAR + Drilldown ('Unter-Bereiche von Mathematik'). Wenn ein KONKRETES Fach genannt wird UND nach Aufgliederung/Unter-Themen gefragt wird → IMMER INT-W-14, NIE INT-W-13. **WICHTIGE ABGRENZUNG zu INT-W-06**: 'wie ist X gegliedert?' / 'wie ist X aufgebaut?' ist NICHT INT-W-06 (Faktenfragen über Plattform/Konzept) sondern INT-W-14 (Drilldown), wenn X ein Fach oder ein Thema ist. 'Zeig mir Materialien aus Mathematik' ist INT-W-03 (Files, nicht Sub-Sammlungen). 'Zeig mir Inhalte einer Sammlung' ist Browse-Action mit get_collection_contents (Files). Hier ist es Sub-Folders. MCP-Tool: browse_collection_tree (depth 1 oder 2)."
+  - id: I01
+    label: Orientierung
+    description: "Erstkontakt / Erkundung der Plattform OHNE Material-Anker. Auch: Übersicht über Fachportale / Themenbereiche.\n"
+    examples:
+      - Was kann ich hier machen?
+      - Welche Fächer gibt es?
+      - Ich bin neu hier
+      - Wie funktioniert das hier?
+      - Ich will mich erst mal umschauen
+      - Stell dich vor
+    trigger_verbs:
+      - was kann ich hier
+      - was kannst du
+      - ich orientiere mich
+      - erstmal schauen
+      - ich schau erst mal
+      - ich bin neu
+      - stell dich vor
+      - wofür ist diese plattform
+      - hilf mir loszulegen
+    negative_triggers:
+      - phrase: fach|thema|material
+        redirect_to: I03
+        rationale: Material-/Fach-Anker im Text → Such-Intent, nicht reine Orientierung.
+      - phrase: was ist (oer|wlo|wirlernenonline|cc by)
+        redirect_to: I02
+        rationale: Definitions-Frage → I02 Wissensfrage.
+    discriminators:
+      - vs: I02
+        rule: I01 = Handlungs-Orientierung (Was kann ich tun?). I02 = Definitions-Frage (Was ist X?).
+        example_a: Was kann ich hier machen? → I01
+        example_b: Was ist OER? → I02
+  - id: I02
+    label: Wissensfrage
+    description: "Konkrete Definitions-/Konzept-/Faktenfrage zu WLO, OER, Lizenz, Plattform-Eckdaten ODER aggregierte Statistik ODER Bewertung eines konkreten Materials. Knappe Antwort aus RAG, keine Suche.\n"
+    examples:
+      - Was ist OER?
+      - Was bedeutet CC BY 4.0?
+      - Wer steht hinter WLO?
+      - Wie viele Materialien hat WLO?
+      - Passt das Material für Klasse 6?
+      - Welche Statistiken zur Nutzung gibt es?
+    trigger_verbs:
+      - was ist
+      - was bedeutet
+      - wer betreibt
+      - wer steht hinter
+      - wie viele
+      - passt das material
+      - ist X geeignet
+      - wie gut ist
+    negative_triggers:
+      - phrase: verstehe nicht|kapier(e)? nicht
+        redirect_to: I03
+        rationale: Defizit-Verb + Lern-Wunsch → I03 (Hilfe-Material suchen), nicht reine Definition.
+        when: 'co-occurs: erklär|schritt für schritt'
+      - phrase: was kann ich hier|was kannst du
+        redirect_to: I01
+        rationale: Handlungs-Orientierung → I01.
+    discriminators:
+      - vs: I01
+        rule: I02 fragt nach FAKT/DEFINITION, I01 nach Plattform-Funktionen.
+        example_a: Was ist CC BY? → I02
+        example_b: Was kann ich hier? → I01
+      - vs: I03
+        rule: I02 = reine Definition ohne Lern-/Material-Wunsch. Sobald 'erklär mir' oder Material-Wort → I03.
+        example_a: Was ist Photosynthese? → I02
+        example_b: Erklär mir Photosynthese Schritt für Schritt → I03
+  - id: I03
+    label: Inhalte-Suchen
+    description: "Universal-Such-Intent: Material, Themenseite, Sammlung, Drilldown unter einem konkreten Fach. Bot sucht IM BESTAND von WirLernenOnline, liefert Original-Links — KEINE KI-Generierung neuer Inhalte.\n\nLeitsatz: 'Suchen = aus dem WLO-Repository raussuchen'. 'Generieren/Erstellen = KI baut etwas Neues' (das ist I05).\n"
+    examples:
+      - Zeig mir Videos zu Bruchrechnung Klasse 5
+      - Material zu Photosynthese
+      - Themenseite zu Klimawandel
+      - Welche Unterthemen hat Mathematik?
+      - Hast du Arbeitsblätter zu Bruchrechnung?
+      - Ich verstehe Photosynthese nicht, gibt es ein Video?
+      - Ich suche etwas zu einem Thema
+      - Ich suche Material zu Bruchrechnung
+      - Such mir was zu Photosynthese
+      - Was hast du zu Klimawandel?
+      - Welches Material gibt es zu Mathe?
+    trigger_verbs:
+      - zeig mir
+      - suche
+      - such mir
+      - ich suche
+      - finde
+      - find mir
+      - brauche
+      - hast du
+      - hast du etwas
+      - hast du was
+      - was hast du
+      - was gibt es
+      - was habt ihr
+      - gibt es
+      - welche.*gibt es
+      - welches material
+      - material zu
+      - themenseite zu
+      - sammlung zu
+      - runterladen
+      - herunterladen
+      - bereitstellen
+      - liefern
+      - zur verfügung stellen
+    negative_triggers:
+      - phrase: erstelle|generiere|mach mir|schreib mir|bau mir|entwirf|produziere|erzeug|fertige an
+        redirect_to: I05
+        rationale: Create-Verb hat harten Vorrang vor Such-Verb (KI-Neuerstellung).
+      - phrase: plane|stundenentwurf|unterrichtsreihe|lernpfad|materialzusammenstellung
+        redirect_to: I04
+        rationale: Plan-/Reihen-/Zusammenstellungs-Wort → mehrstufige Komposition.
+    discriminators:
+      - vs: I05
+        rule: Such-Verb (Zeig/Finde/Hast du) → I03. Create-Verb (Erstelle/Mach mir) → I05.
+        example_a: Zeig mir Arbeitsblätter zu Bruchrechnung → I03
+        example_b: Erstelle ein Arbeitsblatt zu Bruchrechnung → I05
+      - vs: I02
+        rule: Reine Definitions-Frage ohne Lern-/Material-Wunsch → I02. Mit Material-/Lern-Wunsch → I03.
+        example_a: Was ist Bruchrechnung? → I02
+        example_b: Material zu Bruchrechnung → I03
+      - vs: I06
+        rule: Edit-Verb auf vorherigen Bot-Inhalt → I06. Sonst I03.
+        example_a: Zeig mir andere Materialien → I03
+        example_b: Mach den Lernpfad kürzer → I06
+  - id: I04
+    label: Lernpfad
+    description: "Mehrstufiger Stundenentwurf / Unterrichtsreihe / Lernpfad aus EXISTIERENDEN WLO-Materialien zusammensetzen. Auch: Materialzusammenstellungen, kuratierte Mehrfach-Quellen.\n"
+    examples:
+      - Plane mir eine Stunde zu Bruchrechnung Klasse 5
+      - Lernpfad zu Klimawandel für Sek I
+      - Unterrichtsreihe Photosynthese, 4 Stunden
+      - Stundenentwurf zu Geometrie
+      - Erstelle eine Materialzusammenstellung zu Lyrik
+      - Material-Sammlung Klimawandel zum Selbstlernen
+    trigger_verbs:
+      - plane
+      - stundenentwurf
+      - unterrichtsstunde
+      - unterrichtsreihe
+      - unterrichtseinheit
+      - unterrichtsplanung
+      - lernpfad
+      - materialzusammenstellung
+      - material zusammenstellen
+      - strukturierte sammlung
+      - sammlung zusammenstellen
+      - materialpaket
+      - übersicht von materialien
+      - mehrere materialien
+    discriminators:
+      - vs: I05
+        rule: Plural/Sammlung/Zusammenstellung/Stunden-Sequenz → I04. SINGULÄRER neuer Material-Typ → I05.
+        example_a: Erstelle eine Materialzusammenstellung zu X → I04
+        example_b: Erstelle ein Arbeitsblatt zu X → I05
+      - vs: I03
+        rule: Plan-/Strukturierungs-Wort + mehrschrittig → I04. Reine Anzeige bestehender Inhalte → I03.
+        example_a: Lernpfad zu Bruchrechnung → I04
+        example_b: Zeig mir Material zu Bruchrechnung → I03
+  - id: I05
+    label: Inhalt-Generieren
+    description: "KI-Generierung EINES neuen Materials — Arbeitsblatt, Quiz, Info- blatt, Präsentation, Checkliste, Glossar, Übungen, Bericht/ Faktenblatt, Pressemitteilung, Remix. Singular, NICHT mehrteilig.\n\nLeitsatz: 'Generieren/Erstellen = KI baut neu'. 'Suchen/Finden = aus dem WLO-Repository raussuchen' (das ist I03).\n"
+    examples:
+      - Erstelle ein Arbeitsblatt zu Bruchrechnung
+      - Mach mir ein Quiz zur Photosynthese
+      - Generier mir einen Bericht zu OER-KPIs
+      - Schreib eine Pressemitteilung zu unserer OER-Strategie
+      - Bau mir ein Rollenspiel zu Klimawandel
+      - Entwirf eine Checkliste für Eltern-Sprechtag
+    trigger_verbs:
+      - erstelle
+      - erstell mir
+      - erstell ein
+      - erstell eine
+      - generiere
+      - generier mir
+      - generier ein
+      - mach mir ein
+      - mach mir eine
+      - schreib mir
+      - schreib ein
+      - bau mir
+      - entwirf
+      - produziere
+      - erzeuge
+      - fasse zusammen als
+      - fertige an
+    negative_triggers:
+      - phrase: suche|such mir|ich suche|finde mir|find mir|zeig mir|hast du etwas|hast du was|gibt es|was gibt es
+        redirect_to: I03
+        rationale: Such-Verb = User will EXISTIERENDE Inhalte aus WLO sehen — KEIN KI-Create. Inverse-Override zu Create-Verb.
+      - phrase: runterladen|herunterladen|bereitstellen|liefern|zur verfügung|bekommen|geben
+        redirect_to: I03
+        rationale: Bot sucht im Repo, gibt Original-Link — kein eigener File-Stream-Download.
+      - phrase: bewerten|überprüfen|prüfen|wie gut ist|ist x geeignet
+        redirect_to: I02
+        rationale: Qualitätsprüfung/Review → I02 (Inhalte evaluieren).
+      - phrase: statistiken|zahlen|wie viele|aktuelle nutzungsdaten|reporting|übersicht.*daten
+        redirect_to: I02
+        rationale: Auch wenn 'Übersicht' fällt — Statistik-Anfrage ist I02, kein Material-Create.
+      - phrase: kürzer|ausführlicher|einfacher|ergänze|ändere|umformulieren|anpassen
+        redirect_to: I06
+        rationale: Bei aktivem Canvas-Inhalt + Edit-Verb → IMMER I06.
+        when: canvas_state.mode == 'material'
+      - phrase: fehler gefunden|falsch|weiterleiten an redaktion|hier ist was falsch
+        redirect_to: I08
+        rationale: Fehler-/Lücken-Meldung → I08 (Routing Redaktion).
+      - phrase: was ist|wer ist|was macht
+        redirect_to: I02
+        rationale: Fakten-/Info-Frage → I02.
+    discriminators:
+      - vs: I04
+        rule: Plural 'Materialien'/'Sammlung'/'Zusammenstellung' → I04. SINGULÄRER Material-Typ ohne Stunden-Kontext → I05.
+        example_a: Erstelle eine Materialzusammenstellung zu X → I04
+        example_b: Erstelle ein Arbeitsblatt zu X → I05
+      - vs: I03
+        rule: Such-Verb (Zeig/Finde/Hast du) → I03. Create-Verb (Erstelle/Mach mir) → I05.
+        example_a: Zeig mir Quizze zu Bruchrechnung → I03
+        example_b: Mach mir ein Quiz zu Bruchrechnung → I05
+      - vs: I06
+        rule: Voriger Bot-Turn enthält erstellten Inhalt + Edit-Verb → I06. Ohne Vor-Inhalt → I05.
+        example_a: Erstelle ein Arbeitsblatt zu X (Turn 1) → I05
+        example_b: Mach das Arbeitsblatt kürzer (Turn 2, mit Canvas) → I06
+  - id: I06
+    label: Inhalt-Nachbearbeiten
+    description: "Vom Bot zuvor gerenderter Inhalt (Lernpfad oder KI-Material) soll angepasst werden — Edit statt Neu-Erzeugung. Voraussetzung: voriger Bot-Turn enthält erstellten Inhalt.\n"
+    examples:
+      - Mach den Lernpfad kürzer
+      - Füge Lösungen hinzu
+      - Erkläre Schritt 2 ausführlicher
+      - Anders strukturieren bitte
+      - Ergänze ein Beispiel zu Bruchrechnung
+      - Entferne den letzten Abschnitt
+    trigger_verbs:
+      - mach kürzer
+      - kürzer
+      - ausführlicher
+      - einfacher
+      - ergänze
+      - füge hinzu
+      - entferne
+      - anders strukturieren
+      - noch ein beispiel
+      - fasse zusammen
+      - umformulieren
+      - schreib um
+    negative_triggers:
+      - phrase: stattdessen|anderes thema|neues thema|mach mir.*zu
+        redirect_to: I05
+        rationale: Themenwechsel mit Create-Verb → neues Material, kein Edit.
+    discriminators:
+      - vs: I05
+        rule: Bezug auf vorherigen Bot-Output (das/der/den + Inhalts-Wort) → I06. Neues Thema → I05.
+        example_a: Mach es kürzer → I06
+        example_b: Mach mir eins zu einem anderen Thema → I05
+      - vs: I03
+        rule: Edit-Verb auf bestehenden Inhalt → I06. Suche nach neuem Material → I03.
+        example_a: Erkläre Schritt 2 ausführlicher → I06
+        example_b: Zeig mir andere Materialien → I03
+  - id: I07
+    label: Feedback-Bot
+    description: "Rückmeldung zum Bot, zur Antwort, zur Plattform-UX oder Meta-Frage zur Feedback-Möglichkeit / Bot-Bedienung. NICHT über konkrete Inhalte.\n"
+    examples:
+      - Das war richtig hilfreich, danke!
+      - Funktioniert irgendwie nicht
+      - Kann ich hier Feedback geben?
+      - Wie kann ich Feedback geben?
+      - Wie kann ich dir Feedback geben?
+      - Wie melde ich dir was?
+      - Du hast nicht verstanden was ich meinte
+      - Die Ergebnisse sind nicht gut
+      - Wie bewertet ihr die Antworten?
+      - Wie funktioniert das hier mit dem Feedback?
+      - Kannst du mir Schritt für Schritt zeigen wie ich Feedback geben kann?
+    trigger_verbs:
+      - danke
+      - hilfreich
+      - super geholfen
+      - funktioniert nicht
+      - verwirrend
+      - hast nicht verstanden
+      - schade dass
+      - feedback geben
+      - feedback dazu
+      - feedback abgeben
+      - wie kann ich feedback
+      - wie melde ich
+      - wie sage ich dir
+      - wie sage ich euch
+      - wie bewertet ihr
+      - schritt für schritt feedback
+      - wie funktioniert das hier
+    discriminators:
+      - vs: I08
+        rule: I07 bezieht sich auf Bot-Interaktion oder die FUNKTIONSWEISE des Feedback-Gebens. I08 bezieht sich auf konkreten Plattform-Inhalt mit Weiterleitungs-Wunsch.
+        example_a: Das war hilfreich → I07
+        example_b: Wie kann ich dir Feedback geben? → I07
+        example_c: Hier ist ein Fehler im Material, bitte an Redaktion → I08
+      - vs: I02
+        rule: I07 = Reflexion über die Konversation oder Frage zur Bot-Bedienung. I02 = Wissens-/Faktenfrage zur Plattform/Welt.
+        example_a: Du hast nicht verstanden was ich meinte → I07
+        example_b: Was bedeutet OER? → I02
+      - vs: I03
+        rule: "I07 = Frage zur Bot-/Feedback-Bedienung. I03 = Suche nach Inhalten. „Wie kann ich X geben/melden\" mit X=Feedback → I07. „Wie kann ich X finden\" mit X=Material → I03."
+        example_a: Wie kann ich Feedback geben? → I07
+        example_b: Wie kann ich Material zu Photosynthese finden? → I03
+      - vs: I01
+        rule: I07 = explizite Frage nach Feedback-Funktionalität. I01 = allgemeine Erstorientierung „was kann ich hier machen". Wenn der User „Feedback" oder „melden" sagt → I07, nicht I01.
+        example_a: Hi, wie kann ich Feedback geben? → I07
+        example_b: Hi, was kann ich hier machen? → I01
+  - id: I08
+    label: Einreichen / Melden
+    description: "User schlägt eigenes Material vor ODER meldet inhaltlichen Fehler/ Lücke in WLO-Inhalt. Routing zur Redaktion mit Submit-Link.\n"
+    examples:
+      - Ich habe ein gutes Video gefunden, wie reiche ich das ein?
+      - Hier ist ein Fehler im Material zur Photosynthese
+      - Der Link in dieser Sammlung funktioniert nicht
+      - Wo kann ich eigene Materialien hochladen?
+      - Es fehlen Materialien zu Klimawandel, könnt ihr das ergänzen?
+      - Ich habe Fehler in den Mathe-Übungen gefunden, an Redaktion weiterleiten bitte
+    trigger_verbs:
+      - an die redaktion weiterleiten
+      - an redaktion schicken
+      - an die redaktion melden
+      - ich habe einen fehler gefunden
+      - hier ist was falsch
+      - da stimmt etwas nicht
+      - ungereimtheiten entdeckt
+      - es fehlen materialien zu
+      - wo kann ich einen inhaltswunsch einreichen
+      - wie kann ich eigene materialien hochladen
+      - material vorschlagen
+      - quelle einreichen
+    discriminators:
+      - vs: I07
+        rule: I08 = konkrete Meldung MIT Weiterleitungs-Wunsch an Redaktion. I07 = allgemeine Meinung zum Bot ohne Weiterleitungs-Wunsch.
+        example_a: Fehler im Material, bitte an Redaktion → I08
+        example_b: Das war nicht hilfreich → I07
+      - vs: I05
+        rule: Bestehendes externes Material wird eingereicht → I08. Neues Material soll erzeugt werden → I05.
+        example_a: Ich habe ein Video gefunden, wie reiche ich es ein? → I08
+        example_b: Erstelle mir ein Video-Skript → I05

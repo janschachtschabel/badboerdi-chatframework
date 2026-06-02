@@ -57,7 +57,7 @@ _CRISIS_PATTERNS = [
 ]
 
 # Threat = Nutzer droht Gewalt/Tötung gegen Dritte.  Eigener enforced
-# Pattern (PAT-REFUSE-THREAT) und HIGH-Risk, aber KEINE Suizid-Empathie.
+# Pattern (M02) und HIGH-Risk, aber KEINE Suizid-Empathie.
 # Vorsicht: `\bumbring\b` matcht NICHT in "umbringen"! Deshalb `umbring\w*`.
 _THREAT_PATTERNS = [
     # "Ich werde dich/euch/ihn/sie umbringen/töten …"
@@ -150,8 +150,8 @@ def _regex_gate(message: str, signals: list[str]) -> SafetyDecision:
     """Stage 1: fast regex assessment.
 
     Three mutually exclusive hard-block paths:
-      * Crisis — user endangers themselves → PAT-CRISIS (empathic)
-      * Threat — user threatens others   → PAT-REFUSE-THREAT (firm refusal)
+      * Crisis — user endangers themselves → M01 (empathic)
+      * Threat — user threatens others   → M02 (firm refusal)
       * PII   — user volunteers sensitive data → soft medium block
 
     Crisis takes priority over Threat when both would match (conservative
@@ -165,7 +165,7 @@ def _regex_gate(message: str, signals: list[str]) -> SafetyDecision:
     for pat in _CRISIS_PATTERNS:
         if re.search(pat, msg):
             decision.risk_level = "high"
-            decision.enforced_pattern = "PAT-CRISIS"
+            decision.enforced_pattern = "M01"
             decision.blocked_tools = [
                 "search_wlo_collections", "search_wlo_content",
                 "get_collection_contents",
@@ -177,7 +177,7 @@ def _regex_gate(message: str, signals: list[str]) -> SafetyDecision:
     for pat in _THREAT_PATTERNS:
         if re.search(pat, msg):
             decision.risk_level = "high"
-            decision.enforced_pattern = "PAT-REFUSE-THREAT"
+            decision.enforced_pattern = "M02"
             decision.blocked_tools = [
                 "search_wlo_collections", "search_wlo_content",
                 "get_collection_contents",
@@ -406,9 +406,9 @@ async def assess_safety(message: str, signals: list[str] | None = None) -> Safet
             decision.legal_flags.append(legal)
 
     # Hard-Block-Kategorien sofort high. Wählt Pattern je nach Kategorie:
-    #   - self_harm / sexual/minors       → PAT-CRISIS (empathisch)
-    #   - hate/threatening / harassment/threatening → PAT-REFUSE-THREAT (sachlich ablehnend)
-    #   - illicit/violent                 → PAT-CRISIS (default refusal, siehe config)
+    #   - self_harm / sexual/minors       → M01 (empathisch)
+    #   - hate/threatening / harassment/threatening → M02 (sachlich ablehnend)
+    #   - illicit/violent                 → M01 (default refusal, siehe config)
     hard_hit = [c for c in flagged_now if c in hard_blocks]
     if hard_hit:
         decision.risk_level = "high"
@@ -418,12 +418,12 @@ async def assess_safety(message: str, signals: list[str] | None = None) -> Safet
         threat_cats = {"hate/threatening", "harassment/threatening"}
         crisis_cats = {"self_harm", "self_harm/intent", "sexual/minors"}
         if set(hard_hit) & crisis_cats:
-            decision.enforced_pattern = cfg.get("crisis_pattern", "PAT-CRISIS")
+            decision.enforced_pattern = cfg.get("crisis_pattern", "M01")
         elif set(hard_hit) & threat_cats:
-            decision.enforced_pattern = cfg.get("threat_pattern", "PAT-REFUSE-THREAT")
+            decision.enforced_pattern = cfg.get("threat_pattern", "M02")
         else:
             # illicit/violent etc. — generische Zurückweisung über Crisis-Pattern
-            decision.enforced_pattern = cfg.get("crisis_pattern", "PAT-CRISIS")
+            decision.enforced_pattern = cfg.get("crisis_pattern", "M01")
         for t in cfg.get("crisis_blocked_tools", []):
             if t not in decision.blocked_tools:
                 decision.blocked_tools.append(t)

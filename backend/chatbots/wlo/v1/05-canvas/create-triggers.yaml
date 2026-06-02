@@ -5,9 +5,9 @@
 # als Teilphrase gesucht. Groß-/Kleinschreibung egal.
 #
 # Wenn eine dieser Phrasen matcht UND ein Material-Typ erkennbar ist,
-# überschreibt der Chat-Router den Classifier-Intent auf INT-W-11.
+# überschreibt der Chat-Router den Classifier-Intent auf I05.
 # Das schützt gegen Classifier-Drift (z.B. wenn "Erstelle ein Arbeitsblatt"
-# fälschlich als INT-W-10 Unterrichtsplanung klassifiziert wird).
+# fälschlich als I04 Unterrichtsplanung klassifiziert wird).
 #
 # Änderungen wirken live (mtime-Cache).
 

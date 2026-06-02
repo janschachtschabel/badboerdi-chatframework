@@ -56,11 +56,13 @@ def _resolve(asset_name: str) -> Path:
 
 def _cors(resp: Response) -> Response:
     resp.headers["Access-Control-Allow-Origin"] = "*"
-    # Revalidate on every fetch so widget updates propagate immediately.
-    # `no-cache` (NOT `no-store`) still lets the browser keep the bundle
-    # locally but forces a conditional GET (ETag/Last-Modified) on reload,
-    # which is cheap and avoids stale-widget confusion during iteration.
-    resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    # Welle E (2026-05-23): während des aktiven Refactor-Sprints
+    # ``no-store`` damit Service-Worker-Cache + Privacy-Browser-Cache
+    # garantiert nicht den alten Bundle ausliefern. Nach Stabilisierung
+    # zurück auf ``no-cache, must-revalidate`` für ETag-Optimierung.
+    resp.headers["Cache-Control"] = "no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
     return resp
 
 
@@ -453,40 +455,29 @@ _DEMO_HTML = """<!doctype html>
       <span class="tag" style="background:#dbeafe;color:#1e3a8a;">primary-color="#1c4587"</span>
       <span class="tag" style="background:#dcfce7;color:#166534;">emit-guide-suggestion="true"</span>
       <span class="tag" style="background:#dcfce7;color:#166534;">emit-routing-debug="true"</span>
-      <br><span style="font-size:12px;color:#6b7280;">Implizite Defaults: <code>cards-enabled="true"</code>, <code>canvas-enabled="true"</code>, <code>ai-content-enabled="true"</code>, <code>quick-replies-enabled="true"</code>, <code>inline-result-grouping="true"</code>, <code>persist-session="true"</code>, <code>auto-context="true"</code>, <code>show-debug-button="true"</code>, <code>show-language-buttons="true"</code>, <code>show-guide-button="true"</code>.</span>
+      <br><span style="font-size:12px;color:#6b7280;">Implizite Defaults: <code>ai-content-enabled="true"</code>, <code>persist-session="true"</code>, <code>auto-context="true"</code>, <code>show-debug-button="true"</code>, <code>show-language-buttons="true"</code>. Layout-Steuerung (Gruppen-Boxen, Limits, Schriftgrößen) liegt im Studio-Tab <strong>🎨 Anzeige</strong>.</span>
     </p>
   </div>
 
   <div class="note" style="background:#ecfdf5;border-left-color:#10b981;">
-    <strong>Was ist neu?</strong>
+    <strong>Welle E (2026-05-23) — Embed-Attribute aufgeräumt</strong>
     <ul style="margin:6px 0 0 0;">
-      <li><strong>Result-Grouping als Default (Welle C.5, 2026-05-21)</strong>:
-        <code>inline-result-grouping</code> ist jetzt standardmäßig <code>true</code>.
-        Treffer erscheinen in drei separaten Boxen (Themenseiten / Sammlungen /
-        Webseiten-Inhalte; je max. 3, deduped per <code>node_id</code> + Titel) plus
-        Card-Button „Treffer zur Suche „&lt;Term&gt;"". Such-CTA hat einen Backend-
-        Synthese-Fallback (aus <code>entities.thema</code>/<code>fach</code> +
-        <code>REPO_BASE_URL</code>), greift auch bei reinen Sammlungs-/Themenseiten-
-        Treffern. LLM bekommt Einzelinhalt-Details aus <code>search_wlo_content</code>/
-        <code>get_collection_contents</code>/<code>get_node_details</code> redacted
-        (kompakte Typ-Summary), damit der Bot keine unsichtbaren Materialien anpreist.
-        Cards bleiben in der Response — Lernpfad-Flow + Such-CTA-Count nutzen sie weiter.
-        Opt-out auf das alte Card-Layout: <code>inline-result-grouping="false"</code>
-        (Demo <a href="/widget/classic">/widget/classic</a>).</li>
-      <li><strong>Session-Restore mit Greeting + CTA</strong>: beim Wiederöffnen einer
-        Session wird die hardcodierte Begrüßung an den Verlauf vorangestellt, Cards +
-        Web-Links + Query-Metas werden aus <code>debug_json</code> rehydriert — die
-        Such-CTA erscheint nach Reopen wieder mit dem richtigen Link.</li>
-      <li><strong>Trusted Domains</strong> für den Lotsen-Modus liegen jetzt im Backend
-        (<code>guide-mode.yaml</code> oder Env <code>GUIDE_TRUSTED_DOMAINS</code>) — HTML-
-        Attribut <code>trusted-domains</code> ist nur noch optional und additiv. Stored-XSS
-        auf der Host-Seite kann die Allow-Liste nicht mehr aushebeln.
-        <a href="#props">→ siehe Properties</a></li>
-      <li><strong>Lotsen-Button getrennt vom Modus</strong>: neue Attribute
-        <code>show-guide-button="false"</code> versteckt den 🧭-Toggle und
-        <code>guide-mode-default="true|false|auto"</code> setzt den Default unabhängig
-        davon. Damit kann der Host eigene Lotsen-UI bauen oder den Modus stillschweigend
-        aktivieren.</li>
+      <li><strong>Cards/Canvas/Grouping/Quick-Replies-Modi entfernt</strong>:
+        Die HTML-Attribute <code>cards-enabled</code>, <code>canvas-enabled</code>,
+        <code>inline-result-grouping</code>, <code>quick-replies-enabled</code>,
+        <code>show-guide-button</code>, <code>guide-mode-default</code> sind
+        ersatzlos weg. Layout (Gruppen-Boxen, Limits, Schriftgrößen, Quick-
+        Reply-Anzahl) liegt jetzt zentral im Studio-Tab
+        <strong>🎨 Anzeige</strong> (<code>01-base/display-rules.yaml</code>).</li>
+      <li><strong>Canvas-Pane entfernt</strong>: Lernpfade und KI-Materialien
+        werden als gerahmte InlineDocument-Box direkt im Chat-Verlauf gerendert
+        — gleicher Rahmen wie die Gruppen-Boxen, etwas kleinere Schrift.</li>
+      <li><strong>Lotsen-Modus immer aktiv</strong>: kein Toggle-Button mehr im
+        Header. Card-Links zeigen auf Repo-Render-Targets, sofern der Host auf
+        der Allow-Liste in <code>guide-mode.yaml</code> steht.</li>
+      <li><strong>Studio-pflegbar in Echtzeit</strong>: jede Änderung in
+        <code>display-rules.yaml</code> greift beim nächsten Chat-Turn ohne
+        Backend-Neustart (mtime-Cache).</li>
       <li><strong>Public JS-API</strong>: <code>el.openChatbot()</code>,
         <code>el.closeChatbot()</code>, <code>el.toggleChatbot()</code>,
         <code>el.isChatbotOpen()</code> — kein Shadow-DOM-Klick-Hack mehr nötig.
@@ -607,53 +598,32 @@ _DEMO_HTML = """<!doctype html>
   api-url="https://api.wlo.de"
   trusted-domains="wp-staging.wirlernenonline.de"
   session-cookie-domain=".wirlernenonline.de"&gt;
-&lt;/boerdi-chat&gt;
-
-&lt;!-- Variante: Lotsen-Button verstecken, Modus per Default trotzdem aktiv --&gt;
-&lt;boerdi-chat
-  api-url="https://api.wlo.de"
-  show-guide-button="false"
-  guide-mode-default="true"&gt;
 &lt;/boerdi-chat&gt;</pre>
-  <p>Wenn das Widget auf einer der konfigurierten WLO-Domains läuft (Backend-Liste in
-     <code>chatbots/wlo/v1/01-base/guide-mode.yaml</code>), erscheint im Chat-Header
-     ein <strong>🧭-Toggle</strong>. Aktiv schaltet er den Lotsen-Modus an: der Bot
-     hängt unter seiner Antwort einen <strong>Inline-Link</strong> zur passenden
-     WLO-/Repo-Seite an. Klick navigiert <strong>im selben Browser-Tab</strong> statt
-     einen neuen zu öffnen.</p>
+  <p>Welle E (2026-05-23) — Lotsen-Modus ist <strong>immer aktiv</strong>. Wenn
+     das Widget auf einer der allow-listed WLO-Domains läuft (Backend-Liste in
+     <code>chatbots/wlo/v1/01-base/guide-mode.yaml</code>), leitet der Bot
+     automatisch auf Repo-Render-Targets statt externer URLs. Kein UI-Toggle,
+     kein Embed-Attribut nötig.</p>
   <ul>
     <li><strong>Allow-Liste (Vertrauensanker)</strong>: Backend-YAML
         (<code>trusted_domains</code>) und/oder Env <code>GUIDE_TRUSTED_DOMAINS</code>.
         HTML-Attribut <code>trusted-domains</code> ist optional und wirkt nur additiv.
         Wildcards <code>*.example.com</code> matchen alle Subdomains.</li>
-    <li><strong>Sichtbarkeit des Toggles:</strong> auf Allow-Liste-Hosts <strong>und</strong>
-        wenn <code>show-guide-button</code> nicht auf <code>false</code> steht. Auf
-        Drittseiten ist der Modus implicit aus (keine Navigationsziele).</li>
-    <li><strong>Default-Aktivierung:</strong>
-        <code>guide-mode-default</code> Attribut → <code>true</code>/<code>false</code>/<code>auto</code>.
-        <code>auto</code> (Default) folgt der Priorität URL-Param <code>?bgm</code> →
-        <code>localStorage["boerdi.guide_mode"]</code> → Backend-Default aus
-        <code>guide-mode.yaml</code>. Späteres User-Toggle wird in localStorage
-        persistiert.</li>
+    <li><strong>Auf nicht allow-listed Hosts:</strong> Backend liefert externe URLs
+        statt Repo-Targets — kein Bruch. <code>card.guide_url</code> bleibt leer und
+        die Cards öffnen extern.</li>
     <li><strong>Cross-Domain-Brücke:</strong> klickt der User auf eine Card-URL einer
         anderen Allow-Liste-Origin, hängt das Widget automatisch <code>?bsid=&lt;sid&gt;</code>
-        und <code>?bgm=&lt;0|1&gt;</code> an — Session und Lotsen-State werden mitgeführt.</li>
-    <li><strong>Inline statt Pillen:</strong> Lotsen-Hinweise werden vom Backend in
-        jedem Embed-Modus als Markdown-Link am Antwort-Ende eingebaut — kein zusätzlicher
-        Pillen-Button im Chat, kein „Bring mich hin"-Card-Button.</li>
-    <li><strong>Toggle aus → keine Lotsen-Links:</strong> Backend filtert alle
-        magic-prefix-Quick-Replies serverseitig, das Postprocess erzeugt keinen
-        Inline-Markdown-Link.</li>
+        an — die Session wird mitgeführt.</li>
+    <li><strong>Inline statt Pillen:</strong> Lotsen-Hinweise (Themenseite,
+        Mitmachen, Über WLO etc.) erscheinen als Markdown-Link am Antwort-Ende —
+        kein zusätzlicher Pillen-Button im Chat.</li>
   </ul>
-  <p><strong>Wartung:</strong> Allow-Liste (<code>trusted_domains</code>), Default-State
-     (<code>guide_mode_default</code>) und Per-Turn-Limit stehen in
+  <p><strong>Wartung:</strong> Allow-Liste und Per-Turn-Limit in
      <code>chatbots/wlo/v1/01-base/guide-mode.yaml</code>. Env-Var
-     <code>GUIDE_TRUSTED_DOMAINS</code> (komma-/whitespace-getrennt) überschreibt das
-     YAML-Feld komplett. Endpoint <code>GET /api/config/guide-mode</code> liefert die
-     aktiven Werte ans Frontend (gecached). Die Frage→URL-Mapping-Tabelle für die
-     LLM-unabhängigen Quick-Reply-Trigger pflegst du in
-     <code>backend/app/services/guide_qr_injector.py</code> (List <code>_RULES</code> +
-     Dict <code>_RAG_AREA_URLS</code>).</p>
+     <code>GUIDE_TRUSTED_DOMAINS</code> überschreibt das YAML komplett.
+     Lotsen-Regex-Regeln (Themenseiten, Mitmachen-Seiten etc.) liegen in
+     <code>chatbots/wlo/v1/02-domain/guide-rules.yaml</code> und sind Studio-pflegbar.</p>
 
   <h2 id="props">Properties (vollständige Liste)</h2>
   <table>
@@ -686,20 +656,19 @@ _DEMO_HTML = """<!doctype html>
         <td>🔍 Debug-Toggle im Header anzeigen. <code>false</code> = Button ausgeblendet (für Produktiv-Embeddings sinnvoll, da Endnutzer das Debug-Panel meist nicht brauchen).</td></tr>
     <tr><td><code>show-language-buttons</code></td><td>boolean</td><td><code>true</code></td>
         <td>🔊 Text-to-Speech und 🎤 Mic-Aufnahme anzeigen. <code>false</code> = beide Buttons aus, kein Sprach-Feature. <span class="tag tag-note">Tipp</span> verhindert auch den Browser-Mikrofon-Permission-Prompt beim ersten Laden.</td></tr>
-    <tr><td><code>canvas-enabled</code></td><td>boolean</td><td><code>true</code></td>
-        <td>Canvas-Pane (Material-Erstellung, Lernpfad-Anzeige) ein/aus. <code>false</code> rendert Material/Lernpfad direkt im Chat-Verlauf — kein Canvas-Aufgehen.</td></tr>
     <tr><td><code>ai-content-enabled</code></td><td>boolean</td><td><code>true</code></td>
-        <td>KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix) ein/aus. <code>false</code> lehnt Erstell-Anfragen mit der Alt-Antwort aus <code>widget-modes.yaml</code> freundlich ab.</td></tr>
-    <tr><td><code>cards-enabled</code></td><td>boolean</td><td><code>true</code></td>
-        <td>Kachel-Anzeige ein/aus. <code>false</code> rendert Treffer als dezente Inline-Markdown-Links im Bot-Text (max. N aus <code>widget-modes.yaml</code> → <code>cards_inline_link_limit</code>). Titel wird im Frontend gekürzt; URL ist <code>guide_url</code> (Lotsen-Modus an) oder <code>wlo_url</code> (Direktlink).</td></tr>
-    <tr><td><code>inline-result-grouping</code></td><td>boolean</td><td><code>true</code></td>
-        <td><strong>Default seit Welle C.5 (2026-05-21): an.</strong> Gruppierte Treffer-Darstellung — Top-3-Themenseiten, Top-3-Sammlungen und (falls vorhanden) Webseiten-Inhalte aus dem Bot-Text in eigenen Boxen + Card-Button „Treffer zur Suche „<em>Term</em>"" (Theme-Ton, übernimmt <code>primary-color</code>). Einzelinhalte erscheinen nicht mehr als Kacheln — User springt direkt in die MCP-Suchergebnisliste. Wirkt auch im Canvas-Pane. Hosts, die das alte flache Kachel-/Inline-Link-Layout zurück wollen, setzen <code>inline-result-grouping="false"</code>.</td></tr>
-    <tr><td><code>quick-replies-enabled</code></td><td>boolean</td><td><code>true</code></td>
-        <td>Gesprächsvorschläge-Pillen unter Bot-Antworten. <code>false</code> blendet alle QR-Buttons komplett aus — keine Konversations-Vorschläge mehr. <br>Lotsen-Hinweise sind davon nicht betroffen: sie werden <em>in jedem Modus</em> als Inline-Link im Bot-Text gerendert, nicht als Pille.</td></tr>
-    <tr><td><code>show-guide-button</code></td><td>boolean</td><td><code>true</code></td>
-        <td>🧭-Lotsen-Toggle-Button im Header. <code>false</code> blendet den Button aus — der Lotsen-Modus selbst bleibt nutzbar (per <code>guide-mode-default</code> oder Backend-Default + Cross-TLD-<code>?bgm=…</code>-Handoff). Nützlich, wenn der Host das Lotsen-Toggling per eigener UI-Komponente steuert.</td></tr>
-    <tr><td><code>guide-mode-default</code></td><td>tristate</td><td><code>auto</code></td>
-        <td>Initial-State des Lotsen-Modus. <code>true</code>/<code>false</code> = explizit ein/aus; <code>auto</code> = bisheriges Verhalten (URL <code>?bgm</code> → localStorage → Backend-Default aus <code>guide-mode.yaml</code>). Wirkt nur beim allerersten Boot; späteres User-Toggle hat Vorrang.</td></tr>
+        <td>KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix) ein/aus. <code>false</code> lehnt Erstell-Anfragen mit der Alt-Antwort aus <code>widget-modes.yaml</code> freundlich ab. Studio-Default kann via <code>display-rules.yaml</code> bzw. Pattern-Gates ebenfalls gesetzt werden — Host-Attribut hat Vorrang als Embed-spezifische Härtung.</td></tr>
+    <tr><td colspan="4" style="background:#fff8e1;padding:8px 12px;font-size:12.5px;">
+      <strong>Welle E (2026-05-23) — entfernt:</strong>
+      <code>cards-enabled</code>, <code>canvas-enabled</code>,
+      <code>inline-result-grouping</code>, <code>quick-replies-enabled</code>,
+      <code>show-guide-button</code>, <code>guide-mode-default</code> existieren
+      nicht mehr. Layout (Gruppen-Boxen, Limits, Schriftgröße, Quick-Reply-
+      Anzahl, KI-Material-als-Box) liegt zentral im Studio-Tab
+      <strong>🎨 Anzeige</strong> (<code>01-base/display-rules.yaml</code>).
+      Canvas-Pane wurde durch InlineDocument-Box ersetzt. Lotsen-Modus ist
+      immer aktiv, der 🧭-Toggle im Header ist dauerhaft entfernt.
+    </td></tr>
     <tr><td><code>emit-guide-suggestion</code></td><td>boolean</td><td><code>false</code></td>
         <td>Passive Top-Result-Emission. <code>true</code>: bei jedem Bot-Turn mit Lotsen-eligible Cards wird ein <code>badboerdi:guide-suggestion</code>-CustomEvent auf <code>window</code> gefeuert (Payload: Top-1-Treffer + Alternativen). Angular-Output: <code>(guideSuggestion)</code>.</td></tr>
     <tr><td><code>emit-routing-debug</code></td><td>boolean</td><td><code>false</code></td>
@@ -734,27 +703,33 @@ el.setAttribute('initial-state', 'collapsed');  // entspricht closeChatbot()</pr
      Alt-Antwort-Text) liegen in <code>chatbots/wlo/v1/01-base/widget-modes.yaml</code> und
      sind über das Studio editierbar.</p>
 
-  <p><strong>Schlanke Themenseite</strong> — keine Kachel-Komponente, kein Canvas:</p>
+  <p style="background:#fff8e1;border-left:4px solid #f59e0b;padding:10px 14px;border-radius:4px;">
+    <strong>⚠ Welle E (2026-05-23) — Embed-Attribute aufgeräumt</strong><br>
+    Die alten Attribute <code>cards-enabled</code>, <code>canvas-enabled</code>,
+    <code>inline-result-grouping</code> werden ignoriert. Das Widget rendert
+    Treffer jetzt grundsätzlich in vier konsistenten Gruppen-Boxen
+    (Themenseiten · Sammlungen · Materialien · Webseiten-Inhalte) und KI-
+    Material/Lernpfade als gerahmte Inline-Box im Chat — Canvas-Pane ist
+    entfernt. Die Layout-Steuerung (Anzahl Treffer pro Box, Schriftgröße,
+    Prompt↔Anzeige-Konsistenz) liegt zentral im Studio-Tab
+    <strong>🎨 Anzeige</strong> (<code>01-base/display-rules.yaml</code>).
+  </p>
+
+  <p><strong>Default-Embed (alles aus dem Studio gesteuert):</strong></p>
+  <pre>&lt;boerdi-chat api-url="https://api.wlo.de"&gt;&lt;/boerdi-chat&gt;</pre>
+
+  <p><strong>KI-Erstellung pro Host abschalten</strong> — z.B. auf einer
+  Plattform die selbst KI-Content anbietet:</p>
   <pre>&lt;boerdi-chat
   api-url="https://api.wlo.de"
-  cards-enabled="false"
-  canvas-enabled="false"&gt;
+  ai-content-enabled="false"&gt;
 &lt;/boerdi-chat&gt;</pre>
 
-  <p><strong>Reduziert</strong> — Kacheln ja, KI-Erstellung nein, keine Pillen:</p>
+  <p><strong>UI-Buttons im Header verstecken</strong>:</p>
   <pre>&lt;boerdi-chat
   api-url="https://api.wlo.de"
-  ai-content-enabled="false"
-  quick-replies-enabled="false"&gt;
-&lt;/boerdi-chat&gt;</pre>
-
-  <p><strong>Minimal-Bubble</strong> — nur Text + Inline-Links:</p>
-  <pre>&lt;boerdi-chat
-  api-url="https://api.wlo.de"
-  cards-enabled="false"
-  canvas-enabled="false"
-  ai-content-enabled="false"
-  quick-replies-enabled="false"&gt;
+  show-debug-button="false"
+  show-language-buttons="false"&gt;
 &lt;/boerdi-chat&gt;</pre>
 
   <h2>Events (CustomEvents auf <code>window</code>)</h2>
@@ -794,13 +769,10 @@ window.addEventListener('badboerdi:routing-debug', (e) =&gt; {
         überschreibbar via Env <code>GUIDE_TRUSTED_DOMAINS</code>. Frontend ergänzt diese
         Backend-Liste optional via HTML-Attribut <code>trusted-domains</code> (additiv,
         kann nichts entfernen).</li>
-      <li><strong>Default-Aktivierung</strong>: <code>guide_mode_default</code> in der
-        YAML legt den initialen Toggle-State fest; per Embed via Attribut
-        <code>guide-mode-default="true|false|auto"</code> überschreibbar.</li>
-      <li><strong>Sichtbarkeit des Toggle-Buttons</strong>: per Attribut
-        <code>show-guide-button="true|false"</code> einzeln steuerbar — Button ausblenden,
-        Modus trotzdem aktivieren ist möglich (z.B. wenn der Host eigene Lotsen-UI bringt).</li>
-      <li><strong>Cross-Domain-Persistenz</strong>: damit der Toggle-State über
+      <li><strong>Welle E:</strong> Lotsen-Modus ist immer aktiv —
+        kein UI-Toggle, kein Embed-Attribut. Die Aktivierung hängt nur noch
+        davon ab, ob der Host auf der Allow-Liste steht.</li>
+      <li><strong>Cross-Domain-Persistenz</strong>: damit die Session über
         Page-Loads/TLDs überlebt, MUSS die Backend-Allow-Liste die Ziel-Domains kennen;
         für Subdomains derselben TLD zusätzlich <code>session-cookie-domain</code> setzen.</li>
     </ul>
@@ -917,78 +889,57 @@ _DEMO_INLINE_HTML = """<!doctype html>
   </style>
 </head>
 <body>
-  <h1><img src="/api/static/boerdi.svg" alt="" style="width:32px;height:32px;vertical-align:-7px;margin-right:8px;"/>Inline-Link-Modus</h1>
+  <h1><img src="/api/static/boerdi.svg" alt="" style="width:32px;height:32px;vertical-align:-7px;margin-right:8px;"/>Schlanker Embed-Modus</h1>
   <p class="lead">
-    Diese Demo zeigt das Widget mit deaktivierten Kacheln und deaktiviertem Canvas — der
-    Anwendungsfall für eine Themenseite, ein WordPress-Theme oder ein fremdes CMS, das
-    selbst Layout und Inhalts-Komponenten mitbringt.
+    Diese Demo zeigt das Widget mit reduziertem Header (keine Mic-/TTS-/Debug-/Lotsen-
+    Buttons) — der Anwendungsfall für eine Themenseite, ein WordPress-Theme oder ein
+    fremdes CMS. Die Treffer-Darstellung ist seit Welle E (2026-05-23) standardisiert:
+    vier konsistente Gruppen-Boxen, kein Canvas mehr.
   </p>
 
   <div class="hero">
     <p style="margin-bottom:10px;"><strong>Auf dieser Demo-Seite gesetzt (explizit):</strong></p>
     <p>
-      <span class="pill pill-off">cards-enabled="false"</span>
-      <span class="pill pill-off">canvas-enabled="false"</span>
       <span class="pill pill-off">show-language-buttons="false"</span>
       <span class="pill pill-off">show-debug-button="false"</span>
-      <span class="pill pill-off">show-guide-button="false"</span>
-      <span class="pill pill-on">guide-mode-default="true"</span>
       <span class="pill pill-on">emit-guide-suggestion="true"</span>
       <span class="pill pill-on">emit-routing-debug="true"</span>
       <span class="pill" style="background:#8b0000;color:#fff">primary-color="#8b0000"</span>
     </p>
     <p style="margin-top:10px;font-size:12.5px;color:#475569;">
-      <strong>Implizite Defaults greifen zusätzlich:</strong>
-      <code>inline-result-grouping="true"</code> (Welle-C.5-Default; treibt die
-      Result-Group-Boxen unten),
-      <code>quick-replies-enabled="true"</code>,
-      <code>ai-content-enabled="true"</code>,
-      <code>persist-session="true"</code>,
-      <code>auto-context="true"</code>.
+      <strong>Layout-Steuerung liegt jetzt zentral im Studio</strong> — Anzahl Treffer
+      pro Box (Themenseiten / Sammlungen / Materialien / Webseiten-Inhalte), Schrift-
+      größe der Inline-Document-Box, Quick-Reply-Limit etc. werden in
+      <code>01-base/display-rules.yaml</code> (Studio-Tab <strong>🎨 Anzeige</strong>)
+      gepflegt — kein Embed-Attribut mehr nötig.
     </p>
     <p style="margin-top:12px;">
-      <strong>Was sich gegenüber der Standard-Demo ändert:</strong>
-      Treffer-Kacheln entfallen (<code>cards-enabled="false"</code>) — stattdessen erscheinen
-      die Treffer pro Bot-Antwort in <strong>kompakten Result-Group-Boxen</strong>
-      (Themenseiten / Sammlungen / Webseiten-Inhalte / „Treffer zur Suche „&lt;Term&gt;""-CTA).
-      Diese Box-Anzeige ist seit Welle C.5 (2026-05-21) Default — der Parameter
-      <code>inline-result-grouping</code> bleibt hier deshalb unbenannt (greift implizit).
-      Dedup pro Box, Such-CTA-Synthese und Einzelinhalt-Redaction sind aktiv.
-      Material- und Lernpfad-Erstellung landen direkt im Chat-Verlauf statt im Canvas
-      (<code>canvas-enabled="false"</code>).
-      Header-Buttons (🔊 TTS, 🎤 Mic, 🔍 Debug, 🧭 Lotsen-Toggle) sind ausgeblendet — der
-      Lotsen-Modus läuft trotzdem (per <code>guide-mode-default="true"</code> immer an).
-    </p>
-    <p style="font-size:.9em;color:#475569;">
-      Wer das alte Inline-Markdown-Bullet-Verhalten zurück will, kann mit
-      <code>inline-result-grouping="false"</code> opt-out — siehe
-      <a href="/widget/classic" style="color:#1c4587;">/widget/classic</a>.
+      <strong>Was du in dieser Demo siehst:</strong>
+      Treffer landen pro Bot-Antwort in <strong>vier Gruppen-Boxen</strong>
+      (Themenseiten · Sammlungen · Materialien · Webseiten-Inhalte) plus einer
+      „Treffer zur Suche „&lt;Term&gt;""-CTA. Material/Lernpfade werden als gerahmte
+      Inline-Box direkt im Chat-Verlauf gerendert (kein Canvas-Pane mehr). Lotsen-
+      Modus ist Default an — Links zeigen Repo-Render-Targets statt externer URLs.
     </p>
     <p>
-      <a class="swap-link" href="/widget/">← Zurück zur klassischen Demo (mit Kacheln + Canvas)</a>
+      <a class="swap-link" href="/widget/">← Zurück zur Standard-Demo</a>
     </p>
   </div>
 
   <h2>Embed-Snippet (Konfiguration dieser Demo)</h2>
   <pre>&lt;script src="/widget/boerdi-widget.js" defer&gt;&lt;/script&gt;
 &lt;boerdi-chat
-  cards-enabled="false"
-  canvas-enabled="false"
   show-language-buttons="false"
   show-debug-button="false"
-  show-guide-button="false"
-  guide-mode-default="true"
   emit-guide-suggestion="true"
   emit-routing-debug="true"
   position="bottom-right"
   primary-color="#8b0000"&gt;
 &lt;/boerdi-chat&gt;</pre>
   <p class="form-hint" style="font-size:.85em;color:#475569;margin-top:-8px">
-    Im Header ist nur noch der „Neuer Chat"-Button + Schließen-Kreuz sichtbar. Der
-    Lotsen-Modus startet trotzdem aktiv — Inline-Links zeigen Repo-/WLO-Ziele statt
-    Direktlinks. Wer den Modus user-toggle-bar lassen möchte, lässt
-    <code>show-guide-button</code> auf <code>true</code> und
-    <code>guide-mode-default</code> auf <code>auto</code>.
+    Header zeigt nur „Neuer Chat" + Schließen-Kreuz. Layout (Gruppen-Boxen,
+    InlineDocument-Box) ist Welle-E-Standard und kommt aus dem Studio.
+    Lotsen-Modus ist Default an — Inline-Links zeigen Repo-/WLO-Ziele.
   </p>
   <p class="form-hint" style="font-size:.85em;color:#475569;margin-top:-4px">
     Die <code>primary-color="#8b0000"</code> ist hier absichtlich dunkelrot statt
@@ -998,11 +949,8 @@ _DEMO_INLINE_HTML = """<!doctype html>
     bewusst schwarz für Lesbarkeit; das BOERDi-Logo bleibt ebenfalls farb-stabil.
   </p>
 
-  <h3>Minimal-Variante (alle Buttons sichtbar, nur Kacheln/Canvas aus)</h3>
-  <pre>&lt;boerdi-chat
-  cards-enabled="false"
-  canvas-enabled="false"&gt;
-&lt;/boerdi-chat&gt;</pre>
+  <h3>Default-Variante (Studio-gesteuert, keine Embed-Attribute)</h3>
+  <pre>&lt;boerdi-chat api-url="https://api.wlo.de"&gt;&lt;/boerdi-chat&gt;</pre>
 
   <h3>Chat-Panel von außen öffnen</h3>
   <pre>const el = document.querySelector('boerdi-chat');
@@ -1075,29 +1023,15 @@ window.addEventListener('badboerdi:query-meta', (e) =&gt; {
   <!-- Live-Demo: Same-Origin (kein hardcoded Host) — kompakter Embed-Modus. -->
   <!-- {{EVENT_INSPECTOR}} -->
 
-  <script>
-    // guide-mode-default="true" + show-guide-button="false": der User kann
-    // den Lotsen-Modus auf dieser Seite nicht toggeln. Ohne dieses Script
-    // wuerde ein localStorage-Wert '0' von der Haupt-Demo (gleiche Origin)
-    // das HTML-Attribut ueberstimmen — Priority 2 > Priority 3 in der
-    // Widget-Init-Kette. Wir forcen hier '1', damit die Demo immer mit
-    // aktivem Lotsen-Modus startet.
-    try { localStorage.setItem('boerdi.guide_mode', '1'); } catch(e) {}
-  </script>
+  <!-- Welle E (2026-05-23): Lotsen-Modus ist immer aktiv; das Force-
+       localStorage-Script und der Lotsen-Toggle sind ersatzlos entfernt. -->
   <script src="/widget/boerdi-widget.js" defer></script>
-  <!-- ``inline-result-grouping`` ist seit Welle C.5 (2026-05-21) Default
-       = ``true``, ``cards-enabled="false"`` koppelt nur die Tile-Card-
-       Anzeige ab. Resultat: kompaktes Embed mit den neuen Result-Group-
-       Boxen (Themenseiten / Sammlungen / Webseiten-Inhalte / CTA) statt
-       großer Card-Kacheln. Für Opt-out auf das Legacy-Inline-Markdown-
-       Layout siehe ``/widget/classic``. -->
+  <!-- Welle E (2026-05-23): Layout-Steuerung liegt zentral im Studio
+       (display-rules.yaml). Hier nur noch Header-/Eventing-/Styling-
+       Attribute, die Embed-spezifisch Sinn machen. -->
   <boerdi-chat
-    cards-enabled="false"
-    canvas-enabled="false"
     show-language-buttons="false"
     show-debug-button="false"
-    show-guide-button="false"
-    guide-mode-default="true"
     emit-guide-suggestion="true"
     emit-routing-debug="true"
     position="bottom-right"
@@ -1108,60 +1042,21 @@ window.addEventListener('badboerdi:query-meta', (e) =&gt; {
 """
 
 
-# ── Classic-Demo: identisch zu /widget/inline, aber mit explizitem
-# ``inline-result-grouping="false"`` — also Opt-out aus dem neuen Default.
-# Wir leiten sie deterministisch per String-Replacement vom Inline-Template
-# ab, damit Layout, Inspector und Styling synchron bleiben. Nur Titel,
-# Lead-Text, Swap-Link und der Embed-Attribut-Eintrag werden überschrieben.
-#
-# Default-Flip 2026-05-21: Grouping ist jetzt Standard. Wer das alte
-# flache Card-/Inline-Link-Verhalten sehen will, muss explizit OPT-OUT,
-# daher die ``inline-result-grouping="false"``-Zeile statt sie zu entfernen.
-_DEMO_CLASSIC_HTML = (
-    _DEMO_INLINE_HTML
-    .replace(
-        "BOERDi Widget — Inline-Modus (keine Kacheln, kein Canvas)",
-        "BOERDi Widget — Classic-Modus (Result-Grouping deaktiviert)",
-    )
-    .replace(
-        ">Inline-Link-Modus</h1>",
-        ">Classic-Modus (Result-Grouping deaktiviert)</h1>",
-    )
-    .replace(
-        'Diese Demo zeigt das Widget mit deaktivierten Kacheln und deaktiviertem Canvas — der\n    Anwendungsfall für eine Themenseite, ein WordPress-Theme oder ein fremdes CMS, das\n    selbst Layout und Inhalts-Komponenten mitbringt.',
-        'Diese Demo entspricht <a href="/widget/inline" style="color:#1c4587;">/widget/inline</a>,\n    setzt aber <code>inline-result-grouping="false"</code> — der klassische\n    Inline-Link-Modus aus der Zeit vor Welle C.5. Treffer- und Lotsen-Quellen\n    erscheinen als Markdown-Bullets im Antworttext statt in separaten Boxen\n    (Themenseiten / Sammlungen / Webseiten-Inhalte / Such-CTA).\n    <br><br><strong>Hinweis:</strong> seit Welle C.5 (2026-05-21) ist Grouping\n    Default. Diese Demo ist also das Opt-out-Beispiel; ohne expliziten\n    Parameter würde die Anzeige wie in <code>/widget/inline</code> aussehen.',
-    )
-    .replace(
-        '<a class="swap-link" href="/widget/">← Zurück zur klassischen Demo (mit Kacheln + Canvas)</a>',
-        '<a class="swap-link" href="/widget/inline">→ Zur Demo /widget/inline mit Default-Grouping</a>',
-    )
-    # Pill-Bar im Hero-Block: Classic toggelt grouping AUS, das soll der
-    # User auf einen Blick sehen. Wir tauschen die implizit-Default-Pill-
-    # Beschreibung gegen eine explizit-Off-Pill und korrigieren den
-    # "Was ist gesetzt"-Erläuterungstext.
-    .replace(
-        '<code>inline-result-grouping="true"</code> (Welle-C.5-Default; treibt die\n      Result-Group-Boxen unten),',
-        '<code>inline-result-grouping="false"</code> ist hier <strong>explizit gesetzt</strong>\n      (Legacy-Inline-Markdown-Modus statt Result-Group-Boxen),',
-    )
-    .replace(
-        '<span class="pill" style="background:#8b0000;color:#fff">primary-color="#8b0000"</span>',
-        '<span class="pill pill-off">inline-result-grouping="false"</span>\n      <span class="pill" style="background:#8b0000;color:#fff">primary-color="#8b0000"</span>',
-    )
-    .replace(
-        'Treffer-Kacheln entfallen (<code>cards-enabled="false"</code>) — stattdessen erscheinen\n      die Treffer pro Bot-Antwort in <strong>kompakten Result-Group-Boxen</strong>\n      (Themenseiten / Sammlungen / Webseiten-Inhalte / „Treffer zur Suche „&lt;Term&gt;""-CTA).\n      Diese Box-Anzeige ist seit Welle C.5 (2026-05-21) Default — der Parameter\n      <code>inline-result-grouping</code> bleibt hier deshalb unbenannt (greift implizit).\n      Dedup pro Box, Such-CTA-Synthese und Einzelinhalt-Redaction sind aktiv.',
-        'Treffer-Kacheln entfallen (<code>cards-enabled="false"</code>), UND der\n      Result-Grouping-Modus ist explizit aus (<code>inline-result-grouping="false"</code>).\n      Treffer + Lotsen-Quellen werden also als <strong>Markdown-Bullets im Bot-Text</strong>\n      gerendert (Legacy-Layout vor Welle C.5) — keine separaten Themenseiten-/Sammlungs-/\n      Webseiten-Inhalte-Boxen, keine „Treffer zur Suche"-CTA, keine Einzelinhalt-Redaction\n      (Bot sieht volle Tool-Results und kann sie im Text referenzieren).',
-    )
-    # Embed-Attribut ``inline-result-grouping="false"`` EINFÜGEN — die
-    # einzige strukturelle Differenz zwischen Inline- und Classic-Demo.
-    # Classic erzwingt das Legacy-Verhalten: Cards werden zu Inline-
-    # Markdown-Bullets im Bot-Text gewandelt (statt in den Result-Group-
-    # Boxen zu landen). ``cards-enabled="false"`` ist seit Welle C.5
-    # bereits im Inline-Template gesetzt (gleiche kompakte Embed-Optik
-    # für beide Demos), muss hier also nicht mehr nachgezogen werden.
-    .replace(
-        '    canvas-enabled="false"\n',
-        '    canvas-enabled="false"\n    inline-result-grouping="false"\n',
-    )
+# ── Classic-Demo: Welle E (2026-05-23) — die Classic-Demo zeigte den
+# Legacy-Inline-Markdown-Modus (vor Welle C.5). Da ``inline-result-grouping``
+# jetzt deprecated und immer auf True forciert ist, gibt es keine
+# strukturelle Differenz mehr zur Inline-Demo. Wir leiten Classic einfach
+# auf dieselbe HTML wie /widget/inline mit einem Welle-E-Hinweis am Anfang.
+_DEMO_CLASSIC_HTML = _DEMO_INLINE_HTML.replace(
+    "<h1>",
+    "<div style='background:#fff8e1;border-left:4px solid #f59e0b;padding:10px 14px;"
+    "margin-bottom:18px;border-radius:4px;font-size:13.5px;'>"
+    "<strong>📜 Welle E (2026-05-23):</strong> Der frühere "
+    "<code>inline-result-grouping=\"false\"</code>-Modus (Markdown-Bullets im "
+    "Bot-Text statt Gruppen-Boxen) ist entfernt. Diese Seite verhält sich jetzt "
+    "wie <a href='/widget/inline' style='color:#1c4587;'>/widget/inline</a> "
+    "— Gruppen-Boxen sind der Standard.</div><h1>",
+    1,
 )
 
 

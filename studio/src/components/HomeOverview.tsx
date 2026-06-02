@@ -10,12 +10,6 @@ interface Props {
   onOpenSnapshots?: () => void;
 }
 
-interface EngineStats {
-  rule_count: number;
-  live_count: number;
-  shadow_count: number;
-}
-
 interface HealthStats {
   status?: string;
   provider?: string;
@@ -92,7 +86,6 @@ function formatScore(s: number | undefined): string {
 
 export default function HomeOverview({ elements, backendOnline, onNavigate, onOpenSnapshots }: Props) {
   // ── Live system data (fetched in parallel on mount) ──
-  const [engineStats, setEngineStats] = useState<EngineStats | null>(null);
   const [health, setHealth] = useState<HealthStats | null>(null);
   const [factory, setFactory] = useState<FactoryMeta | null>(null);
   const [snapshots, setSnapshots] = useState<SnapshotMeta[] | null>(null);
@@ -104,21 +97,15 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
     (async () => {
       // Parallel fetches; each fails silently to keep the dashboard
       // partially-readable even if one endpoint errors.
-      const [rules, hp, fac, snaps, evals] = await Promise.allSettled([
-        fetch('/api/routing-rules').then(r => r.json()),
+      // Welle E v4+12 (Sprint K): /api/routing-rules entfernt — der
+      // Routing-Engine-Status wird daher nicht mehr abgefragt.
+      const [hp, fac, snaps, evals] = await Promise.allSettled([
         fetch('/api/health').then(r => r.json()),
         fetch('/api/config/factory').then(r => r.json()),
         fetch('/api/config/snapshots').then(r => r.json()),
         fetch('/api/eval/runs').then(r => r.json()),
       ]);
       if (cancelled) return;
-      if (rules.status === 'fulfilled') {
-        setEngineStats({
-          rule_count: rules.value.total ?? 0,
-          live_count: rules.value.live_count ?? 0,
-          shadow_count: rules.value.shadow_count ?? 0,
-        });
-      }
       if (hp.status === 'fulfilled') setHealth(hp.value);
       if (fac.status === 'fulfilled') setFactory(fac.value);
       if (snaps.status === 'fulfilled' && Array.isArray(snaps.value)) {
@@ -138,10 +125,10 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
 
   // ── Live counts (fallback to sensible hard-coded numbers if backend
   //     hasn't responded yet — keeps the home view readable on first load). ──
-  const patternCount = elements?.patterns?.length ?? 23;
-  const personaCount = elements?.personas?.length ?? 9;
-  const intentCount = elements?.intents?.length ?? 13;
-  const stateCount = elements?.states?.length ?? 12;
+  const patternCount = elements?.patterns?.length ?? 16;
+  const personaCount = elements?.personas?.length ?? 6;
+  const intentCount = elements?.intents?.length ?? 8;
+  const stateCount = elements?.states?.length ?? 3;
   const entityCount = elements?.entities?.length ?? 5;
   const signalCount = elements?.signals?.length ?? 17;
 
@@ -158,7 +145,7 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
     {
       num: 2, id: 'domain',
       icon: '\u{1F310}',
-      label: 'Domain & Regeln',
+      label: 'Domain-Wissen',
       headline: 'Was weiß der Chatbot über WLO und seine Umgebung?',
       primaryCount: 'Plattform-Wissen + Policy',
       tags: ['Domain-Rules', 'WLO-Fachwissen', 'Policy-Matrix'],
@@ -168,9 +155,9 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
       num: 3, id: 'patterns',
       icon: '\u{1F9E9}',
       label: 'Patterns',
-      headline: '3-Phasen-Engine: Gate → Score → Modulate.',
+      headline: 'Der LLM-Hint wählt das passende Pattern.',
       primaryCount: `${patternCount} Patterns`,
-      tags: ['Inhalte abrufen', 'Canvas-Create', 'Recherche', 'Safety-Pattern'],
+      tags: ['Inhalte abrufen', 'Material-Erstellung', 'Recherche', 'Safety-Pattern'],
       color: '#7C3AED',
     },
     {
@@ -191,8 +178,8 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
     {
       num: 5, id: 'canvas',
       icon: '\u{1F3A8}',
-      label: 'Canvas-Formate',
-      headline: 'Wie sieht KI-generierter Inhalt im Canvas aus?',
+      label: 'Material-Formate',
+      headline: 'Wie sieht KI-generierter Inhalt im Chat aus?',
       primaryCount: '18 Material-Typen',
       tags: ['13 didaktisch', '5 analytisch', 'Typ-Aliase', 'Edit-/Create-Trigger'],
       color: '#EC4899',
@@ -220,7 +207,7 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
       id: 'quality',
       icon: '\u{1F4CA}',
       label: 'Quality',
-      desc: 'Pattern-Scoring, Confidence, Degradation-Rate',
+      desc: 'Pattern-/Intent-Verteilung, Confidence, Degradation',
       color: '#8B5CF6',
     },
     {
@@ -300,23 +287,6 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
           <button
             type="button"
             className="home-status-card home-status-card--clickable"
-            onClick={() => onNavigate('routing_rules')}
-            title="Routing-Rules öffnen"
-          >
-            <div className="home-status-icon" style={{ color: '#0EA5E9' }}>⚙️ Routing-Engine</div>
-            <div className="home-status-primary">
-              {engineStats ? `${engineStats.live_count} live` : '—'}
-            </div>
-            <div className="home-status-meta">
-              {engineStats
-                ? `${engineStats.rule_count} Regeln gesamt · ${engineStats.shadow_count} shadow`
-                : 'lädt…'}
-            </div>
-          </button>
-
-          <button
-            type="button"
-            className="home-status-card home-status-card--clickable"
             onClick={() => onNavigate('evaluation')}
             title="Evaluation öffnen"
           >
@@ -364,20 +334,11 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
           <button
             type="button"
             className="home-quick-btn"
-            onClick={() => onNavigate('routing_rules')}
-            title="Routing-Rules editieren"
-          >
-            <span className="home-quick-icon">⚙️</span>
-            <span className="home-quick-label">Routing-Rules</span>
-          </button>
-          <button
-            type="button"
-            className="home-quick-btn"
             onClick={() => onNavigate('canvas')}
-            title="Canvas-Formate konfigurieren"
+            title="Material-Formate konfigurieren"
           >
             <span className="home-quick-icon">🎨</span>
-            <span className="home-quick-label">Canvas-Formate</span>
+            <span className="home-quick-label">Material-Formate</span>
           </button>
         </div>
       )}
@@ -446,15 +407,15 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
       {/* ═══ 3-Phasen-Engine Info ═══ */}
       <div className="home-info-row">
         <div className="card home-info-card">
-          <div className="home-info-title">🧮 3-Phasen-Engine</div>
+          <div className="home-info-title">🧮 So entscheidet der Bot</div>
           <ol className="home-info-list">
             <li>
-              <strong>Gate:</strong> Filtert Patterns nach Persona, Intent und State.
-              Preconditions (z.B. <code>thema + material_typ</code>) sind Hard-Gates.
+              <strong>Klassifikation:</strong> Jeder Input wird in Intent, Persona, State und Entities eingeordnet.
+              Fehlende Pflicht-Slots lösen eine gezielte Rückfrage aus.
             </li>
             <li>
-              <strong>Score:</strong> Bewertet verbleibende Patterns anhand von Signalen,
-              Priorität und Slot-Vollständigkeit.
+              <strong>Pattern-Wahl:</strong> Der LLM-Hint bestimmt das passende Pattern,
+              classify-overrides.yaml dient als deterministischer Hard-Anker.
             </li>
             <li>
               <strong>Modulate:</strong> Ton, Länge, Format werden anhand aktiver Signale
@@ -467,7 +428,7 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
           <ul className="home-info-list">
             <li>
               <strong>Patterns</strong> referenzieren Personas, Intents, States und Signale
-              über Gates und Scoring-Regeln — editierbar unter Schicht 3.
+              — editierbar unter „Patterns".
             </li>
             <li>
               <strong>Tonalitäts-Modifier</strong> stecken im Frontmatter jeder Persona
@@ -475,19 +436,19 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
               Tonalität, nicht die Pattern-Wahl.
             </li>
             <li>
-              <strong>Canvas-Formate</strong> greifen nur bei den Intents INT-W-11
-              (Create) und INT-W-12 (Edit).
+              <strong>Material-Formate</strong> greifen nur bei den Intents I05
+              (Create) und I06 (Edit).
             </li>
             <li>
-              <strong>Inhalte abrufen (INT-W-03)</strong> ist universell für Themenseiten,
-              Sammlungen und Einzelinhalte — Pattern-Wahl (PAT-28 / PAT-07 / PAT-14 /
-              PAT-09) erfolgt deterministisch über Anker-Wörter + Persona.
+              <strong>Inhalte abrufen (I03)</strong> ist universell für Themenseiten,
+              Sammlungen und Einzelinhalte — Pattern-Wahl (M06 / M05 / M06 /
+              M05) erfolgt deterministisch über Anker-Wörter + Persona.
             </li>
           </ul>
         </div>
       </div>
 
-      {/* ═══ Neue Mechaniken (Welle B + C, Sprint 1-5) ═══ */}
+      {/* ═══ Weitere Mechaniken ═══ */}
       <div className="home-info-row">
         <div className="card home-info-card">
           <div className="home-info-title">🎚️ Tonalitäts-Modifier</div>
@@ -495,7 +456,7 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
             Jede Persona hat im Frontmatter (siehe Schicht 4 → Personas)
             die fünf Felder <code>tone</code>, <code>length_bias</code>,
             <code>formality</code>, <code>card_text_mode</code>,
-            <code>override</code>. Die Pattern-Engine wendet sie in Phase 3
+            <code>override</code>. Der Antwort-Prompt wendet sie
             an — Tonalität liegt damit zentral pro Persona, nicht in
             jedem Pattern doppelt.
           </p>

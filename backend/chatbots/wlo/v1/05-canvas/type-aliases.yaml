@@ -62,7 +62,10 @@ aliases:
   übungsaufgaben: uebung
 
   lerngeschichte: lerngeschichte
-  geschichte: lerngeschichte
+  # Welle E v4+11 (2026-05-26, eval-f6f56-Befund): "geschichte" als Alias
+  # entfernt — kollidierte als Substring mit Schulfach "Geschichte" (z.B.
+  # "Quiz zur europäischen Geschichte" → lerngeschichte). User muss
+  # explizit "lerngeschichte" oder Synonym wie "story" verwenden.
   story: lerngeschichte
 
   versuch: versuch
@@ -159,6 +162,7 @@ lrt_to_type:
   audio: infoblatt
   webseite: infoblatt
   lerngeschichte: lerngeschichte
-  geschichte: lerngeschichte
+  # Welle E v4+11 (2026-05-26): "geschichte" Alias entfernt — Substring-
+  # Konflikt mit Schulfach Geschichte (siehe oben).
   erzaehlung: lerngeschichte
   checkliste: checkliste

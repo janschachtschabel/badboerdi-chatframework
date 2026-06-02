@@ -101,7 +101,7 @@ body {
   text-transform: uppercase;
   color: var(--text-light);
   letter-spacing: .08em;
-  padding: 8px 10px 6px;
+  padding: 16px 10px 6px;
 }
 
 .layer-item {
@@ -126,22 +126,17 @@ body {
 }
 
 .layer-badge {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--primary-lt);
-  color: var(--primary);
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: .75rem;
-  font-weight: 700;
+  color: var(--text-light);
   flex-shrink: 0;
 }
 
 .layer-item.active .layer-badge {
-  background: var(--primary);
-  color: #fff;
+  color: var(--primary);
 }
 
 .layer-label {
@@ -491,11 +486,58 @@ td .form-select.form-input-sm:hover {
   overflow-y: auto;
   border-right: 1px solid var(--border);
   padding-right: 16px;
+  /* Stabile, sichtbare Scrollbar (Welle E v2, 2026-05-25). */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb, #9CA3AF) transparent;
 }
 
 .split-right {
   overflow-y: auto;
   padding-left: 4px;
+  /* Mehr Padding am Ende, damit die letzten Felder NICHT unter dem
+     Fenster-Rand klemmen — der User hat sonst Mühe, den letzten
+     Textarea-Body zu sehen oder anzuklicken. */
+  padding-right: 12px;
+  padding-bottom: 80px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb, #9CA3AF) transparent;
+}
+
+/* Sichtbare Scrollbar mit Hover-Effekt — gilt für alle scrollbaren
+   Studio-Container. WebKit-Variante (Chrome/Edge/Brave/Safari). */
+.split-left::-webkit-scrollbar,
+.split-right::-webkit-scrollbar,
+.studio-main::-webkit-scrollbar,
+.studio-sidebar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.split-left::-webkit-scrollbar-track,
+.split-right::-webkit-scrollbar-track,
+.studio-main::-webkit-scrollbar-track,
+.studio-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.split-left::-webkit-scrollbar-thumb,
+.split-right::-webkit-scrollbar-thumb,
+.studio-main::-webkit-scrollbar-thumb,
+.studio-sidebar::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.split-left::-webkit-scrollbar-thumb:hover,
+.split-right::-webkit-scrollbar-thumb:hover,
+.studio-main::-webkit-scrollbar-thumb:hover,
+.studio-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+  background-clip: padding-box;
 }
 
 .pattern-item {

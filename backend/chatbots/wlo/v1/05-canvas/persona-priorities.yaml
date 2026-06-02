@@ -16,8 +16,5 @@
 
 # Personas die analytische Material-Typen bevorzugen
 analytical_personas:
-  - P-VER        # Verwaltung
-  - P-W-POL      # Politik / Multiplikator
-  - P-BER        # Berater
-  - P-W-PRESSE   # Presse / Journalist
-  - P-W-RED      # Redaktion (leicht analytischer Bias: Kuration, Recherche)
+  - P-ENT   # Entscheider: Verwaltung + Politik + Beratung (konsolidiert)
+  - P-RED   # Redaktion & Presse

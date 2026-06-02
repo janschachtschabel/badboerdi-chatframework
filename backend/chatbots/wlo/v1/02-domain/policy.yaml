@@ -13,7 +13,7 @@ rules:
   - id: pol-presse-only-public
     description: Presse-Persona darf nur veröffentlichte/lizenzierte Inhalte sehen
     match:
-      persona: P-W-PRESSE
+      persona: P-RED
     effect:
       disclaimer: "Hinweis: Es werden ausschließlich öffentlich verfügbare Inhalte angezeigt."
 
@@ -25,7 +25,7 @@ rules:
       block_tools: ["search_wlo_content"]
       disclaimer: "Personenbezogene Daten können nicht über die Suche verarbeitet werden."
 
-  # Beispiel: Schüler*innen-Kontext (P-W-LK = Lehrkraft etc.)
+  # Beispiel: Schüler*innen-Kontext (P-LEH = Lehrkraft etc.)
   # - id: pol-jugendschutz
   #   match:
   #     persona: P-AND

@@ -1,0 +1,126 @@
+INFO:     Started server process [32192]
+INFO:     Waiting for application startup.
+09:20:03 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+09:20:03 INFO app.services.database: DB not empty (rag=906 sessions=94 messages=262) — factory skipped
+09:20:03 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+09:20:03 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
+09:20:04 INFO startup: Config warmup done in 205ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+09:20:04 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
+09:20:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:20:05 INFO startup: LLM warmup done in 1563ms
+C:\Users\jan\miniconda3\Lib\site-packages\torch\cuda\__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+09:20:13 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+09:20:16 INFO app.services.rag_service: Reranker warmup done in 12181ms
+09:23:08 INFO app.routers.chat: chat_stream START session=bb-0a857f2b-658f-415e-9df3-4cc659e7a9f6 msg='Ich suche etwas zu einem Thema.' action=-
+09:23:09 INFO app.services.llm_service: system_prompt[classify] tokens=16067 (was=0, cache-eligible=True)
+09:23:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:23:09 INFO app.services.safety_service: safety stages=openai level=standard took 890ms
+09:23:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:23:11 INFO app.services.llm_service: system_prompt[response] tokens=8724 (was=0, cache-eligible=True)
+09:23:11 INFO app.services.llm_service: rag-prefetch-gate: pattern=Slot-Klärung sources=['mcp'] \u2192 allowed=False
+09:23:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:23:29 INFO app.services.guide_qr_injector: guide-rules: 15 message_rules loaded from YAML
+09:23:29 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
+09:23:29 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich suche etwas zu einem Thema.'
+09:23:29 INFO app.routers.chat: chat_stream END session=bb-0a857f2b-658f-415e-9df3-4cc659e7a9f6 pattern=M03 (Slot-Klärung) tokens=24460/226 cached=15360
+09:24:11 INFO app.routers.chat: chat_stream START session=bb-0a857f2b-658f-415e-9df3-4cc659e7a9f6 msg='Klimawandel' action=-
+09:24:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:24:12 INFO app.services.safety_service: safety stages=openai level=standard took 616ms
+09:24:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:24:14 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_topic_pages (reasoning=Als primäres Such-Tool passt die Themenseiten-Suche, weil der User nur ein Thema)
+09:24:14 INFO app.routers.chat: speculative primary=search_wlo_topic_pages for intent=I03 hint_pattern=M06 args={'query': 'Klimawandel', 'maxResults': 10}
+09:24:14 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Klimawandel', 'maxResults': 5}
+09:24:14 INFO app.routers.chat: speculative extra=search_wlo_content args={'query': 'Klimawandel', 'maxResults': 5}
+09:24:14 INFO app.routers.chat: speculative extra=search_wlo_content args={'query': 'Klimawandel', 'maxResults': 5}
+09:24:14 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Klimawandel', 'maxResults': 5}
+09:24:14 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Klimawandel', 'maxResults': 5}
+09:24:14 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Klimawandel', 'maxResults': 5}
+09:24:15 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Klimawandel', 'maxResults': 5}
+09:24:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+09:24:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+09:24:15 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+09:24:16 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+09:24:16 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+09:24:16 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+09:24:16 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+09:24:16 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+09:24:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+09:24:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+09:24:17 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+09:24:17 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+09:24:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+09:24:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+09:24:17 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+09:24:18 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+09:24:19 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+09:24:19 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7420 chars
+09:24:19 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Klimawandel', 'maxResults': 10}
+09:24:19 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+09:24:19 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 8099 chars
+09:24:20 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+09:24:20 INFO app.services.mcp_client: MCP tool search_wlo_content returned 7709 chars
+09:24:20 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+09:24:20 INFO app.services.mcp_client: MCP tool search_wlo_content returned 7709 chars
+09:24:23 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+09:24:23 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 1017 chars
+09:24:23 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_content', 'search_wlo_content']
+09:24:23 INFO app.services.llm_service: system_prompt[response] tokens=7657 (was=8724, cache-eligible=True)
+09:24:23 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] \u2192 allowed=False
+09:24:23 INFO app.services.mcp_client: topic_page variants collapsed: 2 \u2192 1 für 'Nachhaltigkeit (LTP)' (funktional identisch — gleiche URL/Target/Label)
+09:24:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:24:24 INFO app.routers.chat: off-topic-filter: 11 \u2192 10 cards (signal-tokens=['klimawandel'], dropped=['Arbeit und Wirtschaft'])
+09:24:24 INFO app.routers.chat: groups.sammlungen_max: kept 3, dropped 1
+09:24:24 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 2
+09:24:24 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
+09:24:24 INFO app.routers.chat: chat_stream END session=bb-0a857f2b-658f-415e-9df3-4cc659e7a9f6 pattern=M06 (Material-Suche Cascade) tokens=28719/289 cached=15488
+09:24:45 INFO app.routers.chat: chat_stream START session=bb-acd123e5-9f81-467b-a80f-fea1c8467afe msg='Wie kannst du mir helfen?' action=-
+09:24:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:24:46 INFO app.services.safety_service: safety stages=openai level=standard took 726ms
+09:24:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:24:48 INFO app.services.llm_service: system_prompt[response] tokens=8648 (was=7657, cache-eligible=True)
+09:24:48 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
+09:24:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:24:49 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
+09:24:49 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Wie kannst du mir helfen?'
+09:24:49 INFO app.routers.chat: chat_stream END session=bb-acd123e5-9f81-467b-a80f-fea1c8467afe pattern=M15 (Orientierung) tokens=24379/277 cached=15360
+09:25:34 INFO app.routers.chat: chat_stream START session=bb-782eeca4-cfd6-4447-b4e7-380fa5af0b7e msg='Ich suche etwas zu einem Thema.' action=-
+09:25:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:25:35 INFO app.services.safety_service: safety stages=openai level=standard took 619ms
+09:25:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:25:41 INFO app.services.llm_service: rag-prefetch-gate: pattern=Slot-Klärung sources=['mcp'] \u2192 allowed=False
+09:25:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:25:42 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
+09:25:42 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich suche etwas zu einem Thema.'
+09:25:42 INFO app.routers.chat: chat_stream END session=bb-782eeca4-cfd6-4447-b4e7-380fa5af0b7e pattern=M03 (Slot-Klärung) tokens=24467/225 cached=17408
+09:25:52 INFO app.routers.chat: chat_stream START session=bb-782eeca4-cfd6-4447-b4e7-380fa5af0b7e msg='Klimawandel' action=-
+09:25:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:25:53 INFO app.services.safety_service: safety stages=openai level=standard took 636ms
+09:25:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:25:55 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_topic_pages (reasoning=Als primäres Tool ist die Suche nach Themenseiten sinnvoll, weil der User nur ei)
+09:25:55 INFO app.routers.chat: speculative primary=search_wlo_topic_pages for intent=I03 hint_pattern=M06 args={'query': 'Klimawandel', 'maxResults': 10}
+09:25:55 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Klimawandel', 'maxResults': 5}
+09:25:55 INFO app.routers.chat: speculative extra=search_wlo_content args={'query': 'Klimawandel', 'maxResults': 5}
+09:25:55 INFO app.routers.chat: speculative extra=search_wlo_content args={'query': 'Klimawandel', 'maxResults': 5}
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Klimawandel', 'maxResults': 5}
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_collections cache HIT (3 entries)
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Klimawandel', 'maxResults': 10}
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages cache HIT (3 entries)
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Klimawandel', 'maxResults': 5}
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_collections cache HIT (3 entries)
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Klimawandel', 'maxResults': 5}
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_content cache HIT (3 entries)
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Klimawandel', 'maxResults': 5}
+09:25:55 INFO app.services.mcp_client: MCP tool search_wlo_content cache HIT (3 entries)
+09:25:55 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_content', 'search_wlo_content']
+09:25:55 INFO app.services.llm_service: system_prompt[response] tokens=7659 (was=8648, cache-eligible=True)
+09:25:55 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] \u2192 allowed=False
+09:25:55 INFO app.services.mcp_client: topic_page variants collapsed: 2 \u2192 1 für 'Nachhaltigkeit (LTP)' (funktional identisch — gleiche URL/Target/Label)
+09:25:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:25:56 INFO app.routers.chat: off-topic-filter: 11 \u2192 10 cards (signal-tokens=['klimawandel'], dropped=['Arbeit und Wirtschaft'])
+09:25:56 INFO app.routers.chat: groups.sammlungen_max: kept 3, dropped 1
+09:25:56 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 2
+09:25:56 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
+09:25:56 INFO app.routers.chat: chat_stream END session=bb-782eeca4-cfd6-4447-b4e7-380fa5af0b7e pattern=M06 (Material-Suche Cascade) tokens=28723/252 cached=17536

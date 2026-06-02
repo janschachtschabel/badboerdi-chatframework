@@ -1,0 +1,352 @@
+{
+  "endpoint": "https://b-api.staging.openeduhub.net/api/v1/llm/academiccloud",
+  "prompt": "Ein Geschäft verkauft 3 Stifte für 2,40 Euro. Wie viel kosten 7 Stifte? Nenne kurz den Rechenweg und das Ergebnis.",
+  "max_tokens": 2500,
+  "results": [
+    {
+      "model": "apertus-70b-instruct-2509",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 5233,
+      "finish": "stop",
+      "ct": 204,
+      "content_chars": 520,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "Um herauszufinden, wie viel 7 Stifte kosten, müssen wir zunächst den Preis für einen Stift bestimmen. \n\nRechenweg:\n1. Te",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "deepseek-r1-distill-llama-70b",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 5934,
+      "finish": "stop",
+      "ct": 276,
+      "content_chars": 700,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [
+        "<think",
+        "</think"
+      ],
+      "content_head": "<think>\nZuerst berechne ich den Preis für einen einzelnen Stift, indem ich die Gesamtkosten von 2,40 Euro durch die Anza",
+      "category": "LEAK_IN_CONTENT"
+    },
+    {
+      "model": "devstral-2-123b-instruct-2512",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 1911,
+      "finish": "stop",
+      "ct": 67,
+      "content_chars": 120,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "**Rechenweg:**\n1. Preis pro Stift: 2,40 € / 3 = 0,80 €\n2. Kosten für 7 Stifte: 0,80 € × 7 = 5,60 €\n\n**Ergebnis:** 5,60 €",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "gemma-3-27b-it",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 2331,
+      "finish": "stop",
+      "ct": 85,
+      "content_chars": 165,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "**Rechenweg:**\n\n1.  Preis pro Stift: 2,40 € / 3 Stifte = 0,80 €/Stift\n2.  Preis für 7 Stifte: 0,80 €/Stift * 7 Stifte = ",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "gemma-4-31b-it",
+      "ok": false,
+      "reachable": false,
+      "err": "ReadTimeout: ",
+      "latency_ms": 90090,
+      "category": "UNREACHABLE"
+    },
+    {
+      "model": "glm-4.7",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 1644,
+      "finish": "stop",
+      "ct": 59,
+      "content_chars": 110,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "**Rechenweg:**\n1. Preis pro Stift: 2,40 € ÷ 3 = 0,80 €\n2. Preis für 7 Stifte: 0,80 € × 7\n\n**Ergebnis:**\n5,60 €",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "internvl3.5-30b-a3b",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 680,
+      "finish": "stop",
+      "ct": 80,
+      "content_chars": 239,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "Rechenweg: Zuerst berechnen wir den Preis für einen Stift, indem wir den Preis für 3 Stifte durch 3 teilen. Dann multipl",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "llama-3.3-70b-instruct",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 29956,
+      "finish": "stop",
+      "ct": 135,
+      "content_chars": 364,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "Um den Preis für 7 Stifte zu ermitteln, teilen wir zunächst den Gesamtpreis für 3 Stifte durch 3, um den Preis für einen",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "medgemma-27b-it",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 4467,
+      "finish": "stop",
+      "ct": 90,
+      "content_chars": 194,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "**Rechenweg:**\n\n1.  **Preis pro Stift:** 2,40 Euro / 3 Stifte = 0,80 Euro/Stift\n2.  **Gesamtpreis für 7 Stifte:** 0,80 E",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "meta-llama-3.1-8b-instruct",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 645,
+      "finish": "stop",
+      "ct": 81,
+      "content_chars": 163,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "Rechenweg:\n1. Preis pro Stift: 2,40 € ÷ 3 Stifte = 0,80 € pro Stift\n2. Kosten für 7 Stifte: 0,80 € pro Stift × 7 Stifte ",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "mistral-large-3-675b-instruct-2512",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 2001,
+      "finish": "stop",
+      "ct": 75,
+      "content_chars": 151,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "**Rechenweg:**\n1. Preis pro Stift: 2,40 € ÷ 3 = **0,80 €**\n2. Preis für 7 Stifte: 0,80 € × 7 = **5,60 €**\n\n**Ergebnis:**",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "openai-gpt-oss-120b",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 2060,
+      "finish": "stop",
+      "ct": 195,
+      "content_chars": 143,
+      "reasoning_field_chars": 396,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "Rechenweg:  \n\\( \\frac{2,40\\ €}{3}=0,80\\ €\\) pro Stift  \n\\(0,80\\ € \\times 7 = 5,60\\ €\\)\n\n**Ergebnis:** 7 Stifte kosten 5,",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 1238,
+      "finish": "stop",
+      "ct": 65,
+      "content_chars": 117,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "Rechenweg:  \nPreis pro Stift = 2,40 € : 3 = 0,80 €  \nKosten für 7 Stifte = 0,80 € × 7 = 5,60 €  \n\nErgebnis: 5,60 Euro",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b-instruct",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 670,
+      "finish": "stop",
+      "ct": 96,
+      "content_chars": 179,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "**Rechenweg:**  \n1. Preis für 3 Stifte: 2,40 €  \n2. Preis für 1 Stift: 2,40 € ÷ 3 = 0,80 €  \n3. Preis für 7 Stifte: 0,80",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "qwen3-omni-30b-a3b-instruct",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 520,
+      "finish": "stop",
+      "ct": 51,
+      "content_chars": 82,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning",
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "Preis pro Stift: 2,40 € ÷ 3 = 0,80 €  \nPreis für 7 Stifte: 7 × 0,80 € = **5,60 €**",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "qwen3.5-122b-a10b",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 29519,
+      "finish": "stop",
+      "ct": 943,
+      "content_chars": 142,
+      "reasoning_field_chars": 2368,
+      "extra_keys": [
+        "reasoning"
+      ],
+      "leak_markers": [],
+      "content_head": "1. **Einzelpreis ermitteln:**  \n   2,40 € ÷ 3 = 0,80 € pro Stift\n\n2. **Gesamtpreis berechnen:**  \n   0,80 € × 7 = 5,60 €",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "qwen3.5-27b",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 13415,
+      "finish": "stop",
+      "ct": 651,
+      "content_chars": 123,
+      "reasoning_field_chars": 1588,
+      "extra_keys": [
+        "reasoning"
+      ],
+      "leak_markers": [],
+      "content_head": "**Rechenweg:**\n1. Preis pro Stift: 2,40 € : 3 = 0,80 €\n2. Preis für 7 Stifte: 0,80 € × 7 = 5,60 €\n\n**Ergebnis:** 5,60 Eu",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "qwen3.5-35b-a3b",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 5843,
+      "finish": "stop",
+      "ct": 599,
+      "content_chars": 207,
+      "reasoning_field_chars": 1357,
+      "extra_keys": [
+        "reasoning"
+      ],
+      "leak_markers": [],
+      "content_head": "**Rechenweg:**\n1. Preis pro Stift ermitteln: $2,40\\,\\text{€} \\div 3 = 0,80\\,\\text{€}$\n2. Preis für 7 Stifte berechnen: $",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "qwen3.5-397b-a17b",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 7810,
+      "finish": "stop",
+      "ct": 586,
+      "content_chars": 133,
+      "reasoning_field_chars": 1437,
+      "extra_keys": [
+        "reasoning"
+      ],
+      "leak_markers": [],
+      "content_head": "1. **Einzelpreis:** 2,40 € : 3 = 0,80 € pro Stift.\n2. **Gesamtpreis:** 0,80 € × 7 = 5,60 €.\n\n**Ergebnis:** 7 Stifte kost",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "qwen3.6-35b-a3b",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 5137,
+      "finish": "stop",
+      "ct": 650,
+      "content_chars": 180,
+      "reasoning_field_chars": 1700,
+      "extra_keys": [
+        "reasoning"
+      ],
+      "leak_markers": [],
+      "content_head": "**Rechenweg:**  \n1. Einzelpreis ermitteln: 2,40 € ÷ 3 = 0,80 € pro Stift  \n2. Mit gewünschter Menge multiplizieren: 0,80",
+      "category": "SEPARATE_FIELD"
+    },
+    {
+      "model": "teuken-7b-instruct-research",
+      "ok": true,
+      "reachable": true,
+      "latency_ms": 1637,
+      "finish": "stop",
+      "ct": 103,
+      "content_chars": 296,
+      "reasoning_field_chars": 0,
+      "extra_keys": [
+        "reasoning_content"
+      ],
+      "leak_markers": [],
+      "content_head": "Zunächst müssen wir die Kosten für 3 Stifte berechnen. \n3 Stifte * 2,40 Euro/Stift = 7,20 Euro \n\nDann können wir die Kos",
+      "category": "SEPARATE_FIELD"
+    }
+  ]
+}

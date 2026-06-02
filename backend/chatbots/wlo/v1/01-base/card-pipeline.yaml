@@ -1,74 +1,15 @@
-# Card-Pipeline v2 — Treffer-Beschaffung und -Anzeige
-#
-# Diese Datei steuert die neue, vereinheitlichte Card-Pipeline (v2). Solange
-# der Env-Flag ``CARD_PIPELINE_V2`` nicht gesetzt ist, läuft die alte Logik
-# parallel weiter — die hier konfigurierten Werte greifen nur, wenn der
-# v2-Pfad aktiv ist.
-#
-# Leitidee: Ein einziger Beschaffungs-Aufruf liefert einen großen Pool an
-# Cards. Daraus wird deterministisch eine Final-Auswahl gezogen (optional
-# durch LLM re-ordered), und exakt eine URL-Resolution baut die Links.
-#
-# Im Vergleich zur v1-Logik entfallen:
-#   * ``max_guide_targets_per_turn`` (war eine versteckte 5-Treffer-Klippe)
-#   * Auto-Augmentation (Pool ist groß genug)
-#   * Safety-Net-Fallback (entfällt, weil Pool immer ausreicht)
+# Card-Pipeline v2 — Treffer-Beschaffung und -Anzeige.
+# Aktiv bei Env CARD_PIPELINE_V2; sonst v1-Pfad.
 
 card_pipeline:
-  # Wie viele Cards pro Suche vom MCP-Server ziehen.
-  #
-  # Bei intent_kind="general" wird der Pool auf drei MCP-Tools verteilt
-  # (search_wlo_topic_pages + search_wlo_collections + search_wlo_content),
-  # bei "type-focus" und "collection-contents" geht der ganze Pool an einen
-  # einzigen Tool-Aufruf.
-  #
-  # Klammer: 5..50. Default 20 ist ein guter Kompromiss aus
-  # Treffer-Vielfalt und Token-Sparsamkeit — bei pool_size=20 und Final-
-  # Auswahl=5 hat das LLM 15 Cards zur Re-Auswahl, was thematische
-  # Re-Rankings ermöglicht, ohne den Prompt zu fluten.
-  pool_size: 20
+  pool_size: 20              # MCP-Pool je Suche (5..50)
+  llm_curation_pool: 15      # an LLM für Re-Auswahl (<= pool_size)
+  final_selection_size: 5    # an User gezeigt (1..10)
+  enable_llm_curation: true  # false = rein deterministisch sortiert
+  min_displayed_cards: 5     # min. nach LLM-Auswahl (0 = kein Auffüllen)
 
-  # Wie viele Cards dem LLM zur Re-Auswahl übergeben.
-  #
-  # Muss <= pool_size sein. Default 15. Reduzieren, wenn die LLM-Latenz
-  # ein Problem wird; erhöhen, wenn der Re-Rank-Effekt zu schwach ist.
-  llm_curation_pool: 15
-
-  # Wie viele Cards dem User schlussendlich zeigen (Inline-Limit, Kachel-
-  # Erstreihe, Lotsen-QR-Anzahl — alle drei aus diesem einen Wert
-  # abgeleitet, damit das Verhalten konsistent ist).
-  #
-  # Klammer: 1..10. Default 5 — User-Feedback zeigt, dass 5 Optionen ein
-  # guter Sweet-Spot sind (3 ist zu wenig, 8+ überfordert).
-  final_selection_size: 5
-
-  # LLM-basierte Re-Auswahl der Cards aktivieren.
-  #
-  # True: Backend übergibt die top llm_curation_pool Cards ans LLM, das
-  # via select_top_cards-Tool die thematisch passendsten final_selection_size
-  # Cards zurückgibt.
-  #
-  # False: Rein deterministische Sortierung — Themenseite > Sammlung >
-  # Einzelinhalt, in MCP-Trefferreihenfolge. Schneller, vorhersehbarer,
-  # spart LLM-Token.
-  enable_llm_curation: true
-
-  # Mindest-Anzahl Cards in der Final-Auswahl. Wenn das LLM weniger picked
-  # (z.B. nur 2 von 15), füllt das Backend deterministisch bis zu diesem
-  # Wert auf. So bekommt der User immer eine sinnvolle Auswahl, auch wenn
-  # das LLM konservativ war.
-  #
-  # 0 oder >final_selection_size → kein Auffüllen.
-  min_displayed_cards: 5
-
-  # Bekannte Repo-Hosts, deren Links auf REPO_BASE_URL umgeschrieben werden
-  # sollen, wenn der MCP-Server sie zurückgibt. Verteidigt gegen MCP-Server-
-  # Bugs, die fixed Production-Hosts hardgecoded haben — und gegen das
-  # umgekehrte Szenario (Production-MCP gibt Staging-Hosts).
-  #
-  # Reihenfolge ist unwichtig; alle Einträge werden gegen die Card-URLs
-  # geprüft (Prefix-Match auf den Host). Externe URLs (Wikipedia, YouTube,
-  # Verlage) bleiben unverändert.
+  # Hosts, deren Links auf REPO_BASE_URL umgeschrieben werden
+  # (verteidigt gegen MCP-Server mit hardcoded Hosts).
   known_repo_hosts:
     - https://redaktion.openeduhub.net
     - https://repository.staging.openeduhub.net

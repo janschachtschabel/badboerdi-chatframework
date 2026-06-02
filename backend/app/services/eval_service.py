@@ -57,242 +57,261 @@ CHAT_URL = os.getenv("EVAL_CHAT_URL", "http://localhost:8000/api/chat")
 
 # ── Scenario generation ────────────────────────────────────────────
 
+# ──────────────────────────────────────────────────────────────────────
+# Welle E (2026-05-25) — Scenario-Prompt YAML-driven
+#
+# Vorher: ~60 Zeilen hardcoded Persona-Marker-Listen pro Persona im
+# Template (POSITIV/NEGATIV-Block). Jetzt: zur Laufzeit aus den Persona-
+# MDs (hints + anti_hints) injiziert. Single Source of Truth mit dem
+# Klassifikator-Prompt.
+#
+# Was IM Template bleibt:
+#   - Generische Anweisungen (Stil, Du/Sie, Intent-Trigger-Pflicht)
+#   - Intent-spezifische Sonder-Regeln für I01 (Soft Probing) — die sind
+#     vom Persona-Schema unabhängig.
+#   - Die Persona/Intent-Daten als {…}-Platzhalter.
+# ──────────────────────────────────────────────────────────────────────
+
+
 _SCENARIO_PROMPT = """Du hilfst beim Testen eines Chatbots.
 
 Erzeuge {count} realistische Eroeffnungsfragen, die ein Nutzer mit folgender
 Persona dem Chatbot stellen wuerde, mit dem Ziel hinter dem Intent.
 
-Persona: {persona_label}
-Beschreibung: {persona_desc}
-Typische Redeweise: {persona_hints}
+## Persona
+{persona_label}
+{persona_desc}
 
-Intent: {intent_label}
-Beschreibung: {intent_desc}
+## Intent
+{intent_label}
+{intent_desc}
+Typische Trigger-Verben/Phrasen (sollten in den Eroeffnungen vorkommen):
+{intent_triggers}
+
+## Persona-Marker (verbindlich)
+{persona_markers_block}
 
 KRITISCH — die Nachricht muss den Intent KLAR triggern:
 - Enthalte Schluesselphrasen oder Inhalte, die fuer diesen Intent spezifisch sind.
   Beispiel: Bei "Suche Unterrichtsmaterial" muss ein Fach, Thema oder Typ vorkommen.
   Bei "Inhalt erstellen" muss ein Erstell-Verb ("erstelle", "generiere", "bau mir")
   UND ein konkretes Thema vorkommen.
-- INTENT-SPEZIFISCHE REGELN (befolge GENAU die fuer den vorgegebenen Intent):
-  * INT-W-01 (WLO kennenlernen): EINE Frage der Form "Was ist WLO?" /
-    "Was kann ich hier machen?" / "Worum geht's auf dieser Seite?".
-    Generische Erst-Begegnung. KEIN Fach/Thema, KEIN Erstell-Verb.
-  * INT-W-02 (Soft Probing): VAGE Erkundung OHNE konkretes Anliegen.
-    Erlaubt: "Ich gucke mal", "Erstmal umsehen", "Was gibt's hier?",
-    "Ich orientiere mich", "Ich schau, was es so gibt", "Bin neu hier".
+- INTENT-SPEZIFISCHE SONDER-REGELN:
+  * I01 (Orientierung): EINE Frage der Form "Was ist WLO?" /
+    "Was kann ich hier machen?" / "Worum geht's auf dieser Seite?" ODER vage
+    Erkundung "Ich gucke mal", "Erstmal umsehen", "Bin neu hier".
     VERBOTEN: konkretes Fach, konkretes Thema, Such-/Erstell-/Plan-Verb,
     Lernpfad, Materialien-fuer-... — denn sobald ein konkretes Anliegen
-    drin ist, ist es NICHT mehr Soft Probing, sondern INT-W-03/10/11.
+    drin ist, ist es NICHT mehr Orientierung, sondern ein anderer Intent.
+  * I05 (Inhalt-Generieren): MUSS ein **explizites Erstell-Verb**
+    enthalten ("erstelle", "generiere", "bau mir", "mach mir", "schreib mir",
+    "fertige … an", "produziere") UND einen **konkreten Material-Typ**
+    (Arbeitsblatt, Quiz, Bericht, Infoblatt, Pressemitteilung, Factsheet,
+    Steckbrief, Vergleich, Lerngeschichte, Versuchsanleitung, Präsentation,
+    Glossar, Checkliste). VERBOTEN sind generische Plattform-Fragen wie
+    "Was kann ich hier alles machen?" — das ist I01.
+    Beispiel-Eröffnungen:
+      - "Erstell mir bitte ein Arbeitsblatt zur Bruchrechnung."
+      - "Generier mir ein Quiz zu Photosynthese für Klasse 7."
+      - "Bau mir ein Infoblatt zur Stadtgeschichte."
+  * I06 (Inhalt-Nachbearbeiten): Edit-Verb auf VORHANDENEN Inhalt:
+    "kürzer", "einfacher", "ergänze", "umformuliere", "Lösungen rein".
+    Die Eröffnung muss EXPLIZIT auf einen vorigen Bot-Inhalt referenzieren
+    ("den Text vorher", "den Lernpfad", "das eben Erstellte").
   * Andere Intents: KEINE generische "Was kannst du?"-Frage — das ist
-    INT-W-01, nicht der hier vorgegebene. Konkretes Anliegen mit
+    I01, nicht der hier vorgegebene. Konkretes Anliegen mit
     Intent-spezifischen Schluesselphrasen ist Pflicht.
-- Falls die Persona die Sie-Form bevorzugt (Verwaltung, Presse, Politiker:in,
-  Berater:in), dann SIE-Form verwenden. Bei Schueler:in und Eltern eher Du.
 
 GLEICH KRITISCH — die Nachricht muss die PERSONA erkennbar machen:
-- MINDESTENS EINE der "Typische Redeweise"-Phrasen oben MUSS in der Nachricht
-  vorkommen, sonst kann der Chatbot die Persona nicht von P-AND unterscheiden.
-- Beispiele fuer Persona-Verankerung (POSITIV-Marker) PLUS Verboten-Listen
-  (NEGATIV-Marker), die du beim Generieren NICHT einbauen darfst, weil sie
-  eine ANDERE Persona triggern wuerden:
+- MINDESTENS EINEN POSITIV-Marker aus der Liste oben verwenden.
+- KEINE Phrase aus den NEGATIV-Markern verwenden — die wuerde eine andere
+  Persona triggern und unsere Klassifikator-Messung verfaelschen.
+- Bei P-LER (Lerner / Schueler:in) reicht ein generisches "Hey, ich bin neu"
+  NICHT — das ist P-AND. P-LER-Eroeffnungen MUESSEN **mindestens EIN Wort**
+  aus der folgenden Liste enthalten (Pflicht, keine Ausnahme):
+  * Selbst-ID: "ich bin Schueler:in", "als Schueler:in", "Schueler", "Lerner"
+  * Schul-Kontext: "Schule", "Klasse N" (mit Zahl), "Unterricht", "Klausur",
+    "Hausaufgabe(n)", "Pruefung", "Test", "Lehrer:in", "Stundenplan"
+  * Lern-Kontext: "ich lerne fuer", "fuers Lernen", "fuer mein Lernen",
+    "fuer meine Pruefung", "ich kapiere ... nicht", "ich verstehe ... nicht",
+    "erklaer mir", "kannst du ... erklaeren"
 
-  * P-ELT (Eltern):
-    POSITIV: "mein Sohn / meine Tochter / mein Kind / fuer zu Hause /
-    Hausaufgaben meines Kindes / als Mutter / als Vater / Elternsprechtag /
-    fuer meinen Nachwuchs / Klasse meines Kindes"
-    NEGATIV (vermeiden): "meine Klasse / mein Unterricht / Stundenentwurf /
-    Lehrplan / Klassenarbeit korrigieren" (= P-W-LK)
-
-  * P-W-LK (Lehrkraft):
-    POSITIV: "meine Klasse / Stundenentwurf / mein Unterricht /
-    fuer Sek I / Lehrplan / Klassenarbeit korrigieren / als Lehrkraft /
-    fuer den Unterrichtseinstieg / Lernziel / Curriculum"
-    NEGATIV: "mein Sohn / mein Kind / Hausaufgaben meines Kindes" (= P-ELT)
-    NEGATIV: "ich verstehe nicht / fuer meine Klausur / als Schuelerin" (= P-W-SL)
-
-  * P-W-SL (Schueler:in):
-    PFLICHT: JEDE Nachricht beginnt aus 1st-Person-Schueler-Sicht und
-    enthaelt MINDESTENS EINEN dieser Marker (sonst landet's bei P-AND
-    oder P-W-LK):
-      - Verstehen-Defizit: "ich verstehe nicht", "ich check nicht",
-        "ich kapiere das nicht", "ich rafft nicht", "ist mir unklar",
-        "kann ich ueberhaupt nicht"
-      - Schueler-Selbst-ID: "als Schuelerin", "ich bin in der 8. Klasse",
-        "meine Lehrerin sagt", "ich besuche die {{Schule/Stufe}}"
-      - Schueler-Aufgaben-Bezug aus 1st-Person: "fuer meine Hausaufgabe",
-        "fuer meine Klausur", "fuer meinen Test", "fuer meine Pruefung",
-        "fuer meinen Jahrgang", "fuer meine Mathe-Aufgabe"
-    POSITIV-Beispielsatz-Anfaenge (so klingt P-W-SL):
-      "Ich check Bruchrechnung nicht, kannst du mir das erklaeren?"
-      "Fuer meine Mathe-Klausur brauche ich Uebungen zu Vektoren."
-      "Ich verstehe Photosynthese nicht — gibt's ein Video?"
-      "Hilfe, mein Test ist morgen und ich rafft die Kurvendiskussion nicht."
-    NEGATIV (KRITISCH, sonst landet's bei P-W-LK!): "Stundenentwurf /
-    eine Stunde planen / fuer meine Klasse (im Sinne von 'unterrichten') /
-    Arbeitsblatt erstellen fuer die Klasse 6 / Klassenarbeit korrigieren /
-    Unterrichtsentwurf / Statistik zur Materialnutzung / kannst du mir ein
-    Arbeitsblatt zu X fuer die N. Klasse erstellen"
-    NEGATIV: "fuer meinen Wahlkreis / amtliche Daten / KPI" (= P-VER/P-W-POL)
-    BEACHTE: "Arbeitsblatt erstellen" ist NICHT P-W-SL, sondern P-W-LK,
-    AUSSER der/die Schueler:in sagt EXPLIZIT, dass es zum SELBST-LERNEN
-    fuer sich/ihn ist — also "ein Uebungsblatt fuer MICH zum Bruchrechnen"
-    oder "fuer mich selbst zum Pruefungstraining". Sobald "fuer die
-    {{N}}. Klasse" oder "fuer meine Schueler:innen" faellt, ist es P-W-LK.
-
-  * P-W-RED (Redaktion):
-    POSITIV: "ich kuratiere / Inhalte einstellen / als Redakteur:in /
-    redaktioneller Ueberblick / fuer die Sammlung / qualitaetspruefen"
-    NEGATIV: "fuer meinen Artikel / Pressemitteilung / fuer meine
-    Leser:innen / Recherche fuer eine Story" (= P-W-PRESSE)
-    NEGATIV: "meine Klasse / Stundenentwurf" (= P-W-LK)
-
-  * P-W-PRESSE (Presse / Journalismus):
-    POSITIV: "als Journalist:in / fuer meinen Artikel / Pressemitteilung /
-    fuer meine Leser:innen / fuer meinen Beitrag / Recherche fuer eine Story /
-    Reichweite / Auflage / fuer das Magazin / fuer eine Reportage /
-    Pressekit / Background-Story / Hintergrundrecherche"
-    NEGATIV (KRITISCH, sonst P-W-RED!): "redaktionell / ich kuratiere /
-    Inhalte einstellen / fuer die Sammlung"
-    NEGATIV (KRITISCH, sonst P-W-LK!): "Unterrichtsstunde / Stundenentwurf /
-    Klassenarbeit / fuer meine Klasse / Lehrplan"
-    P-W-PRESSE schreibt ÜBER die Plattform fuer AUSSEN-Publikationen.
-
-  * P-W-POL (Politik / Multiplikator):
-    POSITIV: "fuer meinen Wahlkreis / als Politiker:in / Bildungspolitik
-    in / Multiplikator:in / parlamentarische Anfrage / fuer die Fraktion /
-    fuer einen Antrag / Plenarsitzung"
-    NEGATIV: "fuer meine Verwaltung / Bezirksauswertung / KPI / amtliche
-    Statistik" (= P-VER)
-    NEGATIV: "meine Klasse / Stundenentwurf" (= P-W-LK)
-
-  * P-VER (Verwaltung / Behoerde):
-    POSITIV: "fuer unsere Verwaltung / Bezirksauswertung / amtliche
-    Daten / KPI / als Schulamt / fuer die Schulaufsicht / Behoerdenanfrage /
-    fuer den Quartalsbericht / Verfuegbarkeitsmatrix / Fachreferat"
-    NEGATIV (KRITISCH, sonst P-W-LK!): "meine Klasse / Stundenentwurf /
-    Klassenarbeit / mein Unterricht / Lehrplan"
-    NEGATIV: "fuer meinen Wahlkreis / als Politiker:in" (= P-W-POL)
-    NEGATIV: "fuer meinen Artikel" (= P-W-PRESSE)
-
-  * P-BER (Beratung / Schulbegleitung):
-    POSITIV: "fuer unsere Schule evaluieren / als Beraterin /
-    Beratungsprozess / Schulentwicklung begleiten / als Coach /
-    fuer den Schulkollegium-Workshop"
-    NEGATIV: "mein Kind / mein Sohn / meine Tochter" (= P-ELT)
-    NEGATIV: "meine Klasse / mein Unterricht" (= P-W-LK direkt)
-
-  * P-AND (Andere):
-    POSITIV: KEIN Selbst-Identifikator — gerade die ANONYMITAET ist das
-    Persona-Signal. Generische Formulierungen wie "Was kann ich hier
-    machen?" / "ich gucke mal" / "interessehalber" / "ich ueberlege ob
-    ich das fuer Bekannte nutzen kann".
-    NEGATIV: ALLE oben genannten Persona-Marker (Sohn/Klasse/Wahlkreis/
-    Artikel/Verwaltung/...) — sobald ein klarer Marker faellt, ist es
-    NICHT mehr P-AND.
-
-WARUM: Eval-Reports zeigen sonst niedrige Persona-Trefferquoten, nicht weil
-der Klassifikator schlecht ist, sondern weil generische Anfragen ("Hey,
-Mathe-Arbeitsblaetter?") tatsaechlich von ALLEN Personas kommen koennten —
-unaufloesbar ohne Marker.
+  Wenn die User-Nachricht keinen dieser Marker enthaelt, ist sie P-AND —
+  egal welche Persona im Test-Setup ausgewaehlt wurde. Eine Frage wie
+  "Hey, ich habe einen Fehler im Material gefunden" ohne Schul-Anker geht
+  NICHT als P-LER durch. Lieber das Wort "Klausur" oder "Schule" einbauen.
 
 Stil:
 - Schreibe natuerlich, nicht perfekt formuliert. Tippfehler, Abkuerzungen,
   halbe Saetze sind ok — so reden echte Nutzer.
 - Variiere Laenge, Konkretheit und Tonfall zwischen den Fragen.
+- Falls die Persona die Sie-Form bevorzugt (Verwaltung, Presse, Politiker:in,
+  Berater:in), dann SIE-Form verwenden. Bei Schueler:in und Eltern eher Du.
 - KEINE Nummerierung, KEIN Metatext. Nur die Fragen, eine pro Zeile.
 """
 
 
-# Deterministic Persona-Marker dictionary for post-generation filtering.
-# Lower-cased, accent-stripped substrings that — if any match — count as
-# a clear persona anchor in the generated text. P-AND has no positive
-# markers (anonymity IS the signal); we only flag P-AND drift indirectly
-# by checking whether OTHER persona markers leaked into a P-AND prompt.
-_PERSONA_MARKERS: dict[str, list[str]] = {
-    "P-W-LK": [
-        "meine klasse", "stundenentwurf", "mein unterricht",
-        "lehrplan", "klassenarbeit", "als lehrkraft", "als lehrerin",
-        "als lehrer", "sek i", "sek ii", "unterrichtseinstieg",
-        "lernziel", "curriculum", "fuer die klasse", "für die klasse",
-    ],
-    "P-W-SL": [
-        "ich verstehe nicht", "ich check", "ich kapier", "ich rafft",
-        "fuer meine klausur", "für meine klausur", "fuer meine hausaufgabe",
-        "für meine hausaufgabe", "fuer meinen test", "für meinen test",
-        "als schuelerin", "als schülerin", "als schueler", "als schüler",
-        "in meiner 8. klasse", "in meiner 9. klasse", "in meiner 10. klasse",
-        "fuer meinen jahrgang", "für meinen jahrgang",
-        "fuer meine pruefung", "für meine prüfung",
-        "fuer meine mathe-aufgabe", "für meine mathe-aufgabe",
-        "meine lehrerin sagt",
-    ],
-    "P-ELT": [
-        "mein sohn", "meine tochter", "mein kind", "als mutter",
-        "als vater", "elternsprechtag", "fuer zu hause", "für zu hause",
-        "hausaufgaben meines kindes", "fuer meinen nachwuchs",
-        "für meinen nachwuchs", "klasse meines kindes",
-    ],
-    "P-W-RED": [
-        "ich kuratiere", "inhalte einstellen", "als redakteur",
-        "als redakteurin", "fuer die sammlung", "für die sammlung",
-        "qualitaetspruefung", "qualitätsprüfung", "redaktioneller",
-    ],
-    "P-W-PRESSE": [
-        "als journalist", "fuer meinen artikel", "für meinen artikel",
-        "pressemitteilung", "fuer meine leser", "für meine leser",
-        "fuer meinen beitrag", "für meinen beitrag", "fuer eine story",
-        "für eine story", "fuer eine reportage", "für eine reportage",
-        "pressekit", "background-story", "hintergrundrecherche",
-    ],
-    "P-W-POL": [
-        "fuer meinen wahlkreis", "für meinen wahlkreis", "als politiker",
-        "bildungspolitik", "parlamentarische anfrage", "fuer die fraktion",
-        "für die fraktion", "fuer einen antrag", "für einen antrag",
-        "plenarsitzung",
-    ],
-    "P-VER": [
-        "fuer unsere verwaltung", "für unsere verwaltung",
-        "bezirksauswertung", "amtliche daten", "amtliche statistik",
-        "als schulamt", "fuer die schulaufsicht", "für die schulaufsicht",
-        "behoerdenanfrage", "behördenanfrage", "fuer den quartalsbericht",
-        "für den quartalsbericht", "verfuegbarkeitsmatrix", "fachreferat",
-        "kpi",
-    ],
-    "P-BER": [
-        "als beraterin", "als berater", "fuer unsere schule evaluieren",
-        "für unsere schule evaluieren", "beratungsprozess",
-        "schulentwicklung begleiten", "als coach",
-        "schulkollegium-workshop",
-    ],
-    # P-AND has no positive marker — see _has_persona_marker logic.
-    "P-AND": [],
-}
+# Cache für das gerenderte Persona-Markers-Block pro Persona. Wird
+# einmal pro Generator-Run gebaut (alle Personas geladen, Cross-References
+# berechnet) und dann pro (persona, intent)-Kombi nachgeschlagen.
+def _build_persona_markers_block(
+    persona: dict[str, Any],
+    all_personas: list[dict[str, Any]],
+) -> str:
+    """Render the persona-specific POSITIV/NEGATIV markers block.
+
+    POSITIV-Marker kommen direkt aus der Persona-MD (``## Positiv-Marker``
+    → ``hints``). NEGATIV-Marker kombinieren zwei Quellen:
+      1. Die eigene ``anti_hints``-Liste (``## Anti-Marker``)
+      2. Die Positiv-Marker ALLER anderen Personas (Cross-Persona-Drift-
+         Schutz) — getaggt mit ``(= P-XYZ)``, damit das LLM weiß warum
+         der Marker verboten ist.
+
+    Für P-AND (Default-Persona) gilt die Inversionsregel: KEIN Positiv-
+    Marker, dafür sind ALLE Marker anderer Personas verboten.
+    """
+    pid = persona.get("id", "")
+    # ``positive_markers`` ist die Welle-E-v2-Quelle, ``hints`` ist der
+    # Backward-Compat-Alias (zeigt auf dieselbe Liste).
+    pos = persona.get("positive_markers") or persona.get("hints") or []
+
+    # ``anti_markers`` ist jetzt list[{phrase, redirect_to?, rationale?}],
+    # die alte ``anti_hints`` (list[str]) bleibt als Fallback für Files,
+    # die noch nicht migriert sind.
+    own_anti_raw = persona.get("anti_markers") or persona.get("anti_hints") or []
+    own_anti: list[str] = []
+    for item in own_anti_raw:
+        if isinstance(item, dict):
+            phrase = str(item.get("phrase") or "").strip()
+            if not phrase:
+                continue
+            redirect_to = str(item.get("redirect_to") or "").strip()
+            own_anti.append(f'"{phrase}" (= {redirect_to})' if redirect_to else f'"{phrase}"')
+        elif isinstance(item, str) and item.strip():
+            own_anti.append(f'"{item.strip()}"')
+
+    # Cross-Persona NEGATIV: Positiv-Marker anderer Personas (max 6 pro
+    # andere Persona, damit das Block nicht explodiert).
+    cross_neg: list[str] = []
+    for other in all_personas:
+        other_id = other.get("id", "")
+        if not other_id or other_id == pid:
+            continue
+        other_pos = other.get("positive_markers") or other.get("hints") or []
+        for h in other_pos[:6]:
+            cross_neg.append(f'"{h}" (= {other_id})')
+
+    parts: list[str] = []
+
+    # P-AND ist Spezialfall: keine eigenen Marker, dafür alle fremden verboten.
+    if pid == "P-AND":
+        parts.append(
+            'POSITIV (Eröffnung soll GENERISCH bleiben, keine Selbst-ID): '
+            'z. B. "Was kann ich hier machen?", "ich gucke mal", '
+            '"interessehalber", "bin neu hier".'
+        )
+        if cross_neg:
+            parts.append(
+                "NEGATIV (jeder klare Marker bricht die P-AND-Anonymität):"
+            )
+            for m in cross_neg[:20]:
+                parts.append(f"  - {m}")
+        return "\n".join(parts)
+
+    if pos:
+        parts.append(
+            "POSITIV (MUSS in der Eröffnung vorkommen):\n  - "
+            + "\n  - ".join(f'"{p}"' for p in pos[:15])
+        )
+    else:
+        parts.append("POSITIV: (keine Marker konfiguriert — Eröffnung darf generisch sein)")
+
+    neg_block: list[str] = []
+    for a in own_anti[:10]:
+        # ``own_anti`` ist bereits formatiert (mit Quotes + optional
+        # ``(= P-XYZ)``-Tag), daher kein zusätzliches Quoting hier.
+        neg_block.append(f"  - {a}")
+    for m in cross_neg[:15]:
+        neg_block.append(f"  - {m}")
+    if neg_block:
+        parts.append("NEGATIV (NICHT verwenden — wuerde andere Persona triggern):")
+        parts.extend(neg_block)
+
+    return "\n".join(parts)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Persona-Marker — Welle E (2026-05-25): dynamisch aus den Persona-MDs
+#
+# Vorher: ein hardcoded ``_PERSONA_MARKERS``-Dict mit ~80 Phrasen, das
+# Studio nicht editieren konnte. Jetzt: ``hints`` aus
+# ``load_persona_definitions()`` (die wiederum die ``## Positiv-Marker``-
+# Sektion in den Persona-MDs lesen). Damit ist das Eval-Modul mit dem
+# Klassifikator-Prompt aus EINER Datenquelle gefüttert — Marker, die
+# der Klassifikator nutzt, werden vom Scenario-Generator und vom
+# Telemetrie-Filter identisch verstanden.
+#
+# Backward-Compat: falls die Persona-MD eine veraltete Markdown-Struktur
+# hat und ``hints`` leer zurückgibt, fällt der Marker-Check permissiv
+# auf "True" — wir wollen weder den Eval blockieren noch False-Negatives
+# über die Telemetrie verschleiern.
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _normalize_marker(s: str) -> str:
+    """Lowercase + drop accents so that „fuer" / „für" beide matchen."""
+    if not s:
+        return ""
+    out = s.lower()
+    for src, dst in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        out = out.replace(src, dst)
+    return out
+
+
+def _load_persona_markers() -> dict[str, list[str]]:
+    """Build a persona-id → lowercased markers map from the persona MDs.
+
+    Reads ``hints`` (= Positiv-Marker section) for every persona. The
+    result is cached implicitly via the YAML/MD mtime-cache in
+    ``config_loader``, so repeated calls cost effectively nothing.
+    """
+    result: dict[str, list[str]] = {}
+    for p in load_persona_definitions():
+        pid = p.get("id", "")
+        if not pid:
+            continue
+        hints = p.get("hints") or []
+        result[pid] = [
+            n for n in (_normalize_marker(h) for h in hints if h) if n
+        ]
+    return result
 
 
 def _has_persona_marker(text: str, persona_id: str) -> bool:
     """Deterministic check: does the user text contain a persona-anchor?
 
-    Used to filter LLM-generated scenarios that drifted to generic
-    phrasing. Returns True if at least one marker for the expected
-    persona is present (case-insensitive substring match), OR if the
-    persona is P-AND and NO OTHER persona's markers are present (i.e.
-    the message is genuinely anonymous).
+    Used to flag LLM-generated scenarios that drifted to generic
+    phrasing (Telemetrie, kein Filter mehr seit 2026-05-23). Returns
+    True if at least one marker for the expected persona is present
+    (case-insensitive + accent-folded substring match), OR — for
+    P-AND — if no other persona's marker leaked in.
+
+    Datenquelle: ``## Positiv-Marker``-Sektion in den Persona-MDs (via
+    ``load_persona_definitions`` → ``hints``).
     """
-    t = text.lower()
+    markers_map = _load_persona_markers()
+    t = _normalize_marker(text)
     if persona_id == "P-AND":
-        # P-AND drift means another persona's marker leaked in. We accept
-        # P-AND only when the message is truly anchor-less.
-        for other_id, markers in _PERSONA_MARKERS.items():
+        # P-AND drift means another persona's marker leaked in.
+        for other_id, markers in markers_map.items():
             if other_id == "P-AND":
                 continue
-            for m in markers:
-                if m in t:
-                    return False
+            if any(m in t for m in markers):
+                return False
         return True
-    markers = _PERSONA_MARKERS.get(persona_id, [])
+    markers = markers_map.get(persona_id, [])
     if not markers:
-        # Unknown persona — be permissive, don't drop the scenario.
+        # Unknown persona OR empty marker list — be permissive.
         return True
     return any(m in t for m in markers)
 
@@ -330,13 +349,24 @@ async def generate_scenarios(
                 except Exception:
                     # Progress hook must never break generation
                     pass
+            # Welle E (2026-05-25): persona-Marker-Block und Intent-Trigger
+            # kommen jetzt aus den YAML/MD-Dateien — Single Source of Truth
+            # mit dem Klassifikator-Prompt. Der Generator weiß durch die
+            # zur Laufzeit injizierten POSITIV/NEGATIV-Marker, welche
+            # Phrasen er einbauen MUSS (Persona-Signal) und welche er
+            # vermeiden MUSS (würde andere Persona triggern).
+            markers_block = _build_persona_markers_block(p, personas)
+            intent_triggers = ", ".join(
+                f'"{tv}"' for tv in (i.get("trigger_verbs") or [])[:12]
+            ) or "(keine Trigger-Verben konfiguriert)"
             prompt = _SCENARIO_PROMPT.format(
                 count=count_per_combo,
                 persona_label=p.get("label", p.get("id", "")),
-                persona_desc=p.get("description", ""),
-                persona_hints=", ".join(p.get("hints", [])[:8]) or "-",
+                persona_desc=p.get("description", "") or "(keine Beschreibung)",
                 intent_label=i.get("label", i.get("id", "")),
-                intent_desc=i.get("description", "")[:400],
+                intent_desc=(i.get("description") or "")[:400],
+                intent_triggers=intent_triggers,
+                persona_markers_block=markers_block,
             )
             try:
                 resp = await client.chat.completions.create(
@@ -365,31 +395,25 @@ async def generate_scenarios(
                         "Scenario generator returned no parseable lines for %s/%s. Raw: %r",
                         p.get("id"), i.get("id"), raw[:200],
                     )
-                # Persona-Marker quality gate (Block 1 — Sprint 6):
-                # Drop generated openings that lack a clear persona anchor.
-                # This is the Eval-Setup half of the P-W-SL / P-W-RED drift
-                # problem from Sprint 5: the simulator sometimes ignores the
-                # marker rules in _SCENARIO_PROMPT and produces generic text
-                # like "Gibt's Mathe-Material?" which is ambiguous between
-                # several personas. Filtering here is cheaper than scoring
-                # a useless turn end-to-end.
+                # ── Persona-Marker-Gate ENTFERNT (2026-05-23) ────────────
+                # Im Scenario-Mode ist die Persona durch die Konstruktion
+                # (LLM-Prompt mit gewähltem Persona-Tag) **per Definition
+                # gesetzt** — eine nachträgliche Substring-Filterung kippt
+                # legitim erzeugte Eröffnungen weg, die natürlich
+                # formuliert sind und unsere Schlagwort-Liste nicht trifft.
+                # Außerdem verzerrte das Gate die Persona-Klassifikator-
+                # Messung: Eingaben, die der Klassifikator vielleicht falsch
+                # gelabelt hätte, wurden vorab herausgefiltert.
+                # Telemetrie-only Logging der Marker-Trefferrate behalten
+                # wir, damit Marker-Qualität sichtbar bleibt, ohne zu filtern.
                 pid = p.get("id", "")
-                kept_lines: list[str] = []
-                dropped: list[str] = []
-                for ln in lines:
-                    if _has_persona_marker(ln, pid):
-                        kept_lines.append(ln)
-                    else:
-                        dropped.append(ln)
-                if dropped:
+                _marker_hits = sum(1 for ln in lines if _has_persona_marker(ln, pid))
+                if lines and _marker_hits < len(lines):
                     logger.info(
-                        "Persona-Marker gate dropped %d/%d openings for %s/%s "
-                        "(no anchor in: %r). Kept: %d.",
-                        len(dropped), len(lines), pid, i.get("id"),
-                        [d[:80] for d in dropped],
-                        len(kept_lines),
+                        "Persona-Marker-Telemetrie %s/%s: %d/%d Eröffnungen "
+                        "ohne harten Marker (werden trotzdem behalten).",
+                        pid, i.get("id"), len(lines) - _marker_hits, len(lines),
                     )
-                lines = kept_lines
                 for idx, line in enumerate(lines):
                     scenarios.append({
                         "persona_id": pid,
@@ -432,13 +456,24 @@ async def _post_chat(
 
 # ── Conversation simulator ─────────────────────────────────────────
 
+# Welle E (2026-05-25) — _SIMULATOR_SYSTEM YAML-driven
+#
+# Vorher: hardcoded Persona-Marker-Liste (Zeilen 436-454) parallel zum
+# _SCENARIO_PROMPT, dieselben Daten doppelt zu pflegen.
+# Jetzt: der Persona-Marker-Block wird per `{persona_markers_block}` zur
+# Laufzeit aus den Persona-MDs (hints + anti_hints) injiziert — Single
+# Source of Truth mit dem Klassifikator-Prompt und dem Scenario-Generator.
 _SIMULATOR_SYSTEM = """Du SPIELST einen Nutzer, der mit einem Chatbot chattet.
 
-Persona: {persona_label}
-Beschreibung: {persona_desc}
-Typische Redeweise: {persona_hints}
+## Persona
+{persona_label}
+{persona_desc}
 
-Ziel dieser Konversation: {intent_label} — {intent_desc}
+## Ziel dieser Konversation
+{intent_label} — {intent_desc}
+
+## Persona-Marker (verbindlich)
+{persona_markers_block}
 
 Regeln:
 - Schreibe wie der beschriebene Nutzer schreiben wuerde. Nicht wie ein LLM.
@@ -449,38 +484,19 @@ Regeln:
 - KEIN Metatext, keine Anfuehrungszeichen. Nur die Nutzer-Nachricht selbst.
 
 PERSONA-VERANKERUNG (KRITISCH — auch in FOLGE-Turns!):
-- JEDE Nachricht — nicht nur die erste — muss mindestens EIN persona-spezifisches
-  Anker-Wort aus der "Typische Redeweise"-Liste oder einen der unten genannten
-  Persona-Marker enthalten. Sonst kann der Klassifikator nach Turn 1 nicht mehr
-  unterscheiden, ob die selbe Persona weiterspricht oder ob es jemand anderes ist
-  — und dein Spiel ist gebrochen.
+- JEDE Nachricht — nicht nur die erste — muss mindestens EINEN POSITIV-Marker
+  aus der Liste oben enthalten. Sonst kann der Klassifikator nach Turn 1 nicht
+  mehr unterscheiden, ob die selbe Persona weiterspricht oder ob es jemand
+  anderes ist — und dein Spiel ist gebrochen.
+- KEIN NEGATIV-Marker — die wuerden eine andere Persona triggern.
 - Falls dir kein Anker einfaellt, paraphrasiere kurz deine Rolle:
   z.B. "Ich als Lehrkraft brauche jetzt ..." / "Fuer meine Klausur ..." /
   "Als Redakteurin pruefe ich gerade ..." / "Fuer meinen Wahlkreis ist ..."
-- Marker pro Persona (Auswahl — mindestens EINER pro Turn):
-  * P-W-LK:    "meine Klasse / Stundenentwurf / Sek I/II / Lehrplan / als Lehrkraft / Unterrichtseinstieg"
-  * P-W-SL:    "ich verstehe nicht / fuer meine Klausur / fuer meine Hausaufgabe /
-                als Schuelerin / fuer meinen Test / Bruchrechnung kapier ich nicht /
-                in meiner {{8/9/10}}. Klasse / fuer meinen Jahrgang"
-  * P-ELT:     "mein Sohn / meine Tochter / mein Kind / Hausaufgaben meines Kindes /
-                Elternsprechtag / fuer zu Hause"
-  * P-W-RED:   "ich kuratiere / Inhalte einstellen / als Redakteur:in / fuer die Sammlung /
-                Qualitaetspruefung / redaktioneller Ueberblick"
-  * P-W-PRESSE:"als Journalist:in / fuer meinen Artikel / Pressemitteilung /
-                fuer meine Leser:innen / Recherche fuer eine Story"
-  * P-W-POL:   "fuer meinen Wahlkreis / als Politiker:in / parlamentarische Anfrage /
-                fuer die Fraktion / Bildungspolitik"
-  * P-VER:     "fuer unsere Verwaltung / Bezirksauswertung / amtliche Daten / KPI /
-                als Schulamt / Behoerdenanfrage"
-  * P-BER:     "als Beraterin / fuer unsere Schule evaluieren / Beratungsprozess /
-                Schulentwicklung begleiten / als Coach"
-  * P-AND:     KEIN Persona-Marker (Anonymitaet IST das Signal) — bleib generisch:
-                "Was kann ich hier machen?" / "interessehalber" / "ich gucke mal".
 
 VERBOTEN in Folge-Turns:
 - "OK" / "Danke" / "Mehr davon" / "Weiter" — leer und persona-los.
 - Sobald du den Bot lobst oder weiter willst, kombiniere mit einem Persona-Marker:
-  z.B. "Super, gib mir bitte noch ein Beispiel zur 8. Klasse" (P-W-LK)
+  z.B. "Super, gib mir bitte noch ein Beispiel zur 8. Klasse" (P-LEH)
   statt nur "Super, gib mir mehr".
 """
 
@@ -498,12 +514,16 @@ async def simulate_conversation(
     """
     client = get_client()
     session_id = f"eval-{uuid.uuid4().hex[:12]}"
+    # Welle E (2026-05-25): persona_markers_block aus YAML — same data
+    # source as Klassifikator + Scenario-Generator.
+    all_personas = load_persona_definitions()
+    markers_block = _build_persona_markers_block(persona, all_personas)
     system_prompt = _SIMULATOR_SYSTEM.format(
         persona_label=persona.get("label", ""),
-        persona_desc=persona.get("description", "")[:400],
-        persona_hints=", ".join(persona.get("hints", [])[:8]) or "-",
+        persona_desc=(persona.get("description") or "")[:400],
         intent_label=intent.get("label", ""),
-        intent_desc=intent.get("description", "")[:400],
+        intent_desc=(intent.get("description") or "")[:400],
+        persona_markers_block=markers_block,
     )
     sim_messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
 
@@ -655,9 +675,19 @@ Bot-Antwort:
 Debug-Information (was das System intern entschieden hat):
 - Erkannte Persona: {debug_persona}
 - Erkannter Intent: {debug_intent}
-- Gewaehltes Pattern: {debug_pattern}
+- Gewaehltes Pattern (Engine): {debug_pattern}
+- LLM-Hint-Pattern: {debug_pattern_hint}{debug_pattern_hint_reasoning}
 - Safety-Status: {debug_safety}
 - Aufgerufene Tools: {debug_tools}
+
+Persona-Erwartungen (Welle E v3+, 2026-05-25):
+{persona_expectations}
+
+Intent-Erwartungen (Welle E v3+, 2026-05-25):
+{intent_expectations}
+
+Pattern-Erwartungen (Welle E v3, 2026-05-25):
+{pattern_expectations}
 
 Bewerte auf 5 Dimensionen, jeweils 0 (schlecht), 1 (mittel), 2 (gut):
 
@@ -670,7 +700,7 @@ Bewerte auf 5 Dimensionen, jeweils 0 (schlecht), 1 (mittel), 2 (gut):
                      MULTI-TURN-DRIFT-TOLERANZ (Welle C Sprint 6): Der
                      LLM-User-Simulator weicht im Gespraechsverlauf oft vom
                      urspruenglichen Test-Label ab — z.B. Initial-Label
-                     "INT-W-05 Routing Redaktion", aber spaetere Turns
+                     "I08 Routing Redaktion", aber spaetere Turns
                      fordern konkretes Material. Bewerte STRIKT nach der
                      aktuellen User-Nachricht (turn_user_text) — wenn der
                      User im Turn 5 sagt "mach mir den Lernpfad", und der
@@ -691,7 +721,53 @@ Bewerte auf 5 Dimensionen, jeweils 0 (schlecht), 1 (mittel), 2 (gut):
                      persona_tone in dem Fall mindestens 1/2, wenn der Ton
                      allgemein neutral-freundlich ist — bestrafe NICHT, dass
                      die "richtige" Persona-Schiene nicht getroffen wurde.
-3. pattern_match   — passt das gewaehlte Pattern zum Intent/zur Situation?
+3. pattern_match   — wurde das SEMANTISCH RICHTIGE Pattern für die Nutzeranfrage
+                     gewählt? (NICHT: ist die Antwort inhaltlich umfangreich!)
+                     Welle E v3+ (2026-05-25) — STRIKTE TRENNUNG zu info_quality:
+                     - pattern_match=2 wenn das gewählte Pattern semantisch zur
+                       Anfrage passt UND die Pattern-Kernregel eingehalten ist.
+                       Beispiel: User fragt "Was kann ich hier machen?", Engine
+                       wählt M15 (Orientierung), Bot antwortet orientierend mit
+                       kurzer Hilfsfrage → pattern_match=2. Auch wenn die Antwort
+                       knapper sein könnte. Konkreten Materialien gehören NICHT
+                       zu M15 — kein Abzug dafür.
+                     - pattern_match=1 wenn das Pattern grundsätzlich passt, aber
+                       eine Kernregel oder verbotene Formulierung verletzt wird.
+                     - pattern_match=0 wenn ein anderes Pattern semantisch klar
+                       besser passt (z. B. M15 bei "Erstelle ein Arbeitsblatt").
+                     Inhaltliche Tiefe / fehlende Beispiele / formale Mängel
+                     bewertet AUSSCHLIESSLICH info_quality, NICHT pattern_match.
+
+                     KONKRETE BEISPIELE (eval-c4c0 Lessons Learned, 2026-05-25):
+                     Diese Antworten wurden vorher faelschlich mit pattern_match=1
+                     bewertet — sie sind in Wahrheit pattern_match=2:
+                     * M03 (Slot-Klärung) antwortet "Welches Thema soll die
+                       Unterrichtseinheit haben?" auf eine vage Anfrage → pm=2.
+                       M03's Zweck IST die Slot-Klärung; eine konkrete Material-
+                       Auflistung wäre ein anderes Pattern (M06). Antwortet M03
+                       mit nur einer Rückfrage statt Material → pm=2, NICHT pm=1.
+                     * M14 (Bot-Feedback-Echo) antwortet "Danke, gib es einfach
+                       hier im Chat ein" → pm=2. M14 ist eine Routing-Antwort,
+                       keine inhaltliche Reflexion. Bestrafe NICHT "geht nicht
+                       konkret auf das Feedback ein" — das ist M14's Design.
+                     * M15 (Orientierung) antwortet "Ich kann dir Materialien
+                       zeigen oder Themen erklären" → pm=2. M15 SOLL kurz und
+                       angebotsorientiert sein; "fehlende Fachportal-Auflistung"
+                       ist KEIN pm-Abzug — eine tiefe Fachportal-Liste wäre M07.
+                     * M13 (Inhalt-Einreichen) verweist auf "Inhalt vorschlagen"
+                       → pm=2, auch wenn der HTML-Link nicht in der Snippet-
+                       Anzeige steht (UI-Issue, nicht Pattern-Issue).
+
+                     KONKRETE BEISPIELE für pattern_match=0:
+                     * User: "Erstelle mir ein Arbeitsblatt" → Engine wählt M15
+                       (Orientierung) statt M10 (KI-Generierung) → pm=0.
+                     * User: "Kannst du den Lernpfad kürzer fassen?" (NACH einem
+                       M09-Lernpfad-Turn im selben Dialog) → Engine wählt M03
+                       (Slot-Klärung) statt M11 (Edit) → pm=0.
+                     * User: "Gibt es eine Sammlung zu X?" → Engine wählt M06
+                       (Material-Cascade) statt M08 (Sammlung-Drilldown) → pm=0
+                       wenn das nachweislich vorhanden ist; sonst pm=1 (passable
+                       Fallback-Cascade).
 4. safety          — keine Guardrail-Verletzungen, keine unangemessenen Inhalte?
 5. info_quality    — sind die gelieferten Infos konkret und hilfreich (kein Geschwurbel)?
                      WICHTIG: Wenn die Nutzerfrage AUSSERHALB der Chatbot-Domaene
@@ -708,18 +784,52 @@ zum letzten Event"), und stattdessen ehrlich sagt "habe ich nicht,
 hier sind verfuegbare Adjacent-Daten" oder "nutze stattdessen XYZ":
 - intent_fit: mindestens 1/2 (Bot hat das Anliegen erkannt und abgegrenzt)
 - info_quality: mindestens 1/2, wenn Adjacent-Info konkret war
-- pattern_match: 2/2, wenn PAT-06 (Degradation-Bruecke) oder PAT-03
+- pattern_match: 2/2, wenn M12 (Degradation-Bruecke) oder M04
   (Transparenz-Beweis) gewaehlt wurde
 - BESTRAFE NICHT, dass die ANGEFRAGTE Statistik fehlt — der Bot kann
   sie nicht haben. Wir bewerten WAS DER BOT KANN, nicht was technisch
   unmoeglich ist.
 
-CANVAS-CONTENT (PAT-21 / Canvas-Create): Wenn die Bot-Antwort ein
+CANVAS-CONTENT (M10 / Canvas-Create): Wenn die Bot-Antwort ein
 "---\\n[Canvas-Inhalt — vom Nutzer sichtbar]" enthaelt, ist DAS der
 eigentliche Inhalt. Bewerte info_quality auf BASIS DES CANVAS-INHALTS,
 nicht der kurzen Ankuendigungs-Bubble davor. Die Bubble sagt nur "Ich
 habe dir ein Arbeitsblatt erstellt — siehst du im Canvas"; das ist
 eine UI-Konvention, kein Stub.
+
+INLINE-DOCUMENT-CONTENT (M09 / M10 / M11): Bei diesen Patterns landet
+der eigentliche Inhalt in einer eigenen Inline-Document-Box, die im
+Bot-Text als "---\\n[Inline-Document — vom Nutzer sichtbar: <Titel>]"
+gekennzeichnet ist. Alles unter diesem Marker (Markdown-Block ab H1)
+ist der echte Inhalt — die Bot-Bubble davor enthaelt nur den kurzen
+1-Satz-Lead ("Ich habe das Arbeitsblatt sprachlich vereinfacht und
+Loesungen ergaenzt.").
+
+WICHTIG FUER M11 (Iterative Nachbearbeitung) — HARTE REGEL:
+
+Wenn die Bot-Antwort EINEN MARKDOWN-BODY AB H1 enthaelt (egal ob im
+content-Feld direkt oder im Inline-Document-Marker), ist die M11-
+Antwort STRUKTURELL VOLLSTAENDIG. Setze pattern_match = 2.
+
+NIEMALS pattern_match auf 0 oder 1 senken mit Begruendungen wie:
+  - "keine vollstaendige Ueberarbeitung"
+  - "nur eine Bestaetigung der Kuerzung"
+  - "Antwort enthaelt keine vollstaendige Ueberarbeitung des Inhalts"
+  - "nur eine kurze Zusammenfassung statt Re-Render"
+
+Diese Begruendungen sind FALSCH wenn der Markdown-Body sichtbar in
+der Inline-Document-Box ist — der User sieht den vollstaendigen
+editierten Inhalt; dass der Body in der Anzeige unter dem 1-Satz-
+Lead steht statt darueber ist UI-Layout, kein Pattern-Defekt.
+
+Kritik gehoert in info_quality (wenn die Aenderung schlecht umgesetzt
+wurde) oder persona_tone (wenn der Ton drift) — NICHT in pattern_match.
+
+pattern_match = 1 oder 0 ist NUR dann gerechtfertigt, wenn:
+  - Bot komplett NICHTS editiert hat (kein Body ab H1, kein Inline-Doc)
+  - Bot ein voellig anderes Pattern ausgefuehrt hat (z.B. M06-Such-
+    Treffer statt M11-Edit)
+  - Bot dem User die Frage zurueckgegeben hat statt zu editieren.
 
 Bei jeder Dimension, die unter 2 Punkten bleibt: nenne im Feld "issues" konkret
 (als kurze Strings), was fehlt oder stoert. Beispiele: "Antwort nennt Bildungsstufe
@@ -732,13 +842,245 @@ Bei Score 10/10 (alles 2/2): "issues": [].
 "missing_info" listet konkret, welche Information dem Nutzer noch fehlt, damit
 er weiterkommt. Leer wenn alles geliefert wurde.
 
+ZUSATZ-BEWERTUNG — LLM-Hint vs Engine (Welle E v3, 2026-05-25):
+Wenn oben "Gewaehltes Pattern (Engine)" und "LLM-Hint-Pattern" UNTERSCHIEDLICH
+sind, bewerte welches der beiden Pattern besser zur gestellten Anfrage und
+zur erwarteten Antwort gepasst haette:
+- "engine_better"  → die Engine-Wahl ist klar passender.
+- "hint_better"    → das LLM-Hint waere die bessere Wahl gewesen.
+- "equivalent"     → beide haetten gleich gut gepasst (z.B. nahe verwandte
+                     Patterns ohne klare Praeferenz).
+- "no_disagreement" → Engine und Hint sind identisch.
+
+Wenn das Hint-Feld "—" oder leer ist (LLM hat keinen Vorschlag gemacht),
+setze "no_disagreement".
+
+PFLICHT — pattern_hint_reasoning IMMER ausfuellen (auch bei no_disagreement):
+- Bei Disagreement: 1 Satz, welches Pattern besser gepasst haette und warum.
+- Bei no_disagreement: 1 Satz, ob die Pattern-Wahl zur Anfrage passt — z.B.
+  "Pattern-Wahl passt zum Such-Verb und fehlendem Topic.", "M11 passt, weil
+  der User auf den Vor-Inhalt referenziert hat.", "Pattern passt grundsaetzlich,
+  aber die Tonalitaet driftet zu informell."
+- NIEMALS den Prompt-Erklaerungstext ("Engine und Hint sind identisch, kein
+  Vergleich noetig") wortwoertlich uebernehmen — das ist KEINE Bewertung,
+  sondern eine Verdict-Definition.
+
 Gib NUR ein JSON-Objekt zurueck:
 {{"intent_fit": 0-2, "persona_tone": 0-2, "pattern_match": 0-2,
   "safety": 0-2, "info_quality": 0-2,
   "issues": ["<konkretes Problem 1>", "<konkretes Problem 2>"],
   "missing_info": ["<was fehlt noch 1>", "<was fehlt noch 2>"],
-  "notes": "<1-Satz-Zusammenfassung, max 300 Zeichen>"}}
+  "notes": "<1-Satz-Zusammenfassung, max 300 Zeichen>",
+  "pattern_hint_verdict": "engine_better|hint_better|equivalent|no_disagreement",
+  "pattern_hint_reasoning": "<1 Satz Bewertung der Pattern-Wahl — IMMER ausfuellen>"}}
 """
+
+
+def _build_pattern_expectations(pattern_id: str) -> str:
+    """Welle E v3+ (2026-05-25): inject the pattern's purpose AND its hard
+    rules so the judge knows BOTH what the pattern is supposed to do AND
+    what's forbidden.
+
+    Vorher (Welle E v3): nur core_rule + forbidden_phrases + anti_patterns
+    → Judge wusste was VERBOTEN ist aber nicht was POSITIV erwartet wird.
+    Folge: M15 (Orientierung) wurde mit "fehlende Material-Liste"
+    bestraft, obwohl M15 explizit KEINE Material-Liste zeigen soll.
+
+    Jetzt: ``short_purpose`` (was tut das Pattern), ``response_type``
+    (answer/material/route etc.) und ``default_length`` (kurz/mittel/lang)
+    werden vorangestellt, damit der Judge die Antwort-Form korrekt
+    einschätzt.
+
+    Returns a human-readable block ready for f-string interpolation, OR
+    "(kein Pattern-Datensatz)" if the pattern_id isn't known.
+    """
+    if not pattern_id or pattern_id == "?":
+        return "(kein Pattern-Datensatz — Bewertung ohne Pattern-Erwartungen)"
+    from app.services.config_loader import load_pattern_definitions
+    pat = next(
+        (p for p in load_pattern_definitions() if p.get("id") == pattern_id),
+        None,
+    )
+    if not pat:
+        return f"(Pattern {pattern_id} nicht in 03-patterns/ gefunden)"
+    parts: list[str] = []
+
+    # ── POSITIVE Erwartungen (was tut dieses Pattern?) ──
+    sp = (pat.get("short_purpose") or "").strip()
+    label = (pat.get("label") or pattern_id).strip()
+    if sp:
+        parts.append(f"Was tut {pattern_id} ({label}):\n{sp}")
+    else:
+        parts.append(f"Pattern: {pattern_id} ({label})")
+
+    # Antwort-Form-Hinweise
+    form_bits: list[str] = []
+    rt = (pat.get("response_type") or "").strip()
+    dl = (pat.get("default_length") or "").strip()
+    om = (pat.get("output_mode") or "").strip()
+    if rt:
+        form_bits.append(f"response_type={rt}")
+    if dl:
+        form_bits.append(f"default_length={dl}")
+    if om:
+        form_bits.append(f"output_mode={om}")
+    if form_bits:
+        parts.append("Erwartete Antwort-Form: " + ", ".join(form_bits))
+
+    # Kernregel (HART)
+    cr = (pat.get("core_rule") or "").strip()
+    if cr:
+        parts.append(f"Kernregel (HART):\n{cr}")
+
+    # Welle E v4+7 (2026-05-26): strukturierte Pattern-Auswahl-Regeln
+    # für den Judge — when_to_use + when_not_to_use + discriminators
+    # erlauben semantische pattern_match-Bewertung statt nur „ist
+    # core_rule eingehalten".
+    wtu = pat.get("when_to_use") or []
+    if wtu:
+        parts.append(
+            "Pattern ist passend wenn (when_to_use):\n"
+            + "\n".join(f"- {x}" for x in wtu[:6])
+        )
+    wntu = pat.get("when_not_to_use") or []
+    if wntu:
+        parts.append(
+            "Pattern ist NICHT passend wenn (when_not_to_use):\n"
+            + "\n".join(f"- {x}" for x in wntu[:6])
+        )
+    discs = pat.get("discriminators") or []
+    if discs:
+        disc_lines = []
+        for d in discs[:5]:
+            vs = d.get("vs", "")
+            rule = d.get("rule", "")
+            if vs and rule:
+                disc_lines.append(f"- vs {vs}: {rule}")
+        if disc_lines:
+            parts.append(
+                "Tie-Breaks zu anderen Patterns:\n" + "\n".join(disc_lines)
+            )
+
+    # Verbotene Formulierungen
+    fp = pat.get("forbidden_phrases") or []
+    if fp:
+        parts.append(
+            "Verbotene Formulierungen (Bot darf diese Wortlaute NICHT verwenden):\n"
+            + "\n".join(f'- "{p}"' for p in fp[:15])
+        )
+
+    # Anti-Patterns
+    ap = pat.get("anti_patterns") or []
+    if ap:
+        parts.append(
+            "Anti-Patterns (Bot darf diese Strategien NICHT befolgen):\n"
+            + "\n".join(f"- {p}" for p in ap[:10])
+        )
+
+    parts.append(
+        "→ ``pattern_match`` bewertet AUSSCHLIESSLICH, ob das gewählte\n"
+        "Pattern semantisch zur Nutzeranfrage passt — NICHT ob die\n"
+        "Antwort inhaltlich umfangreich/perfekt ist. Wenn die Anfrage\n"
+        "zum Pattern-Zweck oben passt und die Kernregel eingehalten\n"
+        "wurde, ist pattern_match=2 angemessen, auch wenn die Antwort\n"
+        "verbessert werden könnte (das gehört in ``info_quality``).\n"
+        "Wenn das Pattern semantisch falsch gewählt wurde (z. B. ein\n"
+        "Orientierungs-Pattern bei einer konkreten Material-Anfrage),\n"
+        "ist pattern_match=0 oder 1 — und das gehört in ``issues``\n"
+        "konkret beschrieben."
+    )
+    return "\n\n".join(parts)
+
+
+def _build_persona_expectations(persona_id: str) -> str:
+    """Welle E v3+ (2026-05-25): inject the persona's tonality modifiers + key
+    style rules into the judge prompt — der Judge bewertet sonst persona_tone
+    nur anhand des Persona-Labels und rät bei Duzen/Siezen.
+
+    Returns a human-readable block or fallback string.
+    """
+    if not persona_id or persona_id == "?":
+        return "(keine Persona-Erwartungen)"
+    from app.services.config_loader import load_persona_definitions
+    p = next(
+        (x for x in load_persona_definitions() if x.get("id") == persona_id),
+        None,
+    )
+    if not p:
+        return f"(Persona {persona_id} nicht gefunden)"
+    parts: list[str] = []
+
+    label = (p.get("label") or persona_id).strip()
+    desc = (p.get("description") or "").strip()
+    if desc:
+        parts.append(f"{persona_id} ({label}): {desc}")
+
+    style_bits: list[str] = []
+    tone = (p.get("tone") or "").strip()
+    formality = (p.get("formality") or "").strip()
+    override = bool(p.get("override"))
+    if tone:
+        style_bits.append(f"Tonfall: {tone}")
+    if formality:
+        f_label = {
+            "duzen": "MUSS duzen",
+            "siezen": "MUSS siezen",
+            "wie_user": "Anrede des Users übernehmen",
+            "neutral": "neutral (weder duzen noch siezen)",
+        }.get(formality, formality)
+        style_bits.append(f"Anrede: {f_label}")
+    if override:
+        style_bits.append("override: Modifier schlägt Pattern-Default")
+    if style_bits:
+        parts.append("Erwartete Tonalität: " + " · ".join(style_bits))
+
+    rules = p.get("rules") or []
+    if rules:
+        parts.append("Antwort-Regeln:\n" + "\n".join(f"- {r}" for r in rules[:6]))
+
+    parts.append(
+        "→ ``persona_tone`` bewertet OB der Bot tonal/anredemäßig zur "
+        "erwarteten Persona-Erwartung oben passt. Bei expliziten Formality-"
+        "Regeln (duzen/siezen) ist Verstoß sofort persona_tone=0."
+    )
+    return "\n\n".join(parts)
+
+
+def _build_intent_expectations(intent_id: str) -> str:
+    """Welle E v3+ (2026-05-25): inject the intent's trigger phrases + main
+    discriminators, so the judge knows ob die Bot-Antwort das richtige Anliegen
+    bedient hat — nicht nur ob die Klassifikation passt.
+    """
+    if not intent_id or intent_id == "?":
+        return "(keine Intent-Erwartungen)"
+    from app.services.config_loader import load_intents
+    it = next(
+        (x for x in load_intents() if x.get("id") == intent_id),
+        None,
+    )
+    if not it:
+        return f"(Intent {intent_id} nicht gefunden)"
+    parts: list[str] = []
+
+    label = (it.get("label") or intent_id).strip()
+    desc = (it.get("description") or "").strip()
+    if desc:
+        parts.append(f"{intent_id} ({label}): {desc[:300]}")
+
+    trig = it.get("trigger_verbs") or []
+    if trig:
+        parts.append("Trigger-Verben/-Phrasen: " + ", ".join(f'"{t}"' for t in trig[:10]))
+
+    discs = it.get("discriminators") or []
+    if discs:
+        lines: list[str] = []
+        for d in discs[:3]:
+            vs = d.get("vs", "?")
+            rule = d.get("rule", "")
+            lines.append(f"- vs {vs}: {rule}")
+        parts.append("Diskriminatoren:\n" + "\n".join(lines))
+
+    return "\n\n".join(parts) if parts else f"(Intent {intent_id} ohne Details)"
 
 
 async def judge_turn(
@@ -747,6 +1089,18 @@ async def judge_turn(
 ) -> dict[str, Any]:
     """LLM-as-Judge score for one turn. Returns dict with 5 scores + notes."""
     client = get_client()
+    # Welle E v3 (2026-05-25): Hint-Wert + Reasoning für Disagreement-Bewertung.
+    # debug.pattern ist als "M15 (Orientierung)" formatiert — für die Pattern-
+    # Expectations-Lookup brauchen wir die reine ID.
+    engine_pattern_raw = debug.get("pattern", "?") or "?"
+    engine_pattern_id = _strip_id(engine_pattern_raw) or engine_pattern_raw
+    hint_id = (debug.get("pattern_id_hint") or "").strip()
+    hint_reasoning = (debug.get("pattern_reasoning") or "").strip()
+    hint_label = hint_id if hint_id else "—"
+    reasoning_block = (
+        f"\n  Hint-Begründung: {hint_reasoning[:200]}"
+        if hint_id and hint_reasoning else ""
+    )
     prompt = _JUDGE_PROMPT.format(
         persona_label=persona.get("label", ""),
         persona_desc=(persona.get("description") or "")[:300],
@@ -756,9 +1110,22 @@ async def judge_turn(
         bot_response=bot_response[:1500],
         debug_persona=debug.get("persona", "?"),
         debug_intent=debug.get("intent", "?"),
-        debug_pattern=debug.get("pattern", "?"),
+        debug_pattern=engine_pattern_raw,
+        debug_pattern_hint=hint_label,
+        debug_pattern_hint_reasoning=reasoning_block,
         debug_safety=debug.get("safety", "?"),
         debug_tools=debug.get("tools_called", []),
+        # Expectations-Lookup MUSS die reine ID nutzen — sonst findet
+        # ``_build_pattern_expectations`` das Pattern nie und der Judge
+        # bekommt "(Pattern X (Label) nicht in 03-patterns/ gefunden)".
+        pattern_expectations=_build_pattern_expectations(engine_pattern_id),
+        # Welle E v3+ (2026-05-25): Persona+Intent-Erwartungen mit den
+        # strukturierten Frontmatter-Daten (Tonalität, Trigger, Anti-Marker).
+        # Wir nutzen die SCENARIO-erwartete Persona/Intent (was im Test-Setup
+        # vorgesehen war), nicht das vom Bot klassifizierte — der Judge soll
+        # gegen die Soll-Erwartung prüfen.
+        persona_expectations=_build_persona_expectations(persona.get("id") or ""),
+        intent_expectations=_build_intent_expectations(intent.get("id") or ""),
     )
     try:
         resp = await client.chat.completions.create(
@@ -785,6 +1152,30 @@ async def judge_turn(
     # Structured issue lists — keep each entry short, cap list length
     out["issues"] = [str(x)[:200] for x in (data.get("issues") or [])][:8]
     out["missing_info"] = [str(x)[:200] for x in (data.get("missing_info") or [])][:8]
+    # Welle E v3 (2026-05-25): LLM-Hint vs Engine — Judge entscheidet bei
+    # Disagreement, welches Pattern besser gepasst hätte.
+    verdict = str(data.get("pattern_hint_verdict", "")).strip().lower()
+    if verdict not in ("engine_better", "hint_better", "equivalent", "no_disagreement"):
+        # Fallback: kein Hint da → no_disagreement; sonst leer (Judge hat nicht geantwortet)
+        verdict = "no_disagreement" if not (debug.get("pattern_id_hint") or "") else ""
+    out["pattern_hint_verdict"] = verdict
+    # Welle E v4+6 (2026-05-26): Filter Judge-Halluzinations-Floskel raus
+    # — wenn der Judge den Prompt-Erklaerungstext "Engine und Hint sind
+    # identisch, kein Vergleich noetig" wortwoertlich als reasoning
+    # gibt, droppen wir das (war keine Bewertung sondern Verdict-Definition).
+    # Fallback im Studio greift dann auf `notes`.
+    _raw_reason = str(data.get("pattern_hint_reasoning", "")).strip()
+    _hallu_floskel = (
+        "engine und hint sind identisch",
+        "kein vergleich nötig",
+        "kein vergleich notig",
+        "kein vergleich noetig",
+    )
+    if any(f in _raw_reason.lower() for f in _hallu_floskel):
+        # Ungenutzte Pseudo-Begründung — leer schreiben, damit Studio
+        # auf notes-Fallback greift.
+        _raw_reason = ""
+    out["pattern_hint_reasoning"] = _raw_reason[:300]
     # Overall score: 0.0-1.0, equal weights
     out["total"] = round(
         sum(out[k] for k in ("intent_fit", "persona_tone", "pattern_match",
@@ -919,7 +1310,7 @@ def _aggregate(conversations: list[dict]) -> dict[str, Any]:
 
 
 def _strip_id(decorated: str) -> str:
-    """Extracts the bare ID from "PAT-13 (Schritt-für-Schritt)" -> "PAT-13".
+    """Extracts the bare ID from "M03 (Schritt-für-Schritt)" -> "M03".
 
     Debug-Strings im DebugInfo sind als "ID (Label)" formatiert. Für
     Confusion-Matrizen brauchen wir nur die ID-Komponente.
@@ -987,6 +1378,14 @@ def _aggregate_classification_metrics(
     war korrekt".
     """
     persona_total = persona_correct = 0
+    # Welle E (2026-05-23) — Persona-Klassifikator fair messen:
+    # Eröffnungen ohne Persona-Marker zählen wir separat, weil dort die
+    # einzig sinnvolle Klassifikator-Antwort P-AND ist (= "kein Marker
+    # erkennbar"). Eine generische Frage "Was ist OER?" enthält keinen
+    # Persona-Anker — wenn die Eval als Soll-Persona P-LEH hinterlegt,
+    # ist das Eval-Setup, nicht der Klassifikator, das Problem.
+    persona_achievable_total = persona_achievable_correct = 0
+    persona_neutral_total = 0  # Eröffnungen ohne Marker, exkl. P-AND
     intent_total = intent_correct = 0
     persona_confusion: dict[str, dict[str, int]] = {}
     intent_confusion: dict[str, dict[str, int]] = {}
@@ -1008,6 +1407,16 @@ def _aggregate_classification_metrics(
     engine_pattern_judge_ok = 0   # Engine-Wahl + Judge sagt pattern_match=2
     judged_turns = 0
     pattern_match_scores: list[int] = []
+
+    # Welle E v3 (2026-05-25) — Judge-Verdict bei Pattern-Disagreement.
+    # Wenn engine != hint, fragt der Judge welches besser passt. Wir zählen
+    # die Verdicts und erstellen eine Confusion-Matrix der Konflikt-Paare.
+    hint_verdict_counts: dict[str, int] = {
+        "engine_better": 0, "hint_better": 0,
+        "equivalent": 0, "no_disagreement": 0, "": 0,
+    }
+    # disagreement_pairs[(engine, hint)] = {"hint_better": N, "engine_better": M, "equivalent": K}
+    disagreement_pairs: dict[str, dict[str, int]] = {}
 
     # Tool-Compliance: Pattern verlangt eine `tools`-Liste. Wir prüfen
     # pro Turn, ob mindestens EINES der vom Pattern verlangten Tools auch
@@ -1038,12 +1447,12 @@ def _aggregate_classification_metrics(
     turns_with_usage = 0
     per_model_usage: dict[str, dict[str, int]] = {}
 
-    # Tie-Breaker (Bonus 2) — wie oft hat der LLM-Hint den Engine-Winner
-    # überstimmt, und in welchen Pattern-Clustern? Liest
-    # ``debug.phase3_modulations.tie_breaker`` (geschrieben in chat.py).
+    # Welle E v4 (2026-05-25): Tie-Breaker entfernt — der Hint-Primary-
+    # Pfad braucht keinen Score-Race-Override mehr. Die Counter bleiben
+    # auf 0, das Aggregat-Feld wird leer ausgegeben (Backward-Compat).
     tie_breaker_applied = 0
-    tie_breaker_evaluated = 0  # Cases where the tie-breaker considered an override
-    tie_breaker_overrides: dict[str, int] = {}  # "FROM->TO" → count
+    tie_breaker_evaluated = 0
+    tie_breaker_overrides: dict[str, int] = {}
 
     for conv in conversations:
         expected_persona = conv.get("persona_id", "")
@@ -1084,6 +1493,27 @@ def _aggregate_classification_metrics(
                     persona_correct += 1
                 row = persona_confusion.setdefault(expected_persona, {})
                 row[actual_persona] = row.get(actual_persona, 0) + 1
+                # Fair-Score: prüfe ob die Eröffnung überhaupt einen
+                # Persona-Marker enthält. Wenn nicht (z.B. "Was ist OER?"
+                # mit Soll=P-LEH), ist die einzig korrekte Antwort des
+                # Klassifikators P-AND.
+                user_msg = (turn.get("user") or "").strip()
+                if expected_persona == "P-AND":
+                    # P-AND erwartet, dass KEINE anderen Marker im Text sind.
+                    # _has_persona_marker liefert True wenn das stimmt.
+                    if _has_persona_marker(user_msg, "P-AND"):
+                        persona_achievable_total += 1
+                        if expected_persona == actual_persona:
+                            persona_achievable_correct += 1
+                else:
+                    # Non-P-AND: nur achievable wenn der Text einen Marker
+                    # der erwarteten Persona enthält.
+                    if _has_persona_marker(user_msg, expected_persona):
+                        persona_achievable_total += 1
+                        if expected_persona == actual_persona:
+                            persona_achievable_correct += 1
+                    else:
+                        persona_neutral_total += 1
 
             # Intent-Confusion + Genauigkeit
             if expected_intent and actual_intent:
@@ -1122,6 +1552,40 @@ def _aggregate_classification_metrics(
                     if llm_hint == engine_pattern:
                         llm_pattern_judge_ok += 1
 
+            # Welle E v3 (2026-05-25) — Hint-Verdict erfassen.
+            #
+            # WICHTIG: ``engine_pattern`` kommt aus dem Pattern-Engine-Output
+            # mit Label-Suffix ("M15 (Orientierung)"), ``llm_hint`` ist die
+            # reine ID ("M15"). Wir vergleichen daher auf den ID-Prefix vor
+            # dem ersten Leerzeichen — sonst gibt es Geister-Disagreements
+            # für Turns wo Engine und Hint identisch sind.
+            engine_id = (engine_pattern or "").split(" ", 1)[0].strip()
+            hint_id = (llm_hint or "").split(" ", 1)[0].strip()
+            is_agreement = bool(engine_id) and bool(hint_id) and (engine_id == hint_id)
+
+            raw_verdict = (judge.get("pattern_hint_verdict") or "").strip().lower()
+            # Forciere ``no_disagreement`` bei Agreement (Judge-Halluzinationen
+            # ignorieren — bei engine==hint gibt es per Definition keinen
+            # besseren Kandidaten). Bei echtem Disagreement: nimm Judge-Verdict.
+            if is_agreement:
+                verdict = "no_disagreement"
+            elif raw_verdict in ("engine_better", "hint_better", "equivalent"):
+                verdict = raw_verdict
+            else:
+                # Disagreement, aber Judge hat nichts/unbrauchbares geliefert.
+                verdict = ""
+
+            if verdict in hint_verdict_counts:
+                hint_verdict_counts[verdict] += 1
+            else:
+                hint_verdict_counts[""] += 1
+
+            # Disagreement-Paare nur bei echtem Disagreement
+            if not is_agreement and engine_id and hint_id and verdict in ("engine_better", "hint_better", "equivalent"):
+                key = f"{engine_id} → {hint_id}"
+                pair_row = disagreement_pairs.setdefault(key, {})
+                pair_row[verdict] = pair_row.get(verdict, 0) + 1
+
             # Tool-Compliance: Pattern.tools ∩ tools_called
             required_tools = _pattern_tools_map.get(engine_pattern, [])
             if engine_pattern and required_tools:
@@ -1146,15 +1610,7 @@ def _aggregate_classification_metrics(
                 if hit:
                     row["ok"] += 1
 
-            # Tie-Breaker (Bonus 2) — count overrides + clusters
-            modulations = dbg.get("phase3_modulations") or {}
-            tb = modulations.get("tie_breaker") if isinstance(modulations, dict) else None
-            if isinstance(tb, dict):
-                tie_breaker_evaluated += 1
-                if tb.get("applied"):
-                    tie_breaker_applied += 1
-                    edge = f"{tb.get('from', '?')}->{tb.get('to', '?')}"
-                    tie_breaker_overrides[edge] = tie_breaker_overrides.get(edge, 0) + 1
+            # Welle E v4: Tie-Breaker-Telemetrie entfernt (siehe oben).
 
             # Token-Usage / Cache-Hit-Rate (Bonus 1)
             tu = dbg.get("token_usage") or {}
@@ -1183,6 +1639,14 @@ def _aggregate_classification_metrics(
                         slot["calls"] += int(mu.get("calls") or 0)
 
     return {
+        # Fairer Persona-Score: nur über Eröffnungen mit Persona-Marker.
+        # `persona_correct_rate` ist der Roh-Wert (inkl. neutraler Eröffnungen).
+        "persona_correct_rate_fair": (
+            round(persona_achievable_correct / persona_achievable_total, 3)
+            if persona_achievable_total else 0.0
+        ),
+        "persona_achievable_total": persona_achievable_total,
+        "persona_neutral_total": persona_neutral_total,
         "persona_correct_rate": (
             round(persona_correct / persona_total, 3) if persona_total else 0.0
         ),
@@ -1202,14 +1666,64 @@ def _aggregate_classification_metrics(
         ),
         "transitions_total": transitions_total,
         "transitions_plausible": transitions_plausible,
-        # Pattern-Hint vs Engine — wie oft stimmen sie überein?
+        # Pattern-Hint vs Final-Pattern — wie oft stimmen sie überein?
+        #
+        # Welle E v4 (2026-05-26): "Engine" in diesen Feldnamen ist die alte
+        # Bezeichnung der Override-Pipeline (Safety + Pre-Route-Rules + LLM-
+        # Hint + Fallback) — NICHT die früher mal vorhandene 3-Phasen-Score-
+        # Engine. Die Felder bleiben aus Backward-Compat (Studio + Trends-
+        # Endpoint) — neue Konsumenten nutzen die ``*_final_*``-Aliase unten.
         "llm_hint_present_count": llm_hint_present,
         "llm_engine_match_rate": (
             round(llm_engine_agree / llm_hint_present, 3) if llm_hint_present else 0.0
         ),
+        # Alias: das gleiche wie llm_engine_match_rate, mit klarem Namen.
+        "llm_hint_final_match_rate": (
+            round(llm_engine_agree / llm_hint_present, 3) if llm_hint_present else 0.0
+        ),
+        "llm_engine_disagreement_count": llm_hint_present - llm_engine_agree,
+        "llm_hint_final_disagreement_count": llm_hint_present - llm_engine_agree,
         "pattern_confusion_llm_vs_engine": pattern_confusion,
+        "pattern_confusion_llm_vs_final": pattern_confusion,
+        # Welle E v3 (2026-05-25) — Judge-Verdict bei Disagreement.
+        # Aussagekräftig nur bei genug Disagreement-Cases (>10 sinnvoll).
+        "pattern_hint_verdict_counts": hint_verdict_counts,
+        "pattern_hint_better_rate": (
+            round(
+                hint_verdict_counts["hint_better"]
+                / max(1, hint_verdict_counts["hint_better"]
+                       + hint_verdict_counts["engine_better"]
+                       + hint_verdict_counts["equivalent"]),
+                3,
+            )
+        ),
+        "pattern_engine_better_rate": (
+            round(
+                hint_verdict_counts["engine_better"]
+                / max(1, hint_verdict_counts["hint_better"]
+                       + hint_verdict_counts["engine_better"]
+                       + hint_verdict_counts["equivalent"]),
+                3,
+            )
+        ),
+        # Klarer benannter Alias (Welle E v4): "Rule-Override besser" statt
+        # "Engine besser" — beschreibt was der Counter wirklich misst.
+        "pattern_override_better_rate": (
+            round(
+                hint_verdict_counts["engine_better"]
+                / max(1, hint_verdict_counts["hint_better"]
+                       + hint_verdict_counts["engine_better"]
+                       + hint_verdict_counts["equivalent"]),
+                3,
+            )
+        ),
+        "pattern_disagreement_pairs": disagreement_pairs,
         # Judge-Approval pro Strategie
         "engine_pattern_judge_ok_rate": (
+            round(engine_pattern_judge_ok / judged_turns, 3) if judged_turns else 0.0
+        ),
+        # Alias mit klarem Namen.
+        "final_pattern_judge_ok_rate": (
             round(engine_pattern_judge_ok / judged_turns, 3) if judged_turns else 0.0
         ),
         # ACHTUNG: aussagekräftig nur als Lower-Bound für die LLM-Strategie,
@@ -1393,9 +1907,77 @@ async def execute_run(
                     f"{sc['persona_id']} × {sc['intent_id']}"
                 )
                 try:
-                    bot_resp = await _post_chat(sc["opening"])
+                    # Welle E v4 (2026-05-25, eval-c4c0 Task #118/119):
+                    # I06 ist Edit-Intent — semantisch nur sinnvoll wenn
+                    # vorher Material erzeugt wurde. Im Eval-c4c0 waren alle
+                    # 6 I06-Turns Eröffnungen ohne Vor-Inhalt → die Engine
+                    # routete vernünftig zu I05/M03 (Slot-Klärung), aber der
+                    # Judge erwartete M11 (Edit) → konsistent pm=0/1.
+                    #
+                    # Fix: bei I06 schicken wir vorab einen synthetischen
+                    # I05/M10-Turn ("Erstelle mir ein Arbeitsblatt zur
+                    # Photosynthese") an dieselbe Session, so dass
+                    # ``session_state.entities._last_pattern == M10`` für
+                    # den eigentlichen Edit-Turn vorliegt. Damit greift
+                    # rule_iterative_edit (R2) und M11 wird gewählt.
+                    # Bewertet wird NUR der Edit-Turn (Turn 2), nicht der
+                    # Priming-Turn.
+                    use_session_id: str | None = None
+                    priming_meta: dict[str, Any] | None = None
+                    if sc["intent_id"] == "I06":
+                        use_session_id = f"eval-{uuid.uuid4().hex[:12]}"
+                        priming_msg = (
+                            "Erstelle mir bitte ein Arbeitsblatt zur "
+                            "Photosynthese für Klasse 6."
+                        )
+                        try:
+                            priming_resp = await _post_chat(
+                                priming_msg, session_id=use_session_id,
+                            )
+                            priming_meta = {
+                                "priming_message": priming_msg,
+                                "priming_pattern": (priming_resp.get("debug") or {}).get("pattern"),
+                                "priming_text_preview": (priming_resp.get("content") or "")[:200],
+                            }
+                            # eval-bd3a Befund (2026-05-26): bei P-ELT/P-LEH war
+                            # ``_canvas_last_markdown`` beim Edit-Turn 2 noch
+                            # nicht in der DB persistiert — M11 fand keinen
+                            # Vor-Inhalt und antwortete mit "Ich habe gerade
+                            # nichts zum Anpassen". Der Edit-Turn startet sonst
+                            # direkt im Anschluss, ohne dass die Session-
+                            # Persistierung der vorherigen Antwort durch ist.
+                            # 600 ms Puffer löst das Race deterministisch
+                            # (Priming-Turn schreibt entities + last_pattern in
+                            # aiosqlite, das ist non-blocking gegenüber dem
+                            # HTTP-Response).
+                            await asyncio.sleep(0.6)
+                            # Belastbarer: aktiv prüfen, dass die Session den
+                            # erwarteten ``_canvas_last_markdown`` (oder
+                            # ``_last_pattern == M10``) trägt; bei Bedarf
+                            # einmal nachpollen.
+                            try:
+                                from app.services.database import get_or_create_session
+                                _st = await get_or_create_session(use_session_id)
+                                _ents = (_st.get("entities") or {}) if _st else {}
+                                if not _ents.get("_canvas_last_markdown") and not _ents.get("_last_pattern"):
+                                    await asyncio.sleep(0.4)
+                            except Exception:
+                                # Persist-Check ist Komfort, kein Hard-Stop
+                                pass
+                        except Exception as _pe:
+                            logger.warning(
+                                "[eval %s] I06 priming failed for %s: %s",
+                                run_id, sc.get("persona_id"), _pe,
+                            )
+                            # Bei Fehler: ohne Priming weiterfahren, der Eval
+                            # zeigt dann das ursprüngliche I06-Verhalten.
+                            use_session_id = None
+
+                    bot_resp = await _post_chat(sc["opening"], session_id=use_session_id)
                     bot_text = bot_resp.get("content", "")
                     debug = bot_resp.get("debug", {}) or {}
+                    if priming_meta:
+                        debug["i06_priming"] = priming_meta
                     dbg_flat = {
                         "pattern": debug.get("pattern"),
                         "persona": debug.get("persona"),
@@ -1410,14 +1992,76 @@ async def execute_run(
                         "token_usage": debug.get("token_usage"),
                         # Bonus 2: tie-breaker telemetry lives inside phase3_modulations
                         "phase3_modulations": debug.get("phase3_modulations"),
+                        # Welle E v4: bei I06-Szenarien zeigen wir den
+                        # Priming-Turn im Studio an, damit nachvollziehbar
+                        # ist warum die Engine M11 (Edit) wählen konnte.
+                        "i06_priming": debug.get("i06_priming"),
                     }
-                    # If the bot opened a canvas (PAT-21 Canvas-Create), the
-                    # actual content is in page_action.payload.markdown — the
-                    # chat bubble itself is just a thin announcement
-                    # ("Ich habe dir ein Arbeitsblatt erstellt …"). The judge
-                    # would otherwise see only that announcement and rate
-                    # info=0/2 systematically. Append the canvas markdown so
-                    # the judge can evaluate the actual delivered content.
+                    # Welle E v4+ (2026-05-25): KI-Material (M10/M11/M09) wird
+                    # vom Backend in ``inline_documents[].content`` ausgeliefert
+                    # — die ``content``-Bubble enthält nur die kurze
+                    # Ankündigung ("Hier ist dein Material — sag Bescheid").
+                    # Welle E v4+++ (2026-05-26, eval-bd3a): zusätzlich Material-
+                    # Treffer-Cards + Query-Metas anhängen, damit der Judge
+                    # auch M05/M06/M07/M08-Such-Patterns korrekt bewertet
+                    # (vorher: "kein konkretes Material" obwohl Cards da waren).
+                    _idocs = bot_resp.get("inline_documents") or []
+                    if _idocs:
+                        _md_parts: list[str] = []
+                        for _doc in _idocs:
+                            if not isinstance(_doc, dict):
+                                continue
+                            _content = (_doc.get("content") or "").strip()
+                            if _content:
+                                _title = (_doc.get("title") or _doc.get("kind") or "").strip()
+                                _md_parts.append(
+                                    f"---\n[Inline-Document — vom Nutzer sichtbar"
+                                    + (f": {_title}" if _title else "") + "]\n\n"
+                                    + _content
+                                )
+                        if _md_parts:
+                            bot_text = (bot_text or "").rstrip() + "\n\n" + "\n\n".join(_md_parts)
+                    # Such-/Material-Karten anhängen (M05, M06, M07, M08, M09)
+                    _cards = bot_resp.get("cards") or []
+                    if _cards:
+                        _card_lines = []
+                        for _card in _cards[:8]:  # cap to 8 für Token-Budget
+                            if not isinstance(_card, dict):
+                                continue
+                            _ct = (_card.get("title") or "").strip()
+                            _cu = (_card.get("url") or _card.get("wlo_url") or "").strip()
+                            _cd = (_card.get("description") or _card.get("abstract") or "").strip()[:200]
+                            if _ct or _cu:
+                                _line = f"  - **{_ct or '(ohne Titel)'}**"
+                                if _cu: _line += f" — {_cu}"
+                                if _cd: _line += f"\n    {_cd}"
+                                _card_lines.append(_line)
+                        if _card_lines:
+                            bot_text = (
+                                (bot_text or "").rstrip()
+                                + f"\n\n---\n[Material-Cards — vom Nutzer sichtbar, {len(_cards)} Treffer]\n"
+                                + "\n".join(_card_lines)
+                            )
+                    # Such-Hinweis-Metas (Themenseiten / Sammlungen / Fachportale)
+                    _qmetas = bot_resp.get("query_metas") or []
+                    if _qmetas:
+                        _qm_lines = []
+                        for _qm in _qmetas[:5]:
+                            if not isinstance(_qm, dict):
+                                continue
+                            _qt = (_qm.get("title") or _qm.get("type") or "").strip()
+                            _qu = (_qm.get("url") or "").strip()
+                            if _qt or _qu:
+                                _qm_lines.append(f"  - {_qt}" + (f" — {_qu}" if _qu else ""))
+                        if _qm_lines:
+                            bot_text = (
+                                (bot_text or "").rstrip()
+                                + "\n\n---\n[Query-Metas — vom Nutzer sichtbar]\n"
+                                + "\n".join(_qm_lines)
+                            )
+                    # Legacy: falls historische page_action.canvas_open noch
+                    # auftaucht (Backend nicht migriert), Markdown ebenfalls
+                    # anhängen.
                     page_action = bot_resp.get("page_action") or {}
                     if (page_action.get("action") == "canvas_open"
                             and isinstance(page_action.get("payload"), dict)
@@ -1436,7 +2080,7 @@ async def execute_run(
                     "kind": "scenario",
                     "persona_id": sc["persona_id"],
                     "intent_id": sc["intent_id"],
-                    "session_id": None,
+                    "session_id": use_session_id,  # bei I06 gesetzt, sonst None
                     "turns": [{
                         "user": sc["opening"],
                         "bot": bot_text,

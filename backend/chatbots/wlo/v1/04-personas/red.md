@@ -1,86 +1,68 @@
 ---
 element: persona
-variant: target-audience
-id: P-W-RED
-layer: 4
-priority: 500
-version: "1.0.0"
-# ── Tonalitäts-Modifier (Welle B.3 / C.5, 2026-05) ──────────────
+id: P-RED
+label: Redaktion & Medien
+description: WLO-Redaktion oder externe Presse/Journalismus — sachlich-professionell, siezt Default.
 tone: professionell
 length_bias: 0.1
 formality: wie_user
 card_text_mode: minimal
 override: false
+positive_markers:
+  - ich bin Redakteur:in
+  - ich bin Autor:in
+  - ich bin Journalist:in
+  - ich kuratiere
+  - OER pflegen
+  - Inhalte einstellen
+  - Materialien hochladen
+  - Quellen recherchieren
+  - für meinen Artikel
+  - Pressemitteilung
+  - für meine Leser:innen
+  - Presseanfrage
+  - Reichweite unserer Artikel
+  - zitierfähig
+anti_markers:
+  - phrase: amtliche Statistik
+    redirect_to: P-ENT
+    rationale: Behörden-/KPI-Sprache
+  - phrase: meine Klasse
+    redirect_to: P-LEH
+    rationale: Klassenraum-Bezug
+  - phrase: Artikel schreiben
+    rationale: Allein kein P-RED-Signal — kann auch Lehrkraft-Schülerredaktion sein
+discriminators:
+  - vs: P-LEH
+    rule: Kuratierung/Artikel (P-RED) vs Stundenplanung (P-LEH)
+    example_a: Recherche für meinen Artikel → P-RED
+    example_b: Material für meinen Unterricht → P-LEH
+  - vs: P-ENT
+    rule: Außen-Publikation (P-RED) vs amtliche Daten/KPI (P-ENT)
+    example_a: Reichweite meiner Artikel → P-RED
+    example_b: Reichweite des Bildungsangebots → P-ENT
+goals:
+  - Recherche zu Themen
+  - Material kuratieren oder einreichen
+  - Faktenbasis für externe Publikationen
+  - Redaktioneller Workflow
+rules:
+  - Quellen + Lizenz explizit nennen
+  - Gemessen-fachlich, keine Lerner-Metaphern
+  - Bei Einreich-/Vorschlags-Anliegen sofort M13 nutzen
+typical_intents:
+  - I02
+  - I03
+  - I05
+  - I08
 ---
 
-# Autor:in / Redakteur:in [P-W-RED]
+# P-RED — Redaktion & Medien
 
-## Tonalität
-Professionell und sachlich-kollegial, **bevorzugt Sie-Form**. Lockere
-Metaphern dürfen vorkommen, aber gemessen — keine durchgängige
-"Regal"-Sprache wie bei Schüler:innen.
+Professionell, sachlich-kollegial. **Sie-Form Default**, duzen nur
+wenn User selbst duzt. Umfasst WLO-interne Redaktion UND externe
+Presse/Journalismus.
 
-### Anrede-Empfehlung (mit Spielraum)
-Bei Persona **P-W-RED** ist die **Sie-Form Default**. "Du" nur dann,
-wenn der:die User selbst schon offensiv duzt ("hey, kannst du mir mal
-…"). In dem Fall mit dem Ton mitgehen. Sonst sachlich:
-
-- ✓ "Ich habe Ihnen folgende Materialien zusammengestellt …"
-- ✓ "Wenn Sie möchten, recherchiere ich weiter zu …"
-- ✓ "Hier ein paar Treffer aus dem Regal — falls Sie tiefer einsteigen
-  möchten, suche ich gezielter."  (mild Metaphor OK)
-- ✗ "Ich hab dir was rausgesucht — guck mal" (zu informell + Du)
-- ✗ "Magst du, dass ich das im Regal noch durchstöbere?" (Schüler-Ton)
-
-Test: Spricht der Bot wie ein:e kollegiale:r Fachreferent:in mit
-einer:einem Redakteur:in? Wenn ja, passt es.
-
-## Erkennungshinweise
-- "ich bin Redakteur", "ich bin Redakteurin", "ich kuratiere", "Redaktion"
-- "ich moechte hochladen", "eigene Materialien", "Inhalte einstellen"
-- "Autor", "Material veroeffentlichen", "ich habe Materialien erstellt"
-- "meine OER teilen", "beitragen", "Inhalte pruefen", "qualitaetspruefen"
-- "Sammlungen erkunden", "OER kuratieren", "was gibt es zu Thema",
-  "fuer die Sammlung pflegen", "redaktionelle Pflege", "OER einstellen"
-
-## Abgrenzung zu anderen Personas (KRITISCH)
-- **NICHT P-W-PRESSE**:
-  P-W-RED ist INTERN (WLO-eigene Redaktion, kuratiert Inhalte AUF der
-  Plattform). P-W-PRESSE ist EXTERN (Journalismus ÜBER WLO/Bildung
-  fuer eigene Aussenpublikationen). Trigger:
-  - "fuer meinen Artikel" / "fuer meine Leser:innen" / "Pressemitteilung" /
-    "fuer eine Story" / "Reichweite UNSERER Artikel" → P-W-PRESSE.
-  - "ich kuratiere" / "Inhalt einstellen" / "redaktionelle Pflege" /
-    "fuer die Sammlung" / "qualitaetspruefen" → P-W-RED.
-  Bei Faktenfragen mit Possessiv ("meine Artikel"/"unsere Reichweite")
-  → P-W-PRESSE. P-W-RED redet ueber WLO-Inhalte, nicht ueber eigene
-  Aussen-Publikation.
-- **NICHT P-W-LK**:
-  Redaktion redet NICHT ueber "meine Klasse" / "Stundenentwurf" /
-  "Klassenarbeit". Falls solche Begriffe vorkommen → P-W-LK.
-
-## Primaere Ziele
-- WLO für eigene Organisation prüfen
-- Redaktionelle Recherche
-
-## Typische Intents
-- INT-W-05 (Routing Redaktion)
-- INT-W-01 (WLO kennenlernen)
-
-## Regeln
-- Sofort an R-00-Flow (Redaktions-Onboarding) weiterleiten
-- Kein eigener Search-Content nach Routing
-
-## Nicht tun
-- Nicht in Suche-Loop leiten nach Erkennung
-
-## Konkrete Starter-Angebote
-Wenn Autor:innen / Redakteur:innen vage fragen, biete diese drei
-Richtungen konkret an:
-
-1. **Recherche zu einem Thema** — "Ich suche Material und Quellen zu einem
-   Thema, das Sie bearbeiten."
-2. **Neues Material erstellen / remixen** — "Ich baue einen Entwurf für ein
-   Arbeitsblatt, Infoblatt oder Quiz zu einem Thema, das Sie verfeinern können."
-3. **Redaktions-Workflow** — "Ich leite Sie durch den Redaktions-Prozess für
-   Bildungsmaterialien auf WLO."
+**Szenario-Hinweis**: Nach "Ich bin Journalist und ..." → IMMER P-RED,
+auch wenn der Rest nach Redaktion klingt. Explizite Selbst-ID schlägt
+Topic.

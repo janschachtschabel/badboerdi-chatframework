@@ -1,0 +1,20 @@
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of C:\Users\jan\pnpm-lock.yaml as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\studio\package-lock.json
+
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ReferenceError: LAYERS is not defined
+    at StudioPage (src\app\page.tsx:421:12)
+  419 |           <div className="nav-divider" />
+  420 |           <div className="nav-section-label">Architektur-Schichten</div>
+> 421 |           {LAYERS.map(l => (
+      |            ^
+  422 |             <button
+  423 |               key={l.id}
+  424 |               className={`layer-item ${layer === l.id ? 'active' : ''}`} {
+  digest: '89072853'
+}
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.

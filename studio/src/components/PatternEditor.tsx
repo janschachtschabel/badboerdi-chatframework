@@ -30,17 +30,15 @@ function serializeYamlValue(value: any, indent: number = 0): string {
 }
 
 function patternToFileContent(p: PatternData, body: string): string {
+  // Welle E v4 (2026-05-25): deprecated Felder (gate_personas, gate_states,
+  // gate_intents, signal_*, page_bonus) werden nicht mehr serialisiert.
+  // Der LLM-Hint wählt das Pattern; Phase 1+2 sind aus der Engine raus.
+  // Existierende MD-Dateien mit alten Feldern werden vom config_loader
+  // still ignoriert.
   const fields: [string, any][] = [
     ['id', p.id],
     ['label', p.label],
     ['priority', p.priority ?? 400],
-    ['gate_personas', p.gate_personas ?? ['*']],
-    ['gate_states', p.gate_states ?? ['*']],
-    ['gate_intents', p.gate_intents ?? ['*']],
-    ['signal_high_fit', p.signal_high_fit ?? []],
-    ['signal_medium_fit', p.signal_medium_fit ?? []],
-    ['signal_low_fit', p.signal_low_fit ?? []],
-    ['page_bonus', p.page_bonus ?? []],
     ['precondition_slots', p.precondition_slots ?? []],
     ['default_tone', p.default_tone ?? 'sachlich'],
     ['default_length', p.default_length ?? 'mittel'],
@@ -198,6 +196,126 @@ interface Props {
   createFile: (path: string, content: string) => Promise<boolean>;
 }
 
+// ── Pattern-Discriminators — vs/rule/example-Tripel-Editor (Welle E v4+7) ──
+function PatternDiscriminators({ values, onChange }: {
+  values: Array<{ vs: string; rule: string; example?: string }>;
+  onChange: (v: Array<{ vs: string; rule: string; example?: string }>) => void;
+}) {
+  const items = values || [];
+  const update = (idx: number, key: 'vs' | 'rule' | 'example', val: string) => {
+    const next = [...items];
+    next[idx] = { ...next[idx], [key]: val };
+    onChange(next);
+  };
+  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx));
+  const add = () => onChange([...items, { vs: '', rule: '', example: '' }]);
+  return (
+    <div className="form-group">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+        <label className="form-label" style={{ margin: 0 }}>
+          Tie-Breaks zu anderen Patterns (discriminators){' '}
+          <span style={{ color: '#9CA3AF', fontWeight: 400 }}>({items.length})</span>
+        </label>
+        <button type="button" className="btn btn-sm" onClick={add}
+          style={{ fontSize: '.7rem', padding: '2px 8px' }}>+ hinzufügen</button>
+      </div>
+      <div className="form-hint" style={{ fontSize: '.8rem', marginBottom: 6 }}>
+        Pro Konflikt-Pattern eine Regel + ein Beispiel. Z.B. <code>vs M04 — Create-Verb + Material-Typ → M10. Erstell mir ein Quiz zu Photosynthese → M10.</code>
+      </div>
+      {items.length === 0 && (
+        <div style={{ fontSize: 11, color: '#9CA3AF', fontStyle: 'italic', padding: '4px 0' }}>
+          (keine Tie-Breaks definiert)
+        </div>
+      )}
+      {items.map((d, idx) => (
+        <div key={idx} style={{
+          border: '1px solid #e5e7eb', borderRadius: 4, padding: 8, marginBottom: 6,
+          background: '#fafafa',
+        }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 11, color: '#6B7280' }}>vs Pattern:</span>
+            <input
+              className="form-input form-input-sm"
+              value={d.vs || ''}
+              placeholder="M04"
+              onChange={e => update(idx, 'vs', e.target.value)}
+              style={{ width: 80, fontSize: 12, fontFamily: 'ui-monospace, Menlo, monospace' }}
+            />
+            <button type="button" className="btn btn-danger btn-sm btn-icon"
+              onClick={() => remove(idx)} title="Entfernen"
+              style={{ padding: '2px 6px', fontSize: '.7rem', marginLeft: 'auto' }}>✕</button>
+          </div>
+          <input
+            className="form-input form-input-sm"
+            value={d.rule || ''}
+            placeholder="Regel: Create-Verb + Material-Typ → M10. Was-Frage ohne Material-Typ → M04."
+            onChange={e => update(idx, 'rule', e.target.value)}
+            style={{ width: '100%', fontSize: 12, marginBottom: 4 }}
+          />
+          <input
+            className="form-input form-input-sm"
+            value={d.example || ''}
+            placeholder="Beispiel: Erstell mir ein Quiz zu Photosynthese → M10. Was ist Photosynthese? → M04."
+            onChange={e => update(idx, 'example', e.target.value)}
+            style={{ width: '100%', fontSize: 12 }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+// ── String-Liste (Add/Remove) — für forbidden_phrases / anti_patterns ──
+function PatternStringList({ label, hint, values, onChange, placeholder }: {
+  label: string;
+  hint?: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+}) {
+  const items = values || [];
+  const update = (idx: number, v: string) => {
+    const next = [...items];
+    next[idx] = v;
+    onChange(next);
+  };
+  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx));
+  const add = () => onChange([...items, '']);
+  return (
+    <div className="form-group">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+        <label className="form-label" style={{ margin: 0 }}>
+          {label} <span style={{ color: '#9CA3AF', fontWeight: 400 }}>({items.length})</span>
+        </label>
+        <button type="button" className="btn btn-sm" onClick={add}
+          style={{ fontSize: '.7rem', padding: '2px 8px' }}>+ hinzufügen</button>
+      </div>
+      {hint && <div className="form-hint" style={{ fontSize: '.8rem', marginBottom: 6 }}>{hint}</div>}
+      {items.length === 0 && (
+        <div style={{ fontSize: 11, color: '#9CA3AF', fontStyle: 'italic', padding: '4px 0' }}>
+          (keine Einträge)
+        </div>
+      )}
+      {items.map((v, idx) => (
+        <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 3 }}>
+          <input
+            className="form-input form-input-sm"
+            value={v}
+            placeholder={placeholder}
+            onChange={e => update(idx, e.target.value)}
+            style={{ flex: 1, fontSize: 12 }}
+          />
+          <button type="button" className="btn btn-danger btn-sm btn-icon"
+            onClick={() => remove(idx)} title="Entfernen"
+            style={{ padding: '2px 6px', fontSize: '.7rem' }}>✕</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 // ── Chip Multi-Select ────────────────────────────────────────────────
 function ChipSelect({ options, selected, onChange, colorClass = 'tag-blue' }: {
   options: { id: string; label?: string }[];
@@ -307,14 +425,18 @@ function RagAreaInput({ selected, onChange }: {
 // Keeping the form modal-free: a tab is just a render-filter, the
 // underlying editData state is shared. Save button is global (top
 // right) so a click commits everything regardless of active tab.
-type TabId = 'identity' | 'gates' | 'scoring' | 'output' | 'tools' | 'instructions';
+// Welle E v4 (2026-05-25): Tabs "Phase 1 Gates" + "Phase 2 Scoring" raus.
+// Patterns werden vom LLM-Hint ausgewählt, nicht mehr deterministisch
+// gefiltert/bewertet. precondition_slots wandern nach "Slots" (eigener
+// schlanker Tab, weil sie noch in phase3_modulate als Degradation-Flag
+// aktiv sind und für M09/M10 inhaltlich wichtig bleiben).
+type TabId = 'identity' | 'output' | 'tools' | 'slots' | 'instructions';
 
 const TAB_DEFINITIONS: { id: TabId; label: string; icon: string }[] = [
-  { id: 'identity',     label: 'Identität',     icon: '\u{1F9E9}' }, // 🧩
-  { id: 'gates',        label: 'Phase 1 — Gates',     icon: '\u{1F6AA}' }, // 🚪
-  { id: 'scoring',      label: 'Phase 2 — Scoring',   icon: '\u{1F4E1}' }, // 📡
-  { id: 'output',       label: 'Phase 3 — Output',    icon: '\u{1F3A8}' }, // 🎨
+  { id: 'identity',     label: 'Identität',           icon: '\u{1F9E9}' }, // 🧩
+  { id: 'output',       label: 'Antwort-Form',        icon: '\u{1F3A8}' }, // 🎨
   { id: 'tools',        label: 'Tools & Wissen',      icon: '\u{1F527}' }, // 🔧
+  { id: 'slots',        label: 'Slots & Degradation', icon: '\u{1F511}' }, // 🔑
   { id: 'instructions', label: 'Anweisungen',         icon: '\u{1F4DD}' }, // 📝
 ];
 
@@ -374,17 +496,47 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
     setEditData({ ...editData, [field]: value });
   };
 
-  // Save
+  // Save — Welle E v3 (2026-05-25): bevorzugt den strukturierten Backend-
+  // PUT-Endpoint (/api/config/patterns), der via ruamel-Roundtrip
+  // Kommentare erhält + Pydantic-validiert. Fallback auf den älteren
+  // /api/config/file-Pfad nur wenn das neue Endpoint fehlt (404).
   const handleSave = async () => {
-    if (!editData?.file) return;
+    if (!editData) return;
     setStatus('saving');
-    const content = patternToFileContent(editData, body);
-    const ok = await saveFile(editData.file, content);
-    if (ok) {
-      setOriginalRaw(content);
-      setStatus('saved');
-      setTimeout(() => setStatus('idle'), 2000);
-    } else {
+
+    // Build full payload — keep ALL patterns intact, only patch the edited one.
+    const payload = patterns.map(p =>
+      p.id === editData.id
+        ? { ...editData, body_md: body }
+        : p
+    );
+
+    try {
+      const r = await fetch('/api/config/patterns', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patterns: payload }),
+      });
+      if (r.ok) {
+        setStatus('saved');
+        await onReload();
+        setTimeout(() => setStatus('idle'), 2000);
+        return;
+      }
+      // 404 → fall back to legacy file-based save (preserves backwards-compat
+      // when the user is running an older backend without the new endpoint).
+      if (r.status === 404 && editData.file) {
+        const content = patternToFileContent(editData, body);
+        const ok = await saveFile(editData.file, content);
+        if (ok) {
+          setOriginalRaw(content);
+          setStatus('saved');
+          setTimeout(() => setStatus('idle'), 2000);
+          return;
+        }
+      }
+      setStatus('error');
+    } catch {
       setStatus('error');
     }
   };
@@ -399,13 +551,9 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
       id,
       label,
       priority: 400,
-      gate_personas: ['*'],
-      gate_states: ['*'],
-      gate_intents: ['*'],
-      signal_high_fit: [],
-      signal_medium_fit: [],
-      signal_low_fit: [],
-      page_bonus: [],
+      // Welle E v4: gate_* + signal_* + page_bonus aus dem Default
+      // entfernt — der LLM-Hint wählt das Pattern, deterministische
+      // Filterung/Gewichtung ist deprecated.
       precondition_slots: [],
       default_tone: 'sachlich',
       default_length: 'mittel',
@@ -447,8 +595,8 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
             <div className="form-group">
               <label className="form-label">Pattern ID</label>
               <input className="form-input" value={newPatternId} onChange={e => setNewPatternId(e.target.value)}
-                placeholder="z.B. PAT-21-custom" autoFocus />
-              <div className="form-hint">Eindeutige ID, z.B. PAT-21-mein-pattern</div>
+                placeholder="z.B. M10-custom" autoFocus />
+              <div className="form-hint">Eindeutige ID, z.B. M10-mein-pattern</div>
             </div>
             <div className="form-group">
               <label className="form-label">Label</label>
@@ -571,84 +719,18 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                   </div>
                 </div>
                 <div className="form-hint" style={{ marginTop: 12, fontSize: '.85rem' }}>
-                  Die Identität entscheidet, wo das Pattern in der Priority-Hierarchie steht und
-                  ob es als Antwort, Frage oder Vorschlag rendert. Gates und Scoring stehen in
-                  den nächsten Tabs.
+                  Die Identität entscheidet, wie das Pattern in der Klassifikator-Pattern-Liste
+                  auftaucht (Reihenfolge via <code>priority</code>) und ob es als Antwort, Frage
+                  oder Vorschlag rendert. Slots & Degradation, Tools, Anweisungen stehen in den
+                  weiteren Tabs.
                 </div>
               </div>
               )}
 
-              {/* Phase 1: Gates */}
-              {activeTab === 'gates' && (
+              {/* Slots & Degradation (Welle E v4) */}
+              {activeTab === 'slots' && (
               <div className="section">
-                <div className="section-title"><span className="section-icon">&#x1F6AA;</span> Phase 1: Gates (Filterung)</div>
-                <div className="gate-grid">
-                  <div className="gate-box">
-                    <div className="gate-box-title">Personas</div>
-                    <ChipSelect
-                      options={elements.personas.map(p => ({ id: p.id, label: p.label }))}
-                      selected={editData.gate_personas ?? ['*']}
-                      onChange={v => update('gate_personas', v.length ? v : ['*'])}
-                    />
-                  </div>
-                  <div className="gate-box">
-                    <div className="gate-box-title">States</div>
-                    <ChipSelect
-                      options={elements.states.map(s => ({ id: s.id, label: s.label }))}
-                      selected={editData.gate_states ?? ['*']}
-                      onChange={v => update('gate_states', v.length ? v : ['*'])}
-                      colorClass="tag-green"
-                    />
-                  </div>
-                  <div className="gate-box">
-                    <div className="gate-box-title">Intents</div>
-                    <ChipSelect
-                      options={elements.intents.map(i => ({ id: i.id, label: i.label }))}
-                      selected={editData.gate_intents ?? ['*']}
-                      onChange={v => update('gate_intents', v.length ? v : ['*'])}
-                      colorClass="tag-yellow"
-                    />
-                  </div>
-                </div>
-                <div className="form-hint" style={{ marginTop: 12, fontSize: '.85rem' }}>
-                  Wenn keine Persona/State/Intent passt, wird das Pattern eliminiert.
-                  <strong> Stern (*) bedeutet „alle erlaubt"</strong>. Hard-Gates auf
-                  precondition_slots stehen im Scoring-Tab.
-                </div>
-              </div>
-              )}
-
-              {/* Phase 2: Signals */}
-              {activeTab === 'scoring' && (
-              <div className="section">
-                <div className="section-title"><span className="section-icon">&#x1F4E1;</span> Phase 2: Signal-Scoring</div>
-                <div className="form-group">
-                  <label className="form-label">High Fit Signale (Gewicht 1.0)</label>
-                  <ChipSelect
-                    options={elements.signals.map(s => ({ id: s.id }))}
-                    selected={editData.signal_high_fit ?? []}
-                    onChange={v => update('signal_high_fit', v.filter(x => x !== '*'))}
-                    colorClass="tag-green"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Medium Fit Signale (Gewicht 0.5)</label>
-                  <ChipSelect
-                    options={elements.signals.map(s => ({ id: s.id }))}
-                    selected={editData.signal_medium_fit ?? []}
-                    onChange={v => update('signal_medium_fit', v.filter(x => x !== '*'))}
-                    colorClass="tag-yellow"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Low Fit Signale (Gewicht 0.2)</label>
-                  <ChipSelect
-                    options={elements.signals.map(s => ({ id: s.id }))}
-                    selected={editData.signal_low_fit ?? []}
-                    onChange={v => update('signal_low_fit', v.filter(x => x !== '*'))}
-                    colorClass="tag-gray"
-                  />
-                </div>
+                <div className="section-title"><span className="section-icon">&#x1F511;</span> Slots & Degradation</div>
                 <div className="form-group">
                   <label className="form-label">Precondition Slots (benötigte Entities)</label>
                   <ChipSelect
@@ -658,15 +740,30 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                     colorClass="tag-purple"
                   />
                   <div className="form-hint" style={{ marginTop: 6, fontSize: '.85rem' }}>
-                    Hard-Gate: Wenn auch nur EIN Slot leer ist, wird das Pattern eliminiert
-                    — egal wie hoch der Score wäre. Lass die Liste leer, wenn keine Slots
-                    erforderlich sind.
+                    Wenn nicht alle Slots gefüllt sind, setzt phase3_modulate ein{' '}
+                    <code>degradation=true</code> Flag und meldet die fehlenden Slots
+                    — der Antwort-Builder kann darauf reagieren (z. B. mit einer
+                    Klärungs-Rückfrage). Anders als früher wird das Pattern NICHT mehr
+                    eliminiert, der LLM-Hint bleibt der Selektor. Leer lassen, wenn
+                    keine Slots erforderlich sind.
                   </div>
+                </div>
+                <div className="card" style={{
+                  marginTop: 12, padding: 10, background: '#EFF6FF',
+                  border: '1px solid #BFDBFE', fontSize: 12,
+                }}>
+                  <strong>Welle E v4+12 (Sprint K, 2026-05-27):</strong> Phase-1-Gates,
+                  Phase-2-Scoring und die komplette Routing-Rule-Engine wurden entfernt.
+                  Das Pattern wird vom LLM-Klassifikator-Hint gewählt; deterministische
+                  Hard-Overrides liegen in <code>01-base/classify-overrides.yaml</code>
+                  (Persona-Self-ID, Verb-Anker). Pattern-Definitionen brauchen daher
+                  keine Gate-/Signal-Felder mehr — pflege hier nur Inhalt, Tools und
+                  Antwort-Form.
                 </div>
               </div>
               )}
 
-              {/* Phase 3: Output defaults */}
+              {/* Antwort-Form (vormals Phase 3 Output defaults) */}
               {activeTab === 'output' && (
               <div className="section">
                 <div className="section-title"><span className="section-icon">&#x1F3A8;</span> Phase 3: Ausgabe-Defaults</div>
@@ -786,32 +883,102 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
               </>
               )}
 
-              {/* Anweisungen tab: core_rule + markdown body */}
+              {/* Anweisungen tab: Welle E v3 — strukturiert + freier Body */}
               {activeTab === 'instructions' && (
               <div className="section">
                 <div className="section-title"><span className="section-icon">&#x1F4DD;</span> Kernregel & Anweisungen</div>
+
                 <div className="form-group">
                   <label className="form-label">Kernregel (core_rule)</label>
-                  <input className="form-input" value={editData.core_rule ?? ''}
+                  <textarea
+                    className="form-textarea"
+                    value={editData.core_rule ?? ''}
                     onChange={e => update('core_rule', e.target.value)}
-                    placeholder="z.B. Maximal 2 Sätze, keine Einleitung." />
+                    placeholder="HART formulierte Hauptregel — 1–3 Sätze. Wird im Response-Prompt als Top-Block gerendert."
+                    rows={3}
+                    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: '.9rem' }}
+                  />
                   <div className="form-hint" style={{ marginTop: 6, fontSize: '.85rem' }}>
-                    Wird als kompakte Hauptanweisung in den Prompt eingefügt. Ein Satz.
+                    Die zentrale „HART"-Regel des Patterns. 1–3 Sätze. Wird im Antwort-Prompt als
+                    eigene Sektion gerendert.
                   </div>
                 </div>
+
+                <PatternStringList
+                  label="Verbotene Formulierungen (forbidden_phrases)"
+                  hint='Konkrete Wortlaute die der Bot NICHT verwenden darf. Wird im Antwort-Prompt + Eval-Judge als Anti-Liste eingesetzt.'
+                  values={editData.forbidden_phrases ?? []}
+                  onChange={v => update('forbidden_phrases', v)}
+                  placeholder='z.B. „Hier sind passende Sammlungen"'
+                />
+
+                <PatternStringList
+                  label="Anti-Patterns (anti_patterns)"
+                  hint="Falsche Handlungs-Strategien dieses Patterns — eine pro Bullet."
+                  values={editData.anti_patterns ?? []}
+                  onChange={v => update('anti_patterns', v)}
+                  placeholder='z.B. „Suche statt Routing"'
+                />
+
+                {/* ── Welle E v4+7 (2026-05-26): strukturierte Pattern-Auswahl ── */}
+                <div className="card" style={{
+                  marginTop: 16, marginBottom: 8, padding: 14,
+                  background: '#f0f9ff', border: '1px solid #bae6fd',
+                }}>
+                  <div style={{ fontSize: '.82rem', color: '#0369a1', fontWeight: 600, marginBottom: 4 }}>
+                    Pattern-Auswahl-Regeln (verbindet sich automatisch mit dem classify-Prompt + Eval-Judge)
+                  </div>
+                  <div style={{ fontSize: '.74rem', color: '#0369a1' }}>
+                    Diese 4 Felder ersetzen die zentrale <code>classify-overrides.yaml</code>-Sektion
+                    <code>pattern_disambiguators</code>. Sie wandern beim nächsten Turn automatisch in
+                    den classify-Prompt, den response-Pattern-Brief und den Eval-Judge.
+                  </div>
+                </div>
+
+                <PatternStringList
+                  label="Einsetzen wenn (when_to_use)"
+                  hint="Positive Auslöser-Bedingungen — Klassifizier wählt dieses Pattern wenn eine zutrifft."
+                  values={editData.when_to_use ?? []}
+                  onChange={v => update('when_to_use', v)}
+                  placeholder='z.B. „Intent I05 + Topic + Material-Typ vorhanden"'
+                />
+
+                <PatternStringList
+                  label="NICHT einsetzen wenn (when_not_to_use)"
+                  hint="Negative Bedingungen — Klassifizier wählt ein anderes Pattern wenn eine zutrifft."
+                  values={editData.when_not_to_use ?? []}
+                  onChange={v => update('when_not_to_use', v)}
+                  placeholder='z.B. „Topic fehlt → M03 (Slot-Klärung)"'
+                />
+
+                <PatternStringList
+                  label="Typische User-Phrasen (trigger_phrases)"
+                  hint="Konkrete Nutzer-Eingaben die dieses Pattern triggern. Werden als Few-Shot-Anker in den classify-Prompt geschoben."
+                  values={editData.trigger_phrases ?? []}
+                  onChange={v => update('trigger_phrases', v)}
+                  placeholder='z.B. „Erstell mir ein Quiz zu X"'
+                />
+
+                <PatternDiscriminators
+                  values={editData.discriminators ?? []}
+                  onChange={v => update('discriminators', v)}
+                />
+
                 <div className="form-group">
-                  <label className="form-label">Zusätzliche Anweisungen (Markdown-Body)</label>
+                  <label className="form-label">Pattern-Brief (Markdown-Body)</label>
                   <textarea
                     className="form-textarea form-textarea-lg"
                     value={body}
                     onChange={e => setBody(e.target.value)}
-                    placeholder="Weitere Pattern-Anweisungen im Markdown-Format..."
+                    placeholder="Pflicht-Antwort-Schema, Tabellen, Beispiele — pattern-spezifische Inhalte als freier Markdown."
                     spellCheck={false}
                     style={{ minHeight: 320, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: '.9rem' }}
                   />
                   <div className="form-hint" style={{ marginTop: 6, fontSize: '.85rem' }}>
-                    Freier Markdown-Text. Wird unverändert in den Prompt eingefügt. Persona-spezifische
-                    Beispiele, Anti-Patterns und Quick-Reply-Templates landen hier.
+                    Freier Markdown-Text für das Pflicht-Antwort-Schema, Tabellen, Persona-Quick-Reply-
+                    Templates und sonstige pattern-spezifische Anweisungen. <strong>Kernregel,
+                    forbidden_phrases und anti_patterns gehören NICHT hier rein</strong> — die haben
+                    eigene strukturierte Felder oben.
                   </div>
                 </div>
               </div>

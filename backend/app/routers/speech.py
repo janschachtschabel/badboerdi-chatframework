@@ -10,9 +10,19 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from openai import AsyncOpenAI
 
+from app.services.llm_provider import speech_enabled, speech_disabled_reason
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _ensure_speech_enabled() -> None:
+    """Welle E v4+13: Bei B-API-Anbindung ist Speech deaktiviert (Audio-
+    Passthrough defekt). 503 mit klarer Begründung statt eines kryptischen
+    406/415/500 vom B-API-Proxy."""
+    if not speech_enabled():
+        raise HTTPException(status_code=503, detail=speech_disabled_reason())
 
 # Speech always talks directly to an OpenAI-compatible endpoint (STT/TTS
 # are OpenAI-native features; the B-API proxies don't forward them). The
@@ -67,6 +77,16 @@ WLO_DOMAIN_PROMPT = (
 )
 
 
+@router.get("/status")
+async def speech_status():
+    """Public capability probe — sagt dem Frontend, ob STT/TTS verfügbar ist.
+
+    Bei B-API-Anbindung: ``enabled=false`` (Audio-Passthrough defekt). Das
+    Widget blendet damit Mikro-/Lautsprecher-Buttons aus, statt sie ins
+    Leere laufen zu lassen."""
+    return {"enabled": speech_enabled(), "reason": speech_disabled_reason()}
+
+
 @router.post("/transcribe")
 async def transcribe(
     audio: UploadFile = File(...),
@@ -78,6 +98,7 @@ async def transcribe(
     whisper-1, especially on domain vocabulary). Falls back to
     gpt-4o-transcribe, then whisper-1 on error.
     """
+    _ensure_speech_enabled()
     suffix = os.path.splitext(audio.filename or ".webm")[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         content = await audio.read()
@@ -117,6 +138,7 @@ async def synthesize(
     speed: float = Form(1.0),
 ):
     """Synthesize text to speech using OpenAI TTS."""
+    _ensure_speech_enabled()
     try:
         response = await client.audio.speech.create(
             model=TTS_MODEL,

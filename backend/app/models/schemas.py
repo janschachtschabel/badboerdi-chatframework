@@ -21,16 +21,23 @@ class ClassificationResult(BaseModel):
     """
     persona_id: str = "P-AND"
     persona_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
-    intent_id: str = "INT-W-03"
+    intent_id: str = "I03"
     intent_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     signals: list[str] = Field(default_factory=list)
     entities: dict[str, Any] = Field(default_factory=dict)
     turn_type: str = "initial"
-    next_state: str = "state-1"
+    next_state: str = "S1"
     # NEW (Phase 1, Shadow-Mode): LLM-suggested pattern + reasoning.
     # Both optional — old classifier outputs (no pattern hint) still validate.
     pattern_id_hint: str | None = None
     pattern_reasoning: str | None = None
+    # Welle E (2026-05-23): LLM-suggested MCP-Tool für Speculative Prefetch.
+    # Macht den heuristischen Tool-Picker in chat.py (~3793–3957) zielsicherer:
+    # wenn der LLM sieht "Themenseite zu …" → tool_id_hint=search_wlo_topic_pages.
+    # Backend fällt auf Heuristik zurück wenn Hint leer ist oder nicht in der
+    # Tool-Whitelist des gewählten Pattern liegt.
+    tool_id_hint: str | None = None
+    tool_reasoning: str | None = None
 
 
 # ── Environment (sent by frontend every turn) ──────────────────────
@@ -41,43 +48,43 @@ class Environment(BaseModel):
     locale: str = "de-DE"
     session_duration: int = 0
     referrer: str = "direkt"
-    # Webseiten-Guide-Mode: when true, the backend annotates each
-    # outgoing card with a ``guide_url`` (subject to the allow-list in
-    # 01-base/guide-mode.yaml) so the widget can show a "Bring mich
-    # hin"-button that same-tab-navigates the user to the WLO page.
-    # Frontend sets this from the toggle in the widget header. False
-    # keeps the legacy "open in new tab" behaviour.
-    guide_mode: bool = False
+    # Webseiten-Guide-Mode (Welle E, 2026-05-23 — Default-Flip):
+    # Default ist jetzt ``True``. Das Backend annotiert jede ausgehende
+    # Karte mit einem ``guide_url`` (Repo-Render-Link auf das in
+    # 01-base/guide-mode.yaml konfigurierte Repository), so dass das
+    # Widget den User auf eine echte Repo-Seite leitet statt auf eine
+    # externe ``wwwurl``. Der ``host``-Check in
+    # ``guide_mode_service.host_is_allowed`` bleibt als Sicherheitsnetz —
+    # auf nicht-allowlisteten Hosts fällt das Backend automatisch auf
+    # die externe URL zurück.
+    #
+    # Alte Bestandsintegrationen, die das Feld nicht mitschicken,
+    # bekommen damit automatisch das neue Verhalten — was genau
+    # gewünscht ist, da die Repo-Anbindung als Standard-Erlebnis
+    # gewollt ist.
+    guide_mode: bool = True
     # The widget's host hostname (window.location.hostname). Used by the
     # backend allow-list check — guide_url is only attached when this
     # matches one of the configured allowed_hosts patterns.
     host: str = ""
 
-    # ── Widget-Embed-Modi (None = Default-Verhalten "an" behalten) ──
-    # Vier optionale Schalter, mit denen die einbettende Host-Seite das
-    # Widget feature-by-feature herunterregeln kann. None bedeutet "Feld
-    # nicht mitgeschickt" → Backend bleibt beim heutigen Verhalten,
-    # Bestandsintegrationen sehen keine Änderung. Nur explizites ``False``
-    # schaltet das jeweilige Feature ab.
-    cards_enabled: bool | None = None
-    canvas_enabled: bool | None = None
+    # Welle E (2026-05-23): einziger verbleibender Widget-Embed-Mode.
+    # ``cards_enabled``, ``canvas_enabled``, ``quick_replies_enabled``
+    # und ``inline_result_grouping`` sind ersatzlos entfernt — Layout
+    # liegt jetzt zentral im Studio (display-rules.yaml). Hosts können
+    # nur noch KI-Material-Generierung pro Embed abschalten, falls die
+    # Host-Plattform selbst KI-Content-Tools bereitstellt.
+    # None bedeutet "Host hat das Feld nicht gesetzt" → Backend behält
+    # Default-Verhalten (KI-Content an). Nur explizites ``False`` schaltet
+    # die Erstellung ab; M10/M11 antworten dann mit der Alt-Response aus
+    # widget-modes.yaml.
     ai_content_enabled: bool | None = None
-    quick_replies_enabled: bool | None = None
-    # Welle C.5 (2026-05): Frontend zeigt Such-Treffer als gruppierte Boxen
-    # (Themenseiten / Sammlungen / Webseiten-Inhalte / CTA). Backend nutzt
-    # das Flag um:
-    #   - alle Inline-Links nach ``_apply_widget_modes_postprocess`` noch
-    #     einmal sauber aus dem Bot-Text in ``web_links`` zu ziehen (sonst
-    #     stehen sie doppelt: als Bullet im Text + als Box-Eintrag).
-    #   - Lotsen-Guide-Bullets („- [Über WLO](url)") ebenfalls in die
-    #     Webseiten-Inhalte-Box zu verschieben statt sie als Textbullet zu
-    #     belassen.
-    #
-    # **Default-Flip 2026-05-21**: ``None`` wird jetzt als ``True`` interpretiert
-    # (die gruppierte Darstellung ist Standard). Frontend sendet ``False``
-    # nur noch dann, wenn der Host ``inline-result-grouping="false"`` setzt
-    # und das alte flache Card-Layout zurück will.
-    inline_result_grouping: bool | None = None
+
+    # Webseiten-Tour (geführte Besucherführung). Explizites UI-Signal:
+    #   "start" → Tour beginnen (Button "Web-Tour starten")
+    #   "tick"  → unsichtbarer Page-Load-Ping (Ankunfts-Erkennung)
+    # None / "" → kein Tour-Signal (normale Nachricht). Siehe tour_service.py.
+    tour_action: str | None = None
 
 
 # ── Chat request / response ────────────────────────────────────────
@@ -242,6 +249,9 @@ class DebugInfo(BaseModel):
     pattern: str = ""
     entities: dict[str, Any] = Field(default_factory=dict)
     tools_called: list[str] = Field(default_factory=list)
+    # Welle E v4 (2026-05-25): Phase 1 (Gate) + Phase 2 (Score) entfernt.
+    # ``phase1_eliminated`` ist immer leer, ``phase2_scores`` enthält nur noch
+    # {winner.id: 1.0} (Backward-Compat-Form für Studio-Trace + Eval).
     phase1_eliminated: list[str] = Field(default_factory=list)
     phase2_scores: dict[str, float] = Field(default_factory=dict)
     phase3_modulations: dict[str, Any] = Field(default_factory=dict)
@@ -304,6 +314,49 @@ class WebLink(BaseModel):
     url: str
 
 
+class InlineDocument(BaseModel):
+    """Gerahmtes Inline-Dokument im Chat-Verlauf — typischerweise
+    Lernpfade (M09), KI-generierte Materialien (M10) oder iterativ
+    überarbeitete Vorgänger-Versionen (M11).
+
+    Welle E (2026-05-23) — ersetzt das frühere Canvas-Pane-Konzept:
+    Statt ein separates Pane aufzumachen, rendert das Frontend den
+    Markdown direkt im Chat-Verlauf als optisch konsistente Box (gleicher
+    Rahmen wie die Webseiten-Inhalte-Box, aber kleinere Schrift —
+    ``display_rules.inline_documents.font_size_percent``).
+    """
+    # ``kind`` steuert das Styling (Icon, Rahmen-Akzent) auf Frontend-
+    # Seite: "lernpfad" | "ki_material" | "bericht" | "remix" | "edit".
+    kind: str = "ki_material"
+    # Überschrift der Box. Bei Lernpfaden z.B. "Lernpfad — Photosynthese
+    # (Sek I)". Frontend zeigt sie als Box-Header über dem Markdown.
+    title: str = ""
+    # Markdown-Body. Wird vom Frontend via DOMPurify gerendert (gleicher
+    # Renderer wie für Bot-Bubbles, kein Extra-Code nötig).
+    content: str = ""
+    # Optionale Metadaten — z.B. material_type, source_node_id (bei
+    # Remix), discipline, educational_context.
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class SwimlaneBox(BaseModel):
+    """Eine Schwimmlinie (Abschnitt) einer Themenseite als eigene Anzeige-Box.
+    Frontend-Box-Titel = ``heading`` + „(Auszug)"; max. 3 Karten je Box."""
+    heading: str = ""
+    type: str = ""  # container | accordion | anchor …
+    cards: list[WloCard] = Field(default_factory=list)
+    has_more: bool = False  # True wenn die Themenseite mehr enthält als gezeigt
+
+
+class TopicPageView(BaseModel):
+    """Inhalte EINER Themenseite, nach Schwimmlinien gruppiert (Pattern M16).
+    Wird ANSTELLE der normalen Sammlungs-/Inhalts-Boxen gerendert; mit
+    ``topic_page_url`` als Absprung-Button auf die vollständige Themenseite."""
+    variant_title: str = ""
+    topic_page_url: str = ""
+    swimlanes: list[SwimlaneBox] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     session_id: str
     content: str
@@ -315,13 +368,30 @@ class ChatResponse(BaseModel):
     pagination: PaginationInfo | None = None
     query_metas: list[QueryMetaEntry] = Field(default_factory=list)
     web_links: list[WebLink] = Field(default_factory=list)
+    # Welle E (2026-05-23) — Lernpfade / KI-Materialien / Edits werden
+    # nicht mehr ins Canvas-Pane geöffnet, sondern als gerahmte Box
+    # direkt im Chat-Verlauf gerendert. Schemas siehe ``InlineDocument``.
+    inline_documents: list[InlineDocument] = Field(default_factory=list)
+    # M16 — Themenseiten-Inhalte (Schwimmlinien-Boxen). Wenn gesetzt, rendert
+    # das Frontend NUR diese Boxen (+ Absprung-Button) statt der normalen
+    # Sammlungs-/Inhalts-/Themenseiten-Boxen.
+    topic_page: TopicPageView | None = None
+    # Echo der aktuellen Display-Regeln (aus 01-base/display-rules.yaml).
+    # Frontend stylet Boxen anhand dieses Echo-Blocks ohne Hard-Coding —
+    # Änderung im Studio greift damit ohne Frontend-Deploy.
+    display_rules: dict[str, Any] = Field(default_factory=dict)
+    # Webseiten-Tour-Status. Gesetzt nur bei Tour-Antworten:
+    #   {"active": bool, "step": str, "group": str}
+    # Das Frontend pflegt damit sein localStorage-Flag (active=false →
+    # Flag löschen, keine weiteren Tour-Ticks). None bei Normal-Antworten.
+    tour: dict[str, Any] | None = None
 
 
 # ── Session / Memory ──────────────────────────────────────────────
 class SessionState(BaseModel):
     session_id: str
     persona_id: str = ""
-    state_id: str = "state-1"
+    state_id: str = "S1"
     entities: dict[str, Any] = Field(default_factory=dict)
     signal_history: list[str] = Field(default_factory=list)
     turn_count: int = 0

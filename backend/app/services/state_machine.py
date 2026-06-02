@@ -1,31 +1,31 @@
 """Conversation State Machine validator (Welle C Sprint 6).
 
-Validiert Übergänge zwischen Conversation-States (state-1 ... state-12)
+Validiert Übergänge zwischen Conversation-States (S1 ... S3)
 gegen die `next_likely`-Listen aus `04-states/states.yaml`.
 
 Designprinzip:
 - States sind **Verlaufs-Phasen**, nicht eine zweite Klassifikations-Achse
   zum Intent. Welche Phase als nächstes kommt, hängt vom aktuellen
-  Verlauf ab — z.B. nach state-5 (Suche) folgt typischerweise state-6
-  (Ergebnis-Kuratierung), nicht state-3 (Information).
+  Verlauf ab — z.B. nach S3 (Suche) folgt typischerweise S3
+  (Ergebnis-Kuratierung), nicht S3 (Information).
 - Der Validator arbeitet primär als **Telemetrie**: er erkennt
   implausible Übergänge und markiert sie, ändert sie aber nicht
   automatisch. Korrekturen passieren über die Routing-Rules-Engine
-  (z.B. `rule_state12_guard` korrigiert state-12 → state-5 bei
+  (z.B. `rule_state12_guard` korrigiert S3 → S3 bei
   Non-Canvas-Intent).
 
 Schnittstelle:
-    >>> result = validate_transition(prev="state-5", next_="state-6", intent="INT-W-03")
+    >>> result = validate_transition(prev="S3", next_="S3", intent="I03")
     >>> result["plausible"]
     True
     >>> result["validated_state"]
-    'state-6'
+    'S3'
 
-    >>> result = validate_transition(prev="state-12", next_="state-3", intent="INT-W-06")
+    >>> result = validate_transition(prev="S3", next_="S3", intent="I02")
     >>> result["plausible"]
     False
     >>> result["reason"]
-    'state-3 nicht in next_likely von state-12 [state-12, state-9, state-5]'
+    'S3 nicht in next_likely von S3 [S3, S3, S3]'
 
 Aufgerufen aus `chat.py` direkt nach `classification.next_state`-Auslesen,
 vor `select_pattern()`.
@@ -78,7 +78,7 @@ def validate_transition(
             "prev_next_likely": [],
         }
 
-    # Self-Loop (z.B. state-2 → state-2 weil noch ein Slot fehlt): erlaubt.
+    # Self-Loop (z.B. S2 → S2 weil noch ein Slot fehlt): erlaubt.
     if prev == next_:
         return {
             "validated_state": next_,
@@ -109,14 +109,14 @@ def validate_transition(
             "prev_next_likely": next_likely,
         }
 
-    # Implausibler Übergang. Sonderfall: Canvas-Intent (INT-W-11/12)
-    # springt nach state-12, das ist immer legitim — falls intent passt,
+    # Implausibler Übergang. Sonderfall: Canvas-Intent (I05/12)
+    # springt nach S3, das ist immer legitim — falls intent passt,
     # Übergang trotzdem als plausibel werten.
-    if next_ == "state-12" and intent in {"INT-W-11", "INT-W-12"}:
+    if next_ == "S3" and intent in {"I05", "I06"}:
         return {
             "validated_state": next_,
             "plausible": True,
-            "reason": "canvas-intent override (intent in {INT-W-11, INT-W-12})",
+            "reason": "canvas-intent override (intent in {I05, I06})",
             "prev_next_likely": next_likely,
         }
 

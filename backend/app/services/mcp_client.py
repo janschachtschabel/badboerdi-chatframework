@@ -334,6 +334,43 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "search_wlo_all",
+            "description": "KOMBINIERTE WLO-Suche: liefert einzelne Lerninhalte, Sammlungen UND Themenseiten in EINEM Aufruf (intern parallel). BEVORZUGT diese Funktion nutzen statt search_wlo_content + search_wlo_collections nacheinander aufzurufen — das spart Zeit. Gibt getrennte Toepfe zurueck (content / collections / topicPages). Filter wie bei search_wlo_content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Suchanfrage auf Deutsch, z.B. 'Bruchrechnung Klasse 7' oder 'Klimawandel'."},
+                    "educationalContext": {"type": "string", "description": "Bildungsstufe als Label ODER URI — Klassenangaben IMMER auf Bildungsstufe mappen (Kl. 1-4=Grundschule, 5-10=Sek I, 11-13=Sek II)."},
+                    "discipline": {"type": "string", "description": "Fach/Schulfach als Label ODER URI, z.B. 'Mathematik', 'Biologie'."},
+                    "userRole": {"type": "string", "description": "Zielgruppe als Label ODER URI, z.B. 'Lehrer/in', 'Lerner/in'."},
+                    "learningResourceType": {"type": "string", "description": "Inhaltstyp (lrt) als Label ODER URI — nur setzen wenn der Nutzer einen Typ nennt (Video, Arbeitsblatt, ...)."},
+                    "publisher": {"type": "string", "description": "Anbieter-Filter, z.B. 'Klexikon', 'Serlo'."},
+                    "maxContent": {"type": "integer", "description": "Max. Einzel-Inhalte (Default 8)."},
+                    "maxCollections": {"type": "integer", "description": "Max. je Sammlungen/Themenseiten (Default 5)."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_topic_page_content",
+            "description": "INHALTE EINER THEMENSEITE abrufen: liefert die Abschnitte (Schwimmlinien) einer Themenseite — je Schwimmlinie Ueberschrift + die echten Inhalts-Karten (Top-Treffer der jeweiligen Widget-Abfrage) + einen Absprung-Link auf die Themenseite. Nutze NACH search_wlo_topic_pages mit der collectionId (oder variantId) der gefundenen Themenseite.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "collectionId": {"type": "string", "description": "NodeId der Themenseiten-Sammlung (aus search_wlo_topic_pages)."},
+                    "variantId": {"type": "string", "description": "Optional: konkrete Varianten-NodeId (schneller als collectionId)."},
+                    "targetGroup": {"type": "string", "enum": ["teacher", "learner", "general"], "description": "Beim Aufloesen per collectionId die Variante dieser Zielgruppe waehlen."},
+                    "maxPerSwimlane": {"type": "integer", "description": "Max. Inhalts-Karten je Schwimmlinie (Default 3)."},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_collection_contents",
             "description": "Inhalte und/oder Sub-Sammlungen einer WLO-Sammlung (Themenseite) per nodeId abrufen.",
             "parameters": {
@@ -511,6 +548,8 @@ _JSON_CAPABLE_TOOLS: frozenset[str] = frozenset({
     "get_collection_contents",
     "get_node_details",
     "search_wlo_topic_pages",
+    "search_wlo_all",
+    "get_topic_page_content",
     "get_subject_portals",
     "browse_collection_tree",
 })
@@ -551,8 +590,10 @@ _TOOL_CACHE_NEG_HITS = 0  # Hits auf empty-result-Cache-Einträge
 # dynamische Suchen kriegen den Default. Greift nur, wenn das Tool keinen
 # Eintrag hat → fällt sauber auf den Default zurück.
 _TOOL_CACHE_TTL_PER_TOOL: dict[str, int] = {
-    # Vokabular: ändert sich nur bei Schema-Updates → 1h
-    "lookup_wlo_vocabulary": 3600,
+    # Vokabular: ändert sich nur bei MCP-Schema-Updates → 24h (O3).
+    # Zusätzlich beim Backend-Start vorgewärmt (prewarm_vocabularies), damit
+    # schon der erste Such-Turn keine Vokabular-Round-Trips braucht.
+    "lookup_wlo_vocabulary": 86400,
     # Top-Level-Fächer: stabil über Wochen → 30 min
     "get_subject_portals": 1800,
     # Sammlungs-Hierarchie: selten geändert → 30 min
@@ -695,6 +736,7 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
     """
     # Per-Call-Server-URL: zuerst aus der Studio-Registry, sonst Default.
     target_url = _get_server_url_for_tool(tool_name)
+    _call_t0 = _time.perf_counter()  # für Tool-Laufzeit-Logging (#3 Debug-Timing)
 
     # Debug: log raw LLM-supplied arguments BEFORE validation/resolution so we
     # can see exactly what the model wanted to send. Keeps this at INFO — the
@@ -812,7 +854,10 @@ async def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
             texts.append(part)
 
     response = "\n".join(texts) if texts else json.dumps(result_data)
-    logger.info("MCP tool %s returned %d chars", tool_name, len(response))
+    logger.info(
+        "MCP tool %s returned %d chars in %d ms",
+        tool_name, len(response), round((_time.perf_counter() - _call_t0) * 1000),
+    )
 
     # Slim ``get_subject_portals``: the raw API ships rich marketing
     # descriptions for every Fachportal (~50 KB total). The LLM only
@@ -1007,7 +1052,7 @@ async def _resolve_collection_node_id(arguments: dict[str, Any]) -> dict[str, An
     """Self-heal ``get_collection_contents`` calls when the LLM passed a
     collection name instead of a UUID.
 
-    Same failure pattern as PAT-27 / browse_collection_tree, but for
+    Same failure pattern as M08 / browse_collection_tree, but for
     arbitrary collections (not just Fachportale). When ``nodeId`` is a
     plain title like ``"Eiszeit"`` or ``"Klimawandel-Materialien"``, run
     a one-shot ``search_wlo_collections(query=<name>, maxResults=1)`` and
@@ -1086,6 +1131,10 @@ def _compact_subject_portals(raw_response: str) -> str:
         for key in ("nodeId", "title", "contentCount"):
             if key in it:
                 slim[key] = it[key]
+        # Fachportale SIND Sammlungen (ccm:map) → nodeType erhalten/setzen, sonst
+        # defaultet parse_wlo_cards auf "content" → falsche Box (Materialien
+        # statt Sammlungen) + Render- statt Collections-Browse-Link.
+        slim["nodeType"] = it.get("nodeType") or "collection"
         # Truncate description so cards still render but the LLM doesn't
         # have to wade through a paragraph each.
         desc = it.get("description") or ""
@@ -1128,6 +1177,50 @@ def parse_total_count(mcp_text: str) -> int:
     if m:
         return int(m.group(1))
     return 0
+
+
+# UUID-Form (für Placeholder-Titel-Erkennung der Themenseiten).
+_TP_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
+)
+
+
+def _topic_page_display_title(
+    raw_title: str, collection_id: str, educational_contexts: list | None
+) -> str:
+    """Menschenlesbarer Titel für eine Themenseiten-Card (Defense-in-Depth).
+
+    Hintergrund: Der MCP-Server lieferte im ``title``-Feld früher teils einen
+    technischen Platzhalter (``PAGE_VARIANT_<uuid>`` = ``cm:name`` eines
+    Page-Variant-Knotens) statt des lesbaren Titels — beobachtet im Widget
+    („PAGE_VARIANT_037c4c53-…").
+
+    Der eigentliche Fix sitzt jetzt SERVERSEITIG: der WLO-MCP bevorzugt
+    ``cm:title`` (z.B. „Seiten-Variante 1") vor ``cm:name`` (server.ts
+    ``pickThemePageTitle`` / formatter ``formatNode``). Dieser Client-Guard
+    bleibt als Sicherheitsnetz erhalten und greift nur noch, wenn doch ein
+    Platzhalter ankommt — etwa solange die Server-Korrektur auf der
+    Staging-Vercel-Instanz noch nicht deployt ist, bei gecachten Alt-
+    Antworten, oder bei einem (noch) nicht gepatchten MCP-Server in der
+    Registry. Ein sauberer Titel bleibt immer unverändert; nur ein echter
+    Platzhalter wird auf ein generisches, lesbares Label gemappt — bevorzugt
+    mit Bildungsstufe, sonst schlicht „Themenseite".
+    """
+    t = (raw_title or "").strip()
+    low = t.lower()
+    is_placeholder = (
+        not t
+        or low.startswith("page_variant")
+        or low.startswith("variant_")
+        or t == (collection_id or "")
+        or bool(_TP_UUID_RE.match(t))
+    )
+    if not is_placeholder:
+        return t
+    ctxs = [c for c in (educational_contexts or []) if isinstance(c, str) and c.strip()]
+    if ctxs:
+        return f"Themenseite ({ctxs[0]})"
+    return "Themenseite"
 
 
 def parse_wlo_topic_page_cards(mcp_text: str) -> list[dict]:
@@ -1231,24 +1324,26 @@ def parse_wlo_topic_page_cards(mcp_text: str) -> list[dict]:
                     "(funktional identisch — gleiche URL/Target/Label)",
                     _before, len(topic_pages), r.get("title", "?"),
                 )
+        # Themenseiten sind technisch Sammlungen (ccm:map mit
+        # page_config_ref), sollen aber als kuratierte Themenseite geöffnet
+        # werden — über ``/components/topic-pages?collectionId=<id>``, NICHT
+        # den generischen Sammlungs-Browse-Link und NICHT den render-Permalink
+        # (der ist für ccm:io). Deshalb: node_type=topic_page und alle
+        # URL-Felder auf den Themenseiten-Renderer (Fallback aus der cid, falls
+        # der MCP keine ``topicPageUrl`` mitliefert).
+        tp_render_url = (
+            f"{get_repo_base_url()}/edu-sharing/components/topic-pages?collectionId={cid}"
+        )
         cards.append({
             "node_id":              cid,
-            "title":                r.get("title") or cid,
-            "node_type":            "collection",
+            "title":                _topic_page_display_title(
+                r.get("title"), cid, r.get("educationalContexts"),
+            ),
+            "node_type":            "topic_page",
             "topic_pages":          topic_pages,
             "educational_contexts": r.get("educationalContexts") or [],
-            # Themenseiten-Treffer SIND Sammlungen (ccm:map) — daher MUSS
-            # die wlo_url auf den Sammlungs-Browse-Endpoint zeigen, nicht
-            # auf ``/components/render/<id>`` (das ist der Permalink für
-            # ccm:io-Knoten und liefert für eine Sammlung eine 404 bzw.
-            # eine falsche Detail-Ansicht). Beobachtet 2026-05-21:
-            # eingebettete Bot-Antwort zeigte ``…/render/39f845…`` für
-            # einen reinen Sammlungs-Treffer.
-            "wlo_url": (
-                f"{get_repo_base_url()}/edu-sharing/"
-                f"components/collections?id={cid}"
-            ),
-            "topic_page_url": r.get("topicPageUrl") or "",
+            "wlo_url":              r.get("topicPageUrl") or tp_render_url,
+            "topic_page_url":       r.get("topicPageUrl") or tp_render_url,
         })
     return _normalize_card_repo_hosts(cards)
 
@@ -1387,6 +1482,132 @@ def parse_wlo_cards(mcp_text: str) -> list[dict]:
     return cards
 
 
+def _first_json_object(s: str) -> str | None:
+    """Erstes balanciertes ``{...}``-Objekt aus einem String (defensiv, falls
+    der MCP-Return Begleittext/Meta nach dem Envelope enthält)."""
+    i = s.find("{")
+    if i < 0:
+        return None
+    depth = 0
+    instr = False
+    esc = False
+    for j in range(i, len(s)):
+        c = s[j]
+        if instr:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                instr = False
+        else:
+            if c == '"':
+                instr = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return s[i:j + 1]
+    return None
+
+
+def parse_search_all_cards(mcp_text: str) -> dict[str, list[dict]]:
+    """Parst das ``search_wlo_all``-Envelope in DREI getrennte Karten-Töpfe.
+
+    Envelope (outputFormat=json):
+
+    .. code-block:: json
+
+        {"query": "...",
+         "content":     {"total": N, "count": M, "results": [FormattedNode, ...]},
+         "collections": {...}, "topicPages": {...}}
+
+    Rückgabe: ``{"content": [...], "collections": [...], "topic_pages": [...]}``
+    mit Boerdi-Karten (gleiche Form wie :func:`parse_wlo_cards`). Sammlungen
+    und Themenseiten tragen ``node_type='collection'`` (vom MCP gesetzt);
+    Themenseiten zusätzlich ``topic_page_url``. So kann der Aufrufer die Töpfe
+    direkt in getrennte Anzeige-Boxen einsortieren.
+    """
+    out: dict[str, list[dict]] = {"content": [], "collections": [], "topic_pages": []}
+    if not mcp_text:
+        return out
+    obj: Any = None
+    try:
+        obj = json.loads(mcp_text)
+    except (ValueError, json.JSONDecodeError):
+        frag = _first_json_object(mcp_text)
+        if frag:
+            try:
+                obj = json.loads(frag)
+            except (ValueError, json.JSONDecodeError):
+                obj = None
+    if not isinstance(obj, dict):
+        logger.warning("parse_search_all_cards: kein JSON-Envelope (%r)", mcp_text[:80])
+        return out
+    for pot, key in (("content", "content"), ("collections", "collections"), ("topic_pages", "topicPages")):
+        sub = obj.get(key)
+        if isinstance(sub, dict):
+            out[pot] = _cards_from_json_envelope(sub) or []
+    return out
+
+
+def parse_topic_page_swimlanes(mcp_text: str) -> dict[str, Any]:
+    """Parst ``get_topic_page_content`` (outputFormat=json) in eine
+    Swimlane-Struktur fuer die Anzeige.
+
+    Envelope (json):
+
+    .. code-block:: json
+
+        {"variantId": "...", "collectionId": "...", "variantTitle": "...",
+         "topicPageUrl": "https://…", "swimlaneCount": N,
+         "swimlanes": [{"heading": "...", "type": "container",
+                        "items": [FormattedNode, ...], "hasMore": true}]}
+
+    Rueckgabe::
+
+        {"variant_title": str, "topic_page_url": str,
+         "swimlanes": [{"heading": str, "type": str, "has_more": bool,
+                        "cards": [<Boerdi-Karte>, ...]}]}
+
+    Die Karten je Schwimmlinie sind im selben Schema wie
+    :func:`parse_wlo_cards` (ueber :func:`_cards_from_json_envelope`).
+    """
+    out: dict[str, Any] = {"variant_title": "", "topic_page_url": "", "swimlanes": []}
+    if not mcp_text:
+        return out
+    obj: Any = None
+    try:
+        obj = json.loads(mcp_text)
+    except (ValueError, json.JSONDecodeError):
+        frag = _first_json_object(mcp_text)
+        if frag:
+            try:
+                obj = json.loads(frag)
+            except (ValueError, json.JSONDecodeError):
+                obj = None
+    if not isinstance(obj, dict):
+        logger.warning("parse_topic_page_swimlanes: kein JSON-Envelope (%r)", mcp_text[:80])
+        return out
+    out["variant_title"] = obj.get("variantTitle") or ""
+    out["topic_page_url"] = obj.get("topicPageUrl") or ""
+    for sl in obj.get("swimlanes") or []:
+        if not isinstance(sl, dict):
+            continue
+        items = sl.get("items") or []
+        cards = _cards_from_json_envelope(
+            {"total": len(items), "count": len(items), "results": items}
+        ) or []
+        out["swimlanes"].append({
+            "heading": sl.get("heading") or "",
+            "type": sl.get("type") or "",
+            "has_more": bool(sl.get("hasMore")),
+            "cards": cards,
+        })
+    return out
+
+
 # ── Label→URI caches for filter auto-resolution ─────────────────
 #
 # Maps lowercased label OR alias → canonical URI. Populated lazily
@@ -1460,6 +1681,26 @@ async def _ensure_label_cache(vocab: str) -> None:
 
     logger.info("%s label→URI cache loaded: %d entries", vocab, len(cache))
     _label_cache_loaded[vocab] = True
+
+
+async def prewarm_vocabularies() -> None:
+    """O3: Vokabular-Caches beim Backend-Start vorladen, damit schon der ERSTE
+    Such-Turn warm ist (sonst mehrere MCP-Round-Trips beim ersten Nutzer).
+
+    Lädt die vier genutzten Vokabulare parallel und best-effort: Fehler (z.B.
+    MCP gerade kalt/nicht erreichbar) werden geschluckt — der bestehende
+    Lazy-Fallback (``_ensure_label_cache`` beim ersten echten Bedarf) greift
+    dann weiterhin. Die Result-TTL für ``lookup_wlo_vocabulary`` liegt bei 24h.
+    """
+    import asyncio as _asyncio
+    vocabs = ["lrt", "discipline", "educationalContext", "userRole"]
+    results = await _asyncio.gather(
+        *[_ensure_label_cache(v) for v in vocabs], return_exceptions=True,
+    )
+    loaded = sum(1 for v in vocabs if _label_cache_loaded.get(v))
+    failed = [v for v, r in zip(vocabs, results) if isinstance(r, Exception)]
+    logger.info("vocabulary prewarm: %d/%d geladen%s", loaded, len(vocabs),
+                f", fehlgeschlagen={failed}" if failed else "")
 
 
 def _fuzzy_lookup(cache: dict[str, str], needle: str) -> tuple[str, str] | None:
@@ -1784,6 +2025,7 @@ def _get_server_url_for_tool(tool_name: str) -> str:
 TOOL_PREPROCESSORS: dict[str, Any] = {
     "search_wlo_content":      _resolve_filter_uris,
     "search_wlo_collections":  _resolve_filter_uris,
+    "search_wlo_all":          _resolve_filter_uris,
     "browse_collection_tree":  _resolve_browse_node_id,
     "get_collection_contents": _resolve_collection_node_id,
 }

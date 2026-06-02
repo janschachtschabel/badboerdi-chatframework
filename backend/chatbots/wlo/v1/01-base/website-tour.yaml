@@ -1,0 +1,227 @@
+# Webseiten-Tour — geführte Besucherführung als Konversions-Funnel
+# (Domänwissen, Studio-pflegbar)
+#
+# Steuert die optionale "Web-Tour", die einen Besucher zielgerichtet durch
+# WirLernenOnline führt — von der Selbstzuordnung bis zur Anfrage/Kontakt
+# auf /mitmachen/. Das VERHALTEN (State Machine, Ankunfts-Erkennung,
+# Einstiegspunkt-Erkennung) liegt deterministisch im Backend
+# (tour_service.py + chat.py); HIER stehen nur Texte, Ziel-URLs, Gruppen
+# und das Gruppe→Angebot-Mapping — alles ohne Deploy redaktionell pflegbar.
+#
+# ── Funnel (voller Weg ab Startseite, Flow A1/A2/A3) ────────────────
+#   intro → (Startseite) group → group_page → (Zielgruppenseite)
+#   content → (Bildungsinhalte, kurzer Zwischenstopp) solutions →
+#   (relevante Angebote/Produkte) contact → (Mitmachen = Anfrage, Ziel)
+#
+# ── Einstiegspunkte (Funnel kann MITTEN starten — siehe flows: unten) ─
+#   Beim Start prüft tour_service.detect_entry die aktuelle Seite:
+#     /home/               → group     (A*: Selbstzuordnung)
+#     Zielgruppenseite     → solutions (B1: Gruppe erkannt, direkt zu Lösungen)
+#     Produkt/Angebot-Seite→ solutions (C1: Gruppe per Rückwärts-Lookup)
+#     /mitmachen/(…)       → contact   (D1/D2: schon am Ziel, nur Prozess-Sicherheit)
+#     sonst                → intro     (voller Funnel ab Startseite)
+#
+# Navigation = "Bring mich hin"-Buttons (1 Klick) via __guide__|Label|URL.
+# Pfade werden als {base_host}{path} zu vollen URLs gebaut. Der Vergleich
+# "Besucher auf Zielseite?" passiert pfad-basiert (Host egal).
+#
+# DEPLOYMENT-VORAUSSETZUNGEN (sonst bricht die Ankunfts-/Einstiegs-Erkennung):
+#   1. Das Widget muss auf den Tour-Zielseiten SITE-WEIT eingebettet sein —
+#      nur dann feuert nach dem Seitenwechsel der unsichtbare Tick, mit dem
+#      der Bot die Ankunft erkennt, und nur dann kennt detect_entry beim Start
+#      die aktuelle Seite (env.page).
+#   2. Session-Persistenz muss an sein (persist-session="true" am Widget bzw.
+#      Cookie/?bsid= für Cross-Subdomain), damit die laufende Tour den WP-
+#      Full-Page-Reload überlebt.
+#   3. base_host muss auf denselben Host zeigen, auf dem das Widget läuft
+#      (Test: wp-test…, Prod: https://wirlernenonline.de).
+
+website_tour:
+  enabled: true
+
+  # Basis-Host für alle Tour-Links. Umschaltbar Test <-> Prod.
+  # Prod: https://wirlernenonline.de
+  base_host: "https://wp-test.wirlernenonline.de"
+
+  # Startseite — Ziel von Schritt "intro", Auslöser von Schritt "group".
+  home_path: "/home/"
+
+  # Landeseite des Bildungsinhalte-Zwischenstopps.
+  content_hub: "/bildungsinhalte/"
+
+  # Konversions-Ziel des Funnels (Anfrage / Mitmachen / Kontakt).
+  contact_hub: "/mitmachen/"
+
+  # Frontend-Startbutton-Label (ersetzt einen der 4 festen Startbuttons).
+  start_label: "Web-Tour starten"
+
+  # ── Typische Besucher-Flows (Konzept 4.2) — Grundlage der Einstiege ─
+  # Reine Dokumentation/Domänwissen. Die Spalte tour_einstieg sagt, an
+  # welchem Schritt die Tour einsteigt, wenn der Besucher schon auf einer
+  # solchen Seite ist (umgesetzt in tour_service.detect_entry).
+  flows:
+    - { id: A1, weg: "Startseite → Zielgruppenseite → Produkt/Angebot → Anfrage", bedeutung: "Klassischer Zielgruppenflow: Selbstzuordnung, Lösung, Anfrage", tour_einstieg: intro }
+    - { id: A2, weg: "Startseite → Produkt/Angebot → Anfrage", bedeutung: "Nutzer wissen grob, welches Angebot sie interessiert", tour_einstieg: intro }
+    - { id: A3, weg: "Startseite → Lösungsübersicht → Produkt/Angebot → Anfrage", bedeutung: "Nutzer brauchen zuerst Angebotsüberblick", tour_einstieg: intro }
+    - { id: B1, weg: "Zielgruppenseite → Produkt/Angebot → Anfrage", bedeutung: "Nutzer landen direkt auf Zielgruppenseite", tour_einstieg: solutions }
+    - { id: C1, weg: "Produkt/Angebot → Anfrage", bedeutung: "Nutzer landen direkt auf Produktseite", tour_einstieg: solutions }
+    - { id: D1, weg: "Angebots-/Mitmachseite → Anfrage/Formular", bedeutung: "Fast konversionsbereit; Ablenkung reduzieren", tour_einstieg: contact }
+    - { id: D2, weg: "Anfrage-Seite → Formular absenden", bedeutung: "Im Abschluss; nur Prozesssicherheit geben", tour_einstieg: contact }
+
+  # Begrüßung + Tour-Erklärung (Schritt "intro", voller Funnel ab Start).
+  intro: |
+    Schön, dass du da bist! 🎉 Ich zeig dir in ein paar Schritten, was
+    WirLernenOnline für **dich** bietet — und bring dich am Ende direkt
+    dahin, wo du eine Anfrage stellen oder mitmachen kannst. Los geht's
+    auf der Startseite. 👇
+
+  # Sanfter Hinweis, wenn der Besucher mitten in der Tour auf einer
+  # unerwarteten Seite landet — der aktuelle Weiter-Button wird erneut angeboten.
+  nudge: |
+    Du bist gerade woanders unterwegs. Wenn du mit der Tour weitermachen
+    möchtest, bring ich dich zum nächsten Halt: 👇
+
+  # Re-Show-Text, wenn der Besucher in der Lösungen-Phase eine der
+  # verlinkten Seiten öffnet (Ankunft auf einer Explore-Seite).
+  explore: |
+    Schau dich hier ruhig in Ruhe um. Wenn du bereit für die Anfrage bist,
+    geht's weiter: 👇
+
+  # ── Einstiegs-Texte (Funnel startet mitten drin, B1/C1) ─────────────
+  # Wird gezeigt, wenn der Besucher die Tour NICHT auf der Startseite
+  # startet, sondern schon auf einer Zielgruppen- oder Produktseite.
+  entry:
+    solutions: |
+      Schön, du bist schon mitten drin bei WLO! 🎉 Dann steigen wir direkt
+      hier ein — kein Grund, von vorn anzufangen. Das sind die für dich
+      passenden Lösungen; schau dir eine an, danach bring ich dich direkt
+      zur Anfrage. 👇
+
+  # ── Besucher-Gruppen ──────────────────────────────────────────────
+  # label   = Quick-Reply-Button + Anzeige
+  # synonyms = zusätzliche Freitext-Treffer (lowercase, Teilstring-Match)
+  # page     = Zielgruppenseite (Pfad) — Einstiegspunkt B1
+  # angebote = relevante /angebote/-Seiten (Produkte/Lösungen) — Einstiegspunkt C1
+  groups:
+    - id: redaktionen
+      label: "Redaktionen"
+      synonyms: ["redaktion", "redaktionen", "redakteur", "redakteurin", "kuratieren", "kuratierung", "metadaten pflegen"]
+      page: "/home/redaktionen/"
+      angebote:
+        - { label: "WLO-Redaktionssoftware", path: "/angebote/wlo-redaktionssoftware/" }
+        - { label: "Redaktionelle Arbeiten", path: "/angebote/redaktionelle-arbeiten/" }
+        - { label: "Metadaten verbessern lassen", path: "/angebote/metadaten-verbessern-lassen/" }
+
+    - id: contentanbieter
+      label: "Contentanbieter"
+      synonyms: ["content anbieter", "contentanbieter", "anbieter", "verlag", "produzent", "material anbieten", "inhalte anbieten", "inhalte bereitstellen"]
+      page: "/home/contentanbieter/"
+      angebote:
+        - { label: "WLO-Inhalte für deine Suchmaschine", path: "/angebote/wlo-inhalte-fuer-deine-suchmaschine/" }
+        - { label: "Automatisierte Quellenerschließung", path: "/angebote/automatisierte-quellenerschliessung/" }
+        - { label: "Metadaten verbessern lassen", path: "/angebote/metadaten-verbessern-lassen/" }
+
+    - id: abnehmer
+      label: "Content-Abnehmer"
+      synonyms: ["abnehmer", "content abnehmer", "inhalte nutzen", "inhalte beziehen", "lernplattform", "schule", "lehrkraft", "nutze inhalte"]
+      page: "/home/abnehmer-bildungs-und-wissensinhalte/"
+      angebote:
+        - { label: "Integrationen für Lernplattformen & Web-CMS", path: "/angebote/integrationen-fuer-lernplattformen-und-web-cms/" }
+        - { label: "Bildungs-API", path: "/angebote/bildungs-api/" }
+        - { label: "WLO-Inhalte für deine Suchmaschine", path: "/angebote/wlo-inhalte-fuer-deine-suchmaschine/" }
+
+    - id: oer-community
+      label: "OER-Community"
+      synonyms: ["oer", "community", "oer community", "freie bildungsmaterialien", "ehrenamt", "mitmachen", "open educational resources"]
+      page: "/home/oer-community/"
+      angebote:
+        - { label: "Redaktionelle Arbeiten", path: "/angebote/redaktionelle-arbeiten/" }
+        - { label: "Think Tank", path: "/angebote/think-tank/" }
+
+    - id: software-betreiber
+      label: "Software-Betreiber"
+      synonyms: ["software betreiber", "betreiber", "plattform betreiben", "hosting", "betrieb", "betreibe software"]
+      page: "/home/software-betreiber/"
+      angebote:
+        - { label: "Integrationen für Lernplattformen & Web-CMS", path: "/angebote/integrationen-fuer-lernplattformen-und-web-cms/" }
+        - { label: "Bildungs-API", path: "/angebote/bildungs-api/" }
+        - { label: "Souveränes KI-Ökosystem", path: "/angebote/souveraenes-ki-oekosystem/" }
+
+    - id: software-hersteller
+      label: "Software-Hersteller"
+      synonyms: ["software hersteller", "hersteller", "entwickler", "entwicklerin", "software entwickeln", "infrastruktur", "bildungsinfrastruktur", "entwickle software"]
+      page: "/home/bildungsinfrastruktur-mitgestalten/"
+      angebote:
+        - { label: "Bildungs-API", path: "/angebote/bildungs-api/" }
+        - { label: "Souveränes KI-Ökosystem", path: "/angebote/souveraenes-ki-oekosystem/" }
+        - { label: "Integrationen für Lernplattformen & Web-CMS", path: "/angebote/integrationen-fuer-lernplattformen-und-web-cms/" }
+
+    - id: politik
+      label: "Politik / Rahmensetzer"
+      synonyms: ["politik", "rahmensetzer", "ministerium", "verwaltung", "rahmen setzen", "bildungspolitik", "förderung", "entscheider"]
+      page: "/home/wlo-fuer-politik/"
+      angebote:
+        - { label: "Souveränes KI-Ökosystem", path: "/angebote/souveraenes-ki-oekosystem/" }
+        - { label: "Think Tank", path: "/angebote/think-tank/" }
+        - { label: "Bildungs-API", path: "/angebote/bildungs-api/" }
+
+  # ── Bildungsinhalte-Sublinks (Schritt "solutions", zum Stöbern) ─────
+  content_sublinks:
+    - { label: "Fachportale", path: "/fachportale/" }
+    - { label: "OER-Statistik", path: "/bildungsinhalte/oer-statistik/" }
+    - { label: "Datenquellen", path: "/bildungsinhalte/datenquellen/" }
+    - { label: "Was ist OER?", path: "/bildungsinhalte/oer/" }
+
+  # ── Kontakt-/Anfrage-Links (Schritt "contact" = Konversions-Ziel) ───
+  # Bewusst knapp halten (D1: Ablenkung reduzieren).
+  contact_links:
+    - { label: "Über WLO", path: "/mitmachen/ueber-wlo/" }
+    - { label: "FAQ", path: "/mitmachen/faq/" }
+
+  # ── Schritt-Texte ───────────────────────────────────────────────────
+  # Platzhalter {group} wird durch das gewählte Gruppen-Label ersetzt.
+  steps:
+    intro:
+      nav_label: "Zur Startseite"
+
+    group:
+      text: |
+        Du bist auf der **Startseite**. 👇 Scroll einmal in Ruhe nach unten —
+        dort stellen wir die verschiedenen Besucher-Gruppen vor. Damit ich dir
+        die passenden Lösungen zeigen kann: In welche Gruppe ordnest du dich
+        am ehesten ein?
+      unsure_label: "Bin mir nicht sicher"
+      unsure_text: |
+        Kein Problem! Sag mir einfach grob, was dich zu WLO führt — zum
+        Beispiel „ich suche Material", „ich biete Inhalte an" oder „ich
+        entwickle Software" — dann ordne ich dich passend ein.
+
+    group_page:
+      text: |
+        Super — **{group}**. Ich bring dich direkt zu eurer Seite, dort ist
+        alles für euch zusammengefasst. 👇
+      nav_label: "Zur Seite für {group}"
+
+    content:
+      text: |
+        Kurzer Zwischenstopp: Hier siehst du, woher die Bildungsinhalte auf
+        WLO kommen — Fachportale, Datenquellen und ein paar Zahlen aus der
+        OER-Statistik. Schau rein, dann geht's zu den Lösungen für **{group}**. 👇
+      nav_label: "Zu den Bildungsinhalten"
+
+    solutions:
+      text: |
+        Das sind die für **{group}** besonders relevanten Lösungen. Schau dir
+        eine in Ruhe an — und wenn etwas passt, bring ich dich direkt zur
+        Anfrage. 👇
+      sublinks_label: "Mehr zu den Inhalten"
+      angebote_label: "Für {group} besonders relevant"
+      nav_label: "Weiter zur Anfrage"
+
+    contact:
+      text: |
+        Fast geschafft! 🎯 Hier auf der **Mitmach-Seite** kannst du deine
+        Anfrage stellen oder direkt Kontakt aufnehmen — alles Wichtige dazu
+        findest du hier, ganz unkompliziert. Danke fürs Mitkommen — und meld
+        dich jederzeit, wenn noch etwas offen ist!
+      links_label: "Das brauchst du noch"
