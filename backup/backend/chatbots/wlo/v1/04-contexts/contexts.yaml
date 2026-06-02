@@ -1,0 +1,71 @@
+# Konversations-Kontext-Definitionen (Welle E, 2026-05-18)
+#
+# DOKU-ONLY. Diese Datei wird vom Code NICHT mehr ausgewertet.
+#
+# Was tatsächlich passiert:
+#   * Das Widget übergibt einen ``page_context``-Block in der ChatRequest
+#     (URL, node_id, collection_id, topic_page_slug, search_query usw.).
+#   * ``app.services.page_context_service`` löst den Block via MCP auf
+#     (Titel, Fächer, Bildungsstufen, Material-Typen der Seite) und
+#     baut daraus einen semantischen Block, der in den Classifier- und
+#     Response-Prompt eingebaut wird.
+#   * Welle E hat ``page_bonus`` aus den Patterns entfernt — kein
+#     Score-Boost mehr je Page-Pfad.
+#
+# Die folgenden Einträge sind hier nur als Referenz für Editor:innen
+# und Studio-UI-Anzeige.  Wer das Verhalten ändert: an
+# ``page_context_service`` und der ``domain-rules.md``-Sektion
+# „Seitenkontext nutzen" arbeiten.
+
+contexts:
+  - id: ctx-search-page
+    label: "Suchergebnis-Seite"
+    description: "User ist auf /suche oder Startseite mit aktiver Suchanfrage."
+    triggers:
+      page: ["/suche", "/startseite", "/"]
+    behavior: |
+      Suchbegriff aus page_context.search_query aufgreifen.
+      Ergebnisse eingrenzen oder erweitern anbieten.
+      Nie „Was suchst du?" fragen — der User sucht gerade aktiv.
+
+  - id: ctx-collection-detail
+    label: "Sammlungs-Detailseite"
+    description: "User betrachtet eine konkrete WLO-Sammlung."
+    triggers:
+      page_pattern: "/sammlung/.*|/collection/.*|/themenseite/.*"
+    behavior: |
+      Auf die angezeigte Sammlung Bezug nehmen.
+      get_collection_contents nutzen, wenn collection_id vorhanden.
+      Ähnliche Sammlungen oder vertiefende Materialien anbieten.
+
+  - id: ctx-material-detail
+    label: "Material-Detailseite"
+    description: "User betrachtet ein einzelnes Lernmaterial."
+    triggers:
+      page_pattern: "/material/.*|/components/render/.*"
+    behavior: |
+      Auf das angezeigte Material Bezug nehmen.
+      get_node_details nutzen, wenn node_id vorhanden.
+      Lizenz, Bildungsstufe, ähnliche Materialien anbieten.
+
+  - id: ctx-fachportal
+    label: "Fachportal-Seite"
+    description: "User befindet sich auf einer Fachportal-Einstiegsseite."
+    triggers:
+      page_pattern: "/fach/.*|/fachportal/.*"
+    behavior: |
+      Das Fach aus dem Seitenpfad ableiten (z.B. /fachportal/mathematik = Mathematik).
+      Fach als bekannt voraussetzen — nicht nochmal fragen.
+      Themenseiten und Sammlungen für dieses Fach anbieten (P7/P8).
+
+  - id: ctx-mobile-quick
+    label: "Mobile Schnellinteraktion"
+    description: "Mobiles Endgerät, kurze Sessiondauer — knappe Antworten."
+    triggers:
+      device: "mobile"
+      max_session_duration: 60
+    behavior: |
+      Antworten maximal kurz halten.
+      Weniger Karten (max. 3) — wird tatsächlich vom device-config.yaml
+      gesteuert (device_max_items.mobile = 3).
+      Quick-Replies bevorzugen statt Freitext-Fragen.

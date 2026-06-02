@@ -1,0 +1,76 @@
+# Create-Trigger-Verben für Canvas-Intent-Override
+# ============================================================================
+# Phrasen, die klar "Erstelle mir neues Material"-Absicht signalisieren.
+# Werden am Anfang einer Nachricht (innerhalb der ersten 60 Zeichen) oder
+# als Teilphrase gesucht. Groß-/Kleinschreibung egal.
+#
+# Wenn eine dieser Phrasen matcht UND ein Material-Typ erkennbar ist,
+# überschreibt der Chat-Router den Classifier-Intent auf INT-W-11.
+# Das schützt gegen Classifier-Drift (z.B. wenn "Erstelle ein Arbeitsblatt"
+# fälschlich als INT-W-10 Unterrichtsplanung klassifiziert wird).
+#
+# Änderungen wirken live (mtime-Cache).
+
+create_triggers:
+  # Imperative (klassisch Lehrer/Schüler)
+  - erstelle
+  - "erstell "
+  - erstell mir
+  - generiere
+  - generier mir
+  - mach mir ein
+  - mach mir eine
+  - "mach ein "
+  - "mach eine "
+  - bau mir
+  - schreib mir ein
+  - schreib mir eine
+  - schreib ein
+  - schreib eine
+  - entwirf
+  - produziere
+
+  # Indikativ / Wunsch (Verwaltung, Politik, Presse)
+  - ich brauche ein
+  - ich brauche eine
+  - ich brauche einen
+  - brauche ein
+  - brauche eine
+  - brauche einen
+  - hätte gern ein
+  - hätte gern eine
+  - hätte gern einen
+  - hätte gerne ein
+  - hätte gerne eine
+  - hätte gerne einen
+  - ich möchte ein
+  - ich möchte eine
+  - ich möchte einen
+  - möchte ein
+  - möchte eine
+  - möchte einen
+  - gib mir ein
+  - gib mir eine
+  - gib mir einen
+  - kannst du mir ein
+  - kannst du mir eine
+  - kannst du mir einen
+  - kannst du einen
+  - kannst du ein
+  - fasse zusammen als
+  - wandle um in
+
+# Negative (Search-Verben) — wenn eines davon auftaucht, wird die
+# Message explizit NICHT als Create interpretiert, selbst wenn ein
+# Material-Typ genannt wird. Verhindert z.B. dass "Zeig mir Arbeitsblätter"
+# als Create-Arbeitsblatt missinterpretiert wird.
+search_verbs:
+  - "zeig "
+  - "zeige "
+  - suche
+  - "such "
+  - finde
+  - gib mir arbeits
+  - hast du
+  - welche
+  - gibt es

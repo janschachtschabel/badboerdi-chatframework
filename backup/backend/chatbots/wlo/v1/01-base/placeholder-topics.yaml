@@ -1,0 +1,74 @@
+# Placeholder-Topic-Filter
+#
+# Hier stehen die Begriffe, die der Classifier fälschlich als `thema`
+# extrahieren kann, obwohl sie nur Meta-Wörter aus der User-Frage sind
+# (z. B. "Ich suche etwas zu einem Thema" → thema="Thema").
+#
+# Solche Platzhalter werden im Backend (chat.py) VOR der MCP-Suche
+# auf leer gesetzt, damit R-6 (rule_vague_search in routing-rules.yaml)
+# greift und der Bot sauber nachfragt statt mit Müll-Treffern zu fluten.
+#
+# Studio-Hinweis: Diese Liste kann ohne Code-Deploy gepflegt werden.
+# Neue Begriffe einfach unten ergänzen — der Config-Loader hat mtime-Cache.
+
+placeholder_topics:
+  # Meta-Wörter "Thema"
+  - "thema"
+  - "themen"
+  - "ein thema"
+  - "einem thema"
+  - "irgendein thema"
+  - "etwas thema"
+
+  # Topic-Switch-Floskeln — User möchte das Thema wechseln, hat aber noch
+  # keinen konkreten Begriff genannt. Sprint 6 Hotfix: der LLM-Classifier
+  # extrahiert in dem Fall "anderes Thema" / "neues Thema" wörtlich als
+  # thema-Slot — das ist semantisch leer und muss in die Klärungs-Rule
+  # `rule_topic_switch_needs_clarification` fallen.
+  - "anderes thema"
+  - "anderes thema bitte"
+  - "ein anderes thema"
+  - "ein anderes"
+  - "anderes"
+  - "neues thema"
+  - "ein neues thema"
+  - "andere themen"
+  - "wechseln"
+  - "thema wechseln"
+  - "themawechsel"
+  - "themen wechseln"
+  - "umschalten"
+  - "etwas anderes"
+  - "etwas neues"
+  - "was anderes"
+  - "was neues"
+
+  # Pronomen / Vage-Wörter
+  - "irgendwas"
+  - "etwas"
+  - "was"
+  - "irgendetwas"
+  - "sonstiges"
+  - "sachen"
+  - "dinge"
+  - "stuff"
+  - "topic"
+
+  # Material-Sammelbegriffe (kein konkretes Topic)
+  - "material"
+  - "materialien"
+  - "ein material"
+  - "ein paar materialien"
+  - "inhalt"
+  - "inhalte"
+  - "content"
+
+# Minimale Themen-Länge in Zeichen. Werte unterhalb dieser Schwelle
+# (nach trim) werden ebenfalls als Platzhalter behandelt — sehr kurze
+# Wörter wie "xy", "z" können nie ein sinnvolles Topic sein und stammen
+# in der Praxis aus Tippfehlern oder Auto-Complete-Resten.
+#
+# Achtung: Pattern wie "OER", "DSGVO" haben 3-4 Zeichen — Schwelle bei 3
+# halten, damit diese gültigen Akronyme nicht als Platzhalter abgewiesen
+# werden.
+min_topic_length: 3

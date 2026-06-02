@@ -1,0 +1,95 @@
+# Entity-/Slot-Definitionen
+# Diese Entities werden aus der Nutzernachricht extrahiert und akkumuliert.
+
+entities:
+  - id: fach
+    label: Fach / Fachgebiet
+    type: string
+    description: "Schulfach oder Fachgebiet (z.B. Mathematik, Deutsch, Biologie)"
+    examples:
+      - Mathematik
+      - Deutsch
+      - Biologie
+      - Informatik
+      - Geschichte
+
+  - id: stufe
+    label: Bildungsstufe
+    type: string
+    description: >-
+      Bildungsstufe gemaesz dem WLO-Vokabular educationalContext
+      (Elementarbereich, Grundschule, Sekundarstufe I, Sekundarstufe II,
+      Berufliche Bildung, Hochschule, Erwachsenenbildung, Fortbildung,
+      Foerderschule). Nennt der Nutzer eine konkrete Klassenstufe
+      ("Klasse 6", "6. Klasse", "11. Schuljahr"), MAPPE auf die
+      passende Bildungsstufe: Klasse 1-4 = Grundschule,
+      Klasse 5-10 = Sekundarstufe I, Klasse 11-13 = Sekundarstufe II.
+      Filter auf Klassenstufen-Ebene gibt es auf WLO nicht —
+      Inhalte sind nur mit educationalContext (Bildungsstufe) getaggt.
+    examples:
+      - Grundschule
+      - Sekundarstufe I
+      - Sekundarstufe II
+      - Berufliche Bildung
+      - Hochschule
+      - Erwachsenenbildung
+
+  - id: thema
+    label: Thema
+    type: string
+    description: "Konkretes Thema oder Lerngegenstand (z.B. Bruchrechnung, Fotosynthese)"
+    examples:
+      - Bruchrechnung
+      - Fotosynthese
+      - Lyrik der Romantik
+
+  - id: medientyp
+    label: Medientyp
+    type: string
+    description: >-
+      Art des gesuchten Materials / Ressourcentyp (resourceType / Lernressourcentyp).
+      Extrahiere diesen Slot IMMER wenn der Nutzer einen Inhaltstyp nennt —
+      auch bei Pluralformen, Umschreibungen oder Adjektiven.
+      Beispiele fuer Cues → erwartete Werte:
+      "Video" / "Videos" / "Film" → Video;
+      "Arbeitsblatt" / "Arbeitsblaetter" / "Uebungsblatt" → Arbeitsblatt;
+      "Bild" / "Bilder" / "Foto" / "Grafik" → Bild;
+      "interaktiv" / "interaktive Materialien" / "Simulation" / "interaktive Uebung"
+      → Interaktives medium;
+      "Quiz" / "Quizz" / "Test" → Quiz;
+      "Podcast" / "Audio" / "Hoerspiel" → Audio;
+      "Lernspiel" / "Spiel" → Lernspiel;
+      "Kurs" / "Online-Kurs" → Kurs;
+      "Praesentation" / "Slides" → Praesentation;
+      "Karte" / "Landkarte" → Karte;
+      "Webseite" / "Website" / "Link" → Webseite.
+      Der Wert darf Klartext sein — das Backend loest ihn ins WLO-Vokabular auf.
+    examples:
+      - Video
+      - Arbeitsblatt
+      - Bild
+      - Interaktives medium
+      - Simulation
+      - Quiz
+      - Audio
+      - Lernspiel
+      - Podcast
+      - Kurs
+
+  - id: lizenz
+    label: Lizenz
+    type: string
+    description: "Gewünschte Lizenz (z.B. CC BY, CC BY-SA, CC0)"
+    examples:
+      - CC BY
+      - CC BY-SA
+      - CC0
+      - Alle OER
+
+# Akkumulations-Regeln pro Turn-Typ:
+accumulation_rules:
+  initial: "keep+extend"
+  follow_up: "keep+extend"
+  clarification: "keep+extend"
+  correction: "overwrite"
+  topic_switch: "reset all"

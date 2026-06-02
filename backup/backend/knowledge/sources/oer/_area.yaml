@@ -1,0 +1,27 @@
+# RAG-Bereich: OER-Grundlagen und -Strategie
+# ============================================================================
+# Allgemeine Grundlagen zu Open Educational Resources (OER) — unabhaengig
+# von der WLO-Plattform. Enthält politische Strategiepapiere (BMBF),
+# internationale Rahmenwerke (UNESCO) und konzeptionelle Grundlagen (OEP,
+# 21st Century Skills, CC-Lizenzen, Metadatenstandards).
+#
+# Abgrenzung: Plattform-spezifisches WLO-Wissen steht im Bereich
+# "wissenlebtonline". Dieser Bereich liefert den uebergeordneten,
+# bildungspolitischen und konzeptionellen Hintergrund zu OER.
+
+id: oer-grundlagen
+label: "OER-Grundlagen und -Strategie"
+mode: on_demand
+description: >
+  Allgemeine OER-Grundlagen: UNESCO-Empfehlung (2019), BMBF-OER-Strategie (2022),
+  internationale Einbettung (UN SDG 4, EU-Aktionsplan), 21st Century Skills,
+  Open Educational Practices (OEP), CC-Lizenzen, Metadatenstandards,
+  Handlungsfelder der deutschen OER-Foerderung und Foerderprogramme.
+  Wird aktiviert bei Fragen zu OER-Politik, -Definitionen, -Foerderung,
+  -Infrastruktur und -Strategie ausserhalb der WLO-Plattform.
+source_urls:
+  - https://www.oer-strategie.de/wp-content/uploads/691288_OER-Strategie.pdf
+brand_note: >
+  WirLernenOnline (WLO) wird im BMBF-Dokument als Beispiel-Vorhaben erwaehnt.
+  Fuer aktuelle WLO/WissenLebtOnline-Informationen den Bereich "wissenlebtonline"
+  bevorzugen.

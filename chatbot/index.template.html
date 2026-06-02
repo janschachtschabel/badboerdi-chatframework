@@ -44,6 +44,14 @@
   </div>
 
   <script src="__BACKEND_URL__/widget/boerdi-widget.js" defer></script>
+  <!--
+    Welle E (2026-05-23): Mehrere Widget-Attribute (cards-enabled,
+    canvas-enabled, inline-result-grouping, show-guide-button) sind
+    deprecated. Die Anzeige-Steuerung (Boxen, Schriftgrößen,
+    Einzelinhalt-Limits) läuft jetzt über die Studio-Datei
+    01-base/display-rules.yaml — siehe Studio-Tab "🎨 Anzeige".
+    Lotsen-Modus ist Default an (Repo-Links).
+  -->
   <boerdi-chat
     api-url="__BACKEND_URL__"
     position="bottom-right"

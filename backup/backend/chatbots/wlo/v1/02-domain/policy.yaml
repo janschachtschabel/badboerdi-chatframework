@@ -1,0 +1,44 @@
+# Policy-Layer (Welle E, 2026-05-18)
+#
+# Organisations- und Compliance-Regeln, die NACH der Pattern-Wahl
+# greifen und Tools blocken oder Disclaimer setzen können. Sie sind
+# orthogonal zur Welle-E-Pattern-Engine (LLM-Hint-driven Routing) —
+# das Pattern wird gewählt, dann prüft policy ob das Pattern in der
+# konkreten Persona/Intent-Combo Auflagen hat.
+#
+# Match-Felder:  persona, intent, pattern, message_regex
+# Effect-Felder: allow (false→block), block_tools, disclaimer
+#
+# Im Studio unter "Domain & Regeln" editierbar.
+
+rules:
+  - id: pol-presse-only-public
+    description: Presse-Persona darf nur veröffentlichte/lizenzierte Inhalte sehen
+    match:
+      persona: P-W-PRESSE
+    effect:
+      disclaimer: "Hinweis: Es werden ausschließlich öffentlich verfügbare Inhalte angezeigt."
+
+  - id: pol-no-personal-data-search
+    description: Suche nach personenbezogenen Daten generell unterbinden
+    match:
+      message_regex: "(passwort|password|kreditkart)"
+    effect:
+      block_tools: ["search_wlo_content"]
+      disclaimer: "Personenbezogene Daten können nicht über die Suche verarbeitet werden."
+
+  # Beispiele für künftige Regeln (Welle E):
+  # - id: pol-ver-no-material-search
+  #   description: Verwaltung & Politik bekommt nur Plattform-Infos, keine Material-Suche
+  #   match:
+  #     persona: P-VER
+  #     pattern: P5    # spezifische Material-Suche
+  #   effect:
+  #     allow: false
+  #     disclaimer: "Material-Suche ist für Verwaltungs-/Politik-Personas nicht aktiv. Stattdessen Plattform-Statistik via P3."
+  #
+  # - id: pol-jugendschutz
+  #   match:
+  #     persona: P-W-SL
+  #   effect:
+  #     disclaimer: "Inhalte werden gemäß Jugendschutz gefiltert."

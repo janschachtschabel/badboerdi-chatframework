@@ -1,0 +1,153 @@
+# State-Definitionen — Conversation Flow Machine
+# ============================================================================
+# Welle E (2026-05-17): States sind reine Telemetrie — sie beeinflussen
+# das Routing NICHT mehr. Pattern-Wahl läuft über den LLM-Hint. States
+# liefern weiterhin den Conversation-Flow-Kontext (next_likely-Plausibilität,
+# Eval-Auswertung) und ihre bot_directive wird in den Response-Prompt
+# eingebaut, um den LLM-Ton/Schritt-für-Schritt-Verhalten zu steuern.
+#
+# States und Patterns sind orthogonal:
+#   * Pattern (P1–P16) = WAS wird gesagt + welche Tools + welche Quellen
+#   * State (state-1–state-12) = welcher Verlaufs-Schritt
+# Beispiel: P5 Material-Suche kann in state-5 (erste Suche) oder state-7
+# (Verfeinerung mit neuem Filter) auftreten. Das Pattern bleibt P5, der
+# State signalisiert dem LLM, ob er „Hier 6 Treffer zu X" (state-5) oder
+# „Jetzt für Klasse 8 statt 6 — hier die neuen Treffer" (state-7) sagt.
+#
+# Felder:
+#   id              — stabile API-ID, nicht ändern (DB, Quality-Logs)
+#   label           — Deutsche Anzeige im Studio
+#   description     — Was zeichnet diese Phase aus
+#   role            — Welche Rolle nimmt der Bot in dieser Phase ein
+#   bot_directive   — Handlungs-Anweisung an den LLM (in Response-Prompt)
+#   next_likely     — Plausible Nachfolge-States (für state_machine-Validator)
+#
+# Historie:
+#   * Welle C Sprint 6 (2026-05-16): state-10 (Redaktions-Recherche)
+#     gelöscht — redundant zu Persona P-W-RED.
+#   * Welle E (2026-05-17): bot_directives an neue Pattern-IDs (P1–P16)
+#     angepasst, Verweise auf alte PAT-NN ersetzt.
+
+states:
+  - id: state-1
+    label: Orientierung
+    description: "Erster Kontakt. Nutzer:in orientiert sich, Bot klärt Bedarf."
+    role: "Bot sondiert offen, ohne Pre-Commitment auf einen Use-Case."
+    bot_directive: |
+      Stelle EINE offene, einladende Frage und biete 2-3 Einstiegs-Optionen
+      über Quick-Replies an (z.B. "Material suchen", "Themenseite entdecken",
+      "Über WLO lernen"). KEIN Tool-Call. Halte die Bubble kurz (max 2 Sätze).
+    next_likely: [state-2, state-3, state-5, state-4, state-11]
+
+  - id: state-2
+    label: Slot-Erfassung
+    description: "Bot sammelt fehlende Slots — Fach, Stufe, Thema, Medientyp — bevor eine Suche/Erstellung sinnvoll ist."
+    role: "Bot fragt aktiv nach fehlenden Slot-Werten."
+    bot_directive: |
+      Stelle GENAU EINE Frage zum wichtigsten fehlenden Slot. Niemals zwei
+      Fragen auf einmal — der User soll EINEN Wert liefern. Quick-Replies
+      mit den 3-4 wahrscheinlichsten Antworten. KEIN Such-Tool-Call solange
+      mindestens ein Pflicht-Slot fehlt.
+    next_likely: [state-5, state-2, state-1]
+
+  - id: state-3
+    label: Information
+    description: "Bot liefert WLO-/OER-/Plattform-Wissen ohne Material-Suche."
+    role: "Bot beantwortet eine Fakten- oder Konzept-Frage."
+    bot_directive: |
+      Antworte faktisch und knapp (2-3 Sätze). Wenn der User auf Material
+      auswählen will, biete als Quick-Reply den Übergang zu Suche an
+      ("Jetzt Material zu X zeigen"). Quelle bei Lizenz-/Faktenfragen
+      explizit nennen.
+    next_likely: [state-3, state-5, state-11, state-1]
+
+  - id: state-4
+    label: Erkundung
+    description: "Nutzer:in browst Themenseiten/Sammlungen, ohne konkrete Suche."
+    role: "Bot zeigt Einstiegs-Wege und Browse-Optionen."
+    bot_directive: |
+      Zeige 2-3 Einstiegs-Sammlungen oder Themenseiten als konkrete
+      Vorschläge mit Kacheln. Frage proaktiv nach Vertiefungs-Interesse
+      ("Möchtest du tiefer in eine davon einsteigen?").
+    next_likely: [state-5, state-2, state-7]
+
+  - id: state-5
+    label: Suche
+    description: "Aktive Material-Suche. Tool-Call läuft mit den vorhandenen Slots."
+    role: "Bot führt die Suche aus."
+    bot_directive: |
+      Rufe das passende Such-Tool mit den vorhandenen Slots auf. Wenn ein
+      Pflicht-Slot fehlt → Übergang zurück zu state-2 (Slot-Erfassung)
+      VOR dem Tool-Call. Antwort-Bubble: maximal 1 Satz Einleitung,
+      die Treffer kommen über die Kacheln/Inline-Links.
+    next_likely: [state-6, state-8, state-12]
+
+  - id: state-6
+    label: Ergebnis-Kuratierung
+    description: "Bot hat Treffer geliefert. User schaut sie an."
+    role: "Bot bestätigt knapp + fragt deterministisch nach Pass-Quality."
+    bot_directive: |
+      Bestätige die Auswahl in 1 Satz (z.B. "Hier 4 passende Materialien
+      zu X für Klasse Y"). Biete konkrete Refinement-Quick-Replies an:
+      "Andere Klassenstufe?", "Anderer Medientyp?", "Mehr davon?",
+      "Passt nicht — woran liegt's?". KEINE neue Suche ungefragt.
+    next_likely: [state-7, state-8, state-9, state-5, state-12]
+
+  - id: state-7
+    label: Verfeinerung
+    description: "User passt existierende Filter an — andere Stufe, anderer Medientyp, anderes Thema."
+    role: "Bot adjustiert die Suche."
+    bot_directive: |
+      Erkenne das geänderte Filter-Set. Rufe Such-Tool mit dem neuen Set
+      auf. Bestätige knapp, was geändert wurde ("Jetzt für Klasse 8 statt
+      Klasse 6 — hier die Treffer"). Quick-Replies erneut: weitere
+      Refinement-Optionen oder "Pass jetzt?".
+    next_likely: [state-6, state-8, state-9]
+
+  - id: state-8
+    label: Lernen & Arbeiten
+    description: "Nutzer:in arbeitet mit den gefundenen Materialien — fragt nach Anwendung, Reihenfolge, Didaktik."
+    role: "Bot hilft beim Anwenden und Einbinden."
+    bot_directive: |
+      Beantworte die Anwendungs-Frage konkret (z.B. didaktische Reihenfolge,
+      Ergänzungs-Materialien, Einstieg/Vertiefung). Falls Material-Erstellung
+      sinnvoll wäre → biete via Quick-Reply Übergang zu Canvas-Erstellung
+      (state-12) an.
+    next_likely: [state-7, state-9, state-12]
+
+  - id: state-9
+    label: Bewertung & Feedback
+    description: "Nutzer:in äußert sich bewertend zur Bot-Antwort oder zum gelieferten Material."
+    role: "Bot paraphrasiert und probt nach Detail."
+    bot_directive: |
+      Paraphrasiere das Feedback knapp ("Verstanden — die Klassenstufe
+      passte nicht"). Bei Negativ-Feedback frage nach EINEM Detail
+      ("Was war zu schwer / zu einfach?"). Bei Positiv-Feedback frage
+      nach Folgeschritt ("Möchtest du noch X dazu?"). KEINE neuen
+      Treffer ungefragt.
+    next_likely: [state-7, state-5, state-1, state-12]
+
+  # state-10 (Redaktions-Recherche) wurde Welle C Sprint 6 entfernt —
+  # redundant zu Persona P-W-RED, kein eigener Verlaufs-Schritt.
+
+  - id: state-11
+    label: System & Meta
+    description: "Nutzer:in fragt über Plattform- oder Bot-Funktionsweise (Meta-Ebene)."
+    role: "Bot erklärt sich oder die Plattform selbst."
+    bot_directive: |
+      Erkläre die Funktion in 2-3 Sätzen. Wo machbar, zeige den direkten
+      UI-Pfad ("Klicke oben rechts auf 🧭 für den Lotsen-Modus").
+      KEIN Such-Tool-Call.
+    next_likely: [state-1, state-3, state-5]
+
+  - id: state-12
+    label: Canvas-Arbeit
+    description: "Nutzer:in arbeitet im Canvas an einem neu erstellten oder remixten Inhalt (Arbeitsblatt, Infoblatt etc.) und gibt Änderungswünsche per Chat."
+    role: "Bot editiert Canvas-Inhalt iterativ."
+    bot_directive: |
+      Wende die Edit-Anweisung auf den bestehenden Canvas-Inhalt an.
+      Gib einen knappen Bestätigungs-Text in der Chat-Bubble ("Habe
+      es einfacher formuliert und Lösungen ergänzt") — der eigentliche
+      Inhalt aktualisiert sich im Canvas-Pane. Frage am Ende nach
+      weiteren Edits via Quick-Reply.
+    next_likely: [state-12, state-9, state-5]

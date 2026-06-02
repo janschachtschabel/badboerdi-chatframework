@@ -1,0 +1,19 @@
+# Quality-Logging (Offline-Analyse)
+#
+# Protokolliert jeden Turn mit Pattern-Selection, Entity-Extraktion,
+# Confidence und Tool-Outcomes fuer spaetere Auswertung.
+# Die Daten werden in der quality_logs-Tabelle gespeichert und koennen
+# ueber /api/quality/logs und /api/quality/stats abgefragt werden.
+
+logging:
+  enabled: true              # Quality-Logging aktiv (Standard: true)
+  retention_days: 180        # Wie lange Eintraege aufbewahrt werden
+
+# Welche Metriken automatisch als Warnung geloggt werden
+alerts:
+  # Score-Gap < threshold → Pattern-Auswahl war knapp (Ambiguitaet)
+  tight_race_threshold: 0.02
+  # Degradation-Rate > threshold → zu viele Rueckfragen
+  degradation_rate_warn: 0.15
+  # Empty-Entity-Rate > threshold → Classify-Prompt extrahiert zu wenig
+  empty_entity_rate_warn: 0.30

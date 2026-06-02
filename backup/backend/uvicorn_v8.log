@@ -1,0 +1,585 @@
+INFO:     Started server process [12900]
+INFO:     Waiting for application startup.
+16:12:30 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+16:12:30 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+16:12:30 INFO startup: Config warmup done in 31ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+16:12:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:12:31 INFO startup: LLM warmup done in 951ms
+INFO:     127.0.0.1:58835 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60265 - "GET /api/health HTTP/1.1" 200 OK
+16:12:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:12:40 INFO app.services.safety_service: safety stages=openai level=standard took 598ms
+16:12:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:12:41 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-03c args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+16:12:41 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+16:12:41 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+16:12:41 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:12:41 INFO app.services.mcp_client: MCP server: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+16:12:42 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+16:12:42 INFO app.services.mcp_client: MCP handshake complete
+16:12:43 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:12:43 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+16:12:43 INFO app.services.mcp_client: discipline label\u2192URI cache loaded: 190 entries
+16:12:43 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+16:12:43 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+16:12:43 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:12:43 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+16:12:43 INFO app.services.mcp_client: educationalContext label\u2192URI cache loaded: 48 entries
+16:12:43 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+16:12:44 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:12:45 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3087 chars
+16:12:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:12:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:12:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:12:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:12:46 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13296 chars
+16:12:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:12:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:12:49 INFO app.services.llm_service: query_knowledge(wirlernenonline.de-webseite): 13630 chars
+16:12:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:12:51 INFO app.routers.chat: Outcome-based state hint: state-8 -> state-6
+16:12:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:12:52 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:12:52 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:12:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:12:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:12:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:12:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:12:55 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12112 chars
+16:12:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:00 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:13:00 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:13:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:01 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12228 chars
+16:13:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:03 INFO app.services.safety_service: safety stages=openai level=standard took 307ms
+16:13:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:04 INFO app.routers.chat: Safety blocked tools: ['search_wlo_content']
+16:13:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:04 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13231 chars
+16:13:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:08 INFO app.services.safety_service: safety stages=openai level=standard took 358ms
+16:13:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:10 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13439 chars
+16:13:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:16 INFO app.services.safety_service: safety stages=openai level=standard took 1136ms
+16:13:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:32 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 14076 chars
+16:13:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:37 INFO app.services.safety_service: safety stages=openai level=standard took 329ms
+16:13:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:38 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:13:38 INFO app.routers.chat: Safety enforced pattern active: PAT-REFUSE-THREAT
+16:13:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:39 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 8325 chars
+16:13:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:40 INFO app.services.safety_service: safety stages=openai level=standard took 228ms
+16:13:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:41 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13483 chars
+16:13:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:45 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:13:45 INFO app.routers.chat: Safety enforced pattern active: PAT-REFUSE-THREAT
+16:13:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:45 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12958 chars
+16:13:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:47 INFO app.services.safety_service: safety stages=openai level=standard took 703ms
+16:13:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:48 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12286 chars
+16:13:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:52 INFO app.services.safety_service: safety stages=openai level=standard took 331ms
+16:13:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:53 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:13:53 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:13:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:53 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12965 chars
+16:13:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:55 INFO app.services.safety_service: safety stages=openai level=standard took 253ms
+16:13:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:56 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:13:56 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:13:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:56 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 6772 chars
+16:13:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:13:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:58 INFO app.services.safety_service: safety stages=openai level=standard took 260ms
+16:13:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:13:58 INFO app.services.safety_service: safety stages=openai level=standard took 502ms
+16:13:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:58 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:13:58 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:13:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:13:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:59 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12267 chars
+16:13:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:13:59 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13157 chars
+16:14:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:14:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:14:01 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:14:01 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:14:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:02 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13134 chars
+16:14:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:63022 - "POST /api/chat HTTP/1.1" 200 OK
+16:14:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:14:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:14:04 INFO app.services.safety_service: safety stages=openai level=standard took 340ms
+16:14:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:14:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:05 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13293 chars
+16:14:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:14:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:14:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:14:08 INFO app.services.safety_service: safety stages=openai level=standard took 335ms
+16:14:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:14:09 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-03c args={'query': 'Mitose und Meiose', 'maxResults': 5, 'discipline': 'Biologie'}
+16:14:09 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Mitose und Meiose', 'maxResults': 5, 'discipline': 'Biologie'}
+16:14:09 INFO app.services.mcp_client: resolved discipline='Biologie' \u2192 http://w3id.org/openeduhub/vocabs/discipline/080
+16:14:10 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:14:11 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 752 chars
+16:14:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:11 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13156 chars
+16:14:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:14:27 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'collectionId': 'd1fcd6f4-3c60-4d19-84b2-d5024bd1cef1', 'targetGroup': 'learner', 'maxResults': 5}
+16:14:27 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:14:28 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 28 chars
+16:14:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:14:29 INFO app.routers.chat: Outcome-based state hint: state-8 -> state-6
+16:14:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60269 - "POST /api/chat HTTP/1.1" 200 OK
+16:14:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:14:37 INFO app.services.safety_service: safety stages=openai level=standard took 517ms
+16:14:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:14:37 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+16:14:37 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik', 'educationalContext': 'Sekundarstufe I'}
+16:14:37 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+16:14:37 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+16:14:38 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Bruchrechnung'
+16:14:38 INFO app.routers.chat: LP search: topic='Bruchrechnung' skip=0
+16:14:38 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxItems': 5, 'skipCount': 0}
+16:14:38 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:14:38 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:14:39 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3087 chars
+16:14:39 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3087 chars
+16:14:39 INFO app.routers.chat: LP found 4 collections
+16:14:39 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '39f845f1-65d5-4f46-ba51-918133501101', 'maxItems': 16, 'skipCount': 0}
+16:14:40 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:14:41 INFO app.services.mcp_client: MCP tool get_collection_contents returned 6531 chars
+16:14:41 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'd6c88b81-b639-4b89-94d7-c0507a3e90be', 'maxItems': 16, 'skipCount': 0}
+16:14:41 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:14:42 INFO app.services.mcp_client: MCP tool get_collection_contents returned 11946 chars
+16:14:42 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'ac18e9bf-3209-4606-a598-e8e290c9b999', 'maxItems': 16, 'skipCount': 0}
+16:14:43 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:14:45 INFO app.services.mcp_client: MCP tool get_collection_contents returned 11370 chars
+16:14:45 INFO app.routers.chat: LP contents: 5771 chars, topic='Ungleichungen'
+16:14:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:14:56 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+16:14:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:14:58 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:14:58 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:14:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:14:59 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12112 chars
+16:15:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:00 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:15:00 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:15:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:01 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12351 chars
+16:15:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:03 INFO app.services.safety_service: safety stages=openai level=standard took 431ms
+16:15:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:06 INFO app.routers.chat: Safety blocked tools: ['search_wlo_content']
+16:15:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:06 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13231 chars
+16:15:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:10 INFO app.services.safety_service: safety stages=openai level=standard took 314ms
+16:15:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:13 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13439 chars
+16:15:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:16 INFO app.services.safety_service: safety stages=openai level=standard took 499ms
+16:15:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:17 INFO app.services.safety_service: safety stages=openai level=standard took 370ms
+16:15:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:17 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 14076 chars
+16:15:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:18 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 14237 chars
+16:15:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:61313 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:22 INFO app.services.safety_service: safety stages=openai level=standard took 400ms
+16:15:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:23 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:15:23 INFO app.routers.chat: Safety enforced pattern active: PAT-REFUSE-THREAT
+16:15:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:23 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 8325 chars
+16:15:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:25 INFO app.services.safety_service: safety stages=openai level=standard took 242ms
+16:15:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:26 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13483 chars
+16:15:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:29 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:15:29 INFO app.routers.chat: Safety enforced pattern active: PAT-REFUSE-THREAT
+16:15:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:29 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12958 chars
+16:15:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:32 INFO app.services.safety_service: safety stages=openai level=standard took 491ms
+16:15:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:33 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12286 chars
+16:15:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:36 INFO app.services.safety_service: safety stages=openai level=standard took 582ms
+16:15:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:37 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:15:37 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:15:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:37 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12965 chars
+16:15:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:39 INFO app.services.safety_service: safety stages=openai level=standard took 354ms
+16:15:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:40 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:15:40 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:15:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:40 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 6772 chars
+16:15:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:42 INFO app.services.safety_service: safety stages=openai level=standard took 393ms
+16:15:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:42 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:15:42 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:15:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:43 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12267 chars
+16:15:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:44 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:15:44 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:15:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:45 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13134 chars
+16:15:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:47 INFO app.services.safety_service: safety stages=openai level=standard took 445ms
+16:15:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:48 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13293 chars
+16:15:50 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:15:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:15:52 INFO app.services.safety_service: safety stages=openai level=standard took 416ms
+16:15:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:54 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-03c args={'query': 'Mitose und Meiose', 'maxResults': 5, 'discipline': 'Biologie'}
+16:15:54 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Mitose und Meiose', 'maxResults': 5, 'discipline': 'Biologie'}
+16:15:54 INFO app.services.mcp_client: resolved discipline='Biologie' \u2192 http://w3id.org/openeduhub/vocabs/discipline/080
+16:15:55 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:15:56 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 752 chars
+16:15:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:15:56 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13156 chars
+16:15:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:15:57 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'collectionId': 'd1fcd6f4-3c60-4d19-84b2-d5024bd1cef1', 'targetGroup': 'learner', 'maxResults': 5}
+16:15:58 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:15:58 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 28 chars
+16:16:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:16:00 INFO app.routers.chat: Outcome-based state hint: state-8 -> state-6
+16:16:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57043 - "POST /api/chat HTTP/1.1" 200 OK
+16:16:28 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:16:28 INFO app.routers.chat: Safety enforced pattern active: PAT-REFUSE-THREAT
+16:16:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:16:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:16:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:16:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:16:29 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12958 chars
+16:16:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54514 - "POST /api/chat HTTP/1.1" 200 OK
+16:16:39 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+16:16:39 INFO app.routers.chat: Safety enforced pattern active: PAT-CRISIS
+16:16:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:16:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:16:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:16:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:16:40 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12112 chars
+16:16:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54518 - "POST /api/chat HTTP/1.1" 200 OK
+16:23:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56578 - "POST /api/speech/synthesize HTTP/1.1" 200 OK
+16:23:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:61167 - "POST /api/speech/synthesize HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56336 - "GET /api/sessions/bb-415898b9-b6d5-444b-b6cf-cc7c24dfee80/messages?limit=20 HTTP/1.1" 200 OK
+16:23:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+16:23:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56338 - "POST /api/speech/synthesize HTTP/1.1" 200 OK
+16:23:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:23:21 INFO app.services.safety_service: safety stages=openai level=standard took 327ms
+16:23:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:23:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:23:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:23:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:23:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:23:22 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12648 chars
+16:23:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56344 - "POST /api/speech/synthesize HTTP/1.1" 200 OK
+16:23:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:23:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56340 - "POST /api/chat HTTP/1.1" 200 OK
+16:23:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:23:36 INFO app.services.safety_service: safety stages=openai level=standard took 528ms
+16:23:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:23:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:23:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:23:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:23:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:23:37 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12020 chars
+16:23:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:23:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:64778 - "POST /api/chat HTTP/1.1" 200 OK
+16:23:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52281 - "POST /api/speech/synthesize HTTP/1.1" 200 OK
+16:23:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52241 - "POST /api/speech/synthesize HTTP/1.1" 200 OK
+16:23:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57594 - "POST /api/speech/synthesize HTTP/1.1" 200 OK
+16:24:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56229 - "POST /api/speech/transcribe HTTP/1.1" 200 OK
+16:24:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:24:07 INFO app.services.safety_service: safety stages=openai level=standard took 578ms
+16:24:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:24:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:24:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:24:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:24:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:24:09 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 14808 chars
+16:24:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:24:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58034 - "POST /api/chat HTTP/1.1" 200 OK
+16:24:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:53486 - "POST /api/speech/synthesize HTTP/1.1" 200 OK
+16:24:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56905 - "POST /api/speech/synthesize HTTP/1.1" 200 OK
+16:24:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:62983 - "POST /api/speech/transcribe HTTP/1.1" 200 OK
+16:24:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:24:30 INFO app.services.safety_service: safety stages=openai level=standard took 741ms
+16:24:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:24:30 INFO app.routers.chat: speculative search_wlo_content for intent=INT-W-03b args={'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Arbeitsblatt'}
+16:24:30 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Arbeitsblatt'}
+16:24:30 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+16:24:31 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:24:31 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars
+16:24:31 INFO app.services.mcp_client: lrt label\u2192URI cache loaded: 100 entries
+16:24:31 INFO app.services.mcp_client: resolved learningResourceType='Arbeitsblatt' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45
+16:24:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:24:33 INFO app.services.mcp_client: MCP tool search_wlo_content returned 2912 chars
+16:24:33 INFO app.services.llm_service: medientyp='Arbeitsblatt' \u2192 removed ['search_wlo_collections'] from active_tools to force content search
+16:24:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:24:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:24:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:24:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:24:34 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12759 chars
+16:24:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:24:37 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+16:24:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52148 - "POST /api/chat HTTP/1.1" 200 OK
+16:25:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57049 - "POST /api/speech/transcribe HTTP/1.1" 200 OK
+16:25:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:25:02 INFO app.services.safety_service: safety stages=openai level=standard took 877ms
+16:25:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:25:02 INFO app.routers.chat: speculative search_wlo_content for intent=INT-W-03b args={'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Video'}
+16:25:02 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Video'}
+16:25:02 INFO app.services.mcp_client: resolved learningResourceType='Video' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/38774279-af36-4ec2-8e70-811d5a51a6a1
+16:25:03 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:25:05 INFO app.services.mcp_client: MCP tool search_wlo_content returned 5087 chars
+16:25:05 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
+16:25:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:25:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:25:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:25:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+16:25:06 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13635 chars
+16:25:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:25:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51155 - "POST /api/chat HTTP/1.1" 200 OK
+16:25:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:63990 - "POST /api/speech/transcribe HTTP/1.1" 200 OK
+16:25:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:25:26 INFO app.services.safety_service: safety stages=openai level=standard took 479ms
+16:25:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:25:26 INFO app.routers.chat: speculative search_wlo_content for intent=INT-W-10 args={'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Video'}
+16:25:26 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'maxResults': 5, 'learningResourceType': 'Video'}
+16:25:26 INFO app.services.mcp_client: resolved learningResourceType='Video' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/38774279-af36-4ec2-8e70-811d5a51a6a1
+16:25:27 INFO app.routers.chat: LP contents: 1200 chars, topic='Bruchrechnung'
+16:25:27 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:25:29 INFO app.services.mcp_client: MCP tool search_wlo_content returned 4994 chars
+16:25:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:25:35 INFO app.routers.chat: speculative search_wlo_content discarded (blocked by safety/pattern)
+16:25:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50594 - "POST /api/chat HTTP/1.1" 200 OK
+16:26:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:61631 - "POST /api/speech/transcribe HTTP/1.1" 200 OK
+16:26:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+16:26:21 INFO app.services.safety_service: safety stages=openai level=standard took 499ms
+16:26:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:26:22 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-10 args={'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik'}
+16:26:22 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5, 'discipline': 'Mathematik'}
+16:26:22 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+16:26:22 INFO app.routers.chat: LP contents: 1200 chars, topic='Bruchrechnung'
+16:26:23 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+16:26:23 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3087 chars
+16:26:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+16:26:30 INFO app.routers.chat: speculative search_wlo_collections discarded (blocked by safety/pattern)
+16:26:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:64958 - "POST /api/chat HTTP/1.1" 200 OK

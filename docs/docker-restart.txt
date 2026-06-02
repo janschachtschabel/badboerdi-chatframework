@@ -1,0 +1,12 @@
+cd /opt/badboerdi
+
+# 1) Neueste Images ziehen — backend, studio, chatbot
+docker compose pull backend studio chatbot
+
+# 2) Backend + Studio mit den neuen Images neu erstellen (erzwungen)
+docker compose up -d --force-recreate backend studio
+
+# 3) Prüfen
+docker compose ps
+curl -s localhost:8000/health
+docker compose logs -f backend

@@ -1,0 +1,461 @@
+<div class="chat-wrapper">
+  <!-- (Chat-Header wurde in den konsolidierten Widget-Panel-Header
+       hochgezogen — Avatar/Name/Status/Action-Buttons leben jetzt
+       in widget.component.ts. Das hier startet direkt mit dem
+       Messages-Bereich.) -->
+
+  <!-- Messages -->
+  <div class="messages-area" #messagesContainer>
+    <div *ngFor="let msg of messages()" [id]="'msg-' + msg.id" class="message-row" [class.bot-row]="msg.sender === 'bot'" [class.user-row]="msg.sender === 'user'">
+
+      <!-- Bot avatar -->
+      <img *ngIf="msg.sender === 'bot'" class="msg-avatar" [src]="boerdiLogo" alt="" />
+
+      <div class="msg-bubble"
+           [class.bot-bubble]="msg.sender === 'bot'"
+           [class.user-bubble]="msg.sender === 'user'">
+        <!-- Loading dots + live phase label (from POST /api/chat/stream) -->
+        <div *ngIf="msg.isLoading" class="typing-row">
+          <div class="typing-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span *ngIf="msg.loadingPhase" class="typing-phase">{{ msg.loadingPhase }}</span>
+        </div>
+
+        <!-- Content -->
+        <div *ngIf="!msg.isLoading && msg.content" [innerHTML]="renderMarkdown(msg.content, msg.sender)" class="msg-content"></div>
+
+        <!-- Lernpfad: prominenter Druck-Button am Ende des Textes -->
+        <div *ngIf="!msg.isLoading && isLearningPath(msg)" class="lp-print-bar">
+          <button class="btn-lp-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
+            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
+            <span>Lernpfad drucken / als PDF speichern</span>
+          </button>
+        </div>
+
+        <!-- Canvas-Material im Inline-Modus: Print-Button anbieten, sodass
+             generierte Inhalte (Arbeitsblatt, Quiz, Bericht, …) genauso
+             als PDF abgreifbar sind wie Lernpfade. Backend setzt den
+             Sentinel-HTML-Kommentar bei canvas-enabled=false. -->
+        <div *ngIf="!msg.isLoading && isPrintableCanvasMaterial(msg)" class="lp-print-bar">
+          <button class="btn-lp-print" (click)="printCanvasMaterial(msg)" title="Material als PDF drucken">
+            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
+            <span>{{ printableCanvasLabel(msg) }} drucken / als PDF speichern</span>
+          </button>
+        </div>
+
+        <!-- Compact collection-action bar: only shown when the canvas is NOT
+             open (otherwise the canvas owns every interaction and the chat
+             stays purely textual, as the user explicitly asked). -->
+        <div *ngIf="msg.cards && msg.cards.length && !hideCards && hasCollectionCards(msg) && false"
+             class="collection-shortcuts">
+          <ng-container *ngFor="let card of getCollectionCards(msg)">
+            <div class="coll-row">
+              <div class="coll-row-title">
+                <span *ngIf="card.topic_pages && card.topic_pages.length"
+                      class="chip chip-typpille chip-tp-topicpage">
+                  <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
+                  <span>Themenseite</span>
+                </span>
+                <span *ngIf="!(card.topic_pages && card.topic_pages.length)"
+                      class="chip chip-typpille chip-tp-sammlung">
+                  <span class="bb-icon" [innerHTML]="ICONS.auto_stories | safeSvg"></span>
+                  <span>Sammlung</span>
+                </span>
+                <span class="coll-row-name">{{ card.title }}</span>
+              </div>
+              <div class="coll-row-actions">
+                <button type="button" class="card-btn card-btn--primary"
+                        [disabled]="isLoading"
+                        (click)="browseCollection(card.node_id, card.title)">
+                  <span class="bb-icon" [innerHTML]="ICONS.list | safeSvg"></span>
+                  <span>Inhalte</span>
+                </button>
+                <button type="button" class="card-btn card-btn--secondary"
+                        [disabled]="isLoading"
+                        (click)="generateLearningPath(card.node_id, card.title)">
+                  <span class="bb-icon" [innerHTML]="ICONS.route | safeSvg"></span>
+                  <span>Lernpfad</span>
+                </button>
+                <a *ngIf="card.topic_pages && card.topic_pages.length"
+                   class="card-btn card-btn--tertiary"
+                   [href]="card.topic_pages[0].url"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                  <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
+                  <span>Themenseite</span>
+                </a>
+                <button type="button" class="card-btn card-btn--remix"
+                        [disabled]="isLoading"
+                        (click)="remixCard(card)">
+                  <span class="bb-icon" [innerHTML]="ICONS.refresh | safeSvg"></span>
+                  <span>Remix</span>
+                </button>
+              </div>
+            </div>
+          </ng-container>
+        </div>
+
+        <!-- Cards (nur wenn cardsEnabled — Host-Flag aus <boerdi-chat cards-enabled="...">) -->
+        <div *ngIf="msg.cards && msg.cards.length && !hideCards && cardsEnabledBool" class="cards-list">
+          <div *ngFor="let card of getVisibleCards(msg)"
+               class="wlo-card-wrapper"
+               [class.is-themenseite]="isThemenseite(card)"
+               [class.is-sammlung]="isSammlung(card)"
+               [class.is-inhalt]="isInhalt(card)">
+            <a class="wlo-card"
+               [href]="cardUrl(card)"
+               target="_blank"
+               rel="noopener noreferrer"
+               (click)="$event.stopPropagation()">
+
+              <!-- Typ-Header: Inhaltstyp-Icon + Label links oben.
+                   Bei Sammlungen/Themenseiten wird die Kategorie hier benannt
+                   ("📚 Sammlung", "🌐 Themenseite"); bei einzelnen Inhalten
+                   reicht der konkrete Typ ("🎬 Video", "📄 Arbeitsblatt", …) —
+                   ein redundantes "Inhalt"-Badge brauchen wir nicht. -->
+              <div class="card-header">
+                <span class="card-content-type">
+                  <span class="card-content-icon" [innerHTML]="getCardIcon(card) | safeSvg"></span>
+                  <span class="card-content-label">{{ getContentTypeLabel(card) }}</span>
+                </span>
+              </div>
+
+              <!-- Body: Titel volle Breite oben, Desc + kleines Thumb nebeneinander -->
+              <div class="card-body">
+                <div class="card-title">{{ card.title }}</div>
+                <div class="card-body-row">
+                  <div class="card-desc-wrap">
+                    <div class="card-desc" *ngIf="card.description">{{ card.description | slice:0:120 }}{{ card.description && card.description.length > 120 ? '…' : '' }}</div>
+                  </div>
+                  <div *ngIf="card.preview_url" class="card-thumb-side">
+                    <img [src]="card.preview_url" [alt]="card.title" loading="lazy" class="card-img-side">
+                    <span *ngIf="card.license" class="card-license-badge-side"
+                          [title]="card.license">{{ getLicenseShort(card.license) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Footer: Bildungsstufe • Fach (NICHT Zielgruppe) -->
+              <div class="card-footer">
+                <span *ngIf="card.educational_contexts && card.educational_contexts.length"
+                      class="footer-meta footer-stufe">
+                  <span class="footer-icon" [innerHTML]="ICONS.school | safeSvg"></span>
+                  <span>{{ card.educational_contexts[0] }}</span>
+                </span>
+                <span *ngIf="card.disciplines && card.disciplines.length"
+                      class="footer-meta footer-fach">
+                  <span class="footer-icon" [innerHTML]="ICONS.menu_book | safeSvg"></span>
+                  <span>{{ card.disciplines[0] }}</span>
+                </span>
+              </div>
+            </a>
+            <!-- Collection action buttons.
+                 Lotsen-Hinweise erscheinen ausschließlich als Inline-Link
+                 im Chat-Text (siehe Backend ``_extract_guide_inline``); ein
+                 zusätzlicher "Bring mich hin"-Card-Button wäre redundant. -->
+            <div *ngIf="card.node_type === 'collection' && card.node_id" class="card-actions">
+              <button *ngIf="card.node_type === 'collection' && card.node_id"
+                      class="card-btn card-btn--primary"
+                      [disabled]="isLoading"
+                      (click)="browseCollection(card.node_id, card.title)">
+                <span class="bb-icon" [innerHTML]="ICONS.list | safeSvg"></span>
+                <span>Inhalte</span>
+              </button>
+              <button *ngIf="card.node_type === 'collection' && card.node_id"
+                      class="card-btn card-btn--secondary"
+                      [disabled]="isLoading"
+                      (click)="generateLearningPath(card.node_id, card.title)">
+                <span class="bb-icon" [innerHTML]="ICONS.route | safeSvg"></span>
+                <span>Lernpfad</span>
+              </button>
+              <!-- Topic page: single smart button (best match first from backend) -->
+              <div *ngIf="card.topic_pages && card.topic_pages.length" class="tp-wrapper">
+                <a class="card-btn card-btn--tertiary"
+                   [href]="card.topic_pages[0].url"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   [title]="card.topic_pages.length > 1
+                     ? 'Themenseite (' + card.topic_pages[0].label + ') — weitere verfügbar'
+                     : 'Themenseite öffnen'">
+                  <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
+                  <span>Themenseite</span>
+                </a>
+                <!-- Dropdown toggle for alternative variants -->
+                <div *ngIf="card.topic_pages.length > 1" class="tp-dropdown-wrap">
+                  <button class="tp-toggle" (click)="toggleTopicDropdown($event, card.node_id)"
+                          [attr.aria-expanded]="openTopicDropdown === card.node_id">
+                    <span class="bb-icon" [innerHTML]="ICONS.arrow_drop_down | safeSvg"></span>
+                  </button>
+                  <div class="tp-dropdown" *ngIf="openTopicDropdown === card.node_id">
+                    <a *ngFor="let tp of card.topic_pages"
+                       class="tp-dropdown-item"
+                       [href]="tp.url"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       [class.tp-active]="tp === card.topic_pages[0]">
+                      {{ tp.label }}
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pagination: count + show more / load more -->
+        <div *ngIf="msg.cards && msg.cards.length > 1 && !hideCards" class="pagination-bar">
+          <span class="pagination-info">
+            {{ getVisibleCards(msg).length }} von {{ msg.cards.length }} Ergebnissen
+          </span>
+          <!-- Client-side: reveal already-loaded hidden cards -->
+          <button *ngIf="hasHiddenCards(msg)"
+                  class="btn-load-more"
+                  (click)="showMoreCards(msg.id)">
+            <span>Mehr anzeigen</span>
+            <span class="bb-icon" [innerHTML]="ICONS.arrow_drop_down | safeSvg"></span>
+          </button>
+          <!-- Server-side: load next page from collection -->
+          <button *ngIf="!hasHiddenCards(msg) && msg.pagination?.has_more && msg.pagination?.collection_id"
+                  class="btn-load-more"
+                  [disabled]="isLoading"
+                  (click)="loadMore(msg.id)">
+            <span>{{ isLoading ? 'Lade…' : 'Weitere laden' }}</span>
+            <span *ngIf="!isLoading" class="bb-icon" [innerHTML]="ICONS.arrow_drop_down | safeSvg"></span>
+          </button>
+        </div>
+
+        <!-- Action buttons for bot messages: TTS + Lernpfad drucken -->
+        <div *ngIf="msg.sender === 'bot' && !msg.isLoading && msg.content" class="msg-actions">
+          <button class="btn-speak" (click)="speakText(msg.content)" [title]="isSpeaking ? 'Stop' : 'Vorlesen'">
+            <span class="bb-icon" [innerHTML]="(isSpeaking ? ICONS.stop_circle : ICONS.volume_up) | safeSvg"></span>
+          </button>
+          <button *ngIf="isLearningPath(msg)" class="btn-speak btn-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
+            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
+          </button>
+          <button *ngIf="isPrintableCanvasMaterial(msg)" class="btn-speak btn-print"
+                  (click)="printCanvasMaterial(msg)"
+                  [title]="printableCanvasLabel(msg) + ' als PDF drucken'">
+            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
+          </button>
+        </div>
+
+        <!-- Quick replies — Mix aus normalen Vorschlägen und (optional) einem
+             "Bring mich hin"-Guide-Button. Backend kodiert Guide-QRs als
+             magic-prefix String "__guide__|<label>|<url>"; alles andere
+             ist eine normale User-Antwort, die als Folgenachricht gesendet wird.
+             Wenn Lotsen-Modus aus ist, blendet shouldHideQuickReply() Guide-QRs
+             komplett aus — Backend filtert sie zwar serverseitig, aber das ist
+             defense-in-depth gegen alte Caches / Race-Conditions. -->
+        <div *ngIf="msg.quickReplies && msg.quickReplies.length && quickRepliesEnabledBool" class="quick-replies">
+          <ng-container *ngFor="let qr of msg.quickReplies">
+            <ng-container *ngIf="!shouldHideQuickReply(qr)">
+              <button *ngIf="isGuideQuickReply(qr); else regularQr"
+                      type="button"
+                      class="qr-btn qr-btn--guide"
+                      (click)="onGuideQuickReply(qr)"
+                      [title]="'Im aktuellen Tab zur Seite navigieren'">
+                <span class="bb-icon" [innerHTML]="ICONS.explore | safeSvg"></span>
+                <span>{{ guideQuickReplyLabel(qr) }}</span>
+              </button>
+              <ng-template #regularQr>
+                <button type="button" class="qr-btn" (click)="onQuickReply(qr)">{{ qr }}</button>
+              </ng-template>
+            </ng-container>
+          </ng-container>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Debug Panel (Welle C Sprint 6 — neu sortiert mit Phasen-Gruppen) -->
+  <div *ngIf="showDebug && latestDebug" class="debug-panel">
+
+    <!-- ════ 1. Gesprächs-Phase (Conversation Flow) ════ -->
+    <div class="debug-section-title">🌀 Gesprächs-Phase</div>
+    <div class="debug-row"><span class="debug-label">State:</span> {{ latestDebug.state || '–' }}</div>
+    <div class="debug-row" *ngIf="latestDebug.state_transition">
+      <span class="debug-label">Übergang:</span>
+      <span [class.debug-warn]="latestDebug.state_transition.plausible === false">
+        {{ latestDebug.state_transition.prev || '(start)' }} → {{ latestDebug.state_transition.next }}
+      </span>
+      <span *ngIf="latestDebug.state_transition.plausible === false" class="debug-warn">
+        ⚠ implausibel · erwartet: {{ latestDebug.state_transition.expected_next_likely.join(', ') }}
+      </span>
+      <span *ngIf="latestDebug.state_transition.plausible === true" class="debug-ok">✓ plausibel</span>
+    </div>
+    <div class="debug-row"><span class="debug-label">Turn-Typ:</span> {{ latestDebug.turn_type || '–' }}</div>
+
+    <!-- ════ 2. Klassifikation (Persona + Intent + Slots + Signale) ════ -->
+    <div class="debug-section-title">🎯 Klassifikation</div>
+    <div class="debug-row"><span class="debug-label">Persona:</span> {{ latestDebug.persona }}</div>
+    <div class="debug-row"><span class="debug-label">Intent:</span> {{ latestDebug.intent }}</div>
+    <div class="debug-row"><span class="debug-label">Signale:</span> {{ latestDebug.signals.join(', ') || '–' }}</div>
+    <div class="debug-row"><span class="debug-label">Entities:</span> <code>{{ latestDebug.entities | json }}</code></div>
+    <div class="debug-row" *ngIf="latestDebug.confidence !== undefined">
+      <span class="debug-label">Confidence:</span> {{ (latestDebug.confidence || 0) | number:'1.2-2' }}
+    </div>
+
+    <!-- ════ 3. Pattern-Engine (Auswahl + Pipeline) ════ -->
+    <div class="debug-section-title">🧩 Pattern-Engine</div>
+    <div class="debug-row"><span class="debug-label">Pattern:</span> {{ latestDebug.pattern }}</div>
+    <div class="debug-row" *ngIf="latestDebug.pattern_id_hint">
+      <span class="debug-label">LLM-Hint:</span> {{ latestDebug.pattern_id_hint }}
+      <span *ngIf="latestDebug.llm_engine_match === true" class="debug-ok">✓ stimmt mit Engine überein</span>
+      <span *ngIf="latestDebug.llm_engine_match === false" class="debug-warn">⚠ weicht von Engine ab</span>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.pattern_reasoning">
+      <span class="debug-label">Reasoning:</span> {{ latestDebug.pattern_reasoning | slice:0:160 }}{{ latestDebug.pattern_reasoning.length > 160 ? '…' : '' }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.phase1_eliminated && latestDebug.phase1_eliminated.length">
+      <span class="debug-label">Phase 1 eliminiert:</span> {{ latestDebug.phase1_eliminated.join(', ') }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.phase2_scores">
+      <span class="debug-label">Phase 2 Scores:</span>
+      <span *ngFor="let entry of (latestDebug.phase2_scores | keyvalue)" class="debug-score">
+        {{ entry.key }}={{ entry.value | number:'1.2-2' }}
+      </span>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['degradation']">
+      <span class="debug-label">Degradation:</span>
+      <span class="debug-warn">⚠</span>
+      fehlende Slots={{ latestDebug.phase3_modulations['missing_slots']?.join(', ') || '–' }}
+      <span *ngIf="latestDebug.phase3_modulations['blocked_patterns'] && latestDebug.phase3_modulations['blocked_patterns'].length">
+        · blockiert={{ latestDebug.phase3_modulations['blocked_patterns'].length }} Patterns
+      </span>
+    </div>
+
+    <!-- ════ 4. Modulation (Output-Form) ════ -->
+    <div class="debug-section-title">🎨 Modulation</div>
+    <div class="debug-row">
+      <span class="debug-label">Ton/Form:</span>
+      Ton={{ latestDebug.phase3_modulations['tone'] }},
+      Formalität={{ latestDebug.phase3_modulations['formality'] }},
+      Länge={{ latestDebug.phase3_modulations['length'] }},
+      Detail={{ latestDebug.phase3_modulations['detail_level'] }}
+      <span *ngIf="latestDebug.phase3_modulations['skip_intro']"> · skip_intro</span>
+      <span *ngIf="latestDebug.phase3_modulations['one_option']"> · one_option</span>
+      <span *ngIf="latestDebug.phase3_modulations['add_sources']"> · add_sources</span>
+    </div>
+    <div class="debug-row">
+      <span class="debug-label">Response:</span>
+      Typ={{ latestDebug.phase3_modulations['response_type'] }},
+      Format={{ latestDebug.phase3_modulations['format_primary'] }},
+      Follow-up={{ latestDebug.phase3_modulations['format_follow_up'] }},
+      Kacheln={{ latestDebug.phase3_modulations['card_text_mode'] }},
+      Max={{ latestDebug.phase3_modulations['max_items'] }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['core_rule']">
+      <span class="debug-label">Core-Rule:</span> {{ latestDebug.phase3_modulations['core_rule'] | slice:0:120 }}{{ latestDebug.phase3_modulations['core_rule'].length > 120 ? '…' : '' }}
+    </div>
+
+    <!-- ════ 5. Tools + Wissen ════ -->
+    <div class="debug-section-title">🔧 Tools &amp; Wissen</div>
+    <div class="debug-row"><span class="debug-label">Tools aufgerufen:</span> {{ latestDebug.tools_called.join(', ') || '–' }}</div>
+    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['tools'] && latestDebug.phase3_modulations['tools'].length">
+      <span class="debug-label">Pattern-Tools (erlaubt):</span> {{ latestDebug.phase3_modulations['tools'].join(', ') }}
+    </div>
+    <div class="debug-row">
+      <span class="debug-label">Quellen:</span> {{ latestDebug.phase3_modulations['sources']?.join(', ') || '–' }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.phase3_modulations['rag_areas'] && latestDebug.phase3_modulations['rag_areas'].length">
+      <span class="debug-label">RAG-Areas:</span> {{ latestDebug.phase3_modulations['rag_areas'].join(', ') }}
+    </div>
+    <!-- ════ 6. Safety + Policy + Context (Triple-Schema v2) ════ -->
+    <div class="debug-section-title">🛡️ Safety, Policy &amp; Context</div>
+    <div class="debug-row" *ngIf="latestDebug.safety">
+      <span class="debug-label">Safety:</span>
+      Risk={{ latestDebug.safety.risk_level }}
+      <span *ngIf="latestDebug.safety.stages_run && latestDebug.safety.stages_run.length"> · stages={{ latestDebug.safety.stages_run.join('→') }}</span>
+      <span *ngIf="latestDebug.safety.escalated"> · 🤖 escalated</span>
+      <span *ngIf="latestDebug.safety.flagged_categories && latestDebug.safety.flagged_categories.length"> · flagged={{ latestDebug.safety.flagged_categories.join(',') }}</span>
+      <span *ngIf="latestDebug.safety.legal_flags && latestDebug.safety.legal_flags.length"> · legal={{ latestDebug.safety.legal_flags.join(',') }}</span>
+      <span *ngIf="latestDebug.safety.enforced_pattern"> · enforced={{ latestDebug.safety.enforced_pattern }}</span>
+      <span *ngIf="latestDebug.safety.blocked_tools && latestDebug.safety.blocked_tools.length"> · blocked={{ latestDebug.safety.blocked_tools.join(', ') }}</span>
+      <span *ngIf="latestDebug.safety.reasons && latestDebug.safety.reasons.length"> · {{ latestDebug.safety.reasons.join(', ') }}</span>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.outcomes && latestDebug.outcomes.length">
+      <span class="debug-label">Outcomes:</span>
+      <div *ngFor="let o of latestDebug.outcomes" class="debug-sub">
+        · {{ o.tool }} → {{ o.status }} ({{ o.item_count }} items, {{ o.latency_ms }}ms)<span *ngIf="o.error"> – {{ o.error }}</span>
+      </div>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.policy">
+      <span class="debug-label">Policy:</span>
+      {{ latestDebug.policy.allowed ? 'allowed' : 'BLOCKED' }}
+      <span *ngIf="latestDebug.policy.matched_rules && latestDebug.policy.matched_rules.length"> · rules={{ latestDebug.policy.matched_rules.join(', ') }}</span>
+      <span *ngIf="latestDebug.policy.blocked_tools && latestDebug.policy.blocked_tools.length"> · blocked={{ latestDebug.policy.blocked_tools.join(', ') }}</span>
+      <span *ngIf="latestDebug.policy.required_disclaimers && latestDebug.policy.required_disclaimers.length"> · disclaimers={{ latestDebug.policy.required_disclaimers.length }}</span>
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.context">
+      <span class="debug-label">Context:</span>
+      page={{ latestDebug.context.page }}, device={{ latestDebug.context.device }}, turn={{ latestDebug.context.turn_count }}
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.trace && latestDebug.trace.length">
+      <span class="debug-label">Trace:</span>
+      <div *ngFor="let t of latestDebug.trace" class="debug-sub">
+        · [{{ t.step }}] {{ t.label }} – {{ t.duration_ms }}ms
+      </div>
+    </div>
+    <!-- Pattern-Hint (Shadow-Mode telemetry) — LLM-classifier's pattern guess -->
+    <div class="debug-row" *ngIf="latestDebug.pattern_id_hint">
+      <span class="debug-label">LLM-Hint:</span>
+      {{ latestDebug.pattern_id_hint }}
+      <span *ngIf="latestDebug.llm_engine_match === true" style="color:#1f7a39"> ✓ Engine-Match</span>
+      <span *ngIf="latestDebug.llm_engine_match === false" style="color:#ad6f00"> ≠ Engine</span>
+      <span *ngIf="latestDebug.pattern_reasoning" class="debug-sub" style="display:block"> {{ latestDebug.pattern_reasoning }}</span>
+    </div>
+    <!-- Tie-Breaker (Bonus 2 — selektiver LLM-Hint-Override) -->
+    <div class="debug-row" *ngIf="latestDebug.phase3_modulations && latestDebug.phase3_modulations['tie_breaker']">
+      <span class="debug-label">Tie-Breaker:</span>
+      <span *ngIf="latestDebug.phase3_modulations['tie_breaker'].applied">
+        ⚡ {{ latestDebug.phase3_modulations['tie_breaker'].from }} → {{ latestDebug.phase3_modulations['tie_breaker'].to }}
+        (gap={{ latestDebug.phase3_modulations['tie_breaker'].score_gap }})
+      </span>
+      <span *ngIf="!latestDebug.phase3_modulations['tie_breaker'].applied">
+        evaluiert (gap={{ latestDebug.phase3_modulations['tie_breaker'].score_gap }}, applied=false)
+      </span>
+    </div>
+    <!-- Token-Usage + Cache-Hit-Rate (A2.1 + A2.3) -->
+    <div class="debug-row" *ngIf="latestDebug.token_usage && latestDebug.token_usage['calls']">
+      <span class="debug-label">Tokens:</span>
+      prompt={{ latestDebug.token_usage['prompt_tokens'] }},
+      completion={{ latestDebug.token_usage['completion_tokens'] }},
+      cached={{ latestDebug.token_usage['cached_tokens'] }}
+      <span *ngIf="latestDebug.token_usage['prompt_tokens']">
+        ({{ ((latestDebug.token_usage['cached_tokens'] || 0) / latestDebug.token_usage['prompt_tokens'] * 100) | number:'1.0-0' }}% cache)
+      </span>
+      · {{ latestDebug.token_usage['calls'] }} call(s)
+    </div>
+    <div class="debug-row" *ngIf="latestDebug.token_usage && latestDebug.token_usage['per_phase']">
+      <span class="debug-label">Phasen:</span>
+      <div *ngFor="let p of (latestDebug.token_usage['per_phase'] | keyvalue)" class="debug-sub">
+        · {{ p.key }}: prompt={{ p.value.prompt }}, cached={{ p.value.cached }}<span *ngIf="p.value.prompt"> ({{ ((p.value.cached || 0) / p.value.prompt * 100) | number:'1.0-0' }}%)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input Footer -->
+  <div class="chat-footer">
+    <button *ngIf="languageButtonsVisible" class="btn-mic" [class.recording]="isRecording" (click)="toggleRecording()"
+            [title]="isRecording ? 'Aufnahme stoppen' : 'Spracheingabe starten'">
+      <span *ngIf="!isRecording" class="bb-icon" [innerHTML]="ICONS.mic | safeSvg"></span>
+      <span *ngIf="isRecording" class="recording-indicator">
+        <span class="rec-dot"></span>
+        {{ recordingSeconds }}s
+      </span>
+    </button>
+    <input
+      #inputField
+      type="text"
+      class="chat-input"
+      [(ngModel)]="userInput"
+      (keydown)="onKeydown($event)"
+      [placeholder]="isRecording ? 'Aufnahme läuft… Klicke Stop zum Beenden' : (isLoading ? 'Boerdi denkt nach…' : 'Nachricht eingeben…')"
+      [disabled]="isLoading || isRecording"
+    >
+    <button class="btn-send" (click)="sendMessage()" [disabled]="isLoading || !userInput.trim()" title="Senden">
+      <span class="bb-icon" [innerHTML]="ICONS.send | safeSvg"></span>
+    </button>
+  </div>
+</div>

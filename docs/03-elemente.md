@@ -1,377 +1,416 @@
 # Elemente und ihre Wechselwirkungen
 
-## Uebersicht
-
-Das BadBoerdi-Framework arbeitet mit **7 Kernelementen** (aktiv bei jeder Nachricht) und **4 Laufzeit-Elementen** (dynamisch erzeugt). Zusammen bilden sie das **Triple-Schema v2** — ein deterministisches Steuerungssystem, das den LLM-Prompt nicht nur inhaltlich, sondern auch stilistisch und strukturell formt.
+> **Stand: Welle E v4 (2026-05-25) — Hint-Primary-Architektur.**
+> Die Pattern-Wahl trifft das Klassifikator-LLM; eine deterministische
+> Score-Engine ist nicht mehr aktiv. Persona steuert ausschließlich Stil
+> und Anrede, nicht die Pattern-Auswahl.
 
 ---
 
-## Die 7 Kernelemente
+## Übersicht
 
-### 1. Persona
+Das BadBoerdi-Framework arbeitet mit **6 Konfig-Elementen** (Persona, Intent,
+State, Entity, Pattern, Signal) und **3 Laufzeit-Elementen** (Safety, Policy,
+Klassifikation). Zusammen formen sie den System-Prompt und steuern die
+Antwort-Generierung.
 
-**Datei:** `04-personas/*.md` (9 Stueck)
+| # | Element | Quelle | Anzahl | Wirkt auf |
+|---|---|---|---|---|
+| 1 | Persona | `04-personas/*.md` | 6 | Stil + Anrede (Phase 3 Modulate) |
+| 2 | Intent | `04-intents/intents.yaml` | 8 | Klassifikator-Hint für Pattern |
+| 3 | State | `04-states/states.yaml` | 3 | Gesprächs-Verlaufs-Phase |
+| 4 | Entity | `04-entities/entities.yaml` | 5 | MCP-Tool-Parameter + Degradation |
+| 5 | Pattern | `03-patterns/*.md` | 15 | Antwort-Struktur, Tools, Stil-Defaults |
+| 6 | Signal | `04-signals/signal-modulations.yaml` | dyn. | Stil-Overrides (Tone/Länge) |
 
-| ID | Label | Anrede |
-|----|-------|--------|
-| P-W-LK | Lehrkraft | wie_user (Sie Standard) |
-| P-W-SL | Schüler:in | duzen (Override aktiv) |
-| P-ELT | Eltern | wie_user (Sie Standard) |
-| P-W-POL | Politiker:in | siezen (Override aktiv) |
-| P-W-PRESSE | Presse/Journalist:in | siezen (Override aktiv) |
-| P-W-RED | Redaktion | wie_user (Sie Standard) |
-| P-BER | Berater:in | wie_user (Sie Standard) |
-| P-VER | Verwaltung | siezen (Override aktiv) |
-| P-AND | Sonstige/Unbekannt | duzen (BOERDi-Default) |
+---
 
-**Tonalität-Steuerung (Welle B.3):** Jede Persona hat im Frontmatter
-(z.B. `04-personas/lk.md`) fünf Modifier-Felder: `tone`, `length_bias`,
-`formality`, `card_text_mode`, `override`. Diese werden von der
-Pattern-Engine in Phase 3 angewendet. Studio-Pflege im Persona-Editor
-über das Form-UI über dem Markdown-Editor.
+## 1. Persona
+
+**Datei:** `04-personas/*.md` (6 Stück)
+
+| ID | Label | Beschreibung | Formality (Default) | Override |
+|----|-------|--------------|---------------------|----------|
+| P-AND | Andere / Unbekannt | Default ohne klare Persona-Marker | neutral | nein |
+| P-ELT | Eltern | Eltern eines schulpflichtigen Kindes | wie_user → Sie | nein |
+| P-ENT | Entscheider | Verwaltung / Politik / Schulberatung / Schulleitung | siezen | **ja** |
+| P-LEH | Lehrkraft | Lehrkraft, plant Unterricht für eine Klasse | wie_user → Sie | nein |
+| P-LER | Lerner:in / Schüler:in | Schüler:in, die selbst lernt | duzen | **ja** |
+| P-RED | Redaktion & Medien | WLO-Redaktion / Presse / Journalismus | wie_user → Sie | nein |
+
+**Welle E v4: Persona ist nur noch Stil-Modifier.**
+
+Persona wählt **kein** Pattern aus. Sie steuert ausschließlich:
+
+- **Tone** (formell · kollegial · spielerisch · warm · …)
+- **Length-Bias** (-0.3 bis +0.3 — Antwort eine Stufe kürzer/länger)
+- **Formality** (siezen · duzen · wie_user · neutral)
+- **Card-Text-Mode** (minimal · reference · highlight · explanation)
+- **Override-Flag** — wenn true, schlägt der Persona-Modifier den Pattern-Default
+
+**Frontmatter-Schema (Persona-MD, 5 Sektionen):**
+
+```yaml
+---
+id: P-ENT
+label: Entscheider
+description: ...
+
+# Stil & Anrede (Phase 3 Modulate)
+tone: formell
+length_bias: 0.1
+formality: siezen
+card_text_mode: minimal
+override: true
+
+# Klassifikations-Hilfen (nur für den Klassifikator-LLM)
+positive_markers: ["Schulamt", "Ministerium", "Wahlkreis", "amtliche Daten", …]
+anti_markers:
+  - { phrase: "mein Kind", redirect_to: P-ELT, rationale: "Eltern-Pronomen" }
+  - …
+discriminators:
+  - { vs: P-LEH, rule: "amtliche KPI vs Klassenraum", example_a: …, example_b: … }
+
+# Verantwortlichkeit + Wunsch (für Response-Prompt)
+goals: ["Belastbare Daten beschaffen", …]
+rules: ["Quellen + Zeitstand immer angeben", …]
+typical_intents: [I02, I03, I05]
+---
+```
 
 **Wirkung:**
-- Bestimmt Anrede (Sie/du/neutral) aus `device-config.yaml`
-- Filtert Pattern-Gates (`gate_personas`)
-- Aktiviert Policy-Regeln (z.B. Presse-Disclaimer, Tool-Blockaden)
-- Steuert persona-spezifischen Prompt-Abschnitt (z.B. Lehrkraft bekommt didaktische Tipps)
+- Phase 3 Modulate liest `tone`/`length_bias`/`formality`/`card_text_mode`/`override`
+- Klassifikator-Prompt erhält `positive_markers` + `anti_markers` + `discriminators`
+- Response-Prompt erhält `goals` + `rules` (persona-passende Antwort-Direktive)
+- `lookup_persona_self_id__*`-Rules in `routing-rules.yaml` setzen Persona auf Basis expliziter Selbst-ID-Phrasen ("ich bin Lehrkraft …") — als zusätzliches Korrektiv neben dem Klassifikator-LLM
 
 ---
 
-### 2. Intent
+## 2. Intent
 
-**Datei:** `04-intents/intents.yaml` (13 Stück, Stand Welle C Sprint 4)
+**Datei:** `04-intents/intents.yaml` (8 Stück)
 
-| ID | Label | Typische Aktion |
-|----|-------|-----------------|
-| INT-W-01 | WLO kennenlernen | Plattform-Info aus RAG |
-| INT-W-02 | Erst-Orientierung ohne Anliegen | Bot fragt nach Bedarf (PAT-20) |
-| INT-W-03 | Inhalte abrufen | universell für Themenseiten/Sammlungen/Einzelinhalte — Pattern wählt Tool: `search_wlo_topic_pages` / `search_wlo_collections` / `search_wlo_content` |
-| INT-W-04 | Feedback | Kein Tool, Dank/Weiterleitung |
-| INT-W-05 | Routing Redaktion | Weiterleitung an Redaktion |
-| INT-W-06 | Faktenfragen | MCP-Info-Tools (WLO, edu-sharing) |
-| INT-W-08 | Inhalte evaluieren | `get_node_details` + RAG |
-| INT-W-09 | Analyse & Reporting | `search_wlo_collections` + Statistik |
-| INT-W-10 | Unterrichtsplanung | `search_wlo_collections` + `search_wlo_content` (mehrstufiger Lernpfad) |
-| INT-W-11 | Inhalt erstellen | Canvas-Create (PAT-21) |
-| INT-W-12 | Canvas-Edit | Verfeinerung bestehender Canvas-Inhalte |
-| INT-W-13 | Fachportal-Übersicht | `get_subject_portals` (Plural-Frage) |
-| INT-W-14 | Themen-Drilldown | `browse_collection_tree` (in EINE Sammlung tiefer) |
+| ID | Label | Typisches Pattern (Klassifikator-Hint) |
+|----|-------|---------------------------------------|
+| I01 | Orientierung | M15 (Orientierung) |
+| I02 | Wissensfrage | M04 (Wissens-Antwort) |
+| I03 | Inhalte-Suchen | M05/M06/M07/M08/M12 (je nach Slots) |
+| I04 | Lernpfad | M09 (Lernpfad-Erstellung) |
+| I05 | Inhalt-Generieren | M10 (KI-Inhalt-Generierung) |
+| I06 | Inhalt-Nachbearbeiten | M11 (Iterative Nachbearbeitung) |
+| I07 | Feedback-Bot | M14 (Bot-Feedback-Echo) |
+| I08 | Einreichen / Melden | M13 (Inhalt-Einreichen / Melden) |
 
-**Historische Hinweise (Welle C Sprint 4, 2026-05-15):**
-- **INT-W-03a/03b/03c** (Themenseite/Material/Lerninhalt) wurden in **INT-W-03 "Inhalte abrufen"** konsolidiert. Pattern-Wahl (PAT-28 / PAT-07 / PAT-14 / PAT-09) erfolgt deterministisch über Anker-Wörter + Persona.
-- **INT-W-07 "Material herunterladen"** wurde gelöscht: technisch identisch mit INT-W-03 (Bot sucht im Repo, gibt Link — kein eigener File-Download).
+**YAML-Schema:**
+
+```yaml
+intents:
+  - id: I05
+    label: Inhalt-Generieren
+    description: Neues Material vom Bot generieren lassen — Arbeitsblatt, Quiz, Bericht …
+    trigger_verbs: ["erstelle", "generiere", "bau mir", "schreib mir", "mach mir"]
+    negative_triggers:
+      - { phrase: "suche", redirect_to: I03, when: "ohne Erstell-Verb" }
+    discriminators:
+      - { vs: I04, rule: "Einzel-Material (I05) vs sequenzieller Lernpfad (I04)",
+          example_a: "Erstelle mir ein Arbeitsblatt → I05",
+          example_b: "Erstelle mir einen Lernpfad → I04" }
+```
 
 **Wirkung:**
-- Bestimmt, welche MCP-Tools der LLM bevorzugt aufruft
-- Filtert Pattern-Gates (`gate_intents`)
-- Löst spekulative Vorab-Abfragen aus (INT-W-03 und INT-W-10)
-- Steuert Entity-Akkumulation (welche Slots werden erwartet?)
+- Klassifikator-LLM nutzt `trigger_verbs` + `discriminators` + `negative_triggers` zur Intent-Erkennung
+- Intent kommt als Klassifikations-Ergebnis (`classification.intent_id`) in die Pipeline
+- Rules in `06-rules/routing-rules.yaml` können bei klaren Slot-Lagen das Pattern erzwingen (z. B. I05 ohne `topic` → M03 Slot-Klärung statt M10)
+- `lookup_intent_anchor__*`-Rules korrigieren Catch-All-Verwechslungen (I01/I05 → I03/I04 etc. anhand expliziter Verb-Anker)
 
 ---
 
-### 3. Signal
+## 3. State (Gesprächs-Verlaufs-Phase)
 
-**Datei:** `04-signals/signal-modulations.yaml` (17 Signale in 4 Dimensionen)
+**Datei:** `04-states/states.yaml` (3 Stück — Welle E v3)
 
-| Dimension | Signale |
-|-----------|---------|
-| D1 — Zeit & Druck | zeitdruck, ungeduldig, gestresst, effizient |
-| D2 — Sicherheit | unsicher, ueberfordert, unerfahren, erfahren, entscheidungsbereit |
-| D3 — Haltung | neugierig, zielgerichtet, skeptisch, vertrauend |
-| D4 — Kontext | orientierungssuchend, vergleichend, validierend, delegierend |
+| ID | Label | Bot-Rolle |
+|----|-------|-----------|
+| S1 | Orientierung | Bot sondiert offen, präsentiert Möglichkeiten |
+| S2 | Klärung | Bot fragt nach fehlendem Slot (max. 1 Frage pro Turn) |
+| S3 | Aktion | Bot liefert Material / Inhalt / Routing |
 
-**Wirkung (deterministische IF-THEN-Regeln):**
+Welle E v3 hat die früheren 11 States auf 3 reduziert — States modellieren jetzt
+**Gesprächs-Verlaufs-Phasen**, nicht zweite Klassifikations-Achse zum Intent.
 
-| Signal | Ton | Laenge | skip_intro | one_option | Sonstiges |
-|--------|-----|--------|------------|------------|-----------|
-| zeitdruck | sachlich | kurz | ja | | |
-| ungeduldig | sachlich | kurz | ja | | reduziert max_items |
-| gestresst | beruhigend | kurz | ja | | reduziert max_items |
-| unsicher | empathisch | mittel | | ja | |
-| ueberfordert | empathisch | kurz | | ja | |
-| unerfahren | niedrigschwellig | mittel | | ja | |
-| neugierig | spielerisch | mittel | | | show_more |
-| skeptisch | transparent | mittel | | | add_sources |
-| orientierungssuchend | orientierend | mittel | | | show_overview |
-| validierend | belegend | mittel | | | add_sources |
+**YAML-Schema:**
 
-**Kombinationsregeln:**
-- Mehrere Signale koennen gleichzeitig aktiv sein
-- Bei Konflikten gilt: kuerzere Laenge gewinnt, restriktiveres Verhalten gewinnt
-- `reduce_items_signals` (ungeduldig, gestresst) halbieren die Kartenanzahl
+```yaml
+states:
+  - id: S3
+    label: Aktion
+    role: Liefere konkrete Antwort (Material, Inhalt, Routing).
+    bot_directive: |
+      Gib konkrete Treffer / Inhalte / Links. Frag nur dann zurück,
+      wenn dir ein harter Pflicht-Slot fehlt.
+    next_likely: [S1, S2, S3]   # plausible Folge-Zustände
+```
+
+**Wirkung:**
+- `bot_directive` wird in den Response-Prompt eingebaut (Verhaltens-Hinweis pro Phase)
+- `next_likely` validiert State-Übergänge im Trace (Plausibilitäts-Telemetrie)
+- States werden vom Klassifikator gesetzt (`classification.state_id`)
 
 ---
 
-### 4. Entity (Slot)
+## 4. Entity (Slot)
 
 **Datei:** `04-entities/entities.yaml` (5 Slots)
 
 | ID | Label | Beispiel |
-|----|-------|---------|
-| fach | Fach/Fachgebiet | Mathematik, Biologie, Informatik |
-| stufe | Bildungsstufe | Grundschule, Sek I, Klasse 7 |
-| thema | Thema | Bruchrechnung, Fotosynthese |
-| medientyp | Medientyp | Video, Arbeitsblatt, Simulation |
-| lizenz | Lizenz | CC BY, CC BY-SA, CC0 |
+|----|-------|----------|
+| `fach` | Fach / Fachgebiet | Mathematik, Biologie, Geschichte |
+| `stufe` | Bildungsstufe | Grundschule, Sek I, Klasse 7 |
+| `thema` | Thema | Bruchrechnung, Photosynthese, Klimawandel |
+| `medientyp` | Medientyp | Video, Arbeitsblatt, Simulation |
+| `lizenz` | Lizenz | CC BY, CC BY-SA, CC0 |
 
 **Wirkung:**
-- Entities werden als **Such-Parameter** an MCP-Tools weitergegeben
-- Sie werden **ueber Turns akkumuliert** (Entity-Memory)
-- Akkumulationsregeln:
-  - `initial` / `follow_up` / `clarification` → bestehende Werte behalten + neue ergaenzen
-  - `correction` → vorhandene Werte ueberschreiben
-  - `topic_switch` → alle Slots zuruecksetzen
-- Spekulative Vorab-Abfragen nutzen extrahierte Entities (`thema` > `fach` > `query`) als Suchbegriff
+- Werden als **Such-Parameter** an MCP-Tools weitergegeben
+- Werden **über Turns akkumuliert** (Entity-Memory, je nach `turn_type`)
+- `precondition_slots` im Pattern: fehlt ein Pflicht-Slot, setzt `phase3_modulate`
+  das Flag `degradation=true` + `missing_slots`-Liste — der Antwort-Builder kann
+  darauf eine Klärungs-Rückfrage anschließen
+- Slot-fehlt-Rules in `routing-rules.yaml` (`rule_create_needs_topic`,
+  `rule_plan_needs_topic`, `rule_vague_search`) erzwingen M03 (Slot-Klärung)
+  wenn ein Pflicht-Slot leer ist
 
 ---
 
-### 5. State (Gespraechszustand)
+## 5. Pattern (Antwort-Muster)
 
-**Datei:** `04-states/states.yaml` (11 Zustaende nach Welle C Sprint 6 — state-10 entfernt)
+**Datei:** `03-patterns/*.md` (15 Patterns)
 
+**Pattern-Selektion (Welle E v4):** kein 3-Phasen-Engine mehr.
+
+1. **Safety-Override** — `enforced_pattern_id` vom Safety-Layer (M01/M02) gewinnt immer
+2. **Pre-Route-Rules** — können `enforced_pattern_id` aus `routing-rules.yaml` setzen
+3. **LLM-Hint** — `pattern_id_hint` vom Klassifikator (primärer Pfad in ≈ 100 % der Turns)
+4. **Fallback** — defensives M15 (Orientierung) bzw. M03 (Klärung), wenn weder Safety
+   noch Rules noch Hint ein gültiges Pattern liefern
+5. **`phase3_modulate`** — Stil/Tonalitäts-Anpassung via Persona-Modifier + Pattern-Defaults
+
+| ID | Label | Priorität | Typischer Einsatz |
+|----|-------|-----------|-------------------|
+| M01 | Krisen-Empathie | 999 | Akute Notlage (Safety-enforced) |
+| M02 | Bedrohungs-Refusal | 998 | Drohung/Verbalattacke (Safety-enforced) |
+| M03 | Slot-Klärung | 450 | Pflicht-Slot fehlt → 1 Frage + 3 Quick-Replies |
+| M04 | Wissens-Antwort | 520 | Definitions-/Konzept-/Faktenfrage aus RAG |
+| M05 | Material-Suche gefiltert | 510 | Thema + Filter → direkte MCP-Suche |
+| M06 | Material-Suche Cascade | 500 | Thema, Filter unklar → Themenseite→Sammlung→Content |
+| M07 | Fachportale-Übersicht | 490 | Plural-Frage „welche Fächer?" → `get_subject_portals` |
+| M08 | Sammlung-Drilldown | 490 | Singular-Fach mit Drilldown-Verb → eine Ebene tiefer |
+| M09 | Lernpfad-Erstellung | 480 | Sequenzieller Plan aus existierenden Materialien (precond: `topic`) |
+| M10 | KI-Inhalt-Generierung | 470 | Arbeitsblatt/Quiz/Bericht/Remix (precond: `material_type` + `topic`) |
+| M11 | Iterative Nachbearbeitung | 600 | Voriger Bot-Inhalt anpassen |
+| M12 | Null-Treffer-Eskalation | 590 | 0 Treffer → Synonym-Lookup, breitere Suche, Alternativ-Pfad |
+| M13 | Inhalt-Einreichen / Melden | 540 | User reicht Material ein / meldet Fehler → Submit-Link |
+| M14 | Bot-Feedback-Echo | 530 | Rückmeldung zum Bot → Echo + Folge-Angebot |
+| M15 | Orientierung | 460 | Erstkontakt / „Was kann ich hier?" → Begrüßung + 3 Angebote |
+
+**Frontmatter-Schema (Welle E v4, reduziert):**
+
+```yaml
+---
+id: M03
+label: Slot-Klärung
+priority: 450
+short_purpose: Pflicht-Slot fehlt → 1 Frage + 3 konkrete Persona-/Kontext-spezifische QRs.
+
+# precondition_slots wirken in phase3_modulate als Degradation-Flag,
+# NICHT mehr als Selektor-Gate
+precondition_slots: []
+
+# Antwort-Form (Phase 3 Defaults — werden von Persona-Modifier überschrieben falls override=true)
+default_tone: kollegial
+default_length: kurz
+default_detail: standard
+response_type: question
+format_primary: text
+format_follow_up: quick_replies
+card_text_mode: minimal
+
+# Tools & Wissen
+sources: [mcp]
+tools: []
+rag_areas: []
+force_tool_use: false
+requires_all_tools: false
+
+# Inhalt-Regeln (für Response-Prompt)
+core_rule: |
+  GENAU EINE Frage zum wichtigsten fehlenden Slot. 3 Quick-Replies
+  mit konkreten Optionen — niemals generische Platzhalter.
+forbidden_phrases:
+  - "Zu welchem Thema?" — zu offen, keine Optionen
+  - Such-Tool-Calls solange Slot fehlt
+anti_patterns:
+  - Zwei oder mehr Fragen in einem Turn
+---
 ```
-state-1  Orientierung          → Erster Kontakt, Bot sondiert offen
-state-2  Slot-Erfassung        → Bot fragt nach fehlendem Slot (1 Frage)
-state-3  Information           → Bot beantwortet Fakten/Konzept-Frage
-state-4  Erkundung             → Themenseiten/Sammlungen browsen
-state-5  Suche                 → Aktive Materialsuche (Tool-Call)
-state-6  Ergebnis-Kuratierung  → Bot bestätigt + fragt nach Pass
-state-7  Verfeinerung          → Bot adjustiert Filter
-state-8  Lernen & Arbeiten     → Bot hilft bei Anwendung
-state-9  Bewertung & Feedback  → Bot paraphrasiert + probt
-state-11 System & Meta         → Bot erklärt sich/Plattform
-state-12 Canvas-Arbeit         → Bot editiert Canvas iterativ
-```
 
-**Welle C Sprint 6 (2026-05-16) — State als Conversation Flow Machine:**
-
-States modellieren jetzt **Gesprächs-Verlaufs-Phasen** (nicht zweite Klassifikations-Achse zum Intent). Pattern wählt WAS gesagt wird + welche Tools, State sagt in welchem Verlaufs-Schritt das einzahlt.
-
-Jeder State hat:
-- `role` — welche Rolle nimmt der Bot in dieser Phase
-- `bot_directive` — konkrete Handlungs-Anweisung, wird in den Response-Prompt eingebaut
-- `next_likely` — plausible Nachfolge-States (für Plausibilitäts-Validator)
-
-**Wirkung:**
-- `bot_directive` steuert die LLM-Antwort-Generierung (was als Verlaufs-Schritt jetzt drankommt)
-- `next_likely` validiert implausible Übergänge (z.B. state-12 → state-3 ohne Reset)
-- Quick-Reply-Generator nutzt State für phase-spezifische QRs
-- Pattern-Gates (`gate_states`) bleiben bestehen, sind aber meist `*` (State ist kein Pattern-Selektor)
+**Entfernt seit Welle E v4** (waren tot oder durch Hint-Primary überflüssig):
+`gate_personas`, `gate_states`, `gate_intents`, `signal_high_fit`,
+`signal_medium_fit`, `signal_low_fit`, `page_bonus`, `priority`-Specificity-Bonus.
 
 ---
 
-### 6. Pattern (Gespraechsmuster)
+## 6. Signal
 
-**Datei:** `03-patterns/*.md` (23 Patterns)
+**Datei:** `04-signals/signal-modulations.yaml`
 
-**Pattern-Engine (3 Phasen):**
-1. **Gate-Pruefung** — Passt Persona, State, Intent? UND: Sind alle `precondition_slots` gefuellt? (`precondition_slots` ist ein **Hard Gate** — fehlt ein geforderter Slot, wird das Pattern eliminiert, nicht nur schlechter bewertet)
-2. **Scoring** — Signal-Fit-Gewichte + Page-Bonus + Entity-Vollstaendigkeit → gewichteter Score
-3. **Modulation** — Signale ueberschreiben Defaults (Ton, Laenge, skip_intro)
+Signale sind emotionale/situative Hinweise aus der Nutzer-Nachricht (vom
+Klassifikator-LLM extrahiert). Sie wirken als **Tone-/Length-Overrides**
+in `phase3_modulate`.
 
-| ID | Label | Typischer Einsatz |
-|----|-------|--------------------|
-| PAT-01 | Direkt-Antwort | Schnelle, knappe Antworten |
-| PAT-02 | Gefuehrte Klaerung | Bot stellt Rueckfrage |
-| PAT-03 | Transparenz-Beweis | Quellenangaben betont |
-| PAT-04 | Inspiration-Opener | Explorativer Einstieg |
-| PAT-05 | Profi-Filter | Erfahrene Nutzer, praezise Filterung |
-| PAT-06 | Degradation-Bruecke | Fallback bei fehlenden Daten |
-| PAT-07 | Ergebnis-Kuratierung | Kartenbasierte Ergebnisliste |
-| PAT-08 | Null-Treffer | Kein Ergebnis → alternative Vorschlaege |
-| PAT-09 | Redaktions-Recherche | Systematische Fachrecherche (nur RED) |
-| PAT-10 | Fakten-Bulletin | Kurze Faktenantwort |
-| PAT-14 | Lerner-Empfehlung | Speziell für Schüler:innen/Eltern (Welle B.2: Merge aus PAT-13 + PAT-14) |
-| PAT-18 | Unterrichts-Paket | Materialzusammenstellung (precondition: thema) |
-| PAT-19 | Unterrichts-Lernpfad | Strukturierter Lernpfad (precondition: thema) |
-| PAT-20 | Orientierungs-Guide | "Was kann ich hier" mit konkreten Beispielen (kein MCP) |
-| PAT-21 | Canvas-Create | Neues Material KI-generiert im Canvas (precondition: thema+material_typ, INT-W-11) |
-| PAT-22 | Feedback-Echo | Nutzer-Feedback bestätigen + Folge-Angebot (INT-W-04) |
-| PAT-23 | Redaktions-Routing | Lücken/Fehler an Redaktion weiterleiten (INT-W-05) |
-| PAT-25 | Canvas-Edit-Dialog | Verfeinerung bestehender Canvas-Inhalte (INT-W-12) |
-| PAT-26 | Fachportale-Übersicht | get_subject_portals — alle Fächer (INT-W-13) |
-| PAT-27 | Themen-Drilldown | browse_collection_tree in EINE Sammlung (INT-W-14) |
-| PAT-28 | Themenseiten-Suche | search_wlo_topic_pages bei "Themenseite zu X" (INT-W-03) |
-| PAT-CRISIS | Crisis-Empathie | Notfall-Pattern: Bei Krisen-Signalen sofort deeskalieren |
-| PAT-REFUSE-THREAT | Refuse-Threat | Abweisung von Bedrohungs-/Policy-Verletzungen |
+**Beispiel-Modulationen:**
 
-**Welle B/C Konsolidierungen** (gestrichen oder gemerged):
-- PAT-11 (Nachfrage-Schleife) → gestrichen (tot: state-9-only, nie erreicht)
-- PAT-12 (Überbrückungs-Hinweis) → gestrichen (kein Trigger)
-- PAT-13 (Schritt-für-Schritt) → in PAT-14 gemerged (Lerner-Empfehlung)
-- PAT-15 (Analyse-Überblick) → in PAT-10 gemerged (Fakten-Bulletin)
-- PAT-16 (Themen-Exploration) → in PAT-09 gemerged (Recherche)
-- PAT-17 (Sanfter Einstieg) → in PAT-20 gemerged (Orientierungs-Guide)
-- PAT-24 (Download-Hinweis) → in PAT-07 gemerged (Sub-Modus „Download")
+| Signal | Ton | Länge | skip_intro | Sonstiges |
+|--------|-----|-------|------------|-----------|
+| zeitdruck | sachlich | kurz | ja | |
+| ungeduldig | sachlich | kurz | ja | reduziert max_items |
+| gestresst | beruhigend | kurz | ja | reduziert max_items |
+| unsicher | empathisch | mittel | | one_option |
+| neugierig | spielerisch | mittel | | show_more |
+| skeptisch | transparent | mittel | | add_sources |
 
 **Wirkung:**
-- Bestimmt Antwortstruktur (Ton, Laenge, Detailgrad)
-- Steuert Tool-Zugang (`sources`, `tools`)
-- Wird als einziges Pattern in den Prompt eingefuegt
+- Aktive Signale modulieren Pattern-Defaults deterministisch (IF-THEN)
+- `reduce_items_signals` (ungeduldig, gestresst) halbieren die Kartenanzahl
+- Bei Konflikten: kürzere Länge gewinnt, restriktiveres Verhalten gewinnt
+- Signale sind keine Pattern-Selektoren mehr (Signal-Fit-Scoring entfernt)
 
 ---
 
-### 7. Kontext (Page-Context)
+## Die 3 Laufzeit-Elemente
 
-**Datei:** `04-contexts/contexts.yaml` (4 Kontexte)
+### 7. Safety-Entscheidung
 
-| ID | Label | Trigger |
-|----|-------|---------|
-| ctx-search-page | Suchergebnis-Seite | Pfad: /suche, /startseite |
-| ctx-collection-detail | Sammlungs-Detailseite | Pfad: /sammlung/* |
-| ctx-material-detail | Material-Detailseite | Pfad: /material/* |
-| ctx-mobile-quick | Mobile Schnellinteraktion | Device: mobile + Session < 60s |
-
-**Wirkung:**
-- Gibt Pattern-Scoring einen Page-Bonus
-- Mobile-Kontext verkuerzt Antworten automatisch
-- Seitenkontext wird vom Widget automatisch erfasst (`auto-context="true"`)
-
----
-
-## Die 4 Laufzeit-Elemente
-
-Diese Elemente werden nicht in YAML definiert, sondern zur Laufzeit erzeugt:
-
-### 8. Safety-Entscheidung
-
-**Erzeugt von:** `safety_service.assess_safety()`
+**Erzeugt von:** `safety_service.assess_safety()` (Regex + OpenAI-Moderation + LLM-Legal)
 
 **Felder:**
 - `risk_level`: low | medium | high
-- `blocked_tools`: Liste gesperrter Tools (z.B. bei Krisen-Erkennung)
-- `enforced_pattern`: Erzwungenes Pattern (z.B. `PAT-CRISIS` bei selbstbezogenen Krisen, `PAT-REFUSE-THREAT` bei Drohungen gegen Dritte)
+- `blocked_tools`: gesperrte Tools (bei Krisen-Erkennung)
+- `enforced_pattern`: erzwungenes Pattern (`M01` bei Selbstgefährdung, `M02` bei Drohungen)
 - `disclaimers`: Pflicht-Hinweistexte
 
-**Wechselwirkung mit anderen Elementen:**
-- Blockiert Tools → MCP-Aufrufe werden unterdrueckt
-- Erzwingt Pattern → ueberschreibt Pattern-Engine-Ergebnis
-- High-Risk → spekulative Vorab-Abfragen werden abgebrochen
+**Wechselwirkung:**
+- Blockiert Tools → MCP-Aufrufe unterdrückt
+- Erzwingt Pattern → überschreibt Hint und Rules
 
-### 9. Policy-Entscheidung
+### 8. Policy-Entscheidung
 
-**Erzeugt von:** `policy_service.evaluate()`
+**Erzeugt von:** `policy_service.evaluate()` mit `02-domain/policy.yaml`
 
 **Felder:**
 - `blocked_tools`: Persona/Intent-basierte Tool-Blockaden
-- `disclaimers`: Pflichthinweise (z.B. Presse-Disclaimer)
+- `disclaimers`: Pflichthinweise
 
 **Wechselwirkung:**
 - Additiv zu Safety-Blockaden
-- Disclaimers werden dem Prompt als Pflichttext hinzugefuegt
+- Disclaimers werden dem Prompt als Pflichttext hinzugefügt
 
-### 10. Klassifikations-Ergebnis
+### 9. Klassifikations-Ergebnis
 
 **Erzeugt von:** `classify_input()` (LLM-Call mit tool_choice)
 
 **Felder:**
-- `persona_id`, `intent_id`, `intent_confidence`
+- `persona_id`, `intent_id`, `state_id`
+- `intent_confidence`, `persona_confidence`
 - `signals` (Liste aktiver Signal-IDs)
 - `entities` (Slot-Werte)
 - `turn_type` (initial | follow_up | clarification | correction | topic_switch)
-- `next_state`
+- **`pattern_id_hint`** — der vorgeschlagene Pattern-Selektor (primär)
+- `pattern_reasoning` — Begründung des Hints (Eval-Telemetrie)
+- `tool_hint` — vorgeschlagene MCP-Tools (für spekulative Vorab-Abfrage)
 
 **Wechselwirkung:**
-- Persona → steuert Anrede, Pattern-Gate, Policy
-- Intent → steuert Pattern-Gate, spekulative Abfragen, Tool-Praeferenz
-- Signals → modulieren Pattern-Defaults (Ton, Laenge, skip_intro, one_option)
-- Entities → werden an MCP-Tools weitergegeben und ueber Turns akkumuliert
-- Confidence → unter Schwelle: PAT-02 (Nachfrage) statt direkter Antwort
-
-### 11. Trace (Debug-Info)
-
-**Erzeugt von:** `trace_service`
-
-Wird als `DebugInfo`-Objekt in der Chat-Response zurueckgegeben (nur bei aktiviertem Debug-Modus). Enthaelt alle Zwischen-Ergebnisse aller 7 Phasen. Persona, Intent und State werden mit menschenlesbaren Labels ausgegeben (z.B. `P-W-LK (Lehrkraft)`, `INT-W-06 (Faktenfragen)`, `state-3 (Information)`).
-
-`phase3_modulations` enthaelt alle 19 Modulations-Felder:
-- Stil: `tone`, `formality`, `length`, `detail_level`
-- Response: `response_type`, `format_primary`, `format_follow_up`, `sources`
-- Steuerung: `max_items`, `card_text_mode`, `tools`, `rag_areas`, `core_rule`
-- Flags: `skip_intro`, `one_option`, `add_sources`
-- Degradation: `degradation`, `missing_slots`, `blocked_patterns`
-
-### 12. Quality-Log
-
-**Erzeugt von:** `log_quality_event()` in `database.py`
-
-Jeder Chat-Turn wird automatisch in der `quality_logs`-Tabelle protokolliert (non-blocking, fire-and-forget). Steuerbar ueber `01-base/quality-log-config.yaml`:
-
-```yaml
-logging:
-  enabled: true    # An/Aus (Standard: true)
-  retention_days: 180
-```
-
-**Gespeicherte Metriken:** Pattern-ID, Score-Gap zum Zweitplatzierten, Intent-Confidence, Entities, Degradation, Tool-Outcomes, Antwortlaenge sowie das vollstaendige Debug-JSON fuer Deep-Dive-Analyse.
-
-**Aggregierte Statistiken** ueber `GET /api/quality/stats`:
-- Pattern-Verteilung, Intent-Verteilung
-- Durchschnittliche Confidence und Score-Gap
-- Degradation-Rate, Empty-Entity-Rate, Tight Races
+- `pattern_id_hint` ist der primäre Pattern-Selektor (siehe oben)
+- Persona → Phase 3 Modulate (Stil)
+- Intent → Klassifikator-Signal + Rules-Kondition
+- Signals → Phase 3 Modulate (Tone/Länge-Override)
+- Entities → MCP-Tool-Parameter + Degradation-Detection
 
 ---
 
-## Wechselwirkungs-Matrix
-
-Wie beeinflussen sich die Elemente gegenseitig?
+## Wechselwirkungs-Matrix (Welle E v4)
 
 ```
-Persona ──────┬── filtert ──→ Pattern-Gate
-              ├── aktiviert → Policy-Regeln
-              ├── bestimmt → Anrede (Sie/du)
-              └── beeinflusst → Tool-Zugang
+Persona ──── Phase 3 Modulate (Stil + Anrede)
+             └─ KEIN Pattern-Gate mehr
 
-Intent ───────┬── filtert ──→ Pattern-Gate
-              ├── loest aus → Spekulative MCP-Abfrage
-              ├── steuert ──→ Tool-Praeferenz (Collections vs Content)
-              └── bestimmt → Entity-Erwartung
+Intent  ──── Klassifikator → pattern_id_hint
+             └─ Rules-Kondition (z. B. I05+empty topic → M03)
 
-Signal ───────┬── moduliert → Pattern-Defaults (Ton, Laenge)
-              ├── gewichtet → Pattern-Scoring (signal_high/medium/low_fit)
-              └── reduziert → max_items bei Stress-Signalen
+Signal  ──── Phase 3 Modulate (Tone/Length-Override)
+             └─ KEIN Pattern-Scoring mehr
 
-Entity ───────┬── parametriert → MCP-Tool-Aufrufe
-              ├── gespeist von → Spekulative Query-Ermittlung
-              └── akkumuliert → Ueber Turns via turn_type-Regeln
+Entity  ──── MCP-Tool-Parameter
+             └─ Degradation-Flag wenn Pflicht-Slot fehlt
 
-State ────────┬── filtert ──→ Pattern-Gate
-              └── gesetzt von → Klassifikator (next_state)
+State   ──── Gesprächs-Phase → bot_directive im Response-Prompt
+             └─ next_likely → Plausibilitäts-Validator
 
-Pattern ──────┬── bestimmt → Antwortstruktur + Ton
-              ├── steuert ──→ Tool-Zugang (sources, tools)
-              └── moduliert → Signal-Overrides
-
-Context ──────┬── gibt Bonus → Pattern-Scoring (page_bonus)
-              └── verkuerzt → Antworten bei mobile
+Pattern ──── Antwort-Struktur (tone, length, format, tools)
+             └─ core_rule + forbidden_phrases im Response-Prompt
+             └─ wird vom LLM-Hint gewählt, nicht von Scoring
 ```
+
+---
 
 ## Konkrete Beispielkette
 
-**Nutzernachricht:** *"Mathe Klasse 7 Videos"* (von einer Lehrkraft auf der Startseite)
+**Nutzernachricht:** *„Mach mir bitte ein Quiz zur Photosynthese für Klasse 7"* (Lehrkraft)
 
-1. **Klassifikation:**
-   - Persona: `P-W-LK` (Lehrkraft)
-   - Intent: `INT-W-03` (Inhalte abrufen)
-   - Entities: fach=Mathematik, stufe=Klasse 7, medientyp=Video
-   - Signals: [zielgerichtet, erfahren]
-   - State: state-5 (Search)
+1. **Safety:** risk=low, keine Blockaden, kein enforced_pattern
 
-2. **Safety:** risk=low, keine Blockaden
+2. **Klassifikator:**
+   - `persona_id = P-LEH` (Lehrkraft — kein expliziter Marker, aber implizit
+     durch typische Frageformulierung)
+   - `intent_id = I05` (Inhalt-Generieren — „Mach mir … Quiz")
+   - `state_id = S3` (Aktion)
+   - `entities = { material_typ: "Quiz", thema: "Photosynthese", stufe: "Klasse 7" }`
+   - `signals = [zielgerichtet]`
+   - `pattern_id_hint = M10` (KI-Inhalt-Generierung)
 
-3. **Spekulative Abfrage:**
-   - INT-W-03 ist in `_spec_search_intents` → `search_wlo_content` wird parallel gestartet
-   - Query: "Mathematik" (aus Entity `fach`)
+3. **Pre-Route-Rules:** keine Rule trifft zu (`thema` ist gefüllt, kein Edit-Verb)
 
-4. **Pattern-Engine:**
-   - Gate: PAT-01 (alle offen), PAT-05 (LK + erfahren), PAT-07 (Search-State)
-   - Scoring: PAT-05 gewinnt (signal_high_fit: erfahren + zielgerichtet)
-   - Modulation: tone=sachlich, length=kurz, skip_intro=true
+4. **`select_pattern`:** Hint M10 wird direkt gewählt — Engine-Phase 1/2 laufen nicht.
 
-5. **Prompt-Zusammensetzung:**
-   - System: base-persona + domain-rules + LK-Persona + PAT-05-Block + Signal-Overrides + guardrails
-   - Messages: Verlauf + User-Nachricht + [prefetched search_wlo_content Result]
-   - Tools: MCP-Tools (aber tool_choice nicht "required", weil Prefetch vorliegt)
+5. **`phase3_modulate`:**
+   - Persona-Tone-Modifier P-LEH: `tone=kollegial`, `formality=wie_user → Sie`,
+     `card_text_mode=minimal`, `override=false`
+   - Pattern-Default M10: `default_tone=kollegial` (gleich), `default_length=lang`
+   - Length-Bias P-LEH = 0.0 → bleibt `lang`
+   - `precondition_slots` von M10 = `[material_type, topic]` → beide gefüllt → kein Degradation-Flag
 
-6. **LLM-Antwort:** Knappe, sachliche Auflistung von Mathe-Videos fuer Klasse 7, keine Einleitung, Quellenkarten.
+6. **Response-Prompt:**
+   - Schicht 1: base-persona + guardrails
+   - Schicht 2: domain-rules + wlo-plattform-wissen
+   - Schicht 3: M10-Block mit `core_rule` + `forbidden_phrases`
+   - Schicht 4: P-LEH-Block mit `goals` + `rules`
+   - Schicht 6: Page-Context wenn vorhanden, RAG-Snippets bei Always-On-Areas
+
+7. **Antwort:** Quiz zur Photosynthese (Klasse 7), 8–12 Fragen mit Lösungen,
+   Sie-Form, mittellange Erklärungen.
+
+---
+
+## Pflege im Studio
+
+| Element | Studio-Tab | Endpoint |
+|---------|------------|----------|
+| Persona | Dimensionen → Personas | `PUT /api/config/personas` |
+| Intent | Dimensionen → Intents | `PUT /api/config/intents` |
+| State | Dimensionen → States | `PUT /api/config/states` |
+| Entity | Dimensionen → Entities | `PUT /api/config/entities` |
+| Pattern | Patterns | `PUT /api/config/patterns` |
+| Routing-Rules | Routing | `06-rules/routing-rules.yaml` via Datei-Endpoint |
+| Signal-Modulationen | Datei-Browser | `04-signals/signal-modulations.yaml` |
+| Tone-Modifier-Default | Datei-Browser | `01-base/tone-modifiers.yaml` |
+| Device-Config (Formality-Fallback) | Datei-Browser | `01-base/device-config.yaml` |

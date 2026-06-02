@@ -1,5 +1,20 @@
 # Widget-JavaScript-API (Embed-Integration)
 
+> **Welle E (2026-05-23) — entfernte Attribute:** `cards-enabled`,
+> `canvas-enabled`, `inline-result-grouping`, `quick-replies-enabled`,
+> `show-guide-button`, `guide-mode-default` existieren **nicht mehr**.
+> Layout-Steuerung (Gruppen-Boxen, Limits, Schriftgröße,
+> Quick-Reply-Anzahl, KI-Material-Box) liegt zentral im Studio-Tab
+> **🎨 Anzeige** (`01-base/display-rules.yaml`). Lotsen-Modus ist immer
+> aktiv (kein UI-Toggle), Canvas-Pane wurde durch InlineDocument-Box im
+> Chat-Verlauf ersetzt. Übrig bleiben: `api-url`, `position`,
+> `primary-color`, `initial-state`, `greeting`, `auto-context`,
+> `page-context`, `persist-session`, `session-key`,
+> `session-cookie-domain`, `session-cookie-max-age`, `trusted-domains`,
+> `show-debug-button`, `show-language-buttons`, `ai-content-enabled`,
+> `emit-guide-suggestion`, `emit-routing-debug`,
+> `intercept-edu-sharing-links`.
+
 Diese Doku beschreibt **alle** öffentlichen JavaScript-Schnittstellen des
 ``<boerdi-chat>``-Widgets — also die Knöpfe, mit denen einbettende
 Hosts (WordPress, Edu-Sharing, eigene Web-Apps) die Widget-Funktionalität
@@ -34,15 +49,9 @@ Beide Kanäle sind gleichwertig — wähle den, der zur Host-Integration passt.
 | | `session-cookie-domain` | Input | `''` |
 | | `session-cookie-max-age` | Input | `2592000` (30 Tage) |
 | | `trusted-domains` | Input | `''` |
-| **Embed-Modi** | `cards-enabled` | Input | `true` |
-| | `canvas-enabled` | Input | `true` |
-| | `ai-content-enabled` | Input | `true` |
-| | `quick-replies-enabled` | Input | `true` |
-| | `inline-result-grouping` | Input | `true` |
+| **Embed-Modi (Welle E)** | `ai-content-enabled` | Input | `true` — KI-Content (M10/M11) pro Embed deaktivierbar |
 | **UI-Toggles** | `show-debug-button` | Input | `true` |
 | | `show-language-buttons` | Input | `true` |
-| | `show-guide-button` | Input | `true` |
-| **Lotsen-Modus** | `guide-mode-default` | Input | `auto` |
 | | `emit-guide-suggestion` | Input | `false` |
 | | `emit-routing-debug` | Input | `false` |
 | **Link-Handling** | `intercept-edu-sharing-links` | Input | `false` |
@@ -189,83 +198,33 @@ Backend-`trusted_domains`-Liste aus `guide-mode.yaml` gemerged.
 
 ---
 
-### Embed-Modi (Display-Toggles)
-
-Die vier Booleans steuern, **was** vom Widget angezeigt wird. Alle
-default auf `true`; Setzen auf `"false"` (String im HTML) oder `false`
-(Boolean in Angular) deaktiviert das Feature.
-
-#### `cards-enabled`
-
-* `true` (Default): Treffer als interaktive Kacheln im Chat/Canvas.
-* `false`: keine Kacheln — Backend rendert Treffer als dezente
-  Inline-Markdown-Links am Antwort-Ende. Max-Anzahl aus Studio-Setting
-  `cards_inline_link_limit` (Default 5).
-
-```html
-<!-- Schlanke Themenseiten-Integration: nur Chat-Text + Inline-Links -->
-<boerdi-chat cards-enabled="false"></boerdi-chat>
-```
-
-#### `canvas-enabled`
-
-* `true` (Default): Canvas-Pane öffnet sich bei Material-Erzeugung
-  (Arbeitsblatt, Lernpfad, …) und kann Kachel-Listen aufnehmen.
-* `false`: Canvas wird nie geöffnet. Material-Erzeugung rendert das
-  Markdown direkt im Chat-Verlauf.
+### Embed-Modi (Welle E — auf das Minimum reduziert)
 
 #### `ai-content-enabled`
 
-* `true` (Default): Material-Erzeugungs-Pattern (PAT-21) + Lernpfad
-  (PAT-19) sind aktiv.
+* `true` (Default): Material-/Lernpfad-Erzeugungs-Pattern (M09 / M10 / M11) sind aktiv.
 * `false`: Backend lehnt Erzeugungs-Anfragen freundlich ab
   (Standard-Text aus `widget-modes.yaml`) und bietet stattdessen
   Bestandsmaterialien an.
 
-#### `quick-replies-enabled`
+Studio-Default + Pattern-Gates können denselben Effekt erzielen; das
+Host-Attribut hat Vorrang als embed-spezifische Härtung — z.B. wenn
+eine Plattform selbst KI-Content-Tools mitbringt und Doppel-Generierung
+verhindern will.
 
-* `true` (Default): Quick-Reply-Pillen unter Bot-Antworten.
-* `false`: keine Pillen sichtbar. Lotsen-`__guide__|…`-Buttons werden
-  vom Backend stattdessen als Inline-Markdown am Antwort-Ende eingebaut.
+```html
+<boerdi-chat ai-content-enabled="false"></boerdi-chat>
+```
 
-#### `inline-result-grouping`
-
-Gruppierte Treffer-Darstellung statt flacher Card-Liste.
-
-**Default-Flip seit Welle C.5 (2026-05-21):** dieser Parameter ist jetzt
-**standardmäßig `true`**. Wer das alte flache Card-Layout zurück will,
-setzt explizit `inline-result-grouping="false"`. Bestandsembeds, die
-den Parameter ohnehin schon auf `="true"` gesetzt hatten, ändern sich
-nicht.
-
-* `true` (Default): jede Bot-Antwort mit Suchergebnissen zeigt bis zu
-  **vier separate Boxen** statt einer langen Liste:
-  - **Themenseiten** — Top 3 kuratierte WLO-Themenseiten, falls vorhanden
-  - **Sammlungen** — Top 3 edu-sharing-Sammlungen, falls vorhanden
-  - **Webseiten-Inhalte** — bis zu 3 Inline-Links aus dem Bot-Text
-    (z.B. WLO-Artikel, FAQ-Seiten, RAG-Quellen), die nicht schon einer
-    Card entsprechen
-  - **Primary-Button „Alle Treffer in der Suche anzeigen"** — vollflächig
-    in der Theme-Farbe (`primary-color`), führt zur MCP-Such-URL der
-    breitesten Tool-Anfrage (priorisiert `search_wlo_content` >
-    `search_wlo_collections` > `search_wlo_topic_pages`)
-
-  Einzelinhalte erscheinen damit **nicht mehr als Kacheln**; der User
-  springt direkt in die volle Trefferliste. Greift parallel im Canvas-
-  Pane (dort werden die Einzelinhalte-Cards ausgeblendet und durch
-  denselben Card-CTA-Button ersetzt). LLM kennt die ausgeblendeten
-  Cards weiterhin und kann sie für Folge-Fragen nutzen.
-
-  Layout: schmaler einheitlicher Rahmen pro Box, graue outlined Material-
-  Symbol-Icons im Heading, kompakte Zeilen. Heading-Farbe und Icons sind
-  theme-agnostisch — nur die Search-CTA übernimmt `--boerdi-primary`
-  (heller Card-Stil mit Primary-Tint-Icon-Bubble + Chevron).
-
-* `false`: alte flache Card-Liste mit Pagination-Bar („Mehr anzeigen") —
-  Einzelinhalte, Sammlungen und Themenseiten als gestaffelte Kacheln.
-  Lotsen-Inline-Links bleiben als Markdown-Bullets im Bot-Text sichtbar
-  (statt in eine Webseiten-Inhalte-Box zu wandern). Nützlich für CMS-
-  Embeds, die Layout-Konsistenz mit eigenen Listen-Komponenten wollen.
+> **Entfernt in Welle E (2026-05-23)** — die folgenden Attribute
+> existieren **nicht mehr**:
+> `cards-enabled`, `canvas-enabled`, `inline-result-grouping`,
+> `quick-replies-enabled`, `show-guide-button`, `guide-mode-default`.
+> Layout (Gruppen-Boxen, Limits, Schriftgrößen, Quick-Reply-Anzahl,
+> KI-Material-Box) liegt zentral im Studio-Tab **🎨 Anzeige**
+> (`01-base/display-rules.yaml`). Canvas-Pane wurde durch InlineDocument-
+> Box im Chat-Verlauf ersetzt. Lotsen-Modus ist immer aktiv, der
+> 🧭-Toggle im Header ist dauerhaft entfernt.
 
 ---
 
@@ -273,64 +232,14 @@ nicht.
 
 #### `show-debug-button`
 
-Zeigt den Debug-Toggle-Button im Chat-Header.
-
-* `true` (Default): Debug-Button sichtbar
-* `false`: Button versteckt (Debug-Panel trotzdem per Code erreichbar)
+Zeigt den Debug-Toggle-Button im Chat-Header. Default `true`. Für
+Produktiv-Embeddings empfiehlt sich `false`.
 
 #### `show-language-buttons`
 
-Zeigt die TTS- und STT-Buttons (Vorlesen / Mikrofon) im Chat-Header.
-
-* `true` (Default): Sprach-Buttons sichtbar
-* `false`: Buttons versteckt
-
-#### `show-guide-button`
-
-Zeigt den Lotsen-Modus-Toggle im Chat-Header.
-
-* `true` (Default): 🧭-Toggle sichtbar (wenn Host allow-listed)
-* `false`: Toggle versteckt — der Lotsen-Modus kann trotzdem aktiv sein
-  (per `guide-mode-default` oder Backend-Default), aber der User kann
-  ihn nicht manuell umschalten. Nützlich für Embeds, die den Modus
-  stillschweigend aktivieren wollen.
-
-```html
-<!-- Lotsen-Modus an, aber ohne Toggle-UI -->
-<boerdi-chat
-  show-guide-button="false"
-  guide-mode-default="true">
-</boerdi-chat>
-```
-
----
-
-### Lotsen-Modus
-
-#### `guide-mode-default`
-
-Startzustand des Lotsen-Modus. Tristate:
-
-* `auto` (Default): Backend-Setting `default_enabled` aus
-  `guide-mode.yaml` wird übernommen.
-* `true`: Lotsen-Modus beim Start aktiv (User kann per Toggle
-  umschalten, sofern `show-guide-button` nicht `false`).
-* `false`: Lotsen-Modus beim Start aus.
-
-Priorität der Zustandsermittlung (höchste zuerst):
-
-1. URL-Parameter `?bgm=1/0` (Cross-TLD-Handoff)
-2. `localStorage` (User hat zuvor manuell getoggelt)
-3. `guide-mode-default`-Attribut
-4. Backend-`default_enabled` aus `guide-mode.yaml`
-
-Sichtbarkeit des Toggles hängt zusätzlich von der Allow-Liste in
-`guide-mode.yaml` ab — auf nicht-allow-listed Hosts ist der Toggle
-ausgeblendet und der Modus wird deaktiviert.
-
-```html
-<boerdi-chat guide-mode-default="true"></boerdi-chat>
-```
+Zeigt 🔊 TTS und 🎤 Mic-Aufnahme im Chat-Header bzw. Footer. Default
+`true`. `false` verhindert auch den Browser-Mikrofon-Permission-Prompt
+beim ersten Laden.
 
 #### `emit-guide-suggestion`
 

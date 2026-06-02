@@ -1,0 +1,30 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+# openai SDK: >=1.78 needed for the GPT-5 ``verbosity`` kwarg on
+# AsyncCompletions.create. Older SDKs raise
+# ``unexpected keyword argument 'verbosity'`` at chat-time.
+# Upper bound keeps us off potential 2.x breaking changes.
+openai>=1.78.0,<2.0.0
+pydantic==2.9.0
+python-dotenv==1.0.1
+aiosqlite==0.20.0
+httpx==0.27.0
+markitdown==0.1.1
+python-multipart==0.0.12
+pyyaml==6.0.2
+sqlite-vec==0.1.9
+tiktoken==0.7.0
+websockets==13.1
+
+# ── RAG-Reranker (ONNX int8, immer an) ────────────────────────────
+# Cross-Encoder-Rerank nach dem Embedding-Retrieval.
+# Modell: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 (int8, ~130 MB)
+# Modell-Dir: backend/models/cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8/
+# Fehlt der Ordner → Backend läuft weiter, loggt WARNING, nutzt nur Embeddings.
+#
+# Export-Kommando (einmalig auf Dev-Maschine, nicht im Production-Runtime):
+#   pip install optimum[onnxruntime] sentence-transformers \
+#     --extra-index-url https://download.pytorch.org/whl/cpu
+#   python -m scripts.export_reranker_onnx
+onnxruntime==1.20.1
+transformers==4.46.3

@@ -1,0 +1,1685 @@
+INFO:     Started server process [44580]
+INFO:     Waiting for application startup.
+08:46:17 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+08:46:17 INFO app.services.database: DB not empty (rag=906 sessions=196 messages=408) — factory skipped
+08:46:17 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+08:46:17 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
+08:46:17 INFO startup: Config warmup done in 51ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+08:46:17 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
+08:46:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:46:17 INFO startup: LLM warmup done in 433ms
+C:\Users\jan\miniconda3\Lib\site-packages\torch\cuda\__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+08:46:27 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+08:46:31 INFO app.services.rag_service: Reranker warmup done in 13573ms
+08:46:40 INFO app.services.llm_service: system_prompt[classify] tokens=9108 (was=0, cache-eligible=True)
+08:46:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:46:40 INFO app.services.safety_service: safety stages=openai level=standard took 638ms
+08:46:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:46:43 INFO app.services.rule_engine: RuleEngine loaded with 49 rules (mtime=1779054731.2468772)
+08:46:43 INFO app.services.llm_service: system_prompt[response] tokens=8002 (was=0, cache-eligible=True)
+08:46:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:46:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+08:46:45 INFO app.services.llm_service: query_knowledge(WissenLebtOnline): 3494 chars
+08:46:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:46:48 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist Wissenlebtonline und wer betreibt das?'
+INFO:     127.0.0.1:55272 - "POST /api/chat HTTP/1.1" 200 OK
+08:46:50 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:46:50 INFO app.services.safety_service: safety stages=openai level=standard took 360ms
+08:46:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:46:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:46:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+08:46:57 INFO app.services.llm_service: query_knowledge(WirLernenOnline): 3407 chars
+08:46:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:46:59 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist eine Themenseite?'
+INFO:     127.0.0.1:51363 - "POST /api/chat HTTP/1.1" 200 OK
+08:47:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:47:02 INFO app.services.safety_service: safety stages=openai level=standard took 341ms
+08:47:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:05 INFO app.services.llm_service: system_prompt[response] tokens=7595 (was=8002, cache-eligible=True)
+08:47:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+08:47:07 INFO app.services.llm_service: query_knowledge(WirLernenOnline): 3397 chars
+08:47:07 INFO app.routers.chat: chat_stream START session=bb-a921486a-659e-4ba2-8b5d-76286893fad0 msg='Wetter' action=-
+INFO:     127.0.0.1:50136 - "POST /api/chat/stream HTTP/1.1" 200 OK
+08:47:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:47:08 INFO app.services.safety_service: safety stages=openai level=standard took 442ms
+08:47:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:09 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist WLO und wie kann ich es für mein Kind nutzen?'
+INFO:     127.0.0.1:63965 - "POST /api/chat HTTP/1.1" 200 OK
+08:47:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:47:11 INFO app.services.safety_service: safety stages=openai level=standard took 294ms
+08:47:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:13 INFO app.services.llm_service: system_prompt[response] tokens=11330 (was=7595, cache-eligible=True)
+08:47:13 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=7)
+08:47:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:14 INFO app.services.llm_service: system_prompt[response] tokens=7830 (was=11330, cache-eligible=True)
+08:47:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:16 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier eigentlich machen?'
+INFO:     127.0.0.1:53017 - "POST /api/chat HTTP/1.1" 200 OK
+08:47:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:47:19 INFO app.services.safety_service: safety stages=openai level=standard took 380ms
+08:47:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:22 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
+08:47:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:23 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'erneuerbare Energien Referat', 'maxResults': 4, 'learningResourceType': 'Präsentation'}
+08:47:23 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+08:47:23 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:23 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+08:47:24 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+08:47:24 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server.vercel.app/mcp
+08:47:24 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:24 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars
+08:47:24 INFO app.services.mcp_client: lrt label\u2192URI cache loaded: 100 entries
+08:47:24 INFO app.services.mcp_client: resolved learningResourceType='Präsentation' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/1e300ea3-a687-45a3-b215-9c240c1666dc
+08:47:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:25 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Wetter', 'targetGroup': 'general', 'maxResults': 5}
+08:47:25 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:25 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:26 INFO app.services.mcp_client: MCP tool search_wlo_content returned 47 chars
+08:47:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:26 INFO app.services.llm_service: injecting learningResourceType='Referat' from entities.medientyp (LLM omitted it)
+08:47:26 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'erneuerbare Energien', 'maxResults': 4, 'learningResourceType': 'Referat'}
+08:47:26 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 134 chars
+08:47:26 WARNING app.services.mcp_client: parse_wlo_topic_page_cards: not a JSON envelope (first 80 chars: 'Keine Themenseiten für "Wetter" gefunden. Die Sammlung hat möglicherweise keine ')
+08:47:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:27 INFO app.services.mcp_client: LLM resolved vocab lrt='Referat' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/1e300ea3-a687-45a3-b215-9c240c1666dc
+08:47:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:28 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Wetter', 'maxResults': 5}
+08:47:28 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:28 INFO app.services.mcp_client: MCP tool search_wlo_content returned 47 chars
+08:47:29 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:30 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Erstell mir ein Referat über erneuerbare Energien'
+INFO:     127.0.0.1:53020 - "POST /api/chat HTTP/1.1" 200 OK
+08:47:30 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 6666 chars
+08:47:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:47:32 INFO app.services.safety_service: safety stages=openai level=standard took 402ms
+08:47:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:32 INFO app.services.llm_service: select_top_cards: 3 IDs picked — Themenseite nicht gefunden; ich wähle die passendsten kuratierten Sammlungen zum Thema Wetter, mit Fokus auf die direkt 
+08:47:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:34 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+08:47:34 INFO app.routers.chat: chat_stream END session=bb-a921486a-659e-4ba2-8b5d-76286893fad0 pattern=P6 (Material-Suche unspezifisch (Kuratie tokens=60726/405 cached=48896
+08:47:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:34 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
+08:47:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:35 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Planeten im Sonnensystem Quiz', 'learningResourceType': 'Quiz', 'maxResults': 4}
+08:47:35 INFO app.services.mcp_client: resolved learningResourceType='Quiz' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/02bfd0fe-96ab-4dd6-a306-ec362ec25ea0
+08:47:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:38 INFO app.services.mcp_client: MCP tool search_wlo_content returned 7213 chars
+08:47:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:40 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Planeten Sonnensystem Quiz Astronomie', 'learningResourceType': 'Quiz', 'discipline': 'Astronomie', 'maxResults': 4}
+08:47:40 INFO app.services.mcp_client: resolved learningResourceType='Quiz' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/02bfd0fe-96ab-4dd6-a306-ec362ec25ea0
+08:47:40 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+08:47:41 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:41 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+08:47:41 INFO app.services.mcp_client: discipline label\u2192URI cache loaded: 190 entries
+08:47:41 INFO app.services.mcp_client: resolved discipline='Astronomie' \u2192 http://w3id.org/openeduhub/vocabs/discipline/46014
+08:47:41 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:42 INFO app.services.mcp_client: MCP tool search_wlo_content returned 8192 chars
+08:47:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:44 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Das Sonnensystem-Trefferbild passt am besten mit der thematisch direkten Einheit zuerst; die beiden übrigen Quiz-Treffer
+08:47:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:45 INFO app.routers.chat: Outcome-based state hint: state-12 -> state-6
+08:47:45 INFO app.routers.chat: universal type-filter: 6 \u2192 0 cards (medientyp=['quiz'])
+08:47:45 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Mach mir ein Quiz zu Planeten im Sonnensystem'
+INFO:     127.0.0.1:53032 - "POST /api/chat HTTP/1.1" 200 OK
+08:47:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:47:48 INFO app.services.safety_service: safety stages=openai level=standard took 486ms
+08:47:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:51 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Die Bruchrechnung-Erklärung war hilfreich, danke!'
+INFO:     127.0.0.1:53038 - "POST /api/chat HTTP/1.1" 200 OK
+08:47:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:47:53 INFO app.services.safety_service: safety stages=openai level=standard took 366ms
+08:47:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:56 INFO app.services.llm_service: system_prompt[response] tokens=9716 (was=7830, cache-eligible=True)
+08:47:56 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+08:47:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:47:57 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung', 'educationalContext': 'Grundschule', 'discipline': 'Mathematik', 'learningResourceType': 'Video', 'maxResults': 4}
+08:47:57 INFO app.services.mcp_client: resolved learningResourceType='Video' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/38774279-af36-4ec2-8e70-811d5a51a6a1
+08:47:57 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+08:47:57 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+08:47:57 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:57 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars
+08:47:57 INFO app.services.mcp_client: educationalContext label\u2192URI cache loaded: 48 entries
+08:47:57 INFO app.services.mcp_client: resolved educationalContext='Grundschule' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/grundschule
+08:47:58 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:47:59 INFO app.services.mcp_client: MCP tool search_wlo_content returned 5027 chars
+08:48:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:48:01 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+INFO:     127.0.0.1:53041 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/config HTTP/1.1" 200 OK
+INFO:     ::1:0 - "POST /api/eval/estimate HTTP/1.1" 200 OK
+INFO:     ::1:0 - "POST /api/eval/estimate HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/config HTTP/1.1" 200 OK
+INFO:     ::1:0 - "POST /api/eval/estimate HTTP/1.1" 200 OK
+INFO:     ::1:0 - "POST /api/eval/estimate HTTP/1.1" 200 OK
+INFO:     ::1:0 - "POST /api/eval/runs HTTP/1.1" 200 OK
+08:52:48 INFO app.services.eval_service: [eval eval-723b26b3bedd] cleared tool cache (10 entries)
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:52:50 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:52:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:52:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:52:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:52:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:52:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:07 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-WISSEN (no anchor in: ['Was ist Wissenlebtonline und wie unterstützt es unsere OER-Strategie für Schulen']). Kept: 0.
+08:53:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:09 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-SUCHE-MATERIAL (no anchor in: ['Ich suche nach Materialien, die ich für unsere Schule zur Unterstützung der OER-']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:11 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-BROWSE-THEMEN (no anchor in: ['Ich interessiere mich für die verschiedenen Fachportale, die Sie hier anbieten. ']). Kept: 0.
+08:53:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:13 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-LERNPFAD (no anchor in: ['Ich suche einen strukturierten Lernpfad für unsere Schule, um das Thema „Digital']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:15 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-REMIX (no anchor in: ['Ich möchte einige WLO-Inhalte anpassen, die ich für unsere Schule gefunden habe.']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:17 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-CREATE (no anchor in: ['Könnten Sie mir bitte helfen, einen komplett neuen Lehrplan für ein interaktives']). Kept: 0.
+08:53:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:19 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-EDIT-CANVAS (no anchor in: ['Könnten Sie mir bitte helfen, den Inhalt im Canvas für unsere Schulentwicklung a']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:21 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-FEEDBACK (no anchor in: ['Wie bewerten Sie die OER-Strategie, die auf dieser Plattform vorgestellt wird?']). Kept: 0.
+08:53:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:22 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-MELDUNG (no anchor in: ['Ich habe einen Fehler in einem Artikel entdeckt, der für unsere Schule besonders']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:24 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-BER/INT-UNKLAR (no anchor in: ['Ich bin neu hier und möchte mich erstmal umsehen, was es so gibt.']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:31 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-ELT/INT-BROWSE-THEMEN (no anchor in: ['Was kann ich hier für meine Kinder finden?']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:35 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-ELT/INT-CREATE (no anchor in: ['Kannst du mir ein kreatives Lernspiel für meine Kinder zum Thema Naturwissenscha']). Kept: 0.
+08:53:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:51 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-LK/INT-REMIX (no anchor in: ['Könnten Sie mir bitte einen Lernpfad erstellen, der bestehende Inhalte zu den Th']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:53:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:53:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:01 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-PRESSE/INT-WISSEN (no anchor in: ['Was ist das WLO-Ökosystem und wie kann es meine Recherche unterstützen?']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:03 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-PRESSE/INT-BROWSE-THEMEN (no anchor in: ['Ich bin Journalist und möchte einen Überblick über die verfügbaren Fachportale h']). Kept: 0.
+08:54:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:12 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-PRESSE/INT-FEEDBACK (no anchor in: ['Ich bin Journalist und würde gerne wissen, wie ich Ihnen Feedback zu Ihrer letzt']). Kept: 0.
+08:54:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:13 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-PRESSE/INT-MELDUNG (no anchor in: ['Ich habe einen kaputten Link zu einem Artikel entdeckt, den ich für meine Recher']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:16 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-RED/INT-WISSEN (no anchor in: ['Was ist das WLO-Ökosystem und wie funktioniert es für die Redaktion?']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:19 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-RED/INT-SUCHE-MATERIAL (no anchor in: ['Ich suche nach Materialien, um Inhalte für meine Redaktion zu kuratieren. Gibt e']). Kept: 0.
+08:54:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:20 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-RED/INT-BROWSE-THEMEN (no anchor in: ['Ich bin Redakteurin und interessiere mich für den Themenbaum. Was kann ich da al']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:23 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-RED/INT-REMIX (no anchor in: ['Ich bin Redakteur und möchte einige vorhandene Materialien anpassen. Wie kann ic']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:25 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-RED/INT-CREATE (no anchor in: ['Ich bin Redakteurin und möchte einen neuen Artikel über die Auswirkungen von Soc']). Kept: 0.
+08:54:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:26 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-RED/INT-EDIT-CANVAS (no anchor in: ['Könnten Sie mir bitte helfen, den Text im Canvas zu überarbeiten? Ich bin Redakt']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:29 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-RED/INT-FEEDBACK (no anchor in: ['Ich möchte gerne Feedback zu meiner letzten Anfrage geben – die Antwort war hilf']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:31 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-RED/INT-UNKLAR (no anchor in: ['Was kann ich hier machen? Ich bin neu in der Redaktion und schaue mich erstmal u']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:34 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-SL/INT-WISSEN (no anchor in: ['Was ist das WLO-Ökosystem und wie kann ich es für mein Lernen nutzen?']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:48 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-SL/INT-CREATE (no anchor in: ['Kannst du mir Schritt für Schritt erklären, wie ich eine Zusammenfassung für mei']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:53 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-SL/INT-MELDUNG (no anchor in: ['Ich habe einen kaputten Link gefunden, kannst du da mal nachschauen?']). Kept: 0.
+08:54:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:55 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-W-SL/INT-UNKLAR (no anchor in: ['Was kann ich hier machen? Ich bin neu und möchte mich erstmal umsehen.']). Kept: 0.
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:54:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:54:57 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-VER/INT-WISSEN (no anchor in: ['Was ist eigentlich das WLO-Ökosystem und wie ist es strukturiert?']). Kept: 0.
+08:54:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:00 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-VER/INT-BROWSE-THEMEN (no anchor in: ['Was kann ich hier machen, um einen Überblick über die verschiedenen Fachportale ']). Kept: 0.
+08:55:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:11 INFO app.services.eval_service: Persona-Marker gate [warn] flagged 1/1 openings for P-VER/INT-UNKLAR (no anchor in: ['Was kann ich hier machen, um einen Überblick über die aktuellen Bildungsdaten zu']). Kept: 0.
+08:55:11 INFO app.services.eval_service: [eval eval-723b26b3bedd] generated 80 scenarios
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:55:12 INFO app.services.safety_service: safety stages=openai level=standard took 398ms
+08:55:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:15 INFO app.services.llm_service: system_prompt[response] tokens=8002 (was=9716, cache-eligible=True)
+08:55:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+08:55:18 INFO app.services.llm_service: query_knowledge(WirLernenOnline): 3397 chars
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:20 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist WLO eigentlich?'
+INFO:     127.0.0.1:62894 - "POST /api/chat HTTP/1.1" 200 OK
+08:55:20 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+08:55:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:55:24 INFO app.services.safety_service: safety stages=openai level=standard took 952ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:30 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier finden? Ich bin neu und schaue mich mal um'
+INFO:     127.0.0.1:63789 - "POST /api/chat HTTP/1.1" 200 OK
+08:55:30 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:55:34 INFO app.services.safety_service: safety stages=openai level=standard took 478ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:38 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg="Was gibt's hier so zu entdecken?"
+INFO:     127.0.0.1:60934 - "POST /api/chat HTTP/1.1" 200 OK
+08:55:38 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:55:42 INFO app.services.safety_service: safety stages=openai level=standard took 639ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:47 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier eigentlich machen?'
+INFO:     127.0.0.1:57086 - "POST /api/chat HTTP/1.1" 200 OK
+08:55:47 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:55:53 INFO app.services.safety_service: safety stages=openai level=standard took 1517ms
+08:55:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:55:55 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier so finden?'
+INFO:     127.0.0.1:49672 - "POST /api/chat HTTP/1.1" 200 OK
+08:55:55 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+08:55:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:55:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:55:59 INFO app.services.safety_service: safety stages=openai level=standard took 392ms
+08:56:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:03 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier finden? Ich bin neu und schaue mich um.'
+INFO:     127.0.0.1:49675 - "POST /api/chat HTTP/1.1" 200 OK
+08:56:03 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:56:06 INFO app.services.safety_service: safety stages=openai level=standard took 465ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:10 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier machen? Ich schau mich mal um.'
+INFO:     127.0.0.1:49678 - "POST /api/chat HTTP/1.1" 200 OK
+08:56:10 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:56:14 INFO app.services.safety_service: safety stages=openai level=standard took 778ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:17 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier eigentlich machen? Ich bin neu und schau m'
+INFO:     127.0.0.1:49681 - "POST /api/chat HTTP/1.1" 200 OK
+08:56:17 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:56:21 INFO app.services.safety_service: safety stages=openai level=standard took 496ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:25 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich bin neu hier, was kann ich denn alles finden?'
+INFO:     127.0.0.1:53612 - "POST /api/chat HTTP/1.1" 200 OK
+08:56:25 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:56:29 INFO app.services.safety_service: safety stages=openai level=standard took 774ms
+08:56:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:32 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier so alles machen?'
+INFO:     127.0.0.1:59850 - "POST /api/chat HTTP/1.1" 200 OK
+08:56:32 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:56:35 INFO app.services.safety_service: safety stages=openai level=standard took 394ms
+08:56:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+08:56:40 INFO app.services.llm_service: query_knowledge(WissenLebtOnline): 3499 chars
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:42 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist Wissenlebtonline und wie unterstützt es unsere OER-S'
+INFO:     127.0.0.1:59853 - "POST /api/chat HTTP/1.1" 200 OK
+08:56:42 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+08:56:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:56:46 INFO app.services.safety_service: safety stages=openai level=standard took 398ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:48 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=7)
+08:56:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:56:49 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'OER-Strategie Schule', 'userRole': 'Lehrer/in', 'maxResults': 5}
+08:56:49 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'userRole'}
+08:56:50 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:56:50 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 943 chars
+08:56:50 INFO app.services.mcp_client: userRole label\u2192URI cache loaded: 31 entries
+08:56:50 INFO app.services.mcp_client: resolved userRole='Lehrer/in' \u2192 http://w3id.org/openeduhub/vocabs/intendedEndUserRole/teacher
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:51 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:56:57 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 189 chars
+08:56:57 WARNING app.services.mcp_client: parse_wlo_cards: not a JSON envelope (first 80 chars: 'Keine Sammlungen gefunden für "OER-Strategie Schule". Versuche einen übergeordne')
+08:56:57 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'OER-Strategie', 'targetGroup': 'teacher', 'maxResults': 5}
+08:56:58 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:00 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 141 chars
+08:57:00 WARNING app.services.mcp_client: parse_wlo_topic_page_cards: not a JSON envelope (first 80 chars: 'Keine Themenseiten für "OER-Strategie" gefunden. Die Sammlung hat möglicherweise')
+08:57:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:57:01 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'OER', 'userRole': 'Lehrer/in', 'maxResults': 5}
+08:57:01 INFO app.services.mcp_client: resolved userRole='Lehrer/in' \u2192 http://w3id.org/openeduhub/vocabs/intendedEndUserRole/teacher
+08:57:02 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:03 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 6122 chars
+08:57:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:57:05 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+08:57:05 INFO app.routers.chat: Cards unterdrückt — kein konkretes Thema/Fach im Slot (pattern=P6)
+INFO:     127.0.0.1:59856 - "POST /api/chat HTTP/1.1" 200 OK
+08:57:05 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:57:11 INFO app.services.safety_service: safety stages=openai level=standard took 405ms
+08:57:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:57:13 INFO app.services.llm_service: system_prompt[response] tokens=9617 (was=8002, cache-eligible=True)
+08:57:13 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=4)
+08:57:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:57:14 INFO app.services.mcp_client: MCP tool get_subject_portals args: {'includeContentCounts': True}
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:18 INFO app.services.mcp_client: MCP tool get_subject_portals returned 49610 chars
+08:57:18 INFO app.services.mcp_client: get_subject_portals compacted to 9238 chars
+08:57:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:57:20 INFO app.routers.chat: Outcome-based state hint: state-4 -> state-6
+08:57:20 INFO app.routers.chat: Cards unterdrückt — kein konkretes Thema/Fach im Slot (pattern=P7)
+08:57:20 INFO app.routers.chat: safety-net (kacheln): leere Cards — Fallback-Search auf 'Ich interessiere mich für die verschiedenen Fachportale, die'
+08:57:20 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Ich interessiere mich für die verschiedenen Fachportale, die Sie hier anbieten. Was kann ich hier alles entdecken?', 'maxResults': 5}
+08:57:21 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:24 INFO app.services.mcp_client: MCP tool search_wlo_content returned 12200 chars
+08:57:24 INFO app.routers.chat: fallback inline search: 5 Cards für query='Ich interessiere mich für die verschiedenen Fachportale, die'
+08:57:24 INFO app.routers.chat: safety-net (kacheln): 5 Cards aus Fallback
+C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '71995614-737...om/watch?v=PVHoyFOYtBs'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'e6984eb8-f97...%5Bfree%5D=klimawandel'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '981d6fba-f26...df49526d85b600189768a2'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'd6767e2b-fc9...e-industrialisierung-1'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '7206d9e6-74f...ieren-und-subtrahieren'}, input_type=dict])
+  return self.serializer.to_json(
+INFO:     127.0.0.1:53812 - "POST /api/chat HTTP/1.1" 200 OK
+08:57:24 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:57:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:57:28 INFO app.services.safety_service: safety stages=openai level=standard took 399ms
+08:57:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:57:30 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Digitalisierung im Unterricht'
+08:57:30 INFO app.routers.chat: LP search: topic='Digitalisierung im Unterricht' skip=0
+08:57:30 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Digitalisierung im Unterricht', 'maxItems': 5, 'skipCount': 0}
+08:57:30 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:35 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7226 chars
+08:57:35 INFO app.routers.chat: LP found 5 collections
+08:57:35 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'bd8be6d5-0fbe-4534-a4b3-773154ba6abc', 'maxItems': 16, 'skipCount': 0}
+08:57:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:57:37 INFO app.services.mcp_client: MCP tool get_collection_contents returned 21936 chars
+08:57:37 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '742d8c87-e5a3-4658-86f9-419c2cea6574', 'maxItems': 16, 'skipCount': 0}
+08:57:37 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:57:38 INFO app.services.mcp_client: MCP tool get_collection_contents returned 11988 chars
+08:57:38 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'ffd298b5-3a04-4d13-9d26-ddd5d3b5cedc', 'maxItems': 16, 'skipCount': 0}
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:39 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:57:39 INFO app.services.mcp_client: MCP tool get_collection_contents returned 5810 chars
+08:57:39 INFO app.routers.chat: LP contents: 4813 chars, topic='Digitalisierung im Unterricht'
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:57:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:57:56 INFO app.routers.chat: universal type-filter: 5 \u2192 0 cards (medientyp=['struktur'])
+08:57:56 INFO app.routers.chat: safety-net (kacheln): leere Cards — Fallback-Search auf 'Ich suche einen strukturierten Lernpfad für unsere Schule, u'
+08:57:56 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Ich suche einen strukturierten Lernpfad für unsere Schule, um das Thema „Digitalisierung im Unterricht“ zu evaluieren. Können Sie mir helfen?', 'maxResults': 5}
+08:57:57 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:00 INFO app.services.mcp_client: MCP tool search_wlo_content returned 12444 chars
+08:58:00 INFO app.routers.chat: fallback inline search: 5 Cards für query='Ich suche einen strukturierten Lernpfad für unsere Schule, u'
+08:58:00 INFO app.routers.chat: safety-net (kacheln): 5 Cards aus Fallback
+C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'b7413791-835...om/watch?v=eSuuvRRlIFw'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '33dda3eb-352...om/watch?v=DeLUslPRKxM'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '91ec9f58-3c4...zusammengesetzten-satz'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '656a9f9f-5f3...x9OuvkqUXN6gnU&index=8'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '03d1a41c-781...om/watch?v=CorQdj6ulNw'}, input_type=dict])
+  return self.serializer.to_json(
+INFO:     127.0.0.1:53817 - "POST /api/chat HTTP/1.1" 200 OK
+08:58:00 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:58:04 INFO app.services.safety_service: safety stages=openai level=standard took 902ms
+08:58:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:06 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:08 INFO app.services.llm_service: Reflection-Loop: Pattern Material-Remix verlangt Tools ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] (mode=ANY), aufgerufen ['respond_to_user'], fehlend ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] — Retry
+08:58:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:63090 - "POST /api/chat HTTP/1.1" 200 OK
+08:58:09 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:58:13 INFO app.services.safety_service: safety stages=openai level=standard took 805ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:15 INFO app.services.llm_service: system_prompt[response] tokens=8412 (was=9617, cache-eligible=True)
+08:58:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+08:58:18 INFO app.services.llm_service: query_knowledge(WissenLebtOnline): 3510 chars
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:20 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Könnten Sie mir bitte helfen, einen komplett neuen Lehrplan '
+INFO:     127.0.0.1:60276 - "POST /api/chat HTTP/1.1" 200 OK
+08:58:20 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:58:23 INFO app.services.safety_service: safety stages=openai level=standard took 423ms
+08:58:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:25 INFO app.services.llm_service: system_prompt[response] tokens=7966 (was=8412, cache-eligible=True)
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:27 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Könnten Sie mir bitte helfen, den Inhalt im Canvas für unser'
+INFO:     127.0.0.1:60282 - "POST /api/chat HTTP/1.1" 200 OK
+08:58:27 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+08:58:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:58:31 INFO app.services.safety_service: safety stages=openai level=standard took 437ms
+08:58:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:34 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Wie bewerten Sie die OER-Strategie, die auf dieser Plattform'
+INFO:     127.0.0.1:60285 - "POST /api/chat HTTP/1.1" 200 OK
+08:58:34 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:58:37 INFO app.services.safety_service: safety stages=openai level=standard took 411ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:41 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich habe einen Fehler in einem Artikel entdeckt, der für uns'
+INFO:     127.0.0.1:60288 - "POST /api/chat HTTP/1.1" 200 OK
+08:58:41 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:58:45 INFO app.services.safety_service: safety stages=openai level=standard took 542ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:49 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich bin neu hier und möchte mich erstmal umsehen, was es so '
+INFO:     127.0.0.1:60291 - "POST /api/chat HTTP/1.1" 200 OK
+08:58:49 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:58:53 INFO app.services.safety_service: safety stages=openai level=standard took 417ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+08:58:57 INFO app.services.llm_service: query_knowledge(WissenLebtOnline): 3491 chars
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:58:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:58:59 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist eigentlich Wissenlebtonline und wie kann ich es für '
+INFO:     127.0.0.1:64343 - "POST /api/chat HTTP/1.1" 200 OK
+08:58:59 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:59:04 INFO app.services.safety_service: safety stages=openai level=standard took 391ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:06 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+08:59:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:07 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+08:59:08 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+08:59:08 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars
+08:59:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:09 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Mathe Hausaufgaben 4. Klasse Arbeitsblätter', 'educationalContext': 'Grundschule', 'discipline': 'Mathematik', 'learningResourceType': 'http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45', 'maxResults': 4}
+08:59:09 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+08:59:09 INFO app.services.mcp_client: resolved educationalContext='Grundschule' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/grundschule
+08:59:10 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:12 INFO app.services.mcp_client: MCP tool search_wlo_content returned 6815 chars
+08:59:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:13 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+INFO:     127.0.0.1:64347 - "POST /api/chat HTTP/1.1" 200 OK
+08:59:13 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:59:17 INFO app.services.safety_service: safety stages=openai level=standard took 1079ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:18 INFO app.services.llm_service: system_prompt[response] tokens=7426 (was=7966, cache-eligible=True)
+08:59:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:20 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier für meine Kinder finden?'
+INFO:     127.0.0.1:64353 - "POST /api/chat HTTP/1.1" 200 OK
+08:59:20 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:59:23 INFO app.services.safety_service: safety stages=openai level=standard took 432ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:27 INFO app.services.llm_service: system_prompt[response] tokens=8025 (was=7426, cache-eligible=True)
+08:59:27 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=7)
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:30 INFO app.services.llm_service: Reflection-Loop: Pattern Lernpfad-Erstellung verlangt Tools ['search_wlo_collections', 'get_collection_contents', 'search_wlo_content', 'get_node_details', 'lookup_wlo_vocabulary'] (mode=ANY), aufgerufen ['respond_to_user'], fehlend ['search_wlo_collections', 'get_collection_contents', 'search_wlo_content', 'get_node_details', 'lookup_wlo_vocabulary'] — Retry
+08:59:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:64356 - "POST /api/chat HTTP/1.1" 200 OK
+08:59:32 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:59:37 INFO app.services.safety_service: safety stages=openai level=standard took 977ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:39 INFO app.services.llm_service: system_prompt[response] tokens=9562 (was=8025, cache-eligible=True)
+08:59:39 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+08:59:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:40 INFO app.services.llm_service: Reflection-Loop: Pattern Material-Remix verlangt Tools ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] (mode=ANY), aufgerufen ['respond_to_user'], fehlend ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] — Retry
+08:59:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:41 INFO app.services.mcp_client: MCP tool get_node_details args: {'nodeId': 'unknown'}
+08:59:42 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:42 INFO app.services.mcp_client: MCP tool get_node_details returned 28 chars
+08:59:42 WARNING app.services.mcp_client: parse_wlo_cards: not a JSON envelope (first 80 chars: 'Node unknown nicht gefunden.')
+08:59:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:43 INFO app.routers.chat: Outcome-based state hint: state-12 -> state-6
+INFO:     127.0.0.1:51888 - "POST /api/chat HTTP/1.1" 200 OK
+08:59:43 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:59:47 INFO app.services.safety_service: safety stages=openai level=standard took 626ms
+08:59:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:49 INFO app.services.llm_service: system_prompt[response] tokens=7859 (was=9562, cache-eligible=True)
+08:59:49 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:50 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:50 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Kannst du mir ein kreatives Lernspiel für meine Kinder zum T'
+INFO:     127.0.0.1:51893 - "POST /api/chat HTTP/1.1" 200 OK
+08:59:50 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+08:59:55 INFO app.services.safety_service: safety stages=openai level=standard took 313ms
+08:59:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+08:59:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+08:59:59 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Kannst du mir helfen, die Hausaufgaben meines Kindes im Canv'
+INFO:     127.0.0.1:51896 - "POST /api/chat HTTP/1.1" 200 OK
+08:59:59 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs/eval-723b26b3bedd HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:00:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:00:02 INFO app.services.safety_service: safety stages=openai level=standard took 443ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:00:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:04 INFO app.services.llm_service: system_prompt[response] tokens=7424 (was=7859, cache-eligible=True)
+09:00:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:05 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich würde gerne wissen, wie ich Feedback zu den Hausaufgaben'
+INFO:     127.0.0.1:51899 - "POST /api/chat HTTP/1.1" 200 OK
+09:00:05 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:00:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:00:08 INFO app.services.safety_service: safety stages=openai level=standard took 369ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:00:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:12 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich habe einen kaputten Link zu den Matheaufgaben für mein K'
+INFO:     127.0.0.1:51902 - "POST /api/chat HTTP/1.1" 200 OK
+09:00:12 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:00:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:00:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:00:16 INFO app.services.safety_service: safety stages=openai level=standard took 306ms
+09:00:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:19 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier für mein Kind finden?'
+INFO:     127.0.0.1:53333 - "POST /api/chat HTTP/1.1" 200 OK
+09:00:19 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/file?path=04-personas%2Fber.md HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/tone-modifiers HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=04-personas%2Fber.md HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/tone-modifiers HTTP/1.1" 200 OK
+09:00:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:00:23 INFO app.services.safety_service: safety stages=openai level=standard took 370ms
+09:00:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:25 INFO app.services.llm_service: system_prompt[response] tokens=8320 (was=7424, cache-eligible=True)
+09:00:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:00:27 INFO app.services.llm_service: query_knowledge(WirLernenOnline): 3494 chars
+INFO:     ::1:0 - "GET /api/config/file?path=04-personas%2Fver.md HTTP/1.1" 200 OK
+09:00:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:29 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist das WLO-Ökosystem und wie kann ich es für meinen Unt'
+INFO:     127.0.0.1:51973 - "POST /api/chat HTTP/1.1" 200 OK
+09:00:29 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:00:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:00:33 INFO app.services.safety_service: safety stages=openai level=standard took 595ms
+09:00:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:35 INFO app.services.llm_service: system_prompt[response] tokens=10016 (was=8320, cache-eligible=True)
+09:00:35 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+09:00:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:36 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung Arbeitsblatt Übungen Unterrichtsentwurf', 'discipline': 'Mathematik', 'learningResourceType': 'Arbeitsblatt', 'maxResults': 5}
+09:00:36 INFO app.services.mcp_client: resolved learningResourceType='Arbeitsblatt' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45
+09:00:36 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+09:00:37 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:00:40 INFO app.services.mcp_client: MCP tool search_wlo_content returned 7500 chars
+INFO:     ::1:0 - "GET /api/routing-rules/lookups HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/stats?days=7 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/lookups HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/stats?days=7 HTTP/1.1" 200 OK
+09:00:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:41 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung Übungen Mathematik', 'discipline': 'Mathematik', 'learningResourceType': 'Quiz', 'maxResults': 5}
+09:00:41 INFO app.services.mcp_client: resolved learningResourceType='Quiz' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/02bfd0fe-96ab-4dd6-a306-ec362ec25ea0
+09:00:41 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+09:00:42 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/file?path=05-knowledge%2Frag-config.yaml HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=05-knowledge%2Frag-config.yaml HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/rag/areas HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/rag/areas HTTP/1.1" 200 OK
+09:00:43 INFO app.services.mcp_client: MCP tool search_wlo_content returned 7761 chars
+09:00:43 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:00:44 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+09:00:44 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/mcp-servers HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/mcp-servers HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/canvas/material-types HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/canvas/material-types HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=05-canvas%2Ftype-aliases.yaml HTTP/1.1" 200 OK
+09:00:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:45 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+INFO:     127.0.0.1:53372 - "POST /api/chat HTTP/1.1" 200 OK
+09:00:45 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:00:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:00:49 INFO app.services.safety_service: safety stages=openai level=standard took 446ms
+09:00:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:52 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=4)
+09:00:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:00:53 INFO app.services.mcp_client: MCP tool get_subject_portals args: {'educationalContext': 'Sekundarstufe I', 'includeContentCounts': True}
+09:00:54 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:00:59 INFO app.services.mcp_client: MCP tool get_subject_portals returned 49610 chars
+09:00:59 INFO app.services.mcp_client: get_subject_portals compacted to 9238 chars
+09:01:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:01:01 INFO app.routers.chat: Outcome-based state hint: state-4 -> state-6
+09:01:01 INFO app.routers.chat: Cards unterdrückt — kein konkretes Thema/Fach im Slot (pattern=P7)
+INFO:     127.0.0.1:51090 - "POST /api/chat HTTP/1.1" 200 OK
+09:01:01 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:01:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:01:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:01:04 INFO app.services.safety_service: safety stages=openai level=standard took 452ms
+09:01:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:01:06 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Nachhaltigkeit'
+09:01:06 INFO app.routers.chat: LP search: topic='Nachhaltigkeit' skip=0
+09:01:06 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Nachhaltigkeit', 'maxItems': 5, 'skipCount': 0}
+09:01:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:01:08 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7595 chars
+09:01:08 INFO app.routers.chat: LP found 5 collections
+09:01:08 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'af9fee4f-08b4-4d22-b541-32dcdcf599df', 'maxItems': 16, 'skipCount': 0}
+09:01:08 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:01:09 INFO app.services.mcp_client: MCP tool get_collection_contents returned 47 chars
+09:01:09 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'ca6e69ad-e5ec-4b83-8390-149c6bdceda8', 'maxItems': 16, 'skipCount': 0}
+09:01:09 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:01:09 INFO app.services.mcp_client: MCP tool get_collection_contents returned 47 chars
+09:01:09 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '0acedcc3-d943-4fa4-9b9d-11e1cc94cdf7', 'maxItems': 16, 'skipCount': 0}
+09:01:10 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:01:11 INFO app.services.mcp_client: MCP tool get_collection_contents returned 9431 chars
+09:01:11 INFO app.routers.chat: LP contents: 2009 chars, topic='Nachhaltigkeit'
+09:01:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:01:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:01:32 INFO app.routers.chat: universal type-filter: 6 \u2192 0 cards (medientyp=['struktur'])
+09:01:32 INFO app.routers.chat: safety-net (kacheln): leere Cards — Fallback-Search auf 'Kannst du mir bitte einen strukturierten Lernpfad für das Th'
+09:01:32 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Kannst du mir bitte einen strukturierten Lernpfad für das Thema "Nachhaltigkeit" erstellen, den ich in meiner Klasse nutzen kann?', 'maxResults': 5}
+09:01:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:01:37 INFO app.services.mcp_client: MCP tool search_wlo_content returned 9505 chars
+09:01:37 INFO app.routers.chat: fallback inline search: 5 Cards für query='Kannst du mir bitte einen strukturierten Lernpfad für das Th'
+09:01:37 INFO app.routers.chat: safety-net (kacheln): 5 Cards aus Fallback
+C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '1b72619b-5b2...irtuellerundreise.html'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '6181cbf5-642...tch?v=qop4Tx8yPZI&t=2s'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '56ef470a-7f6...medien.schule/ab1.html'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'daaa07aa-4ca...K_3JZpK6oHAXbT&index=5'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '580515c4-ca4....schule/bindungen.html'}, input_type=dict])
+  return self.serializer.to_json(
+INFO:     127.0.0.1:51110 - "POST /api/chat HTTP/1.1" 200 OK
+09:01:37 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:01:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:01:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:01:48 INFO app.services.safety_service: safety stages=openai level=standard took 901ms
+09:01:50 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:01:50 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Geometrie'
+09:01:50 INFO app.routers.chat: LP search: topic='Geometrie' skip=0
+09:01:50 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Geometrie', 'maxItems': 5, 'skipCount': 0}
+09:01:50 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:01:51 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 6630 chars
+09:01:51 INFO app.routers.chat: LP found 5 collections
+09:01:51 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '703fee62-9a7e-4ba4-8c04-c62a79f8dad2', 'maxItems': 16, 'skipCount': 0}
+09:01:52 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:01:53 INFO app.services.mcp_client: MCP tool get_collection_contents returned 10170 chars
+09:01:53 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '5eccdf08-c10f-488c-9198-d0e068344af4', 'maxItems': 16, 'skipCount': 0}
+09:01:53 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:01:54 INFO app.services.mcp_client: MCP tool get_collection_contents returned 24577 chars
+09:01:54 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '8a752bc4-e616-4f70-a1b6-60099d43cd2a', 'maxItems': 16, 'skipCount': 0}
+09:01:54 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:01:55 INFO app.services.mcp_client: MCP tool get_collection_contents returned 18494 chars
+09:01:55 INFO app.routers.chat: LP contents: 7143 chars, topic='Geometrie'
+09:02:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:02:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58398 - "POST /api/chat HTTP/1.1" 200 OK
+09:02:12 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:02:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:02:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:02:17 INFO app.services.safety_service: safety stages=openai level=standard took 492ms
+09:02:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:02:20 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Nachhaltigkeit im Unterricht'
+09:02:20 INFO app.routers.chat: LP search: topic='Nachhaltigkeit im Unterricht' skip=0
+09:02:20 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Nachhaltigkeit im Unterricht', 'maxItems': 5, 'skipCount': 0}
+09:02:21 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:02:25 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7899 chars
+09:02:25 INFO app.routers.chat: LP found 5 collections
+09:02:25 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'bd8be6d5-0fbe-4534-a4b3-773154ba6abc', 'maxItems': 16, 'skipCount': 0}
+09:02:25 INFO app.services.mcp_client: MCP tool get_collection_contents cache HIT (27 entries)
+09:02:25 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '742d8c87-e5a3-4658-86f9-419c2cea6574', 'maxItems': 16, 'skipCount': 0}
+09:02:25 INFO app.services.mcp_client: MCP tool get_collection_contents cache HIT (27 entries)
+09:02:25 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'ffd298b5-3a04-4d13-9d26-ddd5d3b5cedc', 'maxItems': 16, 'skipCount': 0}
+09:02:25 INFO app.services.mcp_client: MCP tool get_collection_contents cache HIT (27 entries)
+09:02:25 INFO app.routers.chat: LP contents: 4813 chars, topic='Nachhaltigkeit im Unterricht'
+09:02:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:02:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58193 - "POST /api/chat HTTP/1.1" 200 OK
+09:02:39 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:02:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:02:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:02:45 INFO app.services.safety_service: safety stages=openai level=standard took 349ms
+09:02:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:02:47 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+09:02:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:02:48 INFO app.services.llm_service: Reflection-Loop: Pattern Material-Remix verlangt Tools ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] (mode=ANY), aufgerufen ['respond_to_user'], fehlend ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] — Retry
+09:02:50 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58197 - "POST /api/chat HTTP/1.1" 200 OK
+09:02:50 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:02:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:02:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:02:56 INFO app.services.safety_service: safety stages=openai level=standard took 697ms
+09:02:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:02:58 INFO app.services.llm_service: system_prompt[response] tokens=8346 (was=10016, cache-eligible=True)
+09:03:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:00 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich finde die Antworten, die ich bisher erhalten habe, sehr '
+INFO:     127.0.0.1:58200 - "POST /api/chat HTTP/1.1" 200 OK
+09:03:00 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:03:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:03:05 INFO app.services.safety_service: safety stages=openai level=standard took 439ms
+09:03:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:07 INFO app.services.llm_service: system_prompt[response] tokens=7811 (was=8346, cache-eligible=True)
+09:03:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:08 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich habe einen kaputten Link zu einem Unterrichtsmaterial ge'
+INFO:     127.0.0.1:58204 - "POST /api/chat HTTP/1.1" 200 OK
+09:03:08 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:03:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:03:13 INFO app.services.safety_service: safety stages=openai level=standard took 497ms
+09:03:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:17 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier machen, um meine Klasse besser zu unterstü'
+INFO:     127.0.0.1:58207 - "POST /api/chat HTTP/1.1" 200 OK
+09:03:17 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:03:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:03:21 INFO app.services.safety_service: safety stages=openai level=standard took 481ms
+09:03:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:03:27 INFO app.services.llm_service: query_knowledge(WissenLebtOnline): 3434 chars
+09:03:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:29 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist das WLO-Ökosystem und wie kann es meine Recherche un'
+INFO:     127.0.0.1:58210 - "POST /api/chat HTTP/1.1" 200 OK
+09:03:29 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:03:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:03:32 INFO app.services.safety_service: safety stages=openai level=standard took 444ms
+09:03:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:34 INFO app.services.llm_service: system_prompt[response] tokens=8399 (was=7811, cache-eligible=True)
+09:03:34 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=7)
+09:03:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:36 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bildung Reportage', 'maxResults': 5, 'discipline': 'Bildung'}
+09:03:36 INFO app.services.mcp_client: resolved discipline='Bildung' via fuzzy 'bildung für nachhaltige entwicklung' \u2192 http://w3id.org/openeduhub/vocabs/discipline/64018
+09:03:37 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:03:39 INFO app.services.mcp_client: MCP tool search_wlo_content returned 11684 chars
+09:03:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:40 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bildung', 'maxResults': 5, 'discipline': 'Bildung'}
+09:03:40 INFO app.services.mcp_client: resolved discipline='Bildung' via fuzzy 'bildung für nachhaltige entwicklung' \u2192 http://w3id.org/openeduhub/vocabs/discipline/64018
+09:03:40 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:03:41 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 5387 chars
+09:03:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:43 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+09:03:43 INFO app.routers.chat: universal type-filter: 10 \u2192 0 cards (medientyp=['bericht'])
+INFO:     127.0.0.1:49673 - "POST /api/chat HTTP/1.1" 200 OK
+09:03:43 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:03:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:03:48 INFO app.services.safety_service: safety stages=openai level=standard took 407ms
+09:03:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:51 INFO app.services.llm_service: system_prompt[response] tokens=9811 (was=8399, cache-eligible=True)
+09:03:51 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=4)
+09:03:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:52 INFO app.services.mcp_client: MCP tool get_subject_portals args: {'includeContentCounts': True}
+09:03:52 INFO app.services.mcp_client: MCP tool get_subject_portals cache HIT (29 entries)
+09:03:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:54 INFO app.routers.chat: Outcome-based state hint: state-4 -> state-6
+09:03:54 INFO app.routers.chat: Cards unterdrückt — kein konkretes Thema/Fach im Slot (pattern=P7)
+INFO:     127.0.0.1:49678 - "POST /api/chat HTTP/1.1" 200 OK
+09:03:54 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:03:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:03:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:03:57 INFO app.services.safety_service: safety stages=openai level=standard took 478ms
+09:04:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:00 INFO app.services.llm_service: system_prompt[response] tokens=8413 (was=9811, cache-eligible=True)
+09:04:00 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=7)
+09:04:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:01 INFO app.services.llm_service: Reflection-Loop: Pattern Lernpfad-Erstellung verlangt Tools ['search_wlo_collections', 'get_collection_contents', 'search_wlo_content', 'get_node_details', 'lookup_wlo_vocabulary'] (mode=ANY), aufgerufen ['respond_to_user'], fehlend ['search_wlo_collections', 'get_collection_contents', 'search_wlo_content', 'get_node_details', 'lookup_wlo_vocabulary'] — Retry
+09:04:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:04 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'aktuelle Themen', 'maxResults': 4}
+09:04:05 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:04:06 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 2211 chars
+09:04:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:07 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'e0bdd476-5b40-497b-8ef7-8004b04df2a3', 'contentFilter': 'files', 'includeSubcollections': True, 'maxResults': 4}
+09:04:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:04:08 INFO app.services.mcp_client: MCP tool get_collection_contents returned 7025 chars
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:04:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:10 INFO app.routers.chat: Outcome-based state hint: state-4 -> state-6
+09:04:10 INFO app.routers.chat: Cards unterdrückt — kein konkretes Thema/Fach im Slot (pattern=P9)
+09:04:10 INFO app.routers.chat: safety-net (kacheln): leere Cards — Fallback-Search auf 'Als Journalist:in interessiere ich mich für einen strukturie'
+09:04:10 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Als Journalist:in interessiere ich mich für einen strukturierten Lernpfad zu aktuellen Themen. Was kann ich hier dazu finden?', 'maxResults': 5}
+09:04:11 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs/eval-723b26b3bedd HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:04:14 INFO app.services.mcp_client: MCP tool search_wlo_content returned 9234 chars
+09:04:14 INFO app.routers.chat: fallback inline search: 5 Cards für query='Als Journalist:in interessiere ich mich für einen strukturie'
+09:04:14 INFO app.routers.chat: safety-net (kacheln): 5 Cards aus Fallback
+C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '33dda3eb-352...om/watch?v=DeLUslPRKxM'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'e0245be5-492...4f42-bc76-4c000bffd6c4'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '29d0b855-aab...und_Satzschlusszeichen'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'adebdb5c-afc...GNsO0zfdMZ-fb&index=13'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '58e4e10d-a8a...chaftlichen-situation/'}, input_type=dict])
+  return self.serializer.to_json(
+INFO:     127.0.0.1:60672 - "POST /api/chat HTTP/1.1" 200 OK
+09:04:14 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:04:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:04:19 INFO app.services.safety_service: safety stages=openai level=standard took 412ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/logs?limit=200&scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/tight-races?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/stats?scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/degradations?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/empty-entities?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/low-confidence?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/logs?limit=200&scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/tight-races?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/low-confidence?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/stats?scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/empty-entities?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/degradations?scope=all&limit=30 HTTP/1.1" 200 OK
+09:04:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:21 INFO app.services.llm_service: system_prompt[response] tokens=10214 (was=8413, cache-eligible=True)
+09:04:21 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+09:04:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:25 INFO app.services.llm_service: Reflection-Loop: Pattern Material-Remix verlangt Tools ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] (mode=ANY), aufgerufen ['respond_to_user'], fehlend ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] — Retry
+09:04:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:26 INFO app.services.mcp_client: MCP tool get_node_details args: {'nodeId': 'dummy'}
+09:04:27 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:04:27 INFO app.services.mcp_client: MCP tool get_node_details returned 26 chars
+09:04:27 WARNING app.services.mcp_client: parse_wlo_cards: not a JSON envelope (first 80 chars: 'Node dummy nicht gefunden.')
+09:04:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:28 INFO app.routers.chat: Outcome-based state hint: state-12 -> state-6
+INFO:     127.0.0.1:49368 - "POST /api/chat HTTP/1.1" 200 OK
+09:04:28 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:04:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:04:33 INFO app.services.safety_service: safety stages=openai level=standard took 417ms
+09:04:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:37 INFO app.services.llm_service: system_prompt[response] tokens=8606 (was=10214, cache-eligible=True)
+09:04:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:04:39 INFO app.services.llm_service: query_knowledge(WissenLebtOnline): 3583 chars
+09:04:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:40 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Ich arbeite als Journalist und brauche einen neuen Artikel ü'
+INFO:     127.0.0.1:55114 - "POST /api/chat HTTP/1.1" 200 OK
+09:04:40 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:04:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:04:45 INFO app.services.safety_service: safety stages=openai level=standard took 376ms
+09:04:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:47 INFO app.services.llm_service: system_prompt[response] tokens=8072 (was=8606, cache-eligible=True)
+09:04:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:48 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich arbeite als Journalist und habe einige Fragen zu den Dat'
+INFO:     127.0.0.1:55119 - "POST /api/chat HTTP/1.1" 200 OK
+09:04:48 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:04:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:04:52 INFO app.services.safety_service: safety stages=openai level=standard took 403ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:04:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:55 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich bin Journalist und würde gerne wissen, wie ich Ihnen Fee'
+INFO:     127.0.0.1:55122 - "POST /api/chat HTTP/1.1" 200 OK
+09:04:55 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/quality/logs?limit=200&scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/tight-races?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/low-confidence?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/stats?scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/degradations?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/empty-entities?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/logs?limit=200&scope=all HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/low-confidence?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/tight-races?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/empty-entities?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/degradations?scope=all&limit=30 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/quality/stats?scope=all HTTP/1.1" 200 OK
+09:04:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:04:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:04:59 INFO app.services.safety_service: safety stages=openai level=standard took 485ms
+09:05:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:04 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich habe einen kaputten Link zu einem Artikel entdeckt, den '
+INFO:     127.0.0.1:56359 - "POST /api/chat HTTP/1.1" 200 OK
+09:05:04 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/routing-rules HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/lookups HTTP/1.1" 200 OK
+09:05:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/routing-rules/stats?days=7 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/lookups HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/stats?days=7 HTTP/1.1" 200 OK
+09:05:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:05:09 INFO app.services.safety_service: safety stages=openai level=standard took 359ms
+09:05:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:13 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier machen, als Journalist interessiert mich, '
+INFO:     127.0.0.1:62373 - "POST /api/chat HTTP/1.1" 200 OK
+09:05:13 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:05:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:05:16 INFO app.services.safety_service: safety stages=openai level=standard took 353ms
+09:05:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:05:22 INFO app.services.llm_service: query_knowledge(WissenLebtOnline): 3434 chars
+INFO:     ::1:0 - "GET /api/config/file?path=01-base%2Fbase-persona.md HTTP/1.1" 200 OK
+09:05:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/file?path=01-base%2Fsafety-config.yaml HTTP/1.1" 200 OK
+09:05:24 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist das WLO-Ökosystem und wie funktioniert es für die Re'
+INFO:     127.0.0.1:62377 - "POST /api/chat HTTP/1.1" 200 OK
+09:05:24 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/file?path=01-base%2Fbase-persona.md HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=01-base%2Fsafety-config.yaml HTTP/1.1" 200 OK
+09:05:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:05:28 INFO app.services.safety_service: safety stages=openai level=standard took 473ms
+09:05:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:31 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+09:05:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:32 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+09:05:32 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary cache HIT (33 entries)
+09:05:32 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Grundschule Videos Arbeitsblätter Redaktion kuratieren', 'educationalContext': 'Grundschule', 'learningResourceType': 'Video', 'maxResults': 4}
+09:05:32 INFO app.services.mcp_client: resolved learningResourceType='Video' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/38774279-af36-4ec2-8e70-811d5a51a6a1
+09:05:32 INFO app.services.mcp_client: resolved educationalContext='Grundschule' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/grundschule
+09:05:33 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:05:35 INFO app.services.mcp_client: MCP tool search_wlo_content returned 5852 chars
+09:05:35 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Grundschule Videos Arbeitsblätter Redaktion kuratieren', 'educationalContext': 'Grundschule', 'learningResourceType': 'Arbeitsblatt', 'maxResults': 4}
+09:05:35 INFO app.services.mcp_client: resolved learningResourceType='Arbeitsblatt' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45
+09:05:35 INFO app.services.mcp_client: resolved educationalContext='Grundschule' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/grundschule
+09:05:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:05:37 INFO app.services.mcp_client: MCP tool search_wlo_content returned 7216 chars
+09:05:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:39 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Zuerst ein passendes Video zur Grundschule und dann ein Arbeitsblatt-Sammeltreffer; die beiden weiteren Treffer ergänzen
+09:05:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:41 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+09:05:41 INFO app.routers.chat: Cards unterdrückt — kein konkretes Thema/Fach im Slot (pattern=P5)
+09:05:41 INFO app.routers.chat: safety-net (kacheln): leere Cards — Fallback-Search auf 'Ich suche nach Materialien, um Inhalte für meine Redaktion z'
+09:05:41 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Ich suche nach Materialien, um Inhalte für meine Redaktion zu kuratieren. Gibt es hier Videos oder Arbeitsblätter für die Grundschule?', 'maxResults': 5}
+INFO:     ::1:0 - "GET /api/config/file?path=04-personas%2Fver.md HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/tone-modifiers HTTP/1.1" 200 OK
+09:05:41 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/file?path=04-personas%2Fver.md HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/tone-modifiers HTTP/1.1" 200 OK
+09:05:44 INFO app.services.mcp_client: MCP tool search_wlo_content returned 10020 chars
+09:05:44 INFO app.routers.chat: fallback inline search: 5 Cards für query='Ich suche nach Materialien, um Inhalte für meine Redaktion z'
+09:05:44 INFO app.routers.chat: safety-net (kacheln): 5 Cards aus Fallback
+C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '1021d358-a2f...GaihfkaNKjboFj&index=4'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'b8ad0bf7-735...te-bewegung/index.html'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '8f6748b2-4a3...459e-a920-ea57bc70bf26'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'e6984eb8-f97...%5Bfree%5D=klimawandel'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '9f7d7288-b37...free%5D=nachhaltigkeit'}, input_type=dict])
+  return self.serializer.to_json(
+INFO:     127.0.0.1:51680 - "POST /api/chat HTTP/1.1" 200 OK
+09:05:44 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/file?path=04-personas%2Fsl.md HTTP/1.1" 200 OK
+09:05:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/file?path=04-personas%2Fver.md HTTP/1.1" 200 OK
+09:05:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:05:48 INFO app.services.safety_service: safety stages=openai level=standard took 412ms
+09:05:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:51 INFO app.services.llm_service: system_prompt[response] tokens=9790 (was=8072, cache-eligible=True)
+09:05:51 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=4)
+09:05:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:52 INFO app.services.mcp_client: MCP tool get_subject_portals args: {'includeContentCounts': True}
+09:05:52 INFO app.services.mcp_client: MCP tool get_subject_portals cache HIT (36 entries)
+09:05:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:53 INFO app.services.mcp_client: MCP tool browse_collection_tree args: {'nodeId': '742d8c87-e5a3-4658-86f9-419c2cea6574', 'depth': 1, 'includeContentCounts': True, 'maxResults': 5}
+09:05:54 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:05:55 INFO app.services.mcp_client: MCP tool browse_collection_tree returned 7869 chars
+09:05:58 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:05:58 INFO app.routers.chat: Outcome-based state hint: state-4 -> state-6
+09:05:58 INFO app.routers.chat: Cards unterdrückt — kein konkretes Thema/Fach im Slot (pattern=P7)
+INFO:     127.0.0.1:55059 - "POST /api/chat HTTP/1.1" 200 OK
+09:05:58 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:06:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:06:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:06:06 INFO app.services.safety_service: safety stages=openai level=standard took 446ms
+09:06:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:06:09 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Nachhaltigkeit'
+09:06:09 INFO app.routers.chat: LP search: topic='Nachhaltigkeit' skip=0
+09:06:09 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Nachhaltigkeit', 'maxItems': 5, 'skipCount': 0}
+09:06:10 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:06:10 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 6439 chars
+09:06:10 INFO app.routers.chat: LP found 5 collections
+09:06:10 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'af9fee4f-08b4-4d22-b541-32dcdcf599df', 'maxItems': 16, 'skipCount': 0}
+09:06:11 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:06:11 INFO app.services.mcp_client: MCP tool get_collection_contents returned 47 chars
+09:06:11 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'e4574125-1c54-4271-8cc7-e5916e041994', 'maxItems': 16, 'skipCount': 0}
+09:06:12 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:06:12 INFO app.services.mcp_client: MCP tool get_collection_contents returned 47 chars
+09:06:12 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '3014d18d-2c1d-4191-94d1-8d2c1d419154', 'maxItems': 16, 'skipCount': 0}
+09:06:12 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:06:13 INFO app.services.mcp_client: MCP tool get_collection_contents returned 5279 chars
+09:06:13 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Nachhaltigkeit', 'maxItems': 10, 'skipCount': 0}
+09:06:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:06:15 INFO app.services.mcp_client: MCP tool search_wlo_content returned 17588 chars
+09:06:15 INFO app.routers.chat: LP thin-candidates fallback: added 8 content items
+09:06:15 INFO app.routers.chat: LP contents: 3944 chars, topic='Nachhaltigkeit'
+09:06:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:06:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:06:30 INFO app.routers.chat: universal type-filter: 4 \u2192 0 cards (medientyp=['struktur'])
+09:06:30 INFO app.routers.chat: safety-net (kacheln): leere Cards — Fallback-Search auf 'Ich kuratiere gerade Inhalte zum Thema Nachhaltigkeit und br'
+09:06:30 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Ich kuratiere gerade Inhalte zum Thema Nachhaltigkeit und brauche einen strukturierten Lernpfad dazu. Was könnt ihr mir empfehlen?', 'maxResults': 5}
+09:06:31 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:06:33 INFO app.services.mcp_client: MCP tool search_wlo_content returned 5082 chars
+09:06:33 INFO app.routers.chat: fallback inline search: 3 Cards für query='Ich kuratiere gerade Inhalte zum Thema Nachhaltigkeit und br'
+09:06:33 INFO app.routers.chat: safety-net (kacheln): 3 Cards aus Fallback
+C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '92ecd2bf-34d...h-zum-gluecklich-sein/'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'f5f9ce98-11b...ule/wasserabdruck.html'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '29d0b855-aab...und_Satzschlusszeichen'}, input_type=dict])
+  return self.serializer.to_json(
+INFO:     127.0.0.1:60510 - "POST /api/chat HTTP/1.1" 200 OK
+09:06:33 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:06:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:06:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:06:37 INFO app.services.safety_service: safety stages=openai level=standard took 465ms
+09:06:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:06:40 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+09:06:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:06:41 INFO app.services.llm_service: Reflection-Loop: Pattern Material-Remix verlangt Tools ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] (mode=ANY), aufgerufen ['respond_to_user'], fehlend ['get_node_details', 'get_collection_contents', 'lookup_wlo_vocabulary'] — Retry
+09:06:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:06:42 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+09:06:42 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary cache HIT (41 entries)
+09:07:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:24 INFO app.routers.chat: Outcome-based state hint: state-12 -> state-6
+INFO:     127.0.0.1:60708 - "POST /api/chat HTTP/1.1" 200 OK
+09:07:24 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:07:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:07:29 INFO app.services.safety_service: safety stages=openai level=standard took 423ms
+09:07:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:32 INFO app.services.llm_service: system_prompt[response] tokens=8526 (was=9790, cache-eligible=True)
+09:07:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:07:34 INFO app.services.llm_service: query_knowledge(WirLernenOnline): 3424 chars
+09:07:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:36 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Ich bin Redakteurin und möchte einen neuen Artikel über die '
+INFO:     127.0.0.1:55984 - "POST /api/chat HTTP/1.1" 200 OK
+09:07:36 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:07:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:07:39 INFO app.services.safety_service: safety stages=openai level=standard took 371ms
+09:07:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:42 INFO app.services.llm_service: system_prompt[response] tokens=8080 (was=8526, cache-eligible=True)
+09:07:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:44 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Könnten Sie mir bitte helfen, den Text im Canvas zu überarbe'
+INFO:     127.0.0.1:56665 - "POST /api/chat HTTP/1.1" 200 OK
+09:07:44 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:07:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:07:49 INFO app.services.safety_service: safety stages=openai level=standard took 399ms
+09:07:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:53 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich möchte gerne Feedback zu meiner letzten Anfrage geben – '
+INFO:     127.0.0.1:56677 - "POST /api/chat HTTP/1.1" 200 OK
+09:07:53 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:07:55 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:07:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:07:57 INFO app.services.safety_service: safety stages=openai level=standard took 410ms
+09:07:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:01 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich habe einen inhaltlichen Fehler in einem Artikel entdeckt'
+INFO:     127.0.0.1:63521 - "POST /api/chat HTTP/1.1" 200 OK
+09:08:01 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:08:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:08:05 INFO app.services.safety_service: safety stages=openai level=standard took 412ms
+09:08:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:08 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier machen? Ich bin neu in der Redaktion und s'
+INFO:     127.0.0.1:58364 - "POST /api/chat HTTP/1.1" 200 OK
+09:08:08 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:08:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:08:13 INFO app.services.safety_service: safety stages=openai level=standard took 382ms
+09:08:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:08:17 INFO app.services.llm_service: query_knowledge(WirLernenOnline): 3407 chars
+09:08:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:19 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist das WLO-Ökosystem und wie kann ich es für mein Lerne'
+INFO:     127.0.0.1:57420 - "POST /api/chat HTTP/1.1" 200 OK
+09:08:19 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:08:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:08:21 INFO app.services.safety_service: safety stages=openai level=standard took 482ms
+09:08:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:24 INFO app.services.llm_service: system_prompt[response] tokens=9717 (was=8080, cache-eligible=True)
+09:08:24 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+09:08:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:25 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bruchrechnung Übungen', 'discipline': 'Mathematik', 'learningResourceType': 'Übung', 'maxResults': 4}
+09:08:25 INFO app.services.mcp_client: resolved learningResourceType='Übung' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/0b2d7dec-8eb1-4a28-9cf2-4f3a4f5a511b
+09:08:25 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+09:08:26 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:08:28 INFO app.services.mcp_client: MCP tool search_wlo_content returned 5383 chars
+09:08:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:29 INFO app.services.llm_service: select_top_cards: 3 IDs picked — Bruchrechnung steht im Fokus; ALICE:Bruchrechnen passt direkt, Größenvergleich von Brüchen ist thematisch nah, Umkehrfun
+09:08:32 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:32 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+INFO:     127.0.0.1:57423 - "POST /api/chat HTTP/1.1" 200 OK
+09:08:32 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:08:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:08:35 INFO app.services.safety_service: safety stages=openai level=standard took 455ms
+09:08:37 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:37 INFO app.services.llm_service: system_prompt[response] tokens=7998 (was=9717, cache-eligible=True)
+09:08:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:08:42 INFO app.services.llm_service: query_knowledge(WirLernenOnline): 3312 chars
+09:08:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:43 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Kannst du mir erklären, wie ich den Themenbaum hier nutzen k'
+INFO:     127.0.0.1:63942 - "POST /api/chat HTTP/1.1" 200 OK
+09:08:43 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:08:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:08:47 INFO app.services.safety_service: safety stages=openai level=standard took 460ms
+09:08:50 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:08:50 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Brüche'
+09:08:50 INFO app.routers.chat: LP search: topic='Brüche' skip=0
+09:08:50 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Brüche', 'maxItems': 5, 'skipCount': 0}
+09:08:51 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:08:52 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 6761 chars
+09:08:52 INFO app.routers.chat: LP found 5 collections
+09:08:52 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'ac18e9bf-3209-4606-a598-e8e290c9b999', 'maxItems': 16, 'skipCount': 0}
+09:08:52 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:08:53 INFO app.services.mcp_client: MCP tool get_collection_contents returned 21250 chars
+09:08:53 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'd6c88b81-b639-4b89-94d7-c0507a3e90be', 'maxItems': 16, 'skipCount': 0}
+09:08:54 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:08:55 INFO app.services.mcp_client: MCP tool get_collection_contents returned 24819 chars
+09:08:55 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '1d926161-36be-491c-96f4-cead912881a1', 'maxItems': 16, 'skipCount': 0}
+09:08:56 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:08:57 INFO app.services.mcp_client: MCP tool get_collection_contents returned 21920 chars
+09:08:57 INFO app.routers.chat: LP contents: 6639 chars, topic='Brüche'
+09:09:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56775 - "POST /api/chat HTTP/1.1" 200 OK
+09:09:10 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:09:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:09:14 INFO app.services.safety_service: safety stages=openai level=standard took 458ms
+09:09:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:17 INFO app.services.llm_service: system_prompt[response] tokens=9983 (was=7998, cache-eligible=True)
+09:09:17 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=5)
+09:09:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:18 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'bruchrechnung', 'contentFilter': 'both', 'maxResults': 5, 'query': 'Bruchrechnung'}
+09:09:18 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'bruchrechnung', 'maxResults': 3}
+09:09:19 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:09:20 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3894 chars
+09:09:20 INFO app.services.mcp_client: get_collection_contents nodeId resolved: 'bruchrechnung' \u2192 d6c88b81-b639-4b89-94d7-c0507a3e90be (Bruchrechnung)
+09:09:20 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:09:21 INFO app.services.mcp_client: MCP tool get_collection_contents returned 6939 chars
+09:09:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:22 INFO app.services.llm_service: select_top_cards: 3 IDs picked — Grundlagen zuerst, dann Rechenoperationen, danach besondere Brüche als Vertiefung.
+09:09:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:24 INFO app.routers.chat: Outcome-based state hint: state-12 -> state-6
+INFO:     127.0.0.1:61122 - "POST /api/chat HTTP/1.1" 200 OK
+09:09:24 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:09:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:09:28 INFO app.services.safety_service: safety stages=openai level=standard took 375ms
+09:09:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:31 INFO app.services.llm_service: system_prompt[response] tokens=8103 (was=9983, cache-eligible=True)
+09:09:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:09:34 INFO app.services.llm_service: query_knowledge(WirLernenOnline): 3396 chars
+09:09:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:36 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Kannst du mir Schritt für Schritt erklären, wie ich eine Zus'
+INFO:     127.0.0.1:59127 - "POST /api/chat HTTP/1.1" 200 OK
+09:09:36 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:09:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:09:42 INFO app.services.safety_service: safety stages=openai level=standard took 390ms
+09:09:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:09:46 INFO app.services.llm_service: query_knowledge(FAQ): 1010 chars
+09:09:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:09:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:49 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Kannst du mir erklären, wie ich die Schriftgröße im Canvas ä'
+INFO:     127.0.0.1:59132 - "POST /api/chat HTTP/1.1" 200 OK
+09:09:49 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:09:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:09:54 INFO app.services.safety_service: safety stages=openai level=standard took 522ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:09:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:09:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:09:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:09:58 INFO app.services.llm_service: query_knowledge(FAQ): 1216 chars
+09:10:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:00 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Ich verstehe nicht ganz, wie ich hier Feedback geben kann. K'
+INFO:     127.0.0.1:54314 - "POST /api/chat HTTP/1.1" 200 OK
+09:10:00 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:10:04 INFO app.services.safety_service: safety stages=openai level=standard took 393ms
+09:10:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:08 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich habe einen kaputten Link gefunden, kannst du da mal nach'
+INFO:     127.0.0.1:56320 - "POST /api/chat HTTP/1.1" 200 OK
+09:10:08 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:10:13 INFO app.services.safety_service: safety stages=openai level=standard took 998ms
+09:10:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:16 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier machen? Ich bin neu und möchte mich erstma'
+INFO:     127.0.0.1:63276 - "POST /api/chat HTTP/1.1" 200 OK
+09:10:16 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:10:21 INFO app.services.safety_service: safety stages=openai level=standard took 481ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:10:26 INFO app.services.llm_service: query_knowledge(WissenLebtOnline): 3433 chars
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:28 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist eigentlich das WLO-Ökosystem und wie ist es struktur'
+INFO:     127.0.0.1:53021 - "POST /api/chat HTTP/1.1" 200 OK
+09:10:28 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:10:30 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:10:31 INFO app.services.safety_service: safety stages=openai level=standard took 399ms
+09:10:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:34 INFO app.services.llm_service: system_prompt[response] tokens=8945 (was=8103, cache-eligible=True)
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:35 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:10:35 INFO app.services.llm_service: query_knowledge(Plattformwissen): 3374 chars
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:40 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Könnten Sie mir bitte einen Überblick über die verfügbaren K'
+INFO:     127.0.0.1:57339 - "POST /api/chat HTTP/1.1" 200 OK
+09:10:40 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:10:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:10:44 INFO app.services.safety_service: safety stages=openai level=standard took 362ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:46 INFO app.services.llm_service: system_prompt[response] tokens=9617 (was=8945, cache-eligible=True)
+09:10:46 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=4)
+09:10:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:47 INFO app.services.mcp_client: MCP tool get_subject_portals args: {'includeContentCounts': True}
+09:10:47 INFO app.services.mcp_client: MCP tool get_subject_portals cache HIT (48 entries)
+09:10:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:49 INFO app.routers.chat: Outcome-based state hint: state-4 -> state-6
+09:10:49 INFO app.routers.chat: Cards unterdrückt — kein konkretes Thema/Fach im Slot (pattern=P7)
+INFO:     127.0.0.1:57342 - "POST /api/chat HTTP/1.1" 200 OK
+09:10:49 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:51 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:10:52 INFO app.services.safety_service: safety stages=openai level=standard took 350ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:10:54 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:10:54 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Bildungspolitik'
+09:10:54 INFO app.routers.chat: LP search: topic='Bildungspolitik' skip=0
+09:10:54 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bildungspolitik', 'maxItems': 5, 'skipCount': 0}
+09:10:54 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:00 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 184 chars
+09:11:00 WARNING app.services.mcp_client: parse_wlo_cards: not a JSON envelope (first 80 chars: 'Keine Sammlungen gefunden für "Bildungspolitik". Versuche einen übergeordneten B')
+09:11:00 INFO app.routers.chat: LP found 0 collections
+09:11:00 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Bildungspolitik', 'maxItems': 10, 'skipCount': 0}
+09:11:01 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:03 INFO app.services.mcp_client: MCP tool search_wlo_content returned 13972 chars
+09:11:03 INFO app.routers.chat: LP thin-candidates fallback: added 8 content items
+09:11:03 INFO app.routers.chat: LP contents: 2539 chars, topic='Bildungspolitik'
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:15 INFO app.routers.chat: universal type-filter: 4 \u2192 0 cards (medientyp=['struktur'])
+09:11:15 INFO app.routers.chat: safety-net (kacheln): leere Cards — Fallback-Search auf 'Könnten Sie mir bitte einen strukturierten Lernpfad zu den a'
+09:11:15 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Könnten Sie mir bitte einen strukturierten Lernpfad zu den aktuellen Vorgaben im Bereich Bildungspolitik bereitstellen? Ich interessiere mich dafür, wie diese in unseren Schulen umgesetzt werden können.', 'maxResults': 5}
+09:11:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:18 INFO app.services.mcp_client: MCP tool search_wlo_content returned 4396 chars
+09:11:18 INFO app.routers.chat: fallback inline search: 2 Cards für query='Könnten Sie mir bitte einen strukturierten Lernpfad zu den a'
+09:11:18 INFO app.routers.chat: safety-net (kacheln): 2 Cards aus Fallback
+C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': 'e0245be5-492...4f42-bc76-4c000bffd6c4'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WloCard` - serialized value may not be as expected [input_value={'node_id': '7825f54d-989...44aa-bd9e-5b9e80b1198e'}, input_type=dict])
+  return self.serializer.to_json(
+INFO:     127.0.0.1:57345 - "POST /api/chat HTTP/1.1" 200 OK
+09:11:18 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:11:22 INFO app.services.safety_service: safety stages=openai level=standard took 387ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:25 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=7)
+09:11:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:26 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'KPIs Verwaltung', 'maxResults': 5}
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:26 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:33 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 184 chars
+09:11:33 WARNING app.services.mcp_client: parse_wlo_cards: not a JSON envelope (first 80 chars: 'Keine Sammlungen gefunden für "KPIs Verwaltung". Versuche einen übergeordneten B')
+09:11:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:34 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'KPIs Verwaltung', 'maxResults': 5}
+09:11:34 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+09:11:35 INFO app.services.mcp_client: MCP tool search_wlo_content returned 47 chars
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:36 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Kennzahlen Statistik Daten auswerten', 'maxResults': 5}
+09:11:37 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:39 INFO app.services.mcp_client: MCP tool search_wlo_content returned 13140 chars
+09:11:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:40 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+INFO:     127.0.0.1:65529 - "POST /api/chat HTTP/1.1" 200 OK
+09:11:40 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:11:45 INFO app.services.safety_service: safety stages=openai level=standard took 404ms
+09:11:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:47 INFO app.services.llm_service: system_prompt[response] tokens=8989 (was=9617, cache-eligible=True)
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+09:11:50 INFO app.services.llm_service: query_knowledge(WissenLebtOnline): 3406 chars
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:52 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Könnten Sie mir bitte einen neuen Bericht über die aktuellen'
+INFO:     127.0.0.1:52200 - "POST /api/chat HTTP/1.1" 200 OK
+09:11:52 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:11:57 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:11:57 INFO app.services.safety_service: safety stages=openai level=standard took 359ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:11:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:12:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:00 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Könnten Sie bitte die KPIs auf der aktuellen Canvas-Seite an'
+INFO:     127.0.0.1:52207 - "POST /api/chat HTTP/1.1" 200 OK
+09:12:00 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:12:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:12:05 INFO app.services.safety_service: safety stages=openai level=standard took 621ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:12:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:08 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich möchte Ihnen ein Feedback zur letzten Antwort geben: Die'
+INFO:     127.0.0.1:52210 - "POST /api/chat HTTP/1.1" 200 OK
+09:12:08 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:12:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:12 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:12:12 INFO app.services.safety_service: safety stages=openai level=standard took 853ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:12:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:12:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:16 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich habe einen fehlerhaften Link in einem Bericht gefunden, '
+INFO:     127.0.0.1:65328 - "POST /api/chat HTTP/1.1" 200 OK
+09:12:16 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:12:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+09:12:21 INFO app.services.safety_service: safety stages=openai level=standard took 397ms
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:12:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:23 INFO app.services.llm_service: system_prompt[response] tokens=7830 (was=8989, cache-eligible=True)
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+09:12:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:25 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Was kann ich hier machen, um einen Überblick über die aktuel'
+INFO:     127.0.0.1:65331 - "POST /api/chat HTTP/1.1" 200 OK
+09:12:25 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
+09:12:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+09:12:27 INFO app.services.eval_service: [eval eval-723b26b3bedd] done in 1178.5s, avg=0.77, 80/80 turns
+INFO:     ::1:0 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs/eval-723b26b3bedd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59891 - "GET /api/eval/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55291 - "GET /api/eval/runs/eval-723b26b3bedd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60928 - "GET /api/eval/runs/eval-723b26b3bedd HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs/eval-caa91cb80248 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/eval/runs/eval-886e4835e9bf HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=05-knowledge%2Frag-config.yaml HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/file?path=05-knowledge%2Frag-config.yaml HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/rag/areas HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/rag/areas HTTP/1.1" 200 OK
+09:41:53 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/routing-rules HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/stats?days=7 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/lookups HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/stats?days=7 HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/routing-rules/lookups HTTP/1.1" 200 OK
+09:41:54 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+09:41:54 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+INFO:     ::1:0 - "GET /api/config/mcp-servers HTTP/1.1" 200 OK
+INFO:     ::1:0 - "GET /api/config/mcp-servers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62691 - "GET /widget/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62691 - "GET /widget/boerdi-widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62691 - "GET /api/config/guide-mode HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55916 - "GET /widget/inline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54685 - "GET /widget/boerdi-widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55916 - "GET /api/static/boerdi.svg HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:54685 - "GET /api/config/guide-mode HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59157 - "GET /api/sessions/bb-5a49e18d-5f69-41bb-b39a-4c61e7b9ee72/messages?limit=20 HTTP/1.1" 200 OK
+11:02:01 INFO app.routers.chat: chat_stream START session=bb-055ec5e5-2eac-4613-b6d2-3a8f74c2f8a2 msg='Ich suche etwas zu einem Thema.' action=-
+INFO:     127.0.0.1:54852 - "POST /api/chat/stream HTTP/1.1" 200 OK
+11:02:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+11:02:01 INFO app.services.safety_service: safety stages=openai level=standard took 644ms
+11:02:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+11:02:04 INFO app.services.llm_service: system_prompt[response] tokens=9435 (was=7830, cache-eligible=True)
+11:02:05 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+11:02:06 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=[]) for msg='Ich suche etwas zu einem Thema.'
+11:02:06 INFO app.routers.chat: chat_stream END session=bb-055ec5e5-2eac-4613-b6d2-3a8f74c2f8a2 pattern=P13 (Slot-Klärung) tokens=18000/208 cached=0
+11:02:22 INFO app.routers.chat: chat_stream START session=bb-055ec5e5-2eac-4613-b6d2-3a8f74c2f8a2 msg='Bruchrechnung' action=-
+INFO:     127.0.0.1:63565 - "POST /api/chat/stream HTTP/1.1" 200 OK
+11:02:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+11:02:23 INFO app.services.safety_service: safety stages=openai level=standard took 413ms
+11:02:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+11:02:33 INFO app.services.llm_service: system_prompt[response] tokens=11333 (was=9435, cache-eligible=True)
+11:02:33 INFO app.services.llm_service: force_tool_use=true \u2192 tool_choice=required (active_tools=7)
+11:02:34 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+11:02:34 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Bruchrechnung', 'maxResults': 5}
+11:02:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+11:02:36 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 5589 chars
+11:02:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+11:02:38 INFO app.services.llm_service: select_top_cards: 4 IDs picked — Bruchrechnung ist der direkteste Treffer, Grundlagen der Bruchrechnung ergänzt den Einstieg, Ungleichungen ist thematisc
+11:02:39 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+11:02:39 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+11:02:39 INFO app.routers.chat: chat_stream END session=bb-055ec5e5-2eac-4613-b6d2-3a8f74c2f8a2 pattern=P6 (Material-Suche unspezifisch (Kuratie tokens=48329/399 cached=35968

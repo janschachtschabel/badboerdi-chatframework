@@ -1,0 +1,527 @@
+[
+  {
+    "name": "Bruchrechnung",
+    "turns": [
+      {
+        "turn": 1,
+        "user_msg": "Ich suche etwas zu einem Thema.",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-20",
+        "state": "state-4",
+        "llm_hint": "PAT-20",
+        "llm_match": true,
+        "turn_type": "initial",
+        "signals": [
+          "orientierungssuchend",
+          "vage Anfrage",
+          "thema genannt aber unkonkret"
+        ],
+        "entities": {},
+        "tools": [
+          "query_knowledge (prefetch)"
+        ],
+        "cards_total": 0,
+        "cards_dist": {
+          "collection": 0,
+          "content": 0,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [],
+        "qrs": [
+          "Ich suche Materialien zu Mathematik",
+          "Zeig mir Videos und Arbeitsblätter dazu",
+          "Ich bin Lehrkraft und will stöbern"
+        ],
+        "content_preview": "Klar — ich kann dir helfen, **Material zu einem Thema zu finden**, oder ich zeige dir erst mal, **wie WLO aufgebaut ist**. Wenn du magst, nenn mir einfach dein Thema, dann schau ich direkt in den Rega"
+      },
+      {
+        "turn": 2,
+        "user_msg": "Bruchrechnung",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-20",
+        "state": "state-4",
+        "llm_hint": "PAT-28",
+        "llm_match": false,
+        "turn_type": "follow_up",
+        "signals": [
+          "orientierungssuchend",
+          "zielgerichtet",
+          "thema genannt"
+        ],
+        "entities": {
+          "thema": "Bruchrechnung"
+        },
+        "tools": [
+          "query_knowledge (prefetch)",
+          "search_wlo_collections (prefetch-extra)",
+          "search_wlo_content (prefetch-extra)",
+          "search_wlo_content (prefetch-extra)",
+          "respond_to_user"
+        ],
+        "cards_total": 13,
+        "cards_dist": {
+          "collection": 4,
+          "content": 9,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [
+          "video"
+        ],
+        "qrs": [
+          "Mehr Grundlagen zeigen",
+          "Übungen dazu suchen",
+          "Für Sek I eingrenzen",
+          "Anderes Thema wählen"
+        ],
+        "content_preview": "Hier sind ein paar gute Einstiege zur **Bruchrechnung**. Ich habe dir erst mal die redaktionell sortierte Sammlung und dazu passende Lernvideos rausgesucht — damit kannst du direkt loslegen oder tiefe"
+      },
+      {
+        "turn": 3,
+        "user_msg": "nur videos",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-07",
+        "state": "state-6",
+        "llm_hint": "PAT-28",
+        "llm_match": false,
+        "turn_type": "follow_up",
+        "signals": [
+          "orientierungssuchend",
+          "eingrenzung nach medientyp",
+          "konkretes thema vorhanden"
+        ],
+        "entities": {
+          "thema": "Bruchrechnung",
+          "medientyp": "Video"
+        },
+        "tools": [
+          "query_knowledge (prefetch)",
+          "search_wlo_topic_pages (prefetch)",
+          "search_wlo_collections (prefetch-extra)",
+          "search_wlo_collections (prefetch-extra)",
+          "search_wlo_content",
+          "select_top_cards",
+          "respond_to_user"
+        ],
+        "cards_total": 9,
+        "cards_dist": {
+          "collection": 4,
+          "content": 5,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [
+          "video"
+        ],
+        "qrs": [
+          "Mehr einfache Videos",
+          "Nur Grundlagen zeigen",
+          "Anderes Mathe-Thema",
+          "Hat das geholfen?"
+        ],
+        "content_preview": "Hier sind passende **Videos zur Bruchrechnung**. Ich habe dir das direkt passende Erklärvideo zuerst gelegt, dazu noch eine gute Playlist-Übersicht für mehr Stoff zum Weiterklicken.\n\nWenn du willst, s"
+      },
+      {
+        "turn": 4,
+        "user_msg": "Photosynthese",
+        "persona": "P-W-SL",
+        "intent": "INT-W-03",
+        "pattern": "PAT-02",
+        "state": "state-6",
+        "llm_hint": "PAT-28",
+        "llm_match": false,
+        "turn_type": "topic_switch",
+        "signals": [
+          "orientierungssuchend",
+          "zielgerichtet",
+          "Thema genannt",
+          "Materialtyp eingeschraenkt auf Videos im Verlauf"
+        ],
+        "entities": {},
+        "tools": [
+          "query_knowledge (prefetch)",
+          "search_wlo_collections",
+          "search_wlo_content",
+          "respond_to_user"
+        ],
+        "cards_total": 5,
+        "cards_dist": {
+          "collection": 0,
+          "content": 5,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [
+          "arbeitsblatt",
+          "audio",
+          "experiment",
+          "unterrichtsbaustein/-reihe",
+          "video"
+        ],
+        "qrs": [
+          "Mehr Videos zeigen",
+          "Nur Sek I",
+          "Nur Grundlagen",
+          "Anderes Thema"
+        ],
+        "content_preview": "Hier sind passende Videos zur Photosynthese. Ich hab dir erst mal die redaktionell passende Sammlung und dann zwei gute Erklärvideos rausgelegt."
+      }
+    ]
+  },
+  {
+    "name": "Klimawandel",
+    "turns": [
+      {
+        "turn": 1,
+        "user_msg": "Ich suche etwas zu einem Thema.",
+        "persona": "P-AND",
+        "intent": "INT-W-02",
+        "pattern": "PAT-20",
+        "state": "state-1",
+        "llm_hint": "PAT-02",
+        "llm_match": false,
+        "turn_type": "initial",
+        "signals": [
+          "orientierungssuchend",
+          "vage Anfrage",
+          "Slot-Lücke"
+        ],
+        "entities": {},
+        "tools": [
+          "query_knowledge (prefetch)",
+          "respond_to_user"
+        ],
+        "cards_total": 0,
+        "cards_dist": {
+          "collection": 0,
+          "content": 0,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [],
+        "qrs": [
+          "Material zu Thema suchen",
+          "Themenseiten entdecken",
+          "Über WLO lernen"
+        ],
+        "content_preview": "Klar — ich kann dir Materialien zu einem Thema raussuchen oder dir erst mal zeigen, was es hier alles gibt. Wenn du magst, nenn mir einfach dein Thema; dann schaue ich direkt im Regal nach passenden S"
+      },
+      {
+        "turn": 2,
+        "user_msg": "Klimawandel",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-06",
+        "state": "state-5",
+        "llm_hint": "PAT-28",
+        "llm_match": false,
+        "turn_type": "follow_up",
+        "signals": [
+          "orientierungssuchend",
+          "konkretisiertes Thema",
+          "suche nach Inhalten"
+        ],
+        "entities": {
+          "thema": "Klimawandel"
+        },
+        "tools": [
+          "query_knowledge (prefetch)",
+          "search_wlo_topic_pages (prefetch)",
+          "search_wlo_collections (prefetch-extra)",
+          "search_wlo_content (prefetch-extra)",
+          "search_wlo_content (prefetch-extra)",
+          "respond_to_user"
+        ],
+        "cards_total": 10,
+        "cards_dist": {
+          "collection": 5,
+          "content": 5,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [
+          "audio",
+          "video"
+        ],
+        "qrs": [
+          "Mehr davon zeigen",
+          "Anderes Thema wählen",
+          "Nur Videos zeigen",
+          "Für Sek I eingrenzen"
+        ],
+        "content_preview": "Ich hab dir was zum Klimawandel aus dem Regal geholt. Da sind vor allem passende Sammlungen und einige einzelne Materialien dabei — schau mal, ob die Richtung für dich passt."
+      },
+      {
+        "turn": 3,
+        "user_msg": "nur videos",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-07",
+        "state": "state-6",
+        "llm_hint": "PAT-28",
+        "llm_match": false,
+        "turn_type": "follow_up",
+        "signals": [
+          "konkretes Thema genannt",
+          "Medientyp-Wunsch: nur Videos",
+          "Such-/Filterabsicht",
+          "folgt auf vorherige Themenanfrage"
+        ],
+        "entities": {
+          "thema": "Klimawandel",
+          "medientyp": "Video"
+        },
+        "tools": [
+          "query_knowledge (prefetch)",
+          "search_wlo_topic_pages (prefetch)",
+          "search_wlo_collections (prefetch-extra)",
+          "search_wlo_collections (prefetch-extra)",
+          "search_wlo_content",
+          "respond_to_user"
+        ],
+        "cards_total": 10,
+        "cards_dist": {
+          "collection": 5,
+          "content": 5,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [
+          "arbeitsblatt",
+          "audio",
+          "video"
+        ],
+        "qrs": [
+          "Mehr Videos zeigen",
+          "Für Grundschule suchen",
+          "Anderes Thema wählen",
+          "Hat das geholfen?"
+        ],
+        "content_preview": "Hier sind nur Videos zum Klimawandel. Ich hab die Suche extra auf Filmrollen statt auf gemischte Materialien gestellt — wenn du willst, grenze ich es noch auf Schule, Religion oder Geschichte ein."
+      },
+      {
+        "turn": 4,
+        "user_msg": "Goethe Faust",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-02",
+        "state": "state-6",
+        "llm_hint": "PAT-28",
+        "llm_match": false,
+        "turn_type": "topic_switch",
+        "signals": [
+          "orientierungssuchend",
+          "thematische Suche",
+          "medientyp eingeschränkt"
+        ],
+        "entities": {},
+        "tools": [
+          "query_knowledge (prefetch)",
+          "search_wlo_content",
+          "respond_to_user"
+        ],
+        "cards_total": 5,
+        "cards_dist": {
+          "collection": 0,
+          "content": 5,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [
+          "lernobjekt / -pfad",
+          "präsentation",
+          "textbausteine",
+          "video",
+          "übungsmaterial"
+        ],
+        "qrs": [
+          "Nur Sek II zeigen",
+          "Nur Faust I zeigen",
+          "Mehr zur Analyse",
+          "Anderes Thema wählen"
+        ],
+        "content_preview": "Für **Goethe / Faust** hab ich dir ein paar Videos rausgezogen. Besonders passend für den Einstieg ist **[Faust von Goethe | Zusammenfassung | Inhaltsangabe Deutsch](https://www.youtube.com/watch?v=rV"
+      }
+    ]
+  },
+  {
+    "name": "Photosynthese",
+    "turns": [
+      {
+        "turn": 1,
+        "user_msg": "Ich suche etwas zu einem Thema.",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-20",
+        "state": "state-5",
+        "llm_hint": "PAT-20",
+        "llm_match": true,
+        "turn_type": "initial",
+        "signals": [
+          "orientierungssuchend",
+          "vage Anfrage",
+          "Thema genannt aber unkonkret"
+        ],
+        "entities": {},
+        "tools": [
+          "query_knowledge (prefetch)",
+          "respond_to_user"
+        ],
+        "cards_total": 0,
+        "cards_dist": {
+          "collection": 0,
+          "content": 0,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [],
+        "qrs": [
+          "Bruchrechnung",
+          "Klimawandel",
+          "Ich will nur stöbern",
+          "Was kann ich hier finden?"
+        ],
+        "content_preview": "Klar — ich kann dir Lernmaterialien zu einem Thema raussuchen. Sag mir einfach das Thema, dann schau ich direkt ins Regal; wenn du magst, nenne auch grob die Bildungsstufe, dann wird’s treffsicherer. "
+      },
+      {
+        "turn": 2,
+        "user_msg": "Photosynthese",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-06",
+        "state": "state-5",
+        "llm_hint": "PAT-28",
+        "llm_match": false,
+        "turn_type": "follow_up",
+        "signals": [
+          "orientierungssuchend",
+          "zielgerichtet",
+          "thema genannt"
+        ],
+        "entities": {
+          "thema": "Photosynthese"
+        },
+        "tools": [
+          "query_knowledge (prefetch)",
+          "search_wlo_topic_pages (prefetch)",
+          "search_wlo_collections (prefetch-extra)",
+          "search_wlo_content (prefetch-extra)",
+          "search_wlo_content (prefetch-extra)",
+          "respond_to_user"
+        ],
+        "cards_total": 10,
+        "cards_dist": {
+          "collection": 5,
+          "content": 5,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [
+          "arbeitsblatt",
+          "audio",
+          "experiment",
+          "unterrichtsbaustein/-reihe",
+          "video"
+        ],
+        "qrs": [
+          "Mehr Materialien zeigen",
+          "Nur Arbeitsblätter",
+          "Für Sek I eingrenzen",
+          "Anderes Thema wählen"
+        ],
+        "content_preview": "Hier sind passende Materialien zu Photosynthese. Ich habe dir erst die kuratierte Sammlung und dann ein paar konkrete Inhalte dazu rausgezogen."
+      },
+      {
+        "turn": 3,
+        "user_msg": "nur videos",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-07",
+        "state": "state-6",
+        "llm_hint": "PAT-28",
+        "llm_match": false,
+        "turn_type": "follow_up",
+        "signals": [
+          "orientierungssuchend",
+          "zielgerichtet",
+          "medientyp_filter",
+          "thema_vorhanden"
+        ],
+        "entities": {
+          "thema": "Photosynthese",
+          "medientyp": "Video"
+        },
+        "tools": [
+          "query_knowledge (prefetch)",
+          "search_wlo_topic_pages (prefetch)",
+          "search_wlo_collections (prefetch-extra)",
+          "search_wlo_collections (prefetch-extra)",
+          "lookup_wlo_vocabulary",
+          "search_wlo_content",
+          "select_top_cards",
+          "respond_to_user"
+        ],
+        "cards_total": 10,
+        "cards_dist": {
+          "collection": 5,
+          "content": 5,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [
+          "experiment",
+          "video"
+        ],
+        "qrs": [
+          "Mehr Videos zeigen",
+          "Auch Arbeitsblätter suchen",
+          "Für Sek I eingrenzen",
+          "Hat das geholfen?"
+        ],
+        "content_preview": "Hier sind zwei passende Videos zu Photosynthese. Ich habe sie dir so sortiert, dass du erst einen gut erklärten Einstieg und dann eine vertiefende Fortsetzung bekommst."
+      },
+      {
+        "turn": 4,
+        "user_msg": "Französische Revolution",
+        "persona": "P-AND",
+        "intent": "INT-W-03",
+        "pattern": "PAT-02",
+        "state": "state-6",
+        "llm_hint": "PAT-28",
+        "llm_match": false,
+        "turn_type": "topic_switch",
+        "signals": [
+          "orientierungssuchend",
+          "zielgerichtet",
+          "Thema genannt",
+          "Medientyp-Wunsch implizit aus Kontext"
+        ],
+        "entities": {},
+        "tools": [
+          "query_knowledge (prefetch)",
+          "search_wlo_collections",
+          "search_wlo_content"
+        ],
+        "cards_total": 0,
+        "cards_dist": {
+          "collection": 0,
+          "content": 0,
+          "topic_page": 0,
+          "other": 0
+        },
+        "content_types": [],
+        "qrs": [
+          "Hast du auch ein Arbeitsblatt zur Französischen Revolution?",
+          "Gibt es dazu Videos für Klasse 8?",
+          "Mach mir ein Quiz zur Französischen Revolution",
+          "Erstell mir einen Lernpfad dazu"
+        ],
+        "content_preview": "Besonders gut zum Einstieg ist [Französische Revolution I Beginn I musstewissen Geschichte](https://www.youtube.com/watch?v=WCiYpgmSwLw), weil es die wichtigsten Stationen schön zusammenzieht. Wenn du"
+      }
+    ]
+  }
+]

@@ -1,0 +1,51 @@
+# RAG-Bereichskonfiguration
+# mode: always = immer im Kontext, on-demand = nur bei Bedarf
+
+WissenLebtOnline:
+  mode: on-demand
+  description: >
+    WissenLebtOnline (WLO) ist eine offene, KI-gestützte Infrastruktur, die Bildungsinhalte
+    erschließt, strukturiert und über Schnittstellen in Plattformen sowie Anwendungen
+    verbreitet. Das Dokument beschreibt Akteure, Funktionen und Mehrwerte des Ökosystems — von
+    OER-Community über Redaktionssoftware bis zur souveränen KI- und Dateninfrastruktur.
+
+WirLernenOnline:
+  mode: on-demand
+  description: >
+    WirLernenOnline (WLO) ist eine offene Bildungsplattform mit Suchmaschine, Fachportalen und
+    Community für frei nutzbare, qualitätsgeprüfte Lernmaterialien. Es erklärt außerdem OER,
+    Qualitätssicherung, Quellenerschließung, Plug-ins, Fachredaktionen und Mitmachmöglichkeiten
+    für Lehrende, Lernende und Partner.
+
+OER-Wissen:
+  mode: on-demand
+  description: "Wissen rund um OER, freie Bildungsinhalte, CC Lizenzen und vieles mehr."
+
+FAQ:
+  mode: on-demand
+  description: "Allgemeine FAQ mit Fragen und Antworten von verschiedenen Zielgruppen."
+
+Edu-Sharing-Network:
+  mode: on-demand
+  description: >
+    Der Verein edu-sharing.net e.V. ist ein gemeinnütziges Netzwerk, das Bildungsorganisationen
+    mit Open-Source-Technologien vernetzt, um Lerninhalte, Tools und Daten gemeinsam zu teilen.
+    Er entwickelt digitale Bildungsclouds, fördert OER und treibt Innovationen wie KI-basierte
+    Bildungsinfrastrukturen durch Projekte, Community-Arbeit und Kooperationen voran.
+
+Edu-Sharing-Metaventis:
+  mode: on-demand
+  description: >
+    Metaventis entwickelt edu-sharing als Open-Source-Lösung fuer Bildungscloud, E-Learning,
+    Suche und Content-Management, mit der Lerninhalte, Metadaten und Tools systemübergreifend
+    vernetzt, gefunden und geteilt werden können. Es zeigt die Anwendungsbereiche, Funktionen,
+    Integrationen, Releases, Downloads und Mehrwerte der Software fuer Lehrende, Redaktionen,
+    Autor:innen und Betreiber.
+
+Plattformwissen:
+  mode: on-demand
+  description: "Generelles Plattformwissen — interne Strategie, Roadmap, Funktionsweise."
+
+ITSJOINTLY-Schlussbericht:
+  mode: on-demand
+  description: "Schlussbericht des ITSJOINTLY-Projekts mit Auswertung und Kennzahlen."

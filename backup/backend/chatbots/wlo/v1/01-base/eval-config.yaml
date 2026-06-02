@@ -1,0 +1,22 @@
+# Eval-Setup Konfiguration (Studio-pflegbar).
+#
+# Steuert das Verhalten des Eval-Services beim Szenario-Generieren
+# und Judge-Aufrufen.  Diese Datei lebt im Layer 01-base und ist
+# bewusst klein gehalten — keine Tonalität/Routing-Logik hier.
+
+eval_setup:
+  # Persona-Marker-Gate (Block 1, Sprint 6) — beim Generieren von
+  # Szenarien prüft der Service, ob die LLM-generierte Eröffnung
+  # einen klaren Persona-Anker enthält (Wendungen wie "als Lehrkraft",
+  # "in meiner 9. Klasse", "Unterrichtsentwurf").
+  #
+  # Modi:
+  #   strict: Openings ohne Marker werden gedroppt (kein Szenario).
+  #           Aggressiv — bei knappen Marker-Listen kann das viele
+  #           valide Szenarien verlieren (>50% Drop-Rate beobachtet).
+  #   warn:   Loggt fehlende Marker, behält das Szenario aber bei.
+  #           Empfohlener Default — wir bekommen Telemetrie, ohne
+  #           Eval-Runs zu verstümmeln.
+  #   off:    Keine Marker-Prüfung. Sinnvoll, wenn der Run gezielt
+  #           untypische Combos testen soll (Cross-Persona).
+  persona_marker_gate: warn

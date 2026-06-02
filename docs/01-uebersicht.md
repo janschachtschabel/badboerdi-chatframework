@@ -13,8 +13,8 @@ Das Framework besteht aus **drei Softwarebestandteilen**, die als Docker-Contain
 Das Backend ist das Herzstueck — es verarbeitet Chat-Nachrichten, klassifiziert Nutzeranfragen, fuehrt Sicherheitspruefungen durch und generiert Antworten.
 
 **Kernfunktionen:**
-- **Chat-Pipeline** — 7-phasige Verarbeitung jeder Nachricht (Eingabe, Klassifikation, Steuerung, Modulation, Ausfuehrung, Feedback, Observability)
-- **5-Schichten-Architektur** — YAML/Markdown-basierte Chatbot-Konfiguration in `chatbots/wlo/v1/` (Identitaet, Domain, Patterns, Dimensionen, Wissen)
+- **Chat-Pipeline** — Eingabe → Safety+Klassifikation+Memory (parallel) → Pattern-Selektion (Hint-Primary) → Phase-3-Modulation → MCP-/RAG-Reflection-Loop → Response → Quality-Log
+- **Schichten-Architektur** — YAML/Markdown-basierte Chatbot-Konfiguration in `chatbots/wlo/v1/` (Identität, Domain, Patterns, Dimensionen, Wissen, Routing-Rules) — siehe [Architektur-Doc](./02-architektur.md)
 - **Safety-Pipeline** — 3-stufige Sicherheitspruefung (Regex, OpenAI Moderation, LLM-Rechtsklassifikator)
 - **MCP-Tool-Integration** — Anbindung an externe Datenquellen (WLO edu-sharing: Sammlungen, Materialien, Themenseiten mit zielgruppenspezifischen Varianten)
 - **RAG-Wissensbereiche** — Vektorbasierte Wissensdatenbank mit Always-On und On-Demand-Bereichen, inkl. Seed-System fuer initiale Wissensbasis bei Neuinstallation
@@ -38,15 +38,17 @@ Das Backend ist das Herzstueck — es verarbeitet Chat-Nachrichten, klassifizier
 Das Studio ist die Konfigurations-Oberflaeche. Hier werden alle 5 Architektur-Schichten visuell editiert — ohne YAML-Dateien manuell anfassen zu muessen.
 
 **Kernfunktionen:**
-- **Schicht 1 — Identitaet & Schutz:** Persona-Editor, Safety-Preset-Auswahl (off/regex/standard/strict/paranoid), Geraete-Konfiguration
-- **Schicht 2 — Domain & Regeln:** Domain-Regel-Editor, Policy-Verwaltung (Persona/Intent-basierte Tool-Blockaden)
-- **Schicht 3 — Patterns:** Visueller Pattern-Editor mit Gate-Konfiguration, Signal-Fit-Gewichten, Ton/Laenge/Detail-Defaults
-- **Schicht 4 — Dimensionen:** Persona-Verwaltung, Intent-Definitionen, Entity-Slots, Signal-Modulationstabelle, State-Definitionen, Kontext-Definitionen
+- **Schicht 1 — Identität & Schutz:** Safety-Preset-Auswahl (off/regex/standard/strict/paranoid), Geräte-Konfiguration, Tone-Modifier-Defaults, Display- und Widget-Regeln
+- **Schicht 2 — Domain & Regeln:** Domain-Regel-Editor, Policy-Verwaltung (Persona/Intent-basierte Tool-Blockaden + Disclaimer)
+- **Schicht 3 — Patterns:** Visueller Pattern-Editor mit 5 Tabs (Identität / Antwort-Form / Tools & Wissen / Slots & Degradation / Anweisungen). Welle E v4: Gates und Score sind aus der Engine raus — der Klassifikator-Hint wählt das Pattern.
+- **Schicht 4 — Dimensionen:** Persona-Editor (Tonalitäts-Modifier + Klassifikations-Marker — kein Pattern-Mapping mehr), Intent-Definitionen mit Trigger-Verben und Diskriminatoren, Entity-Slots, State-Verlaufs-Phasen, Signal-Modulationstabelle
 - **Schicht 5 — Wissen:** RAG-Wissensbereiche (Dokument-Upload per Datei/URL/Text, Mode-Toggle always/on-demand), MCP-Server-Registry mit Tool-Discovery
-- **Sessions:** Gespraechsverlauf-Einsicht mit Replay
-- **Safety-Logs:** Risiko-Events, Rate-Limit-Uebersicht
-- **Quality-Analytics:** Quality-Logs und aggregierte Metriken (Pattern-Verteilung, Confidence, Degradation-Rate)
-- **Import/Export:** Komplette Konfiguration als JSON, Backup/Restore
+- **Routing-Rules:** Korrektur-Schicht für klare Edge-Cases. Eval-getriebene Lösch-Vorschläge bei redundanten Rules.
+- **Sessions:** Gesprächsverlauf-Einsicht mit Replay
+- **Safety-Logs:** Risiko-Events, Rate-Limit-Übersicht
+- **Quality-Analytics:** Quality-Logs und aggregierte Metriken (Pattern-Verteilung, Confidence, Degradation-Rate, Pattern-Hint-vs-Final-Disagreement)
+- **Evaluation:** Persona-/Intent-Eval-Runs mit Judge-LLM, Pattern-Disagreement-Analyse, Per-Turn-Detail-View
+- **Import/Export:** Komplette Konfiguration als ZIP, Backup/Restore
 - **Passwortschutz:** Optionaler Login via `STUDIO_PASSWORD` (Cookie-basiert)
 
 **Technologie:** Next.js 15, React 18, TypeScript

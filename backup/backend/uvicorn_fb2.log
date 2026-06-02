@@ -1,0 +1,56 @@
+INFO:     Started server process [34044]
+INFO:     Waiting for application startup.
+14:33:13 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+14:33:13 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+14:33:13 INFO startup: Config warmup done in 41ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+14:33:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:33:14 INFO startup: LLM warmup done in 1261ms
+INFO:     127.0.0.1:60518 - "GET /api/health HTTP/1.1" 200 OK
+14:34:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:34:15 INFO app.services.safety_service: safety stages=openai level=standard took 503ms
+14:34:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:34:16 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-03c args={'query': 'Eiszeit', 'maxResults': 5}
+14:34:16 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Eiszeit', 'maxResults': 5}
+14:34:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:34:17 INFO app.services.mcp_client: MCP server: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:34:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:34:17 INFO app.services.mcp_client: MCP handshake complete
+14:34:18 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:34:19 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 692 chars
+14:34:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+14:34:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+14:34:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+14:34:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+14:34:20 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12928 chars
+14:34:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:34:21 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'collectionId': 'f1a058f6-ae81-4545-9b77-af2dcea6257d', 'maxResults': 5}
+14:34:21 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:34:22 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 28 chars
+14:34:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:34:23 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+14:34:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56252 - "POST /api/chat HTTP/1.1" 200 OK
+14:34:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:34:40 INFO app.services.safety_service: safety stages=openai level=standard took 380ms
+14:34:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:34:41 INFO app.routers.chat: speculative search_wlo_content for intent=INT-W-03b args={'query': 'Eiszeit', 'maxResults': 5, 'learningResourceType': 'Einzelmaterialien'}
+14:34:41 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Eiszeit', 'maxResults': 5, 'learningResourceType': 'Einzelmaterialien'}
+14:34:41 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+14:34:41 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:34:41 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars
+14:34:41 INFO app.services.mcp_client: lrt label\u2192URI cache loaded: 100 entries
+14:34:41 INFO app.services.mcp_client: no URI for learningResourceType='Einzelmaterialien' (vocab=lrt); passing label through
+14:34:42 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+14:34:44 INFO app.services.mcp_client: MCP tool search_wlo_content returned 3321 chars
+14:34:44 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
+14:34:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+14:34:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+14:34:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+14:34:45 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+14:34:45 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12651 chars
+14:34:47 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+14:34:47 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+14:34:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52354 - "POST /api/chat HTTP/1.1" 200 OK

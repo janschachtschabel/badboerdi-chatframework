@@ -247,12 +247,50 @@ curl https://studio.meinedomain.de
 Watchtower prueft alle 5 Minuten Docker Hub auf neue `:latest`-Images. Ablauf:
 1. Push auf `main` → GitHub Actions baut neue Images (~5 min)
 2. Watchtower erkennt neues Image-Digest → zieht Image → Rolling Restart
-3. Volumes und Bind-Mounts bleiben erhalten
+3. **Nur das Image** wird getauscht: Volumes (DB) bleiben — aber die Bind-Mount-Configs (`./backend/chatbots`, `./backend/knowledge`) und das ins Image gebackene Widget-Bundle werden so **NICHT** aktualisiert. Für ein vollständiges Update siehe **"Update / Release"** direkt unten.
 
 Ueberwachung:
 ```bash
 docker compose logs watchtower
 ```
+
+### Update / Release — der richtige Weg
+
+> **Wichtig:** Ein reines `docker compose pull` (oder Watchtower) aktualisiert **nur den Code im Image**. Die Bind-Mount-Configs (`./backend/chatbots/`, `./backend/knowledge/`) kommen vom Host-Filesystem (`git pull`), und das Widget-Bundle (`backend/widget_dist/main.js`) wird ins Image gebacken (muss also VOR dem CI-Build neu gebaut + committet sein). Wer das überspringt, deployt neuen Code auf alter Config / altem Widget — ein häufiger, schwer zu findender Fehler.
+
+**1. Auf dem Dev-Rechner (im git-Repo) — nur wenn das Frontend geändert wurde:**
+
+Das Widget-Bundle muss neu gebaut, nach `backend/widget_dist/` kopiert und committet werden — dafür gibt es ein fertiges Script:
+
+```bash
+# Windows
+powershell scripts/sync-widget-to-backend.ps1 -Commit
+# Linux/macOS
+./scripts/sync-widget-to-backend.sh        # baut + kopiert; danach git commit + push
+```
+
+Danach die übrigen Änderungen committen + pushen. GitHub Actions baut die Images (~5 Min).
+
+**2. Auf dem vServer — immer mit dem Update-Script, nicht von Hand:**
+
+```bash
+cd /opt/badboerdi
+./scripts/update-vserver.sh
+```
+
+Das Script macht alle Schritte korrekt: Pre-Update-Snapshot, lokale Studio-Edits stashen, **`git pull`** (zieht neue Patterns/Personas/Guardrails/Web-Tour in die Bind-Mounts), `docker compose pull backend studio chatbot`, `up -d --force-recreate`, Health-Check und Endpoint-Verifikation (`/api/health`, `/api/config/guide-mode`, `/widget/boerdi-widget.js`). Optionen: `--reset-edits` (Studio-Edits verwerfen), `--skip-snapshot`, `--dry-run`.
+
+> Voraussetzung: `/opt/badboerdi` ist ein **git-Klon** des Repos und hat eine `.env` mit `STUDIO_API_KEY` (für den Snapshot-Call). Bei einem Konflikt im `git stash pop` manuell auflösen — oder mit `--reset-edits` fahren.
+
+**Faustregel, was woher kommt:**
+
+| Artefakt | Quelle | Update über |
+|---|---|---|
+| Backend-/Studio-Code | Docker-Image | CI-Build + `docker compose pull` |
+| Config (Patterns, Personas, Guardrails, Web-Tour, RAG-Seed) | Bind-Mount `./backend/chatbots` + `./backend/knowledge` | `git pull` |
+| Widget-Bundle | ins Image gebacken (`widget_dist`) | `sync-widget-to-backend` + CI-Build |
+
+`update-vserver.sh` deckt alle drei in einem Lauf ab — deshalb **nie** nur `docker compose pull` für ein Release verwenden.
 
 ### Memory-Sizing & Reranker-Toggle
 
@@ -419,6 +457,16 @@ el.isChatbotOpen();    // → boolean
 ```
 
 Vollstaendige Payload-Schemas und Embed-Beispiele → [docs/05-widget-javascript-api.md](./05-widget-javascript-api.md)
+
+### Webseiten-Tour (gefuehrte Besucherfuehrung)
+
+Optionale gefuehrte Tour durch die wichtigsten WLO-Seiten (Startseite → Zielgruppe → Bildungsinhalte → Angebote → Mitmachen). Inhalt (Texte, Ziel-URLs, die 7 Besucher-Gruppen, Gruppe→Angebot-Mapping) ist **Studio-pflegbar** in `chatbots/wlo/v1/01-base/website-tour.yaml` — Studio-Tab **🌐 Domain & Regeln → „Webseiten-Tour"**. Das Verhalten (State-Machine, Ankunfts-Erkennung) ist deterministischer Code (`app/services/tour_service.py`), **kein** Pattern. Feature-Doku: README §2.8.
+
+**Deployment-Voraussetzungen** (sonst greift die Ankunfts-Erkennung nicht):
+
+1. Widget **site-weit** auf den Tour-Zielseiten einbetten — beim Page-Load feuert ein unsichtbarer „Tick" mit der aktuellen Seite; nur so erkennt der Bot die Ankunft und liefert den naechsten Schritt.
+2. `persist-session="true"` (bzw. Cookie / `?bsid=`) — damit die laufende Tour den WordPress-Full-Page-Reload nach jedem „Bring mich hin"-Klick ueberlebt.
+3. `base_host` in `website-tour.yaml` auf den laufenden Host setzen (Test: `wp-test…`, Prod: `https://wirlernenonline.de`).
 
 ### Widget-Embed-Modi (kompakte Embed-Varianten)
 

@@ -1,0 +1,16 @@
+# Setup-only dependencies — NOT needed at runtime.
+# Used by scripts/setup.py to export the RAG reranker to ONNX once.
+#
+# Install once after `git clone`:
+#   pip install -r requirements-setup.txt \
+#     --extra-index-url https://download.pytorch.org/whl/cpu
+#   python -m scripts.setup
+#
+# After the export the files under backend/models/ are all that's
+# needed at runtime — `onnxruntime` + `transformers` (already in
+# requirements.txt) are enough to run the reranker. torch etc. can
+# be uninstalled if disk is tight.
+
+optimum[onnxruntime]>=1.23.0
+sentence-transformers>=3.0.0
+torch>=2.0
