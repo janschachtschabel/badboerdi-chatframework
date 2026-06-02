@@ -71,58 +71,6 @@
           </button>
         </div>
 
-        <!-- Compact collection-action bar: only shown when the canvas is NOT
-             open (otherwise the canvas owns every interaction and the chat
-             stays purely textual, as the user explicitly asked). -->
-        <div *ngIf="msg.cards && msg.cards.length && !hideCards && hasCollectionCards(msg) && false"
-             class="collection-shortcuts">
-          <ng-container *ngFor="let card of getCollectionCards(msg)">
-            <div class="coll-row">
-              <div class="coll-row-title">
-                <span *ngIf="card.topic_pages && card.topic_pages.length"
-                      class="chip chip-typpille chip-tp-topicpage">
-                  <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
-                  <span>Themenseite</span>
-                </span>
-                <span *ngIf="!(card.topic_pages && card.topic_pages.length)"
-                      class="chip chip-typpille chip-tp-sammlung">
-                  <span class="bb-icon" [innerHTML]="ICONS.auto_stories | safeSvg"></span>
-                  <span>Sammlung</span>
-                </span>
-                <span class="coll-row-name">{{ card.title }}</span>
-              </div>
-              <div class="coll-row-actions">
-                <button type="button" class="card-btn card-btn--primary"
-                        [disabled]="isLoading"
-                        (click)="browseCollection(card.node_id, card.title)">
-                  <span class="bb-icon" [innerHTML]="ICONS.list | safeSvg"></span>
-                  <span>Inhalte</span>
-                </button>
-                <button type="button" class="card-btn card-btn--secondary"
-                        [disabled]="isLoading"
-                        (click)="generateLearningPath(card.node_id, card.title)">
-                  <span class="bb-icon" [innerHTML]="ICONS.route | safeSvg"></span>
-                  <span>Lernpfad</span>
-                </button>
-                <a *ngIf="card.topic_pages && card.topic_pages.length"
-                   class="card-btn card-btn--tertiary"
-                   [href]="withBsid(card.topic_pages[0].url)"
-                   target="_blank"
-                   rel="noopener noreferrer"
-                   [title]="cardTooltip(card, card.topic_pages[0].url)">
-                  <span class="bb-icon" [innerHTML]="ICONS.language | safeSvg"></span>
-                  <span>Themenseite</span>
-                </a>
-                <button type="button" class="card-btn card-btn--remix"
-                        [disabled]="isLoading"
-                        (click)="remixCard(card)">
-                  <span class="bb-icon" [innerHTML]="ICONS.refresh | safeSvg"></span>
-                  <span>Remix</span>
-                </button>
-              </div>
-            </div>
-          </ng-container>
-        </div>
 
         <!-- ──────── Grouped Result Display (Sprint 7 opt-in via
              ``inline-result-grouping="true"``) ──────────────────────────

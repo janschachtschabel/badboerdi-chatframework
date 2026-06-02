@@ -55,6 +55,27 @@ website_tour:
   # Frontend-Startbutton-Label (ersetzt einen der 4 festen Startbuttons).
   start_label: "Web-Tour starten"
 
+  # Getippte Auslöser: Enthält die Nutzer-Nachricht eine dieser Phrasen
+  # (Teilstring, case-insensitive) UND es läuft KEINE Tour, startet die Tour
+  # automatisch — auch mitten im Chat, nicht nur über den Startbutton.
+  # Redaktionell pflegbar. Bewusst eindeutige Phrasen, damit normale Suchen
+  # ("zeig mir material zu …") die Tour nicht versehentlich auslösen.
+  trigger_phrases:
+    - "web-tour"
+    - "webtour"
+    - "web tour"
+    - "tour starten"
+    - "starte die tour"
+    - "starte eine tour"
+    - "mach eine tour"
+    - "führ mich rum"
+    - "führ mich herum"
+    - "fuehre mich"
+    - "rundgang"
+    - "zeig mir die seite"
+    - "zeig mir die website"
+    - "wie funktioniert die seite"
+
   # ── Typische Besucher-Flows (Konzept 4.2) — Grundlage der Einstiege ─
   # Reine Dokumentation/Domänwissen. Die Spalte tour_einstieg sagt, an
   # welchem Schritt die Tour einsteigt, wenn der Besucher schon auf einer

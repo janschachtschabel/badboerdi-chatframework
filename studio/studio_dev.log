@@ -962,3 +962,93 @@
  GET /api/config/snapshots 200 in 32ms
  GET /api/config/factory 200 in 37ms
  GET /api/config/snapshots/snap-20260602-134128-update-2026-06-02-neuepattern/download 200 in 179ms
+ GET / 200 in 480ms
+ GET /api/config/elements 200 in 335ms
+ GET /api/health 200 in 53ms
+ GET /api/config/snapshots 200 in 66ms
+ GET /api/config/factory 200 in 87ms
+ GET /api/eval/runs 200 in 105ms
+ GET / 200 in 182ms
+ GET /api/config/elements 200 in 182ms
+ GET /api/health 200 in 50ms
+ GET /api/config/snapshots 200 in 57ms
+ GET /api/config/factory 200 in 68ms
+ GET /api/eval/runs 200 in 74ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 45ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 54ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 32ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 30ms
+ GET /api/quality/stats?scope=all 200 in 141ms
+ GET /api/quality/low-confidence?scope=all&limit=30 200 in 147ms
+ GET /api/quality/degradations?scope=all&limit=30 200 in 152ms
+ GET /api/quality/empty-entities?scope=all&limit=30 200 in 156ms
+ GET /api/quality/logs?limit=200&scope=all 200 in 398ms
+ GET /api/quality/low-confidence?scope=all&limit=30 200 in 228ms
+ GET /api/quality/stats?scope=all 200 in 249ms
+ GET /api/quality/degradations?scope=all&limit=30 200 in 258ms
+ GET /api/quality/empty-entities?scope=all&limit=30 200 in 261ms
+ GET /api/quality/logs?limit=200&scope=all 200 in 214ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 25ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 42ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 31ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 38ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 33ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 42ms
+ GET /api/config/file?path=01-base%2Fsafety-config.yaml 200 in 30ms
+ GET /api/config/file?path=01-base%2Fbase-persona.md 200 in 37ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 28ms
+ GET /api/config/file?path=02-domain%2Fdomain-rules.md 200 in 17ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 44ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 60ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 29ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 38ms
+ ✓ Compiled in 1911ms (560 modules)
+ ✓ Compiled /api/[...path] in 100ms (346 modules)
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 416ms
+ GET /api/config/elements 200 in 539ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 546ms
+ ✓ Compiled in 462ms (581 modules)
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 367ms
+ GET /api/config/file?path=01-base%2Fheader-nav.yaml 200 in 32ms
+ GET /api/config/elements 200 in 149ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 118ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 165ms
+ GET /api/config/file?path=01-base%2Fheader-nav.yaml 200 in 113ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 27ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 19ms
+ ✓ Compiled in 303ms (581 modules)
+ GET /api/config/file?path=01-base%2Fheader-nav.yaml 200 in 77ms
+ ✓ Compiled in 198ms (581 modules)
+ GET /api/config/file?path=01-base%2Fheader-nav.yaml 200 in 46ms
+ ✓ Compiled in 192ms (581 modules)
+ GET /api/config/file?path=01-base%2Fheader-nav.yaml 200 in 48ms
+ GET / 200 in 465ms
+ GET /api/config/elements 200 in 136ms
+ GET /api/health 200 in 36ms
+ GET /api/config/factory 200 in 43ms
+ GET /api/config/snapshots 200 in 46ms
+ GET /api/eval/runs 200 in 50ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 25ms
+ GET /api/config/file?path=01-base%2Fheader-nav.yaml 200 in 45ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 49ms
+ GET /api/config/file?path=01-base%2Fdisplay-rules.yaml 200 in 31ms
+ GET /api/config/file?path=01-base%2Fheader-nav.yaml 200 in 32ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 35ms
+ PUT /api/config/file 200 in 41ms
+ GET /api/config/elements 200 in 136ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 17ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 46ms
+ GET /api/config/snapshots 200 in 54ms
+ GET /api/config/factory 200 in 58ms
+ POST /api/config/factory/save 200 in 3140ms
+ POST /api/config/snapshots?label=update-2026-06-02-neuepattern-v2&include_db=true 200 in 2945ms
+ GET /api/config/factory 200 in 25ms
+ GET /api/config/snapshots 200 in 36ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 22ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 45ms
+ GET /api/config/snapshots 200 in 58ms
+ GET /api/config/factory 200 in 61ms
+ DELETE /api/config/snapshots/snap-20260602-134128-update-2026-06-02-neuepattern 200 in 28ms
+ GET /api/config/snapshots 200 in 20ms
+ GET /api/config/factory 200 in 30ms
+ GET /api/config/file?path=01-base%2Fdevice-config.yaml 200 in 24ms

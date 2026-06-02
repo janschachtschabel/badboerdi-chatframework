@@ -1069,47 +1069,6 @@ $accent-orange: #E79800;
 .chip-tp-topicpage { background: #CFFAFE; color: #155E75; border-color: #A5F3FC; }
 .chip-tp-inhalt    { background: #F3F4F6; color: #374151; border-color: #E5E7EB; }
 
-/* ── Collection-action shortcuts (compact row shown when canvas owns cards) ── */
-.collection-shortcuts {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 6px 0 4px;
-}
-
-.coll-row {
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
-  border-radius: 10px;
-  padding: 7px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.coll-row-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #111827;
-}
-.coll-row-name {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.coll-row-actions {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
 // ── Pagination Bar ──────────────────────────────────────────────────────────
 .pagination-bar {
   display: flex;

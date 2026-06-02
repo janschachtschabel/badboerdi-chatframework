@@ -257,17 +257,11 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   // immer noch. Statt jede Stelle anzufassen, geben wir konstantes ``true``
   // zurück. Die View-Conditionals werden separat aufgeräumt.
   get cardsEnabledBool(): boolean { return true; }
-  get canvasEnabledBool(): boolean { return false; }
   get quickRepliesEnabledBool(): boolean { return true; }
   get inlineResultGroupingBool(): boolean { return true; }
-  // Welle E: hideCards/canvasShowingCards/guideModeActive/canvasActiveMarkdown
-  // wurden vom alten Canvas-Pane gespeist. Es gibt kein Canvas mehr — alle
-  // diese Felder sind konstant.
+  // Welle E: hideCards/guideModeActive sind Compat-Hüllen (Toggle entfernt).
   readonly hideCards: boolean = false;
-  readonly canvasShowingCards: boolean = false;
   readonly guideModeActive: boolean = true;
-  readonly canvasActiveMarkdown: string = '';
-  readonly canvasState: Record<string, any> | null = null;
 
   /** Wird vom Angular-Bindings-Layer aufgerufen wenn ein ``@Input()`` neu
    *  gesetzt wird. Wir nutzen es, um den ``_renderCache`` zu invalidieren
@@ -415,7 +409,7 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
     const replies = [
       'Wie kannst du mir helfen?',
       'Ich suche etwas zu einem Thema.',
-      'Was ist WirLernenOnline?',
+      'Was ist WissenLebtOnline?',
       ChatComponent.TOUR_START_LABEL,
     ];
     this.addBotMessage(text, false, undefined, replies);
@@ -461,7 +455,10 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
         const cards = Array.isArray(m.cards) ? m.cards : undefined;
         const webLinks = Array.isArray((m as any).webLinks) ? (m as any).webLinks : undefined;
         const queryMetas = Array.isArray((m as any).queryMetas) ? (m as any).queryMetas : undefined;
-        this.addBotMessage(content, false, cards, undefined, undefined, undefined, queryMetas, webLinks);
+        // debug mitgeben (enthält pattern="TOUR:…" + _type_focus): so werden
+        // auch wiederhergestellte Tour-Nachrichten als solche erkannt und die
+        // Result-Group-Boxen unterdrückt (siehe isTourMessage).
+        this.addBotMessage(content, false, cards, undefined, (m as any).debug, undefined, queryMetas, webLinks);
       }
     }
     // Nach dem Wiederherstellen ans Ende scrollen. Wir delegieren komplett
@@ -532,14 +529,6 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
         ? { page_context: this.parsedPageContext }
         : undefined;
 
-      // Edit-routing: only when the canvas shows markdown AND the user
-      // sent an explicit edit command. Search/browse questions ("Zeig mir",
-      // "Suche ...", "Was ist ...") must stay unrouted so the backend
-      // classifier can decide. Otherwise we'd hijack every message as an
-      // edit against the current canvas document.
-      const isEdit = !!(this.canvasActiveMarkdown && this.canvasActiveMarkdown.length > 0
-                        && this.isEditCommand(msg));
-
       // Phase-1 streaming — uses POST /api/chat/stream which emits SSE
       // ``phase`` events live during classify + tool-loop, so the loading
       // bubble shows what the bot is doing instead of a static spinner.
@@ -558,33 +547,25 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
       };
       let resp: ChatResponse;
       try {
-        resp = isEdit
-          ? await this.api.sendMessageStream(this.sessionId, msg, onEvent, envOverride,
-              'canvas_edit', {
-                current_markdown: this.canvasActiveMarkdown,
-                edit_instruction: msg,
-              }, this.canvasState)
-          : await this.api.sendMessageStream(this.sessionId, msg, onEvent, envOverride,
-              undefined, undefined, this.canvasState);
+        resp = await this.api.sendMessageStream(this.sessionId, msg, onEvent, envOverride);
       } catch (streamErr) {
         // Stream-API failed (network, proxy, parser) → silent fallback to
         // the legacy non-streaming endpoint so the user still gets an
         // answer. This also covers older backends without the /stream route.
         // eslint-disable-next-line no-console
         console.warn('chat stream failed, falling back to POST /chat:', streamErr);
-        resp = isEdit
-          ? await this.api.sendMessage(this.sessionId, msg, envOverride, 'canvas_edit', {
-              current_markdown: this.canvasActiveMarkdown,
-              edit_instruction: msg,
-            }, this.canvasState)
-          : await this.api.sendMessage(this.sessionId, msg, envOverride,
-              undefined, undefined, this.canvasState);
+        resp = await this.api.sendMessage(this.sessionId, msg, envOverride);
       }
 
       // Remove loading, add real response
       this.removeMessage(loadingId);
       const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, resp.query_metas, resp.web_links, resp.inline_documents, resp.display_rules, resp.topic_page);
       this.scrollTargetId = botMsgId;
+      // Die Web-Tour kann auch per getippter Trigger-Phrase starten — dann
+      // kommt die Tour-Antwort über DIESEN Normalpfad (nicht startTour()).
+      // Flag pflegen, damit der unsichtbare Tick nach dem nächsten
+      // Seitenwechsel feuert und die Tour weiterläuft.
+      this._applyTourState(resp);
 
       this.latestDebug = resp.debug;
 
@@ -718,10 +699,16 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
     }
     return env;
   }
-  /** Liest resp.tour und pflegt das localStorage-Flag (active=false → löschen). */
+  /** Liest resp.tour und pflegt das localStorage-Flag.
+   *  - ``resp.tour`` vorhanden → Flag = ``tour.active``.
+   *  - ``resp.tour`` FEHLT → es lief keine Tour mehr in dieser Antwort (z.B.
+   *    der Nutzer hat mitten in der Tour etwas anderes getippt → Backend hat
+   *    die Tour beendet und normal geantwortet). Flag sofort löschen, sonst
+   *    würde das Widget bei der nächsten Navigation noch einmal fälschlich
+   *    auto-öffnen. */
   private _applyTourState(resp: ChatResponse): void {
     const tour = (resp as any).tour;
-    if (tour && typeof tour === 'object') this._setTourFlag(!!tour.active);
+    this._setTourFlag(!!(tour && typeof tour === 'object' && tour.active));
   }
   /** Rendert eine Tour-Bot-Antwort wie eine normale Bot-Bubble. */
   private _renderTourResponse(resp: ChatResponse): void {
@@ -782,61 +769,6 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
     if (this._isTourFlagSet()) {
       setTimeout(() => this.sendTourTick(), 0);
     }
-  }
-
-  /** Heuristic: is the user message an explicit EDIT instruction for
-   *  the currently-open canvas document?
-   *
-   *  Positive signals (edit): "mach es einfacher", "füge ... hinzu",
-   *  "ergänze ...", "kürzer fassen", "ersetze ...", "lösche ...",
-   *  "mehr beispiele", "als ... umwandeln", plus the hard-coded
-   *  quick-reply labels from the edit handler.
-   *
-   *  Negative signals (NOT edit — will go to classifier): "zeig mir",
-   *  "suche", "finde", "welche/welches/welcher", "gibt es", "was ist",
-   *  "wer war", "erstelle", "generiere", "mach mir ein neues ...",
-   *  any question starting with a Fragewort.
-   *
-   *  When neither side matches, default to NON-edit — safer: the backend
-   *  classifier can still route to INT-W-11 if it really is an edit.
-   */
-  private isEditCommand(msg: string): boolean {
-    if (!msg) return false;
-    const low = msg.trim().toLowerCase();
-
-    // Hard negative: clear search / browse / create / question → never edit
-    const negativeStart = [
-      'zeig mir', 'zeige mir', 'zeig ', 'zeige ',
-      'suche', 'such ', 'finde', 'gibt es', 'hast du', 'hat wlo',
-      'welche', 'welches', 'welcher',
-      'was ist', 'was sind', 'wer ist', 'wer war', 'wie ',
-      'warum', 'wozu', 'wo ',
-      'erstelle', 'erstell ', 'generiere', 'generier', 'bau mir',
-      'schreib mir ein', 'schreib ein', 'schreib eine',
-      'mach mir ein ', 'mach mir eine ', 'mach ein ', 'mach eine ',
-      'neues thema', 'neuer lernpfad', 'neuer pfad',
-    ];
-    if (negativeStart.some(t => low.startsWith(t))) return false;
-
-    // Positive edit signals: verb or explicit edit phrase
-    const positiveAny = [
-      'einfacher', 'schwieriger', 'schwerer', 'kürzer', 'laenger', 'länger',
-      'mehr beispiele', 'mehr aufgaben', 'mehr uebungen', 'mehr übungen',
-      'weniger ',
-      'ergänze', 'ergaenze', 'füge ', 'fuege ', 'hinzu',
-      'entferne', 'lösche', 'loesche', 'streiche',
-      'ersetze', 'tausche', 'ändere', 'aendere', 'passe an', 'anpassen',
-      'korrigiere', 'korrektur', 'formuliere um', 'umformulieren',
-      'mit lösungen', 'mit loesungen', 'ohne lösungen', 'ohne loesungen',
-      'für klasse', 'fuer klasse',
-      'als arbeitsblatt umwandeln', 'als quiz umwandeln', 'als infoblatt umwandeln',
-      'zurück zum original', 'zurueck zum original',
-      'noch einfacher', 'noch schwerer',
-    ];
-    if (positiveAny.some(t => low.includes(t))) return true;
-
-    // Default: not an edit — let the backend classifier decide.
-    return false;
   }
 
   onKeydown(event: KeyboardEvent) {
@@ -1983,7 +1915,19 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
    *  Box-Anzeige bewusst minimal sein soll. ``groupedSearchUrl`` ist dann
    *  unser einziger sichtbarer Anker und muss als Trigger zählen.
    */
+  /** Tour-Antworten (``debug.pattern`` = „TOUR:…") sind bewusst rein
+   *  textbasiert: kuratierte Inline-Links (Angebote/Sublinks/Kontakt) +
+   *  ``__guide__``-Nav-Buttons. Sie tragen KEINE RAG-``web_links``. Die
+   *  Result-Group-Boxen würden via Content-Scrape-Fallback nur die Tour-
+   *  eigenen Links ein zweites Mal in die „Webseiten-Inhalte"-Box spiegeln
+   *  → Dopplung. Daher während der Tour komplett unterdrücken. */
+  isTourMessage(msg: ChatMessage): boolean {
+    const p = (msg?.debug as any)?.pattern;
+    return typeof p === 'string' && p.startsWith('TOUR:');
+  }
+
   hasGroupedResults(msg: ChatMessage): boolean {
+    if (this.isTourMessage(msg)) return false;
     const hasCards = !!(msg.cards && msg.cards.length);
     const hasWebLinks = this.groupedWebLinks(msg).length > 0;
     const hasSearchCta = !!this.groupedSearchUrl(msg);
@@ -2223,7 +2167,6 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
         undefined,
         'browse_collection',
         { collection_id: nodeId, title },
-        this.canvasState,
       );
       this.removeMessage(loadingId);
       const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, undefined, resp.web_links, resp.inline_documents, resp.display_rules);
@@ -2234,31 +2177,6 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       this.removeMessage(loadingId);
       const errId = this.addBotMessage(`Ich konnte die Inhalte von "${title}" leider nicht laden. Versuch es nochmal!`);
       this.scrollTargetId = errId;
-    }
-    this.isLoading = false;
-  }
-
-  /** Fetch a further page of a collection's contents. Called by the
-   *  canvas's "Mehr laden"-button. Response is merged by the widget
-   *  via append-mode in handlePageAction(canvas_show_cards).
-   */
-  async browseCollectionPage(nodeId: string, title: string, skipCount: number) {
-    if (this.isLoading) return;
-    this.isLoading = true;
-    try {
-      const resp = await this.api.sendMessage(
-        this.sessionId,
-        `Weitere Inhalte von "${title}"`,
-        undefined,
-        'browse_collection',
-        { collection_id: nodeId, title, skip_count: skipCount },
-        this.canvasState,
-      );
-      // No chat bubble for load-more; the canvas handles the merge.
-      this.latestDebug = resp.debug;
-      this.dispatchPageAction(resp.page_action);
-    } catch (err) {
-      // swallow — widget resets loading state
     }
     this.isLoading = false;
   }
@@ -2275,7 +2193,6 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
         undefined,
         'generate_learning_path',
         { collection_id: nodeId, title },
-        this.canvasState,
       );
       this.removeMessage(loadingId);
       const botMsgId = this.addBotMessage(resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination, undefined, resp.web_links, resp.inline_documents, resp.display_rules);
@@ -2290,80 +2207,12 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
     this.isLoading = false;
   }
 
-  /** Remix a card — create a new material of the same type based on the
-   *  chosen resource. Sends the full metadata set + source URL to the
-   *  backend, which pulls the full text (text-extraction service) before
-   *  calling the LLM so the new material is actually grounded in the
-   *  original content.
-   */
-  async remixCard(card: WloCard): Promise<void> {
-    if (!card || this.isLoading) return;
-    const title = (card.title || '').trim() || 'dem Inhalt';
-
-    // User-visible chat bubble so the interaction is transparent. The
-    // actual remix runs via the canvas_remix action below — no classifier
-    // roundtrip needed, the backend goes straight into the remix handler.
-    this.addUserMessage(`🔄 Remix: „${title}"`);
-    this.isLoading = true;
-    const loadingId = this.addBotMessage('', true);
-    this.scrollTargetId = loadingId;
-
-    try {
-      const envOverride = Object.keys(this.parsedPageContext).length
-        ? { page_context: this.parsedPageContext }
-        : undefined;
-      const resp = await this.api.sendMessage(
-        this.sessionId,
-        `Remix: ${title}`,
-        envOverride,
-        'canvas_remix',
-        {
-          title: card.title || '',
-          url: card.url || card.wlo_url || '',
-          description: card.description || '',
-          keywords: card.keywords || [],
-          disciplines: card.disciplines || [],
-          educational_contexts: card.educational_contexts || [],
-          learning_resource_types: card.learning_resource_types || [],
-          publisher: card.publisher || '',
-          license: card.license || '',
-        },
-        this.canvasState,
-      );
-      this.removeMessage(loadingId);
-      const botMsgId = this.addBotMessage(
-        resp.content, false, resp.cards, resp.quick_replies, resp.debug, resp.pagination,
-        undefined, resp.web_links, resp.inline_documents, resp.display_rules,
-      );
-      this.scrollTargetId = botMsgId;
-      this.latestDebug = resp.debug;
-      this.dispatchPageAction(resp.page_action);
-    } catch (err) {
-      this.removeMessage(loadingId);
-      this.addBotMessage(
-        `Den Remix für „${title}" konnte ich leider nicht erstellen. Versuch es nochmal.`,
-      );
-    }
-    this.isLoading = false;
-  }
 
   // ── Visible cards helper ────────────────────────────────
   getVisibleCards(msg: ChatMessage): WloCard[] {
     if (!msg.cards) return [];
     const limit = msg.visibleCardCount || 5;
     return msg.cards.slice(0, limit);
-  }
-
-  /** Collection cards from a message — used by the compact action-bar
-   *  that stays in the chat even when the full card grid lives in the canvas.
-   */
-  getCollectionCards(msg: ChatMessage): WloCard[] {
-    if (!msg.cards) return [];
-    return msg.cards.filter(c => c.node_type === 'collection' && c.node_id);
-  }
-
-  hasCollectionCards(msg: ChatMessage): boolean {
-    return this.getCollectionCards(msg).length > 0;
   }
 
   /** Exposed helper so the template can use the typ-aware URL resolver. */
@@ -2416,8 +2265,16 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       target = new URL(raw, window.location.href);
     } catch { return raw; }
     if (target.protocol !== 'http:' && target.protocol !== 'https:') return raw;
-    // Same-origin braucht kein bsid — Cookie/LocalStorage reicht.
-    if (target.origin === window.location.origin) return raw;
+    // Konsequent (Welle E): bsid wird AUCH bei same-origin angehängt. Die
+    // Session trägt zwar via Cookie/localStorage same-origin ohnehin, aber
+    // das Widget-Auto-Open (ngOnInit) und die Tour-Fortsetzung keyen auf
+    // ``?bsid=`` — so „folgt" der offene Chat dem Nutzer auch bei seiten-
+    // interner Navigation. Die bsid wird beim Laden in
+    // ``_resolvePersistedSessionId`` sofort wieder aus der URL gestrippt
+    // (history.replaceState) → keine Bookmark-/Referer-Leaks, saubere
+    // Adresszeile. Einziger Trade-off: same-origin-Requests tragen ``bsid``
+    // (möglicher Cache-Buster) — falls relevant, Cache so konfigurieren,
+    // dass der ``bsid``-Param ignoriert wird.
     // Trusted? Sonst kein bsid (keine Daten-Leakage an unbekannte Hosts).
     if (!this.isHostTrusted(target.hostname.toLowerCase())) return raw;
     // Schon vorhanden? Nicht doppelt.
@@ -2836,7 +2693,10 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
 
   renderMarkdown(text: string, sender: 'bot' | 'user' = 'bot'): SafeHtml {
     if (!text) return this.sanitizer.bypassSecurityTrustHtml('');
-    const cacheKey = sender + '|' + text;
+    // sessionId Teil des Cache-Keys: nach resetSession() ändert sich die
+    // bsid, die ``_withBsid`` in die Link-hrefs einbaut — ohne sessionId im
+    // Key würde eine gecachte Bubble mit ALTER bsid wiederverwendet.
+    const cacheKey = sender + '|' + (this.sessionId || '') + '|' + text;
     const cached = this._renderCache.get(cacheKey);
     if (cached) return cached;
     // Backend-Sentinel ``<!-- boerdi:printable-canvas|... -->`` strippen,

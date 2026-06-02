@@ -3312,6 +3312,25 @@ async def _handle_tour(
         )
 
     is_group_reply = active and step == "group" and action == ""
+
+    # Getippter Tour-Start: keine explizite ``tour_action`` und KEINE Tour
+    # aktiv, aber die Nachricht enthält eine Trigger-Phrase aus
+    # website-tour.yaml → wie Button-Start behandeln. Macht die Tour aus
+    # jedem Chat-Moment heraus startbar (eigener Auslöser, nicht nur der
+    # hartkodierte Startbutton). Die config ist mtime-gecacht (kein Extra-IO).
+    if action == "" and not active and not is_group_reply:
+        try:
+            _cfg_t = load_website_tour_config()
+            if _cfg_t.get("enabled", True):
+                _low = (req.message or "").strip().lower()
+                _trigs = _cfg_t.get("trigger_phrases") or []
+                if _low and any(
+                    str(t).strip().lower() in _low for t in _trigs if str(t).strip()
+                ):
+                    action = "start"
+        except Exception:
+            pass
+
     handle = (action == "start") or (action == "tick" and active) or is_group_reply
     if not handle:
         # Normale Nachricht. Läuft eine Tour in einem Nav-Warteschritt, sanft

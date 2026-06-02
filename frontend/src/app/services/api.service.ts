@@ -361,7 +361,6 @@ export class ApiService {
     env?: Partial<Environment>,
     action?: string,
     actionParams?: Record<string, any>,
-    canvasState?: Record<string, any> | null,
   ): Promise<ChatResponse> {
     const environment: Environment = {
       page: env?.page || window.location.pathname,
@@ -383,7 +382,6 @@ export class ApiService {
     };
     if (action) body['action'] = action;
     if (actionParams) body['action_params'] = actionParams;
-    if (canvasState) body['canvas_state'] = canvasState;
 
     const resp = await fetch(`${this.baseUrl}/chat`, {
       method: 'POST',
@@ -414,7 +412,6 @@ export class ApiService {
     env?: Partial<Environment>,
     action?: string,
     actionParams?: Record<string, any>,
-    canvasState?: Record<string, any> | null,
   ): Promise<ChatResponse> {
     const environment: Environment = {
       page: env?.page || window.location.pathname,
@@ -436,7 +433,6 @@ export class ApiService {
     };
     if (action) body['action'] = action;
     if (actionParams) body['action_params'] = actionParams;
-    if (canvasState) body['canvas_state'] = canvasState;
 
     const resp = await fetch(`${this.baseUrl}/chat/stream`, {
       method: 'POST',
@@ -555,27 +551,6 @@ export class ApiService {
       });
     } catch {
       return [];
-    }
-  }
-
-  /** Fetch the last canvas snapshot for a session so the widget can
-   *  rehydrate the canvas pane after a page refresh. Backend returns
-   *  ``{}`` when no canvas content has been persisted for the session;
-   *  the caller treats that as "nothing to restore". */
-  async loadCanvas(sessionId: string): Promise<{
-    title?: string;
-    material_type?: string;
-    material_type_label?: string;
-    material_type_category?: string;
-    markdown?: string;
-  }> {
-    try {
-      const resp = await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/canvas`);
-      if (!resp.ok) return {};
-      const data = await resp.json();
-      return (data && typeof data === 'object') ? data : {};
-    } catch {
-      return {};
     }
   }
 

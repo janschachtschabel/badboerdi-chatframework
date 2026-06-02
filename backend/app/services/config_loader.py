@@ -1180,6 +1180,42 @@ def load_guide_mode_config() -> dict[str, Any]:
     }
 
 
+def load_header_nav_config() -> dict[str, Any]:
+    """Optionale Kopfzeilen-Nav-Buttons des Widgets (01-base/header-nav.yaml).
+
+    Gibt ``{"buttons": [...]}`` zurück — nur valide, aktivierte Buttons mit
+    nicht-leerer URL. Studio-pflegbar; das Widget liest die Liste beim Boot
+    über ``/api/config/guide-mode`` (Feld ``header_nav``) und rendert sie links
+    vom Neustart-Button. Defekte/leere YAML → leere Liste (Buttons aus).
+    mtime-Cache via ``_load_yaml`` wie bei den übrigen Loadern.
+    """
+    data = _load_yaml("01-base/header-nav.yaml") or {}
+    cfg = data.get("header_nav") or {}
+    raw = cfg.get("buttons") or []
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for it in raw:
+        if not isinstance(it, dict):
+            continue
+        if not bool(it.get("enabled", True)):
+            continue
+        url = str(it.get("url") or "").strip()
+        if not url:
+            continue
+        bid = str(it.get("id") or "").strip() or f"btn{len(out)}"
+        if bid in seen:
+            continue
+        seen.add(bid)
+        out.append({
+            "id": bid,
+            "label": str(it.get("label") or "").strip() or bid,
+            "icon": str(it.get("icon") or "explore").strip(),
+            "url": url,
+            "new_tab": bool(it.get("new_tab", False)),
+        })
+    return {"buttons": out}
+
+
 def load_widget_modes_config() -> dict[str, Any]:
     """Load Widget-Embed-Modi configuration.
 

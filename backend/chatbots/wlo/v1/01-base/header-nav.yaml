@@ -1,0 +1,28 @@
+# Optionale Kopfzeilen-Navigations-Buttons im Widget (Studio-pflegbar).
+# Erscheinen LINKS vom „Neuer Chat"-Button, gleiches outlined-neutrales Design.
+# An Trusted-WLO-Hosts hängt das Widget dynamisch ?bsid=<sid> an, damit die
+# Chat-Session auf der Zielseite weiterläuft (sofern das Widget dort eingebettet
+# ist). icon: Name aus shared/icons.ts. new_tab: true → neuer Tab.
+
+header_nav:
+  buttons:
+    - id: home
+      enabled: true
+      label: "Startseite"
+      icon: home
+      url: "https://wp-test.wirlernenonline.de/home/"
+      new_tab: false
+
+    - id: fachportale
+      enabled: true
+      label: "Fachportale"
+      icon: topic
+      url: "https://wp-test.wirlernenonline.de/bildungsinhalte/fachportale/"
+      new_tab: false
+
+    - id: suche
+      enabled: true
+      label: "Suche im WLO-Repository"
+      icon: search
+      url: "https://repository.staging.openeduhub.net/edu-sharing/components/search"
+      new_tab: false

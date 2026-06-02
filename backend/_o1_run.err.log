@@ -1,50 +1,49 @@
-INFO:     Started server process [44088]
+INFO:     Started server process [43724]
 INFO:     Waiting for application startup.
-15:36:02 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
-15:36:02 INFO app.services.database: DB not empty (rag=906 sessions=279 messages=728) — factory skipped
-15:36:02 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
-15:36:02 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
-15:36:02 INFO startup: Config warmup done in 94ms
+21:06:11 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+21:06:11 INFO app.services.database: DB not empty (rag=906 sessions=287 messages=749) — factory skipped
+21:06:11 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+21:06:11 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
+21:06:12 INFO startup: Config warmup done in 100ms
 INFO:     Application startup complete.
-15:36:02 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
-15:36:02 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
-15:36:02 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
-15:36:03 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
-15:36:03 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'userRole'}
+21:06:12 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
+21:06:12 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+21:06:12 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+21:06:12 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+21:06:13 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'userRole'}
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 C:\Users\jan\miniconda3\Lib\site-packages\torch\cuda\__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
   import pynvml  # type: ignore[import]
-15:36:04 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-15:36:04 INFO startup: LLM warmup done in 2233ms
-15:36:05 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-15:36:05 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
-15:36:05 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-15:36:05 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-15:36:05 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-15:36:05 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
-15:36:06 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
-15:36:06 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
-15:36:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
-15:36:07 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
-15:36:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
-15:36:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
-15:36:07 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
-15:36:07 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
-15:36:08 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
-15:36:08 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
-15:36:09 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-15:36:09 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 943 chars in 5644 ms
-15:36:09 INFO app.services.mcp_client: userRole label\u2192URI cache loaded: 31 entries
-15:36:09 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-15:36:09 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars in 6279 ms
-15:36:09 INFO app.services.mcp_client: discipline label\u2192URI cache loaded: 190 entries
-15:36:09 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-15:36:09 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars in 5994 ms
-15:36:09 INFO app.services.mcp_client: educationalContext label\u2192URI cache loaded: 48 entries
-15:36:09 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-15:36:09 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars in 6688 ms
-15:36:09 INFO app.services.mcp_client: lrt label\u2192URI cache loaded: 100 entries
-15:36:09 INFO app.services.mcp_client: vocabulary prewarm: 4/4 geladen
-15:36:13 INFO numexpr.utils: NumExpr defaulting to 16 threads.
-15:36:15 INFO app.services.rag_service: Reranker warmup done in 13019ms
-15:39:58 INFO app.routers.config: factory-snapshot rebuilt from live state (12942332 bytes)
+21:06:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+21:06:15 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+21:06:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+21:06:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+21:06:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+21:06:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+21:06:15 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+21:06:15 INFO startup: LLM warmup done in 3832ms
+21:06:15 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+21:06:16 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+21:06:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+21:06:17 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+21:06:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+21:06:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+21:06:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+21:06:17 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+21:06:17 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+21:06:18 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+21:06:18 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+21:06:18 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars in 6886 ms
+21:06:18 INFO app.services.mcp_client: lrt label\u2192URI cache loaded: 100 entries
+21:06:18 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+21:06:18 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars in 6474 ms
+21:06:18 INFO app.services.mcp_client: discipline label\u2192URI cache loaded: 190 entries
+21:06:18 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+21:06:18 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars in 6063 ms
+21:06:18 INFO app.services.mcp_client: educationalContext label\u2192URI cache loaded: 48 entries
+21:06:18 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+21:06:18 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 943 chars in 5670 ms
+21:06:18 INFO app.services.mcp_client: userRole label\u2192URI cache loaded: 31 entries
+21:06:18 INFO app.services.mcp_client: vocabulary prewarm: 4/4 geladen
+21:06:22 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+21:06:25 INFO app.services.rag_service: Reranker warmup done in 13768ms

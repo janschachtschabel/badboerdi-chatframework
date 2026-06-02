@@ -15,6 +15,7 @@ import InfoView from '@/components/InfoView';
 import PrivacyView from '@/components/PrivacyView';
 import CanvasFormatsEditor from '@/components/CanvasFormatsEditor';
 import DisplayRulesView from '@/components/DisplayRulesView';
+import HeaderNavView from '@/components/HeaderNavView';
 import { SnapshotsModal } from '@/components/SnapshotsModal';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -557,6 +558,9 @@ export default function StudioPage() {
         {backendOnline && layer === 'display' && (
           <>
             <DisplayRulesView loadFile={loadFile} saveFile={saveFile} />
+            <div style={{ marginTop: 24 }}>
+              <HeaderNavView loadFile={loadFile} saveFile={saveFile} />
+            </div>
             <div style={{ marginTop: 24 }}>
               <ConfigTextEditor
                 title="Geräte-Konfiguration"

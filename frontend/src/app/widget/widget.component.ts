@@ -5,28 +5,23 @@ import {
 import { CommonModule } from '@angular/common';
 import { ChatComponent } from '../chat/chat.component';
 import { detectPageContext } from './page-context-detector';
-import { CanvasComponent, CanvasViewMode, CanvasCardAction } from '../canvas/canvas.component';
-import { ApiService, WloCard, PaginationInfo } from '../services/api.service';
+import { ApiService } from '../services/api.service';
 import { BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
 import { ICONS } from '../shared/icons';
 import { SafeSvgPipe } from '../shared/safe-svg.pipe';
 
-/** Snapshot of the canvas state — pushed onto history when the user
- *  drills down (e.g. Sammlung -> Inhalte, Kachel -> Preview) so the
- *  back-button can restore the previous view.
- */
-interface CanvasSnapshot {
-  markdown: string;
-  title: string;
-  materialTypeLabel: string;
-  cards: WloCard[];
-  query: string;
-  previewCard: WloCard | null;
-  preferredView: 'material' | 'cards' | 'preview';
+/** Optionaler Kopfzeilen-Nav-Button (aus 01-base/header-nav.yaml, vom Backend
+ *  über /api/config/guide-mode → ``header_nav`` geliefert). */
+interface HeaderNavButton {
+  id: string;
+  label: string;
+  icon: string;
+  url: string;
+  new_tab: boolean;
 }
 
 /**
- * BoerdiChatWidget — Floating Action Button + expandable chat panel + Canvas.
+ * BoerdiChatWidget — Floating Action Button + expandable chat panel.
  *
  * Used as a Custom Element <boerdi-chat>:
  *   <boerdi-chat
@@ -37,15 +32,12 @@ interface CanvasSnapshot {
  *     primary-color="#1c4587">
  *   </boerdi-chat>
  *
- * Panel-Layout:
- *   - Canvas zu → 420×820 (Chat einspaltig)
- *   - Canvas auf → 900×820 Desktop, Tab-Switch auf Mobile
- *   - Canvas liegt immer gegenueber der FAB-Kante (bottom-right FAB → Canvas links)
+ * Panel-Layout: 420×820 (Chat einspaltig), responsive bis Vollbild auf Mobile.
  */
 @Component({
   selector: 'boerdi-chat-widget',
   standalone: true,
-  imports: [CommonModule, ChatComponent, CanvasComponent, SafeSvgPipe],
+  imports: [CommonModule, ChatComponent, SafeSvgPipe],
   template: `
     <div class="boerdi-widget"
          [class.expanded]="expanded"
@@ -99,6 +91,18 @@ interface CanvasSnapshot {
             <!-- Welle E (2026-05-23): Lotsen-Toggle dauerhaft entfernt.
                  Lotsen-Modus ist immer aktiv — der Bot leitet auf
                  Repo-/Themenseiten-Links statt externer URLs. -->
+            <!-- Optionale Kopfzeilen-Nav-Buttons (Studio: header-nav.yaml),
+                 links vom Neustart-Button, gleiches outlined-neutrales Design.
+                 ?bsid= wird in headerNavHref dynamisch an Trusted-Links gehängt. -->
+            <a *ngFor="let b of headerNavButtons()"
+               class="boerdi-action-btn boerdi-action-btn--neutral"
+               [href]="headerNavHref(b)"
+               [attr.target]="b.new_tab ? '_blank' : null"
+               [attr.rel]="b.new_tab ? 'noopener noreferrer' : null"
+               [title]="b.label"
+               [attr.aria-label]="b.label">
+              <span class="boerdi-icon" [innerHTML]="headerNavIcon(b) | safeSvg"></span>
+            </a>
             <button class="boerdi-action-btn boerdi-action-btn--neutral"
                     (click)="chatRef?.restart()"
                     title="Neuer Chat">
@@ -286,10 +290,6 @@ interface CanvasSnapshot {
     .boerdi-panel.boerdi-panel--hidden {
       display: none !important;
     }
-    .boerdi-widget.with-canvas .boerdi-panel {
-      width: 900px;
-      max-width: calc(100vw - 40px);
-    }
     @keyframes boerdi-slidein {
       from { opacity: 0; transform: translateY(20px) scale(0.95); }
       to   { opacity: 1; transform: translateY(0)    scale(1); }
@@ -371,6 +371,7 @@ interface CanvasSnapshot {
     .boerdi-action-btn {
       position: relative;
       border: 0;
+      text-decoration: none;
       width: 32px;
       height: 32px;
       border-radius: 8px;
@@ -502,30 +503,7 @@ interface CanvasSnapshot {
       border-color: #94a3b8;
     }
 
-    /* Mobile tab switcher — hidden on desktop */
-    .boerdi-tabs {
-      display: none;
-      gap: 4px;
-      background: rgba(255,255,255,0.12);
-      padding: 2px;
-      border-radius: 8px;
-    }
-    .boerdi-tab {
-      background: transparent;
-      border: 0;
-      color: rgba(255,255,255,0.7);
-      padding: 4px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-    }
-    .boerdi-tab.active {
-      background: rgba(255,255,255,0.95);
-      color: var(--boerdi-primary);
-    }
-
-    /* ── Body (Flex: Canvas | Chat) ───────────────────────── */
+    /* ── Body (Chat) ───────────────────────── */
     .boerdi-panel-body {
       flex: 1;
       overflow: hidden;
@@ -543,48 +521,8 @@ interface CanvasSnapshot {
       min-height: 0;
       width: 100%;
     }
-    .boerdi-canvas-pane {
-      flex: 1 1 480px;
-      min-width: 0;
-      display: flex;
-      min-height: 0;
-      /* Canvas lives on the side OPPOSITE to the FAB anchor so it
-         expands toward the page center instead of off-screen. */
-      order: 0;
-    }
-    .boerdi-canvas-pane badboerdi-canvas {
-      flex: 1;
-      display: flex;
-      min-height: 0;
-      min-width: 0;
-    }
-
-    /* FAB on the right → Canvas on the left (order 0 < chat-order 1) */
-    :host([data-position="bottom-right"]) .boerdi-canvas-pane,
-    :host([data-position="top-right"])    .boerdi-canvas-pane { order: 0; }
-    :host([data-position="bottom-right"]) .boerdi-chat-pane,
-    :host([data-position="top-right"])    .boerdi-chat-pane   { order: 1; }
-
-    /* FAB on the left → Canvas on the right */
-    :host([data-position="bottom-left"]) .boerdi-canvas-pane,
-    :host([data-position="top-left"])    .boerdi-canvas-pane { order: 1; }
-    :host([data-position="bottom-left"]) .boerdi-chat-pane,
-    :host([data-position="top-left"])    .boerdi-chat-pane   { order: 0; }
-
-    /* ── Responsive: narrow window → collapse to Tab-mode ─ */
-    @media (max-width: 1200px) {
-      .boerdi-widget.with-canvas .boerdi-panel {
-        width: 420px; /* fall back to single-pane */
-      }
-      .boerdi-widget.with-canvas .boerdi-tabs { display: inline-flex; }
-      .boerdi-widget.with-canvas .boerdi-canvas-pane { display: none; }
-      .boerdi-widget.with-canvas.mobile-canvas-active .boerdi-canvas-pane { display: flex; }
-      .boerdi-widget.with-canvas.mobile-canvas-active .boerdi-chat-pane { display: none; }
-    }
-
     @media (max-width: 480px) {
-      .boerdi-panel,
-      .boerdi-widget.with-canvas .boerdi-panel {
+      .boerdi-panel {
         width: 100vw;
         height: 100vh;
         max-width: 100vw;
@@ -768,89 +706,17 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  before we leave the host page. ``null`` hides the banner. */
   guideNavTarget = signal<{ url: string; label: string } | null>(null);
 
-  // ── Canvas state (signals) ──
-  // Beide Signals (Markdown und Cards) leben parallel. Der User kann im
-  // Canvas-Header zwischen "Material" und "Treffer" wechseln, ohne den
-  // jeweils anderen Inhalt zu verlieren.
-  canvasOpen = signal(false);
-  canvasMarkdown = signal('');
-  canvasTitle = signal('');
-  canvasMaterialLabel = signal('');
-  /** 'analytisch' (blau) oder 'didaktisch' (grün). Null für Default/Fallback. */
-  canvasMaterialCategory = signal<'analytisch' | 'didaktisch' | null>(null);
-  canvasCards = signal<WloCard[]>([]);
-  canvasQuery = signal('');
-  /** MCP-Search-URL + Begriff aus dem letzten ``badboerdi:query-meta``-
-   *  Event. Wird im Grouping-Modus als Search-CTA im Canvas angeboten. */
-  canvasSearchCtaUrl = signal('');
-  canvasSearchCtaTerm = signal('');
-  canvasPagination = signal<PaginationInfo | null>(null);
-  /** How many cards are initially rendered in the canvas cards pane.
-   *  Chat stays at 5; canvas has more space and should show more upfront. */
-  canvasVisibleCount = signal(10);
-  canvasLoadingMore = signal(false);
-  // Single-card preview mode (when user clicks "Anschauen" on a content card).
-  canvasPreviewCard = signal<WloCard | null>(null);
-  // User-preferred tab ('material' oder 'cards'). Wird beim Eintreffen
-  // eines neuen Payloads automatisch umgeschaltet, kann aber per Tab-Klick
-  // manuell uebersteuert werden.
-  canvasPreferredView = signal<'material' | 'cards' | 'preview'>('material');
-  // Navigation history — lets the user go "back" from a drill-down (e.g.
-  // clicked "Inhalte" on a collection, or opened a content preview) to
-  // whatever was in the canvas before.
-  canvasHistory = signal<CanvasSnapshot[]>([]);
-  mobileTab = signal<'chat' | 'canvas'>('chat');
+  /** Optionale Kopfzeilen-Nav-Buttons (Home/Fachportale/Suche). Quelle:
+   *  Backend ``/api/config/guide-mode`` → ``header_nav`` (Studio-pflegbar via
+   *  01-base/header-nav.yaml). Leer = keine Buttons. */
+  headerNavButtons = signal<HeaderNavButton[]>([]);
 
-  // Effective canvas viewMode abgeleitet aus dem Preview-Slot, dem
-  // Preferred-Tab und den verfuegbaren Signals.
-  canvasMode = computed<CanvasViewMode>(() => {
-    if (this.canvasPreferredView() === 'preview' && this.canvasPreviewCard()) return 'preview';
-    const preferred = this.canvasPreferredView();
-    const hasMd = this.canvasMarkdown().trim().length > 0;
-    const hasCards = this.canvasCards().length > 0;
-    if (preferred === 'cards' && hasCards) return 'cards';
-    if (preferred === 'material' && hasMd) return 'content';
-    if (hasMd) return 'content';
-    if (hasCards) return 'cards';
-    return 'empty';
-  });
-
-  // Beide Panes haben Inhalt → Tab-Switch im Canvas-Header anzeigen
-  canvasHasBothPanes = computed(() =>
-    this.canvasMarkdown().trim().length > 0 && this.canvasCards().length > 0
-  );
-
-  // Snapshot for the backend so the LLM knows what's on the canvas.
-  // Sent with every chat request (via ChatComponent -> ApiService).
-  canvasStateForBackend = computed<Record<string, any> | null>(() => {
-    if (!this.canvasOpen()) return null;
-    const mode = this.canvasMode();
-    if (mode === 'empty') return null;
-    return {
-      mode: mode === 'content' ? 'material' : 'cards',
-      title: this.canvasTitle(),
-      material_type: this.canvasMaterialLabel(),
-      markdown: mode === 'content' ? this.canvasMarkdown() : '',
-      cards_count: this.canvasCards().length,
-    };
-  });
-
-  // Welle C Sprint 7 (2026-05-19): Auto-Open-Persistenz auf sessionStorage
-  // umgestellt. Der vorherige localStorage-Ansatz hat das Widget auf
-  // *jeder* Seite des gleichen Hosts auto-geöffnet wenn der User es 30
-  // Minuten vorher mal angeklickt hatte — auf WordPress-Multi-Page-Setups
-  // (z.B. wp-test.wirlernenonline.de) wirkte das wie "Chatbot öffnet sich
-  // bei jedem Seitenwechsel".
-  //
-  // sessionStorage löst das sauber: persistiert nur innerhalb DESSELBEN
-  // Browser-Tabs (Same-Tab-Navigation bleibt open → User-Erfahrung
-  // konsistent), aber jeder neue Tab / Refresh / Cross-Tab-Navigation
-  // startet wieder mit closed. Cross-TLD-Handoff per ``?bsid=`` forciert
-  // weiterhin open, unabhängig vom Storage.
-  //
-  // TTL muss damit nicht mehr begrenzt werden — sessionStorage räumt
-  // sich beim Tab-Close von selbst auf.
-  private readonly OPEN_KEY = 'boerdi_widget_open';
+  // Auto-Open-Policy (Welle E): Das Widget öffnet sich von selbst NUR bei
+  // ``?bsid=`` (Cross-TLD-/Tour-Handoff) ODER laufender Web-Tour
+  // (localStorage ``boerdi_tour_active``). Die frühere generische Same-Tab-
+  // Persistenz (öffnete bei JEDER Same-Tab-Navigation erneut) ist bewusst
+  // entfernt — ohne bsid und ohne aktive Tour bleibt das Widget bei einer
+  // Seiten-Navigation geschlossen. Siehe ngOnInit.
 
   // Fallback window listener — if the Angular @Output() binding on
   // <badboerdi-chat> doesn't propagate (e.g. when the widget is mounted
@@ -902,19 +768,18 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
       }
     } catch { /* ignore */ }
 
-    // Restore expanded state across SAME-TAB page navigation. sessionStorage
-    // (statt früher localStorage) bewirkt: Multi-Page-Sites wie WordPress
-    // behalten den Open-Zustand wenn der User innerhalb eines Tabs navigiert;
-    // ein neuer Tab oder Refresh startet aber wieder mit closed. Cross-TLD-
-    // Handoff per ``?bsid=`` (oben) bleibt unabhängig davon der force-open.
+    // Auto-Open NUR bei aktiver Web-Tour (localStorage-Flag von der
+    // ChatComponent, überlebt den WP-Full-Page-Reload). Die Tour navigiert
+    // same-origin (kein ?bsid=) und würde sonst auf jeder Tour-Seite
+    // zuklappen. Ohne bsid UND ohne aktive Tour bleibt das Widget zu.
     try {
-      if (sessionStorage.getItem(this.OPEN_KEY) === '1') {
+      if (localStorage.getItem('boerdi_tour_active') === '1') {
         this.expanded = true;
       }
     } catch { /* ignore */ }
 
     // Lazy-Mount-Flag setzen, nachdem ALLE Open-Entscheidungen
-    // (initialState, bsid, sessionStorage) ausgewertet wurden. Wenn das
+    // (initialState, bsid, aktive Tour) ausgewertet wurden. Wenn das
     // Widget mit Panel-Open startet, ist das Lazy-Gate sofort offen
     // — sonst erst beim ersten User-Click (gesetzt in ``setExpanded``).
     if (this.expanded) this.everExpanded = true;
@@ -958,8 +823,8 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
         this.resolvedPageContext = { ...this.resolvedPageContext, ...cleaned };
       } catch { /* ignore — never fail widget bootstrap on detection */ }
     }
-    // Mark this session as widget-driven so the backend routes cards to
-    // the canvas regardless of env.page (important for dev on localhost:4200,
+    // Mark this session as widget-driven so the backend treats it as an
+    // embedded widget regardless of env.page (important for dev on localhost:4200,
     // where env.page='/' would otherwise be treated as a host-page integration).
     this.resolvedPageContext = { ...this.resolvedPageContext, widget: true };
     if (typeof this.pageContext === 'string' && this.pageContext.trim()) {
@@ -991,18 +856,6 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
       if (detail) {
         this.zone.run(() => {
           this.queryMeta.emit(detail);
-          // Search-CTA für Canvas/Chat-Grouping aus den Query-Metas extrahieren.
-          // Priorisiere search_wlo_content (breit), dann collections/topic_pages.
-          const queries = Array.isArray(detail?.queries) ? detail.queries : [];
-          const byTool = (t: string) => queries.find((q: any) => q?.tool_name === t && q?.search_url);
-          const meta = byTool('search_wlo_content')
-            || byTool('search_wlo_collections')
-            || byTool('search_wlo_topic_pages')
-            || queries.find((q: any) => q?.search_url);
-          if (meta?.search_url) {
-            this.canvasSearchCtaUrl.set(String(meta.search_url));
-            this.canvasSearchCtaTerm.set(String(meta.search_term || ''));
-          }
         });
       }
     };
@@ -1043,50 +896,6 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     // Host-Referenz merken für sauberes Detach in ngOnDestroy.
     this._clickListenerHost = host;
 
-    // Canvas-Restore nach Page-Refresh: ChatComponent's ngOnInit hat
-    // beim ViewInit-Zeitpunkt seine sessionId bereits aus localStorage/
-    // Cookie eingelesen. Wir fragen den Backend-Endpoint ab und befüllen
-    // die Canvas-Signale, ohne den Pane automatisch zu öffnen — der User
-    // sieht den letzten Canvas-Inhalt erst, wenn er das Canvas selbst
-    // wieder öffnet (z.B. via "Material anzeigen"-Quick-Reply oder über
-    // die Bot-Antwort, die noch auf canvas_open hinweist). Vermeidet
-    // unerwünschte UX wenn der User das Canvas vor Refresh geschlossen
-    // hatte. Setzt nur, wenn aktuell noch nichts im Canvas liegt
-    // (canvasMarkdown leer) — sonst hätte schon ein neueres Event
-    // (z.B. canvas_open aus laufender Antwort) Priorität.
-    this._restoreCanvasAfterBootstrap();
-  }
-
-  private async _restoreCanvasAfterBootstrap(): Promise<void> {
-    // ChatComponent's sessionId ist sync verfügbar nach ngOnInit.
-    // ngAfterViewInit auf dem Widget läuft NACH ngOnInit auf dem Chat-
-    // Child, daher ist chatRef.sessionId hier garantiert gesetzt.
-    const sid = this.chatRef?.sessionId;
-    if (!sid) return;
-    // Schon Canvas-Inhalt da? Nicht überschreiben — andere Pfade
-    // (laufende Bot-Antwort, manueller Edit) haben Priorität.
-    if (this.canvasMarkdown()) return;
-    try {
-      const payload = await this.api.loadCanvas(sid);
-      if (!payload || !payload.markdown) return;
-      // Innerhalb der Angular-Zone aktualisieren, damit Change Detection
-      // ausgelöst wird (loadCanvas läuft mit await außerhalb des Click-
-      // oder Lifecycle-Trigger-Pfades, das ist hier nicht zonal).
-      this.zone.run(() => {
-        this.canvasTitle.set(payload.title || 'Canvas');
-        this.canvasMaterialLabel.set(payload.material_type_label || '');
-        const cat = payload.material_type_category;
-        this.canvasMaterialCategory.set(
-          cat === 'analytisch' ? 'analytisch'
-            : cat === 'didaktisch' ? 'didaktisch' : null,
-        );
-        this.canvasMarkdown.set(payload.markdown || '');
-        this.canvasPreferredView.set('material');
-        // ``canvasOpen`` bewusst NICHT auf true setzen — siehe Kommentar
-        // im Caller. User muss selbst entscheiden ob Canvas wieder
-        // sichtbar wird. Die Signale sind aber für den Moment befüllt.
-      });
-    } catch { /* never fail bootstrap on this */ }
   }
 
   ngOnDestroy() {
@@ -1292,17 +1101,6 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  (Toggle-Button, Public-API, attributeChangedCallback) konsistent
    *  localStorage pflegen und Angular die View neu rendert. */
   private setExpanded(open: boolean): void {
-    // Same-Tab-Persistenz über sessionStorage — überlebt Page-Navigation
-    // innerhalb desselben Tabs, nicht aber Tab-Close oder Cross-Tab.
-    // Wert ist '1' statt Timestamp (TTL nicht mehr nötig, sessionStorage
-    // wird beim Tab-Close von selbst geräumt).
-    try {
-      if (open) {
-        sessionStorage.setItem(this.OPEN_KEY, '1');
-      } else {
-        sessionStorage.removeItem(this.OPEN_KEY);
-      }
-    } catch { /* ignore */ }
     if (this.expanded === open) return;
     this.expanded = open;
     if (open) this.everExpanded = true;
@@ -1335,95 +1133,13 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   }
 
   /**
-   * Handle backend page_actions.
-   * Canvas-relevant actions (canvas_open/update/show_cards/close) are
-   * consumed locally; others (show_results, navigate, ...) are ignored
-   * here — the chat component already dispatches them as CustomEvents
-   * on `window` for host-page integration.
+   * Handle backend page_actions. The widget only consumes ``navigate``
+   * (Lotsen-Banner); all other actions are dispatched by the chat
+   * component as CustomEvents on `window` for host-page integration.
    */
   handlePageAction(pa: { action: string; payload: any }) {
     if (!pa || !pa.action) return;
-    // Welle E (2026-05-23): Canvas-Pane ist entfernt — alle canvas_*
-    // PageActions sind tot und werden hier zentral verworfen. Material/
-    // Lernpfade kommen als InlineDocument im Chat, nicht mehr als
-    // PageAction-Trigger.
-    if (
-      pa.action === 'canvas_open' ||
-      pa.action === 'canvas_update' ||
-      pa.action === 'canvas_show_cards' ||
-      pa.action === 'canvas_close'
-    ) {
-      return;
-    }
     switch (pa.action) {
-      case 'canvas_open': {
-        const p = pa.payload || {};
-        this.canvasTitle.set(p.title || 'Canvas');
-        this.canvasMaterialLabel.set(p.material_type_label || '');
-        const cat = p.material_type_category;
-        this.canvasMaterialCategory.set(
-          cat === 'analytisch' ? 'analytisch' : cat === 'didaktisch' ? 'didaktisch' : null
-        );
-        this.canvasMarkdown.set(p.markdown || '');
-        this.canvasPreferredView.set('material');
-        this.canvasPreviewCard.set(null);
-        this.canvasOpen.set(true);
-        // Note: history is preserved — pre-push in drill-down handlers
-        // already set it, and losing it would defeat the back button.
-        this.mobileTab.set('canvas');
-        break;
-      }
-      case 'canvas_update': {
-        const p = pa.payload || {};
-        if (typeof p.markdown === 'string') {
-          this.canvasMarkdown.set(p.markdown);
-        }
-        this.canvasPreferredView.set('material');
-        this.canvasPreviewCard.set(null);
-        this.canvasOpen.set(true);
-        break;
-      }
-      case 'canvas_show_cards': {
-        const p = pa.payload || {};
-        const fromCollection = p.source === 'collection';
-        const appendMode = p.append === true;
-        // If the user drilled down from an existing card list into a
-        // collection's contents, remember where they came from so Back
-        // can restore the outer grid.
-        if (fromCollection && !appendMode && this.canvasCards().length > 0) {
-          this.pushCanvasHistory();
-        }
-        const incoming: WloCard[] = Array.isArray(p.cards) ? (p.cards as WloCard[]) : [];
-        if (appendMode) {
-          // Append for "load more" — keep the existing list, dedupe by node_id
-          const existing = this.canvasCards();
-          const seen = new Set(existing.map(c => c.node_id).filter(Boolean));
-          const merged: WloCard[] = [
-            ...existing,
-            ...incoming.filter((c: WloCard) => !seen.has(c.node_id)),
-          ];
-          this.canvasCards.set(merged);
-          this.canvasVisibleCount.set(merged.length);
-        } else {
-          this.canvasCards.set(incoming);
-          this.canvasVisibleCount.set(10);
-        }
-        this.canvasQuery.set(p.query || '');
-        this.canvasTitle.set(p.title || '');
-        this.canvasPagination.set(p.pagination || null);
-        this.canvasPreferredView.set('cards');
-        this.canvasPreviewCard.set(null);
-        this.canvasOpen.set(true);
-        this.canvasLoadingMore.set(false);
-        if (window.innerWidth <= 1200 && !appendMode) {
-          this.mobileTab.set('chat');
-        }
-        break;
-      }
-      case 'canvas_close': {
-        this.closeCanvas();
-        break;
-      }
       case 'navigate': {
         // Bot recommends an external navigation. We never auto-leave the
         // host page — show a banner and require an explicit user click.
@@ -1454,183 +1170,6 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   /** User clicked "Hier bleiben" — dismiss the navigate banner. */
   cancelGuideNav(): void {
     this.guideNavTarget.set(null);
-  }
-
-  /** User clicked a tab in the canvas header — switch preferred view. */
-  onCanvasViewSwitch(view: 'material' | 'cards'): void {
-    this.canvasPreferredView.set(view);
-  }
-
-  /** Open a single-card metadata preview inside the canvas. */
-  openCanvasPreview(card: WloCard): void {
-    if (!card) return;
-    this.pushCanvasHistory();
-    this.canvasPreviewCard.set(card);
-    this.canvasPreferredView.set('preview');
-    this.canvasOpen.set(true);
-    this.mobileTab.set('canvas');
-  }
-
-  /** Push the current canvas state onto the history stack. */
-  private pushCanvasHistory(): void {
-    const snap: CanvasSnapshot = {
-      markdown: this.canvasMarkdown(),
-      title: this.canvasTitle(),
-      materialTypeLabel: this.canvasMaterialLabel(),
-      cards: this.canvasCards(),
-      query: this.canvasQuery(),
-      previewCard: this.canvasPreviewCard(),
-      preferredView: this.canvasPreferredView(),
-    };
-    // Cap history at 10 levels to avoid unbounded growth.
-    const next = [...this.canvasHistory(), snap].slice(-10);
-    this.canvasHistory.set(next);
-  }
-
-  /** Pop the most recent history entry and restore that canvas state. */
-  onCanvasGoBack(): void {
-    const hist = this.canvasHistory();
-    if (hist.length === 0) return;
-    const prev = hist[hist.length - 1];
-    this.canvasHistory.set(hist.slice(0, -1));
-    this.canvasMarkdown.set(prev.markdown);
-    this.canvasTitle.set(prev.title);
-    this.canvasMaterialLabel.set(prev.materialTypeLabel);
-    this.canvasCards.set(prev.cards);
-    this.canvasQuery.set(prev.query);
-    this.canvasPreviewCard.set(prev.previewCard);
-    this.canvasPreferredView.set(prev.preferredView);
-  }
-
-  /** User has saved a direct markdown edit from the canvas editor. Push the
-   *  new text into the canvas signal so the next chat turn sees it via
-   *  `canvasStateForBackend` and the backend treats it as the new
-   *  current_markdown. NO server round-trip — this is purely local state.
-   */
-  onCanvasMarkdownEdited(newMarkdown: string): void {
-    this.canvasMarkdown.set(newMarkdown || '');
-  }
-
-  closeCanvas() {
-    // canvasMode is computed; clearing the underlying signals below
-    // naturally pushes mode back to 'empty'.
-    this.canvasOpen.set(false);
-    this.canvasMarkdown.set('');
-    this.canvasCards.set([]);
-    this.canvasPreviewCard.set(null);
-    this.canvasHistory.set([]);
-    this.canvasPagination.set(null);
-    this.canvasVisibleCount.set(10);
-    this.canvasPreferredView.set('material');
-    this.mobileTab.set('chat');
-  }
-
-  /** "Weitere anzeigen" — reveal more client-side cached cards. */
-  onCanvasShowMore(): void {
-    const total = this.canvasCards().length;
-    this.canvasVisibleCount.set(Math.min(total, this.canvasVisibleCount() + 10));
-  }
-
-  /** "Mehr laden" — fetch next page from the same collection. */
-  async onCanvasLoadMoreFromServer(): Promise<void> {
-    const p = this.canvasPagination();
-    const chat = this.chatRef;
-    if (!p || !p.has_more || !p.collection_id || !chat || this.canvasLoadingMore()) return;
-    this.canvasLoadingMore.set(true);
-    try {
-      // Reuse ChatComponent's isLoading gating is ok — this is a foreground
-      // action. The response arrives via page_action=canvas_show_cards
-      // with append=true and gets merged in handlePageAction.
-      await chat.browseCollectionPage(
-        p.collection_id,
-        p.collection_title || '',
-        p.skip_count + p.page_size,
-      );
-    } catch {
-      this.canvasLoadingMore.set(false);
-    }
-  }
-
-  /** Bridge: the canvas just wants to emit user-intent, the chat owns
-   *  session + API. We forward each action to the matching ChatComponent
-   *  public method so behaviour stays identical to in-chat card actions.
-   */
-  onCanvasCardAction(ev: { action: CanvasCardAction; card: WloCard }): void {
-    const chat = this.chatRef;
-    // Diagnostic log so we can see in DevTools what a card contains —
-    // helpful when 'Inhalte'/'Lernpfad' seem to do nothing.
-    // eslint-disable-next-line no-console
-    console.debug('[canvas] card action', ev?.action, {
-      node_id: ev?.card?.node_id,
-      title: ev?.card?.title,
-      node_type: ev?.card?.node_type,
-      topic_pages: ev?.card?.topic_pages?.length ?? 0,
-      chat_ready: !!chat,
-    });
-    if (!ev?.card) return;
-    const c = ev.card;
-    if (!chat) {
-      // Chat component not mounted yet — shouldn't happen once the panel is
-      // open, but log so it's visible instead of silently dropped.
-      console.warn('[canvas] action dropped: chat component not ready');
-      return;
-    }
-    switch (ev.action) {
-      case 'guide': {
-        // Lotsen-Modus: navigate the current tab to the allow-listed
-        // target URL. ``guide_url`` only exists when the backend judged
-        // the card eligible — no extra check needed here.
-        const url = (c as WloCard & { guide_url?: string }).guide_url || '';
-        if (!url) {
-          console.warn('[canvas] guide action without guide_url on card');
-          return;
-        }
-        this.navigateToGuideUrl(url);
-        return;   // page is leaving — no further state changes
-      }
-      case 'preview':
-        // Stay inside the canvas — show metadata-driven preview.
-        this.openCanvasPreview(c);
-        return;   // no chat-roundtrip, don't switch mobile tab
-      case 'browse': {
-        // Resolve a collection-id: card.node_id first, then extract from
-        // any topic-page URL (WLO topic-page URLs always carry
-        // `collectionId=<uuid>` or `/render/<uuid>`).
-        const collId = c.node_id || this.extractCollectionIdFromCard(c);
-        if (!collId) {
-          console.warn('[canvas] browse: no collection id resolvable from card');
-          return;
-        }
-        chat.browseCollection(collId, c.title);
-        break;
-      }
-      case 'learning_path': {
-        const collId = c.node_id || this.extractCollectionIdFromCard(c);
-        if (!collId) {
-          console.warn('[canvas] learning_path: no collection id resolvable');
-          chat.sendMessage(
-            `Bitte erstelle einen Lernpfad zum Thema "${c.title}".`,
-          );
-          return;
-        }
-        this.pushCanvasHistory();
-        chat.generateLearningPath(collId, c.title);
-        break;
-      }
-      case 'remix': {
-        // Remix needs the richest card possible — if node_id is empty but
-        // we can recover it from a topic-page URL, patch it in so the
-        // backend's remix handler can reference the collection.
-        const collId = c.node_id || this.extractCollectionIdFromCard(c);
-        const enriched = collId && !c.node_id ? { ...c, node_id: collId } : c;
-        chat.remixCard(enriched);
-        break;
-      }
-      case 'open':
-        window.open(c.link || c.guide_url || c.wlo_url || c.url || '#', '_blank', 'noopener');
-        return;
-    }
-    this.mobileTab.set('chat');
   }
 
   // ── Guide-Mode: Init / Allow-Liste / Toggle / Navigation ─────
@@ -1669,6 +1208,20 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
             .filter((d: string) => d.length > 0);
           this._trustedDomainsCache = null;
         }
+        // Optionale Kopfzeilen-Nav-Buttons (Studio: header-nav.yaml).
+        if (Array.isArray(data?.header_nav)) {
+          this.headerNavButtons.set(
+            data.header_nav
+              .filter((b: any) => b && b.url)
+              .map((b: any) => ({
+                id: String(b.id || ''),
+                label: String(b.label || ''),
+                icon: String(b.icon || 'explore'),
+                url: String(b.url),
+                new_tab: !!b.new_tab,
+              })),
+          );
+        }
       }
     } catch {
       // Backend nicht erreichbar — kein Show-Stopper, nur die Cross-TLD-
@@ -1683,6 +1236,34 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     // sonst bliebe externalLinkWarning auf der leeren Liste hängen und würde
     // „Achtung! Externe URL." auch für Whitelist-Hosts zeigen.
     try { this.cdr?.markForCheck?.(); } catch { /* ignore */ }
+  }
+
+  /** Icon-SVG für einen Kopfzeilen-Nav-Button (Name → shared/icons.ts).
+   *  Unbekannter Name → Fallback ``explore``. */
+  headerNavIcon(b: HeaderNavButton): string {
+    const set = ICONS as Record<string, string>;
+    return set[b?.icon] || set['explore'] || '';
+  }
+
+  /** Ziel-URL eines Kopfzeilen-Nav-Buttons mit dynamisch angehängter bsid.
+   *  Für Trusted-WLO-Hosts (auch same-origin) wird ``?bsid=<sid>`` ergänzt,
+   *  damit die Chat-Session auf der Zielseite weiterläuft (sofern das Widget
+   *  dort eingebettet ist). Die bsid wird dort beim Laden wieder aus der URL
+   *  gestrippt. Untrusted/externe Hosts bleiben unverändert (kein Leak). */
+  headerNavHref(b: HeaderNavButton): string {
+    const url = (b?.url || '').trim();
+    if (!url) return '#';
+    const sid = this.chatRef?.sessionId || '';
+    if (!/^bb-[0-9a-f-]{32,40}$/i.test(sid)) return url;
+    try {
+      const u = new URL(url, window.location.href);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return url;
+      if (!this._isTrustedHost(u.hostname.toLowerCase())) return url;
+      if (!u.searchParams.has('bsid')) u.searchParams.set('bsid', sid);
+      return u.toString();
+    } catch {
+      return url;
+    }
   }
 
   /** Direct same-tab navigation to a card's guide URL.
@@ -1734,25 +1315,4 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
     }
   }
 
-  /** Pull a UUID (collection id) out of any URL the card exposes.
-   *  Topic-page URLs look like:
-   *    .../topic-pages?collectionId=<uuid>
-   *    .../render/<uuid>
-   *    .../collections?id=<uuid>
-   *  We accept any of those as the collection id for browse/lp/remix.
-   */
-  private extractCollectionIdFromCard(c: WloCard): string {
-    const urls: string[] = [];
-    if (c.url) urls.push(c.url);
-    if (c.wlo_url) urls.push(c.wlo_url);
-    for (const tp of c.topic_pages || []) {
-      if (tp?.url) urls.push(tp.url);
-    }
-    const uuidRe = /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i;
-    for (const u of urls) {
-      const m = u.match(uuidRe);
-      if (m) return m[0];
-    }
-    return '';
-  }
 }

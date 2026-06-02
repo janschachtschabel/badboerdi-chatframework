@@ -246,8 +246,14 @@ async def get_guide_mode_config_route():
     Mounted on ``public_router`` (no Studio auth) — the widget runs in
     every embedder's browser and doesn't have the Studio API key.
     """
-    from app.services.config_loader import load_guide_mode_config
-    return load_guide_mode_config()
+    from app.services.config_loader import (
+        load_guide_mode_config, load_header_nav_config,
+    )
+    cfg = load_guide_mode_config()
+    # Optionale Kopfzeilen-Nav-Buttons (Studio-pflegbar) gleich mitliefern,
+    # damit das Widget sie ohne zweiten Boot-Request rendern kann.
+    cfg["header_nav"] = load_header_nav_config().get("buttons", [])
+    return cfg
 
 
 @router.put("/privacy", response_model=PrivacyConfig)
