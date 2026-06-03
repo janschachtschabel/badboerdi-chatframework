@@ -253,7 +253,6 @@ Aktiviert die **passive Top-Result-Emission** für externe Host-Reaktion.
 
 ```html
 <boerdi-chat
-  guide-mode-default="true"
   emit-guide-suggestion="true">
 </boerdi-chat>
 ```
@@ -388,7 +387,7 @@ Routing-Payload, sobald `emit-routing-debug="true"` gesetzt ist.
 
 ```typescript
 interface RoutingDebugPayload {
-  pattern: string;          // Ausgewähltes Pattern (z.B. "PAT-05")
+  pattern: string;          // Ausgewähltes Pattern (z.B. "M05")
   intent: string;           // Erkannter Intent (z.B. "search_content")
   state: string;            // Verlaufs-Phase (z.B. "state-6")
   persona: string;          // Aktive Persona (z.B. "lotse")
@@ -522,12 +521,10 @@ Anwendungsbeispiel — externes "Frag den Bot"-CTA:
 
 ### 2. Schlanke Themenseiten-Integration
 
-Nur Chat-Text + dezente Inline-Links, kein Canvas, keine KI-Erzeugung:
+Treffer erscheinen als kompakte Gruppen-Boxen; nur die KI-Erzeugung wird deaktiviert:
 
 ```html
 <boerdi-chat
-  cards-enabled="false"
-  canvas-enabled="false"
   ai-content-enabled="false">
 </boerdi-chat>
 ```
@@ -540,7 +537,6 @@ Sidebar weitergegeben:
 ```html
 <aside id="bot-sidebar">
   <boerdi-chat
-    guide-mode-default="true"
     emit-guide-suggestion="true">
   </boerdi-chat>
   <div id="bot-suggestion-banner"></div>
@@ -562,7 +558,6 @@ WP-Theme-JS gehen, die dann ein bestehendes iframe wechselt:
 
 ```html
 <boerdi-chat
-  guide-mode-default="true"
   intercept-edu-sharing-links="true"
   id="wp-bot">
 </boerdi-chat>
@@ -577,14 +572,13 @@ document.getElementById('wp-bot').addEventListener('linkClicked', (e) => {
 
 ### 5. Minimal-Bubble (z.B. Footer-Chat)
 
-Praktisch nur Text-Chat ohne extra UI-Elemente:
+Schlanke UI ohne Debug-/Sprach-Buttons, KI-Erzeugung aus:
 
 ```html
 <boerdi-chat
-  cards-enabled="false"
-  canvas-enabled="false"
-  ai-content-enabled="false"
-  quick-replies-enabled="false">
+  show-debug-button="false"
+  show-language-buttons="false"
+  ai-content-enabled="false">
 </boerdi-chat>
 ```
 
@@ -594,8 +588,6 @@ Alle Features an, Lotsen-Modus aktiv, Debug-Events für Analytics:
 
 ```html
 <boerdi-chat
-  guide-mode-default="true"
-  show-guide-button="false"
   emit-guide-suggestion="true"
   emit-routing-debug="true"
   primary-color="#8b0000"
@@ -681,16 +673,16 @@ Alternativ als HTML-Attribut: `<boerdi-chat primary-color="#b91c1c">`.
 
 | API-Element | Stabilität |
 |---|---|
-| Embed-Mode-Inputs (`cards-enabled`, `canvas-enabled`, `ai-content-enabled`, `quick-replies-enabled`) | **stable** |
+| Feature-Toggle (`ai-content-enabled`) | **stable** |
 | Grundkonfig-Inputs (`api-url`, `position`, `primary-color`, `greeting`, `auto-context`) | **stable** |
 | Session-Inputs (`persist-session`, `session-key`, `session-cookie-domain`, `trusted-domains`) | **stable** |
-| UI-Toggles (`show-debug-button`, `show-language-buttons`, `show-guide-button`) | **stable** |
-| `guide-mode-default` + Lotsen-Modus | **stable** |
+| UI-Toggles (`show-debug-button`, `show-language-buttons`) | **stable** |
+| Lotsen-Modus (immer aktiv, kein Toggle) | **stable** |
 | `emit-guide-suggestion` + `badboerdi:guide-suggestion` | **stable** |
 | `emit-routing-debug` + `badboerdi:routing-debug` | **stable** |
 | `badboerdi:query-meta` | **stable** |
 | `intercept-edu-sharing-links` + `(linkClicked)` | **stable** |
-| `badboerdi:page-action` mit `navigate`/`show_results`/`canvas_*` Actions | **stable** |
+| `badboerdi:page-action` mit `navigate`/`show_results` Actions | **stable** |
 | Public JS-API (`openChatbot`, `closeChatbot`, `toggleChatbot`, `isChatbotOpen`) | **stable** |
 | Direkter Method-Zugriff via `@ViewChild` (`sendMessage`, `restart`, `updateContext`) | **internal** — kann sich ändern |
 

@@ -1464,3 +1464,14 @@
  DELETE /api/config/snapshots/snap-20260602-190340-update-2026-06-02-neuepattern-v2 200 in 31ms
  GET /api/config/snapshots 200 in 24ms
  GET /api/config/factory 200 in 30ms
+ GET /api/safety/logs?limit=200 200 in 60ms
+ GET /api/safety/stats 200 in 66ms
+ GET /api/safety/logs?limit=200 200 in 25ms
+ GET /api/safety/stats 200 in 35ms
+ GET /api/eval/runs 200 in 37ms
+ GET /api/eval/runs 200 in 21ms
+ GET /api/sessions 200 in 76ms
+ GET /api/sessions 200 in 24ms
+ GET /api/config/factory 200 in 32ms
+ GET /api/config/snapshots 200 in 42ms
+ GET /api/config/snapshots/snap-20260602-210424-update-2026-06-02-neuepattern-v3/download 200 in 218ms

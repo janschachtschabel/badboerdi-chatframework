@@ -13,7 +13,7 @@ Verarbeitungsphasen) konfiguriert und besteht aus drei Komponenten:
 
 | Komponente | Stack | Port | Zweck |
 |------------|-------|------|-------|
-| **`backend/`** | FastAPI · Python 3.11 · OpenAI · MCP | `8000` | Chat-API, Pattern-Engine, Safety-Pipeline, RAG, Session-Persistenz, Widget-Auslieferung |
+| **`backend/`** | FastAPI · Python 3.11 · OpenAI · MCP | `8000` | Chat-API, LLM-Hint-Pattern-Routing, Safety-Pipeline, RAG, Session-Persistenz, Widget-Auslieferung |
 | **`frontend/`** | Angular 21 · Web Components | `4200` | Chat-UI, einbettbares `<boerdi-chat>`-Widget |
 | **`studio/`** | Next.js 15 · React 18 | `3001` | Konfigurations-UI für Persona, Patterns, Safety, Knowledge |
 
@@ -106,9 +106,9 @@ nachvollziehbar (siehe Kommentare `# Layer 1: …` bis `# Layer 6: …`).
 |---|---------|----------------|--------------|--------|
 | **1** | **Identität & Schutz** | `chatbots/wlo/v1/01-base/base-persona.md`, `guardrails.md`, `safety-config.yaml`, `quality-log-config.yaml`, `device-config.yaml` | **Immer** — bei jedem Turn als erstes in den Prompt | Wer ist BOERDi, was darf er nie tun (Guardrails als _letzter_ Block, nicht überschreibbar), Sicherheits-Preset (off/basic/standard/strict/paranoid), Quality-Logging, Geräte-Heuristiken |
 | **2** | **Domain & Regeln** | `chatbots/wlo/v1/02-domain/domain-rules.md`, `policy.yaml`, `wlo-plattform-wissen.md` | **Immer** — direkt nach Schicht 1 | Plattform-Wissen (WLO-Sammlungen, Lizenzen, Zielgruppen), Dauerregeln, Policy-Decisions (`policy_service.py`) |
-| **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/pat-*.md` (23 Patterns nach Welle B/C Konsolidierung) | **Nach Bedarf** — nur das _eine_ Pattern, das der Pattern-Engine-Selector gewinnt (`pattern_engine.py → select_pattern()`), ggf. korrigiert durch die Routing-Rules-Engine (siehe 2.4) | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
+| **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/M*.md` (**16 Patterns**, M01–M16) | **Nach Bedarf** — das vom LLM-Hint gewählte Pattern (`pattern_engine.py → select_pattern()`, siehe 2.4) — keine Score-Engine, keine Routing-Rules mehr | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
 | **4** | **Dimensionen** | Klassifikator-Output aus `llm_service.py → classify_input()` + `04-*/*.yaml` (Personas, Intents, States, Entities, Signals) | **Pro Turn neu** | Persona-ID, Intent-ID + Confidence, Signals, Entities, Slots, next_state — strukturierte Werte für genau diesen Turn |
-| **5** | **Canvas-Formate** | `chatbots/wlo/v1/05-canvas/*.yaml` (material-types, type-aliases, create-triggers, edit-triggers, persona-priorities) | **Nur bei Canvas-Intents (INT-W-11, INT-W-12)** — liefert Struktur-Vorgabe des gewählten Material-Typs | 18 Material-Typen (13 didaktisch + 5 analytisch), Alias-Mapping, Create-/Edit-Trigger-Phrasen, Persona-abhängige Reihenfolge |
+| **5** | **Material-Formate** | `chatbots/wlo/v1/05-canvas/*.yaml` (material-types, type-aliases, create-triggers, edit-triggers, persona-priorities) | **Nur bei KI-Generierung (Intent I05/I06)** — liefert die Struktur-Vorgabe des Material-Typs | Material-Typen (didaktisch + analytisch), Alias-Mapping, Create-/Edit-Trigger-Phrasen, Persona-abhängige Reihenfolge |
 | **6** | **Wissen** | `chatbots/wlo/v1/05-knowledge/rag-config.yaml`, MCP-Tool-Outcomes, RAG-Memory (`rag_service.py`, `mcp_client.py`), Themenseiten-Resolver (`page_context_service.py`) | **Nur bei Bedarf** — wenn Pattern Tools ruft, RAG-Bereich aktiv ist oder `node_id`/`topic_page_slug` über `page_context` aufgelöst werden kann | Tool-Outcomes, RAG-Snippets, gemerkte Materialien aus Session-Memory, semantisch aufgelöste Themenseiten-Metadaten |
 
 **Entlade-Reihenfolge bei Token-Knappheit**: 6 → 5 → 4 → 3. Schichten 1 und 2 werden _nie_ entladen.
@@ -123,7 +123,7 @@ system_parts = [
     pattern_block,       # Layer 3: Pattern
     context_block,       # Layer 4: Dimensions
     # ... Modulationen (skip_intro, one_option, add_sources, degradation)
-    canvas_structure,    # Layer 5: Canvas-Material-Struktur (INT-W-11/12 only)
+    material_structure,  # Layer 5: KI-Material-Struktur (nur bei I05/I06)
     page_context_block,  # Layer 6: aufgelöste Themenseite (page_context_service)
     rag_context,         # Layer 6: Knowledge (optional)
     guardrails,          # Layer 1: Schutz — IMMER zuletzt, nicht überschreibbar
@@ -156,60 +156,13 @@ hinterlegt und werden über `services/config_loader.py` eingelesen — d.h. _jed
 Konfigurationsänderung im Studio wirkt ohne Code-Deploy (mtime-gecachter YAML-Loader,
 automatische Cache-Invalidierung bei Writes).
 
-### 2.4 Routing-Rules Engine (deklarativ, Pre + Post Pattern-Selection)
+### 2.4 Pattern-Auswahl (LLM-Hint)
 
-Über der Pattern-Engine liegt eine **YAML-getriebene Regel-Engine** (`backend/app/services/rule_engine.py` +
-`backend/chatbots/wlo/v1/06-rules/routing-rules.yaml`). Sie läuft zweimal pro Turn:
+Das Pattern bestimmt der **LLM-Klassifikator** (`pattern_id_hint`). Es gibt **keine** Score-/Gate-Engine und **keine** Routing-Rules mehr (in Welle E v4 / Sprint K datenbasiert als redundant entfernt — das `06-rules/`-Verzeichnis ist weg). `select_pattern()` (`pattern_engine.py`) priorisiert: **Safety-erzwungenes Pattern → LLM-Hint → Fallback (`M15`/`M03`)**. Nach der Generierung wird das Label ggf. an die real ausgeführte Aktion angeglichen (`M09` Lernpfad / `M10` KI-Material / `M03` Slot-Klärung), damit Telemetrie + Box-Routing stimmen.
 
-| Phase | Wann | Zweck |
-|-------|------|-------|
-| **Pre-Route** | _Vor_ der Pattern-Selektion | Korrigiert Persona/Intent/State des Classifiers — z.B. explizite Self-IDs („ich bin Lehrerin" → `P-W-LK`), Low-Confidence-Fallbacks, Sicherheits-Overrides |
-| **Post-Route** | _Nach_ der Pattern-Selektion | Tiebreaker bei knappen Score-Differenzen, Intent-spezifische Patterns durchsetzen (PAT-22/23/24), Enforce-Routing für klare Persona-Intent-Konstellationen |
+### 2.5 KI-Material-Generierung (M10 / M11)
 
-Eine Regel besteht aus `when` (Bedingungen) und `then` (Effekte) und kann **shadow** (`live: false`) für
-beobachtende Roll-Outs oder **live** (`live: true`) geschaltet werden. Beispiel:
-
-```yaml
-- id: rule_recherche_personas_force_pat09
-  description: "Recherche-Personas (RED/PRESSE/POL/BER) + Thema → PAT-09."
-  priority: 55
-  live: true
-  when:
-    all:
-      - persona: { in: ["P-W-RED", "P-W-PRESSE", "P-W-POL", "P-BER"] }
-      - intent:  { in: ["INT-W-03", "INT-W-09"] }
-      - entity.thema: { non_empty: true }
-      - pattern_winner: { in: ["PAT-06", "PAT-01", "PAT-02", "PAT-10"] }
-  then:
-    enforced_pattern_id: "PAT-09"
-```
-
-Komparatoren: `eq, neq, in, not_in, regex, not_regex, empty, non_empty, exists, lt, gt, lte, gte` +
-boolesche Kombinatoren `all, any, not`. Direkter Zugang im Studio über die Sidebar **Architektur ⚙️ Routing-Rules** —
-inklusive Test-Bench (sub-ms, kein LLM-Call) und Fire-Count-Stats pro Regel.
-
-### 2.5 Canvas-Arbeitsfläche (seit 2026-04-17)
-
-Das Widget öffnet neben dem Chat auf breiten Displays eine **Canvas-Pane** für strukturierte
-Ausgaben. Getrieben durch zwei Intents:
-
-* **INT-W-11 · Inhalt erstellen** → PAT-21 Canvas-Create, ruft `canvas_service.generate_canvas_content()`
-  mit Thema + Material-Typ auf und liefert strukturiertes Markdown + `page_action: canvas_open`.
-* **INT-W-12 · Canvas-Edit** → `_handle_canvas_edit()` verfeinert den bestehenden Canvas-Inhalt
-  ohne Neu-Generierung, getriggert durch Edit-Phrasen („mach es einfacher", „füge Lösungen hinzu",
-  „kürzer fassen") im state-12.
-
-**18 Material-Typen**, konfigurierbar im Studio-Layer „Canvas-Formate":
-
-| Kategorie | Typen |
-|-----------|-------|
-| **Didaktisch** (13) | Automatisch, Arbeitsblatt, Infoblatt, Präsentation, Quiz, Checkliste, Glossar, Strukturübersicht, Übungsaufgaben, Lerngeschichte, Versuchsanleitung, Diskussionskarten, Rollenspielkarten |
-| **Analytisch** (5) | Bericht, Factsheet, Projektsteckbrief, Pressemitteilung, Vergleich |
-
-Analytische Personas (P-VER Verwaltung, P-W-POL Politik, P-W-PRESSE Presse, P-BER Berater,
-P-W-RED Redaktion) sehen die analytischen Typen zuerst in den Quick-Replies; didaktische
-Personas (Lehrkraft, Schüler:in, Eltern, anonym) die didaktischen. PAT-21 ist für alle
-Personas erreichbar (`gate_personas: ["*"]`).
+Auf Erstell-Anfragen (Intent `I05`) generiert der Bot strukturiertes Material (Arbeitsblatt, Quiz, Factsheet, Lernpfad, …) und zeigt es als **InlineDocument-Box** direkt im Chat-Verlauf — **kein** separates Canvas-Pane mehr (in Welle E entfernt). Nachbearbeitung (Intent `I06`, Pattern `M11`) verfeinert die zuletzt erzeugte Box (kürzer, Lösungen ergänzen, …). Die Material-Typen + Trigger/Aliase liegen in `chatbots/wlo/v1/05-canvas/` (Studio-Tab „Material-Formate“); der Verzeichnisname ist historisch.
 
 ### 2.6 Themenseiten-Auflösung
 
@@ -366,14 +319,13 @@ badboerdi/
 │   │   ├── routers/     # chat, sessions, safety, quality, config, rag, speech, widget
 │   │   ├── services/    # llm, pattern_engine, safety, policy, rag, canvas, page_context, …
 │   │   └── main.py
-│   ├── chatbots/wlo/v1/ # ↳ Konfigurations-Bundle (6 Prompt-Schichten + Routing-Rules)
+│   ├── chatbots/wlo/v1/ # ↳ Konfigurations-Bundle (6 Prompt-Schichten)
 │   │   ├── 01-base/     # Layer 1: Persona, Guardrails, Safety, Device, Privacy
 │   │   ├── 02-domain/   # Layer 2: Domain-Wissen, Policy
-│   │   ├── 03-patterns/ # Layer 3: 23 Patterns (PAT-01…PAT-28 mit Lücken, PAT-CRISIS, PAT-REFUSE-THREAT)
-│   │   ├── 04-*/        # Layer 4: 9 Personas (mit Tonalitäts-Modifier-Frontmatter), 13 Intents, 12 States, 5 Entities, 17 Signals, Contexts
-│   │   ├── 05-canvas/   # Layer 5: 18 Material-Typen, Aliase, Create-/Edit-Trigger, Persona-Priorität
-│   │   ├── 05-knowledge/# Layer 6: RAG- und MCP-Konfiguration
-│   │   └── 06-rules/    # Routing-Rules-Engine (deklarative Pre/Post-Route-Regeln)
+│   │   ├── 03-patterns/ # Layer 3: 16 Patterns (M01–M16)
+│   │   ├── 04-*/        # Layer 4: 6 Personas (Tonalitäts-Frontmatter), 8 Intents, 4 States, Entities, Signals
+│   │   ├── 05-canvas/   # Layer 5: Material-Typen, Aliase, Create-/Edit-Trigger, Persona-Priorität
+│   │   └── 05-knowledge/# Layer 6: RAG- und MCP-Konfiguration
 │   ├── snapshots/       # User-Snapshots (server-seitig, frei anlegbar/restorierbar)
 │   ├── knowledge/       # factory-snapshot.zip (Werkseinstellung) + RAG-Quelldokumente
 │   └── run.py
@@ -438,11 +390,9 @@ Verzeichnis auf und prüfen anschließend, dass `main.js` existiert. Mehr in
 Das Widget akzeptiert die folgenden Attribute auf `<boerdi-chat>`. Werte sind Strings (HTML-Attribute);
 Booleans erkennen `"true"` / `"false"`.
 
-> **Neu für Embed-Hosts (2026-05):**
-> - `cards-enabled`, `canvas-enabled`, `ai-content-enabled`, `quick-replies-enabled` —
->   feature-by-feature minimaler Auftritt (siehe Tabelle unten).
-> - `show-guide-button`, `guide-mode-default` — Lotsen-Toggle-Button verstecken oder
->   den Modus stillschweigend aktivieren, unabhängig voneinander.
+> **Welle E:** `ai-content-enabled` ist die einzige verbliebene Feature-Umschaltung (siehe Tabelle).
+> Die früheren `cards-`/`canvas-`/`grouping-`/`quick-replies-`/`guide-mode-`-Attribute wurden
+> entfernt; Treffer erscheinen als Gruppen-Boxen, der Lotsen-Modus ist dauerhaft aktiv.
 > - `trusted-domains` ist jetzt **additiv** zur Backend-Allow-Liste
 >   (`guide-mode.yaml` / Env `GUIDE_TRUSTED_DOMAINS`) — Stored-XSS auf der Host-Seite
 >   kann die Liste nicht mehr aushebeln. Für Default-WLO-Domains kann das HTML-Attribut
@@ -468,20 +418,12 @@ Booleans erkennen `"true"` / `"false"`.
 | `page-context` | _leer_ | Zusätzlicher Kontext als JSON-String oder Objekt |
 | `show-debug-button` | `true` | 🔍 Debug-Toggle im Header. `false` = Button ausgeblendet (für Produktiv-Embeddings) |
 | `show-language-buttons` | `true` | 🔊 Text-to-Speech und 🎤 Mic-Aufnahme. `false` = beide Buttons aus (kein Sprach-Feature) |
-| `cards-enabled` | `true` | Kachel-Anzeige. `false` rendert Treffer als dezente Inline-Markdown-Links im Bot-Text (max. N Links, Schwellen in `chatbots/wlo/v1/01-base/widget-modes.yaml`). URL-Auswahl: Lotsen-Modus → Repo-/WLO-Seite (`guide_url`), sonst → Direktlink (`wlo_url`). |
-| `canvas-enabled` | `true` | Canvas-Pane (Material-Erstellung, Lernpfad-Anzeige). `false` rendert Material/Lernpfad-Markdown direkt im Chat — kein Canvas-Aufgehen, kein Split-Panel. |
 | `ai-content-enabled` | `true` | KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix). `false` lehnt Erstell-Anfragen mit der Alt-Antwort aus `widget-modes.yaml` freundlich ab — kein LLM-Aufruf für Material-Erstellung. |
-| `quick-replies-enabled` | `true` | Gesprächsvorschläge-Pillen unter Bot-Antworten. `false` blendet alle QR-Buttons komplett aus. Lotsen-Hinweise werden in jedem Modus als Inline-Link im Bot-Text gerendert, nicht als Pillen. |
-| `inline-result-grouping` | `true` | **Default seit Welle C.5 (2026-05-21): an.** Gruppierte Treffer-Darstellung — der Chat zeigt statt einer flachen Card-Liste **Top-3 Themenseiten + Top-3 Sammlungen + Webseiten-Inhalte** in eigenen Boxen plus den Card-Button „Treffer zur Suche „<Term>"" (Theme-Farbe via `primary-color`, heller Card-Stil mit Primary-Tint-Icon). Einzelinhalte werden nicht mehr als Kacheln gezeigt — User springt direkt in die MCP-Suchergebnisliste. Greift parallel im Canvas-Pane. Hosts, die das alte Flat-Card-Layout zurück wollen, setzen `inline-result-grouping="false"`. |
-| `show-guide-button` | `true` | Sichtbarkeit des 🧭-Lotsen-Toggle-Buttons im Header. `false` blendet den Button aus — der Lotsen-Modus selbst bleibt nutzbar (per `guide-mode-default` oder Backend-Default + Cross-TLD-`?bgm=`-Handoff). Empfohlen für Embeds, in denen der Host das Lotsen-Toggling per eigenem UI-Element steuert. |
-| `guide-mode-default` | `auto` | Initial-State des Lotsen-Modus. `true`/`false` = explizit ein/aus; `auto` = wie heute (URL `?bgm` → localStorage → Backend-Default aus `guide-mode.yaml`). Wirkt nur beim allerersten Boot — späteres User-Toggle hat Vorrang und wird in localStorage persistiert. |
 
-> **Widget-Embed-Modi** (die vier `*-enabled`-Attribute) lassen die einbettende Seite das Widget
-> feature-by-feature minimaler auftreten — für Themenseiten, WordPress-Themes oder fremde
-> CMS-Hosts mit eigenem Layout. Defaults bleiben `true`, Bestandsintegrationen sehen keine
-> Änderung. Die Schwellen für den Inline-Link-Modus (max. Anzahl, Titel-Kürzung,
-> Alt-Antwort-Text) liegen in `chatbots/wlo/v1/01-base/widget-modes.yaml` und sind über
-> das Studio editierbar.
+> **`ai-content-enabled`** ist die einzige verbliebene Feature-Umschaltung: `false` lehnt KI-Erstell-Anfragen
+> freundlich ab (Alt-Antwort in `widget-modes.yaml`, kein LLM-Aufruf). Treffer erscheinen immer als kompakte
+> Gruppen-Boxen, KI-Material als InlineDocument-Box — die früheren `cards-`/`canvas-`/`grouping-`/`guide-mode-`-
+> Attribute wurden in Welle E entfernt (Guide-Modus ist dauerhaft aktiv).
 
 > **Lotsen-Modus** wird **nicht** über ein Custom-Element-Attribut gesteuert, sondern
 > komplett serverseitig via `chatbots/wlo/v1/01-base/guide-mode.yaml` (Allow-Liste,
@@ -513,29 +455,11 @@ Booleans erkennen `"true"` / `"false"`.
   session-cookie-domain=".wirlernenonline.de">
 </boerdi-chat>
 
-<!-- Schlanke Themenseite: nur Chat + Inline-Links, kein Canvas, keine Kacheln -->
+<!-- Host bringt eigene Material-Erstellung mit: KI-Generierung aus
+     (Treffer bleiben als kompakte Boxen) -->
 <boerdi-chat
   api-url="https://api.example.de"
-  cards-enabled="false"
-  canvas-enabled="false">
-</boerdi-chat>
-
-<!-- Reduziert: Kacheln ja, aber keine KI-Material-Erstellung und keine Quick-Replies
-     (z.B. wenn der Host bereits eigene Material-Erstellungs-Tools mitbringt) -->
-<boerdi-chat
-  api-url="https://api.example.de"
-  ai-content-enabled="false"
-  quick-replies-enabled="false">
-</boerdi-chat>
-
-<!-- Minimal-Bubble: praktisch nur Text-Chat mit Inline-Links
-     (für eingebettete Hilfe-Bubbles in fremden CMS) -->
-<boerdi-chat
-  api-url="https://api.example.de"
-  cards-enabled="false"
-  canvas-enabled="false"
-  ai-content-enabled="false"
-  quick-replies-enabled="false">
+  ai-content-enabled="false">
 </boerdi-chat>
 ```
 
@@ -569,15 +493,14 @@ el.setAttribute('initial-state', 'collapsed');
 
 In Angular per `[attr.initial-state]="state()"` direkt im Template binden — das Widget
 reagiert via `ngOnChanges` auf jede Änderung.
-Live-Demos: `/widget/` (Default mit Kacheln + Canvas), `/widget/inline` (kompakter Inline-Modus).
+Live-Demos: `/widget/` (Default), `/widget/inline` (kompakter Inline-Modus).
 
 #### Embed-Inputs + Outputs/Events
 
 Das Widget hat darüber hinaus eine **umfangreiche Embed-API**: HTML-
-Attribute zum Steuern der Display-Modi (`cards-enabled`,
-`canvas-enabled`, `ai-content-enabled`, `quick-replies-enabled`), des
-Lotsen-Modus (`guide-mode-default`, `emit-guide-suggestion`,
-`emit-routing-debug`) und der Link-Interception
+Attribute wie die Feature-Umschaltung (`ai-content-enabled`), die
+passive Lotsen-/Telemetrie-Emission (`emit-guide-suggestion`,
+`emit-routing-debug`) und die Link-Interception
 (`intercept-edu-sharing-links`) — plus vier globale CustomEvents
 (`badboerdi:page-action`, `badboerdi:guide-suggestion`,
 `badboerdi:routing-debug`, `badboerdi:query-meta`) und die
@@ -652,8 +575,14 @@ Alle URL-/Key-/Modell-Einstellungen sind über Umgebungsvariablen steuerbar. **A
 | **Security** | `STUDIO_API_KEY` | _leer_ | Schützt Admin-Routen |
 | | `CORS_ORIGINS` | `*` | CORS-Whitelist |
 | | `LOG_LEVEL` | `INFO` | Log-Level |
+| | `RAG_RERANKER_ENABLED` | `true` | Cross-Encoder-Reranker; auf ≤ 2-GB-vServern `false` (Embedding-only) |
+| **Repo** | `REPO_BASE_URL` | _Code-Default_ | edu-sharing-Repo-Basis für `wlo_url`/`preview_url` (muss zur `MCP_SERVER_URL` passen) |
+| **Karten-Auswahl** | `CARD_CE_TOP_N` | `3` | Max. Karten je Box |
+| | `CARD_CE_GATE_COLLECTION` | `0.0` | CE-Score-Schwelle Sammlungen/Themenseiten (höher = strenger) |
+| | `CARD_CE_GATE_CONTENT` | `-1.5` | CE-Score-Schwelle Einzelinhalte |
+| | `CHAT_DISABLE_SELECT_TOP_CARDS` | _aus_ | `1` überspringt die LLM-Karten-Kuratierung |
 
-Vollständiges Beispiel unter [`backend/.env.example`](backend/.env.example).
+Vollständiges Beispiel (inkl. `SPEECH_FORCE_ENABLE`, `BOERDI_MAX_INGEST_MB`, `CHAT_INLINE_QUICK_REPLIES`, `CARD_PIPELINE_V2`) unter [`backend/.env.example`](backend/.env.example).
 
 #### Einschränkungen bei B-API-Providern
 
@@ -675,8 +604,8 @@ Die B-API stellt nur die OpenAI-kompatiblen `chat/completions`- und `embeddings`
 ### Backup, Snapshots & Werkseinstellungen
 
 Das System kennt **drei Sicherungs-Ebenen**, die alle den vollständigen `chatbots/wlo/v1`-Tree
-(58 YAML/MD-Dateien über 13 Layer-Ordner: Patterns, Personas, Intents, States, Signals,
-Canvas-Formate, Routing-Rules, Privacy, …) und optional die SQLite-DB (Sessions, Memory,
+(YAML/MD-Dateien über die Layer-Ordner: Patterns, Personas, Intents, States, Signals,
+Material-Formate, Privacy, …) und optional die SQLite-DB (Sessions, Memory,
 RAG-Embeddings, Quality- und Eval-Logs) umfassen:
 
 | Ebene | Pfad | Zweck | Endpoints |
@@ -812,7 +741,7 @@ Alle Endpoints sind Studio-geschützt (Header `X-Studio-Key`, wenn `STUDIO_API_K
 
 ### Skalierung
 
-Ein voller Sweep (alle 9 Personas × 13 Intents × 2 Szenarien) erzeugt 234 Turns und kostet
+Ein voller Sweep (alle 6 Personas × 8 Intents × 2 Szenarien) erzeugt 96 Turns und kostet
 typisch ~$1.30 bei `gpt-4o-mini` als Judge und `gpt-5.4-mini` als Chat-Model. Der volle
 Sweep inkl. 3-Turn-Dialogen (630 Turns) liegt bei ~$4. Laufzeit ~5–15 Minuten, je nach
 Tool-Call- und RAG-Retrieval-Dauer.

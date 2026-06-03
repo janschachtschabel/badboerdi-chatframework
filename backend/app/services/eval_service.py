@@ -47,12 +47,17 @@ logger = logging.getLogger(__name__)
 # Models for simulator + judge. Keep light by default (gpt-4o-mini is
 # plenty for judging; the persona simulator can use the main chat model
 # for more realistic roleplay — but gpt-4o-mini works too and is cheaper).
-DEFAULT_SIMULATOR_MODEL = os.getenv("EVAL_SIMULATOR_MODEL", "gpt-4o-mini")
-DEFAULT_JUDGE_MODEL = os.getenv("EVAL_JUDGE_MODEL", "gpt-4o-mini")
+# ``... or "default"`` (NICHT ``getenv(x, default)``): docker-compose reicht
+# diese Vars als ``${VAR:-}`` durch → im Container sind sie GESETZT, aber LEER.
+# ``getenv(x, default)`` greift den Default nur bei UNSET, nicht bei "" — ein
+# leerer String würde sonst als model="" an die B-API gehen (HTTP 400
+# "you must provide a model parameter") und die Szenario-Generierung killen.
+DEFAULT_SIMULATOR_MODEL = os.getenv("EVAL_SIMULATOR_MODEL") or "gpt-4o-mini"
+DEFAULT_JUDGE_MODEL = os.getenv("EVAL_JUDGE_MODEL") or "gpt-4o-mini"
 
 # Where the eval talks to the real chatbot. Self-loopback in Docker
 # uses "backend:8000"; in dev localhost:8000. Override via env.
-CHAT_URL = os.getenv("EVAL_CHAT_URL", "http://localhost:8000/api/chat")
+CHAT_URL = os.getenv("EVAL_CHAT_URL") or "http://localhost:8000/api/chat"
 
 
 # ── Scenario generation ────────────────────────────────────────────

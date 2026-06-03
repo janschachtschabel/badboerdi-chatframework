@@ -25,6 +25,7 @@ services:
       # ── Speech (STT/TTS) — sprechen immer direkt OpenAI
       - STT_MODEL=${STT_MODEL:-}
       - TTS_MODEL=${TTS_MODEL:-}
+      - SPEECH_FORCE_ENABLE=${SPEECH_FORCE_ENABLE:-}
       # ── MCP / RAG ─────────────────────────────────────────────
       - MCP_SERVER_URL=${MCP_SERVER_URL:-}
       # Base-URL des edu-sharing-Repos, aus dem die wlo_url-/preview_url-
@@ -55,6 +56,15 @@ services:
       # Top-1-Sortierung). Bei kleinen vServern (≤ 2 GB) auf "false"
       # setzen — RAG läuft dann mit Embedding-only-Ranking weiter.
       - RAG_RERANKER_ENABLED=${RAG_RERANKER_ENABLED:-true}
+      - BOERDI_MAX_INGEST_MB=${BOERDI_MAX_INGEST_MB:-}
+      # ── Karten-Auswahl & Ranking (Suchergebnis-Kacheln) ───────
+      # Doku der Werte/Defaults: backend/.env.example
+      - CARD_CE_TOP_N=${CARD_CE_TOP_N:-}
+      - CARD_CE_GATE_COLLECTION=${CARD_CE_GATE_COLLECTION:-}
+      - CARD_CE_GATE_CONTENT=${CARD_CE_GATE_CONTENT:-}
+      - CHAT_DISABLE_SELECT_TOP_CARDS=${CHAT_DISABLE_SELECT_TOP_CARDS:-}
+      - CHAT_INLINE_QUICK_REPLIES=${CHAT_INLINE_QUICK_REPLIES:-}
+      - CARD_PIPELINE_V2=${CARD_PIPELINE_V2:-}
     # ── Memory-Limits ──────────────────────────────────────────
     # Backend braucht im Lastfall (parallele Embedding-Batches +
     # ONNX-Reranker + RAG-Cache) bis zu ~1.8 GB. Limit auf 2 GB

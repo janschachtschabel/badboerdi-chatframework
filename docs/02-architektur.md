@@ -19,7 +19,6 @@ zusammensetzt. Jede Schicht ist eine separate Datei-Hierarchie unter
 04-states/            3 Gesprächs-Phasen       (aktive Phase)
 04-signals/           Tone-Modulationen        (aktive Signale)
 05-knowledge/         RAG & MCP-Server         (kontextabhängig)
-06-rules/             Routing-Rules            (Korrektur-Schicht)
 ```
 
 **Warum Schichten?**
@@ -43,7 +42,7 @@ zusammensetzt. Jede Schicht ist eine separate Datei-Hierarchie unter
 | `device-config.yaml` | Geräte-Limits (max_items pro Desktop/Tablet/Mobile) + Persona-Anrede-Fallback |
 | `tone-modifiers.yaml` | Default-Modifier wenn Persona-MD `formality: wie_user` setzt |
 | `display-rules.yaml` | Frontend-Display-Limits (Cards-pro-Box, Inline-Doc-Anzeige, …) |
-| `widget-modes.yaml` | Widget-Embed-Modi (cards-enabled, canvas-enabled, …) |
+| `widget-modes.yaml` | Widget-Embed-Schwellen (Inline-Link-Modus, `ai-content-enabled`) |
 | `placeholder-topics.yaml` | Beispielthemen für leere QR-Slots |
 | `privacy-config.yaml` | Privacy-Toggles (Logging an/aus pro Datenklasse) |
 | `card-pipeline.yaml` | MCP-Card-Rendering-Konfiguration |
@@ -101,9 +100,7 @@ def select_pattern(...):
 **Reihenfolge der Selektoren** in `routers/chat.py:_pattern_for_request`:
 
 1. **Safety-Layer** — kann via `enforced_pattern_id` ein Pattern erzwingen (M01 bei Selbstgefährdung, M02 bei Drohungen)
-2. **Pre-Route-Rules** — `06-rules/routing-rules.yaml` kann via `enforced_pattern_id` korrigieren
-   - z. B. `rule_create_needs_topic`: I05 ohne `topic` → M03 (Slot-Klärung)
-   - z. B. `rule_iterative_edit`: Edit-Verb + voriger M09/M10-Turn → M11
+2. **Classify-Overrides** — `01-base/classify-overrides.yaml` setzt harte Overrides bereits IM Klassifikator (Persona-Self-ID, Intent-Anchor). Eine separate Post-Route-Routing-Rules-Engine gibt es seit Welle E nicht mehr.
 3. **LLM-Hint** (`pattern_id_hint`) — primärer Pfad in praktisch 100 % der Turns
 4. **Fallback** — M15 (Orientierung), wenn weder Safety noch Rules noch Hint ein gültiges Pattern liefern
 5. **`phase3_modulate`** — Stil/Tonalitäts-Anpassung über Persona-Modifier + Pattern-Defaults + aktive Signale
@@ -203,31 +200,17 @@ Die Metadaten landen als semantischer Block im System-Prompt — der Bot kann �
 
 ---
 
-## Schicht 6: Routing-Rules
+## Schicht 6 — entfällt (Routing-Rules entfernt)
 
-**Pfad:** `06-rules/routing-rules.yaml`
+Die frühere YAML-Routing-Rules-Engine (`06-rules/routing-rules.yaml` + `rule_engine.py`)
+wurde in Welle E v4 / Sprint K datenbasiert als redundant **entfernt** — das Verzeichnis
+existiert nicht mehr. Verbliebene harte Overrides liegen in **`01-base/classify-overrides.yaml`**
+und greifen bereits IM Klassifikator, nicht als separate Post-Route-Stufe:
 
-Korrektur-Schicht für klare Edge-Cases, die der Klassifikator-LLM nicht
-zuverlässig erfasst. **Rules sind Sanity-Net, nicht Hauptselektor.**
+- **Persona-Self-ID** („ich bin Lehrerin" → `P-LEH`)
+- **Intent-Anchor** (korrigiert Catch-All-Intents)
 
-| Rule-Klasse | Beispiele |
-|-------------|-----------|
-| Safety-Override | `rule_safety_override` |
-| Slot-Klärung (Pattern-Force) | `rule_create_needs_topic`, `rule_plan_needs_topic`, `rule_vague_search` |
-| Edit-Detection | `rule_iterative_edit`, `rule_edit_without_prior_content`, `rule_create_followup_after_slot_clarification` |
-| Such-Cascade | `rule_search_with_filter`, `rule_search_cascade` |
-| Spezial-Routing | `rule_subject_portals`, `rule_subject_drilldown`, `rule_learning_deficit`, `rule_personal_data_request` |
-| Persona-Self-ID (Lookup) | `lookup_persona_self_id__{leh,ler,elt,red,ent}` — setzt `persona_override`, nicht Pattern |
-| Intent-Anchor (Lookup) | `lookup_intent_anchor__{i04_plan,i05_create,i08_submit,…}` — korrigiert Catch-All-Intents |
-
-**Confidence-Fallbacks:**
-- `rule_low_persona_confidence` (< 0.40) → `persona_override: P-AND`
-- `rule_low_intent_confidence` (< 0.55) → `enforced_pattern_id: M03` (Slot-Klärung)
-
-**Telemetrie:** Jede Rule wird in `logs/shadow_router_*.jsonl` protokolliert
-mit `fired`/`effective`/`redundant`-Counters — Studio zeigt das im
-Routing-Rules-Editor an, inkl. Lösch-Vorschlägen bei dauerhaft 100 %
-redundanten Rules.
+Pattern-Selektion läuft danach rein über den LLM-Hint (+ Safety-Override + Fallback).
 
 ---
 
@@ -243,11 +226,8 @@ parallel: [Safety-Layer]   [Klassifikator-LLM]   [Memory-Fetch]
           (M01/M02)           persona_id, intent_id, state_id,
                               entities, signals, tool_hint
    ↓
-Pre-Route-Rules (routing-rules.yaml, live: true)
-   → kann enforced_pattern_id / intent_override / persona_override setzen
-   ↓
 select_pattern():
-   1. enforced_pattern_id (Safety + Rules)
+   1. enforced_pattern_id (Safety)
    2. pattern_id_hint (LLM)
    3. Fallback M15
    ↓

@@ -929,3 +929,14 @@ C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarn
 22:54:42 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
 22:54:43 INFO app.services.eval_service: [eval eval-426c5d82b298] done in 632.0s, avg=0.83, 48/48 turns
 23:04:07 INFO app.routers.config: factory-snapshot rebuilt from live state (12897742 bytes)
+23:28:33 INFO app.routers.chat: chat_stream START session=bb-950d24aa-6f81-4723-9711-945433b24d5f msg='Wie kannst du mir helfen?' action=-
+23:28:34 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+23:28:34 INFO app.services.safety_service: safety stages=openai level=standard took 908ms
+23:28:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+23:28:35 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
+23:28:35 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
+23:28:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+23:28:37 INFO app.services.guide_qr_injector: guide-rules: 15 message_rules loaded from YAML
+23:28:37 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
+23:28:37 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Wie kannst du mir helfen?'
+23:28:37 INFO app.routers.chat: chat_stream END session=bb-950d24aa-6f81-4723-9711-945433b24d5f pattern=M15 (Orientierung) tokens=25047/238 cached=4608

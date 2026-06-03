@@ -1,6 +1,6 @@
 # BadBoerdi Backend (FastAPI)
 
-Python-Service mit Chat-API, Pattern-Engine, mehrstufiger Safety-Pipeline, RAG, MCP-Integration
+Python-Service mit Chat-API, LLM-gesteuertem Pattern-Routing, mehrstufiger Safety-Pipeline, RAG, MCP-Integration
 und Auslieferung des `<boerdi-chat>`-Widgets. Konfiguration ausschliesslich ueber Dateien unter
 `chatbots/wlo/v1/` — kein Code-Deploy fuer inhaltliche Aenderungen noetig.
 
@@ -74,7 +74,7 @@ reiner Embedding-Suche; er ist daher immer an.
 | `LLM_EMBED_MODEL` | provider-spezifisch | Override fuer das Embedding-Modell. Defaults: `text-embedding-3-small` (openai, b-api-openai), `e5-mistral-7b-instruct` (b-api-academiccloud). |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | _Legacy_, weiterhin gueltig wenn `LLM_PROVIDER=openai` und `LLM_CHAT_MODEL` nicht gesetzt ist. |
 | `MCP_SERVER_URL` | `https://wlo-mcp-server.vercel.app/mcp` | Default-Ziel des WLO-MCP-Clients. Weitere Server koennen in `05-knowledge/mcp-servers.yaml` definiert werden. |
-| `TEXT_EXTRACTION_URL` | `https://text-extraction.prod.openeduhub.net` | **Base-URL** des OEH-Volltext-Service (Canvas-Remix-Flow, Phase 2). Der `/from-url`-Endpoint wird intern angehängt; Trailing-Slash wird ignoriert. Staging: `https://text-extraction.staging.openeduhub.net`. |
+| `TEXT_EXTRACTION_URL` | `https://text-extraction.prod.openeduhub.net` | **Base-URL** des OEH-Volltext-Service (Material-Remix — URL-Inhalte als Quelle einlesen). Der `/from-url`-Endpoint wird intern angehängt; Trailing-Slash wird ignoriert. Staging: `https://text-extraction.staging.openeduhub.net`. |
 | `STUDIO_API_KEY` | _leer_ | Schuetzt `/api/config/*`, `/api/rag/*`, `/api/safety/*`, `/api/quality/*`, `/api/debug/*` und die geschuetzten `/api/sessions/*`-Routen. Leer = API offen (Dev-Default, Startup-Warnung). Siehe Abschnitt 9. |
 | `CORS_ORIGINS` | `*` | Komma-separierte Liste erlaubter Origins fuer CORS. Bei `*` (Default) werden keine Credentials erlaubt. Fuer Produktion spezifische Origins setzen (z.B. `https://wirlernenonline.de,https://studio.meinedomain.de`), dann werden auch Credentials unterstuetzt. |
 | `DATABASE_PATH` | `badboerdi.db` | Pfad zur SQLite-Datenbank (Sessions, Messages, Safety-Logs, Quality-Logs, RAG). |
@@ -83,6 +83,19 @@ reiner Embedding-Suche; er ist daher immer an.
 | `EVAL_CHAT_URL` | `http://localhost:8000/api/chat` | Ziel-Endpoint für simulierte Chat-Calls im Eval. Self-Loopback; nur ändern, wenn Eval gegen remote Backend läuft. |
 | `EVAL_SIMULATOR_MODEL` | `gpt-4o-mini` | Modell für User-Simulator + Szenario-Generator. |
 | `EVAL_JUDGE_MODEL` | `gpt-4o-mini` | Modell für den LLM-as-Judge-Scorer. |
+| `REPO_BASE_URL` | _Code-Default_ | edu-sharing-Repo-Basis für `wlo_url`/`preview_url`. MUSS zum Repo der `MCP_SERVER_URL` passen. Staging: `https://repository.staging.openeduhub.net`. |
+| `LOG_LEVEL` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`. |
+| `RAG_RERANKER_ENABLED` | `true` | Cross-Encoder-Reranker an/aus. Auf ≤ 2-GB-vServern `false` (Embedding-only). Siehe „Memory-Sizing“ in docs/04. |
+| `EMBED_DIM` | _Modell-Default_ | Embedding-Dimension. Nur für exotische Embed-Modelle; Änderung erfordert Re-Embedding. |
+| `SPEECH_FORCE_ENABLE` | _aus_ | `1` erzwingt Speech-Features trotz Auto-Deaktivierung (Debug). |
+| `BOERDI_MAX_INGEST_MB` | `25` | Max. RAG-Upload-Größe (MB). `0` = unbegrenzt. |
+| **Karten-Auswahl** | | (volle Doku + Defaults: `.env.example`) |
+| `CARD_CE_TOP_N` | `3` | Max. Karten je Box (Sammlungen/Themenseiten/Einzelinhalte). |
+| `CARD_CE_GATE_COLLECTION` | `0.0` | CE-Score-Schwelle Sammlungen + Themenseiten (höher = strenger). |
+| `CARD_CE_GATE_CONTENT` | `-1.5` | CE-Score-Schwelle Einzelinhalte. |
+| `CHAT_DISABLE_SELECT_TOP_CARDS` | _aus_ | `1` überspringt den LLM-Kuratierungs-Schritt der Karten. |
+| `CHAT_INLINE_QUICK_REPLIES` | _aus_ | `1` = Antwort + Quick-Replies in einem kombinierten Tool-Call (experimentell). |
+| `CARD_PIPELINE_V2` | _aus_ | `1` aktiviert die neue modulare Karten-Pipeline (Opt-in). |
 
 ---
 
@@ -138,7 +151,7 @@ Alle Routen unter `/api/config/*` sind **Studio**-geschuetzt.
 | `PUT`    | `/api/config/mcp-servers` | MCP-Server-Konfiguration schreiben. |
 | `POST`   | `/api/config/mcp-servers/discover` | Tools eines MCP-Servers automatisch entdecken (SSRF-geschuetzt). |
 | `POST`   | `/api/config/import` | Batch-Import (JSON, pfad-validiert). |
-| `GET`    | `/api/config/canvas/material-types` | Typed JSON der 18 Canvas-Material-Typen (für GUI-Editor). |
+| `GET`    | `/api/config/canvas/material-types` | Typed JSON der Material-Typen für die KI-Generierung (M10) — GUI-Editor im Studio-Tab „Material-Formate“. |
 | `PUT`    | `/api/config/canvas/material-types` | Liste schreiben — Multi-line-`structure` wird als YAML-Block-Scalar serialisiert. |
 | `GET`    | `/api/config/privacy` | Logging-Toggles (messages/memory/quality). |
 | `PUT`    | `/api/config/privacy` | Logging-Toggles updaten. `safety` ist read-only true. |
@@ -212,7 +225,6 @@ schickt — im **selben Browser-Tab**, statt einen neuen aufzumachen. Aktiv nur,
 | `guide_mode_service.py` | Allow-Listen-Match (Wildcard `*.example.com`), `pick_guide_url(card)` und `annotate_cards_with_guide_url()` | `app/services/` |
 | `guide_qr_injector.py` | Deterministisches Mapping User-Frage-Regex + RAG-Area → URL für Quick-Reply | `app/services/` |
 | `_attach_guide_qr` / `_attach_guide_urls` (in `chat.py`) | Stellt sicher, dass jede ausgehende `ChatResponse` Cards mit `guide_url` und (bei Bedarf) einen `__guide__|...` Quick-Reply trägt — oder beides aktiv strippt, wenn der Toggle aus ist | `app/routers/chat.py` |
-| Routing-Rule R-17 (`rule_themenseite_search`) | `intent_override: INT-W-03` + `enforced_pattern_id: PAT-28` bei „themenseite zu …" (nach Welle C Sprint 4 — vorher INT-W-03a) | `chatbots/wlo/v1/06-rules/routing-rules.yaml` |
 | `GET /api/config/guide-mode` | **Public** Endpoint (kein Studio-Auth), den jedes Widget beim Init fetcht | `app/routers/config.py:public_router` |
 
 **Konfigurations-Datei:**
@@ -271,405 +283,68 @@ Reihenfolge der Trigger pro Antwort: (1) Message-Regex überschreibt LLM-Wahl, (
 
 ---
 
-## 3. Konfigurationslayout — die 6 Prompt-Schichten + Routing-Rules-Engine
+## 3. Architektur-Überblick (Welle E)
 
-Alle Schichten liegen unter `backend/chatbots/wlo/v1/` und werden ueber
-`app/services/config_loader.py` geladen. Schichten 1-6 entsprechen den Prompt-Layern;
-`06-rules/` ist die deklarative Routing-Rules-Engine, die die Pattern-Auswahl umrahmt.
+Pro Nachricht läuft eine schlanke Pipeline: **Safety → Klassifikation (LLM) → Pattern-Auswahl (LLM-Hint) → Antwort-Generierung**. Es gibt **keine** Score-/Gate-Engine und **keine** Routing-Rules mehr (in Welle E v4 / Sprint K datenbasiert als redundant entfernt). Der LLM-Klassifikator liefert den primären Pattern-Hint; nur Safety (Schutz-Pattern) oder ein Ausführungs-Abgleich (M09/M10 → Label an die real ausgeführte Aktion) überschreiben ihn.
 
-```
-chatbots/wlo/v1/
-├── 01-base/                           ← Schicht 1: Identitaet & Schutz
-│   ├── base-persona.md                ←   Wer ist BOERDi? (Name, Rolle, Tonalitaet)
-│   ├── guardrails.md                  ←   Harte Regeln R-01 bis R-10 (LETZTER Block im Prompt)
-│   ├── safety-config.yaml             ←   Presets off/regex/standard/strict/paranoid + Rate-Limits
-│   ├── quality-log-config.yaml        ←   Quality-Logging: an/aus, Retention, Alert-Schwellwerte
-│   ├── device-config.yaml             ←   Geraete-Limits (max_items) + Persona-Anrede (Sie/du)
-│   └── privacy-config.yaml            ←   Logging-Toggles (messages/memory/quality)
-│
-├── 02-domain/                         ← Schicht 2: Domain & Regeln
-│   ├── domain-rules.md                ←   Such-Strategie, Themenseiten, RAG-Wissensquellen, Disambiguierung
-│   ├── policy.yaml                    ←   Tool-Blockaden pro Persona/Intent, Disclaimer-Texte
-│   └── wlo-plattform-wissen.md        ←   Faktenwissen ueber WLO (Struktur, Angebote, Zielgruppen)
-│
-├── 03-patterns/                       ← Schicht 3: 27 Konversations-Patterns (siehe Abschnitt 5)
-│   ├── pat-01-direkt-antwort.md       ←   Direkte Antwort
-│   ├── pat-02-gefuehrte-klaerung.md   ←   Gefuehrte Klaerung
-│   ├── pat-03-transparenz-beweis.md   ←   Transparenz / „habe ich nicht"
-│   ├── pat-04-inspiration-opener.md   ←   Inspirations-Opener
-│   ├── pat-05-profi-filter.md         ←   Profi-Filter (LK)
-│   ├── pat-06-degradation-bruecke.md  ←   Degradation-Bruecke
-│   ├── pat-07-ergebnis-kuratierung.md ←   Ergebnis-Kuratierung
-│   ├── pat-08-null-treffer.md         ←   Null-Treffer
-│   ├── pat-09-redaktions-recherche.md ←   Redaktions/Presse/Politik/Beratung
-│   ├── pat-10-fakten-bulletin.md      ←   Fakten-Bulletin
-│   ├── pat-11-nachfrage-schleife.md   ←   Nachfrage-Schleife
-│   ├── pat-12-ueberbrueckungs-hinweis.md
-│   ├── pat-13-schritt-fuer-schritt.md ←   Schritt-fuer-Schritt
-│   ├── pat-14-eltern-empfehlung.md    ←   Eltern-Empfehlung
-│   ├── pat-15-analyse-ueberblick.md   ←   Analyse / Ueberblick
-│   ├── pat-16-themen-exploration.md   ←   Themen-Exploration
-│   ├── pat-17-sanfter-einstieg.md     ←   Sanfter Einstieg
-│   ├── pat-18-unterrichts-paket.md    ←   Unterrichts-Paket
-│   ├── pat-19-unterrichts-lernpfad.md ←   Unterrichts-Lernpfad
-│   ├── pat-20-orientierungs-guide.md  ←   Orientierungs-Guide
-│   ├── pat-21-canvas-create.md        ←   Canvas-Create (INT-W-11)
-│   ├── pat-22-feedback-echo.md        ←   Feedback-Echo (INT-W-04)
-│   ├── pat-23-redaktions-routing.md   ←   Redaktions-Routing (INT-W-05)
-│   ├── pat-25-canvas-edit-dialog.md   ←   Canvas-Edit (INT-W-12)
-│   ├── pat-26-fakten-bulletin.md      ←   Fakten-Bulletin (INT-W-09)
-│   ├── pat-27-news-overview.md        ←   News-Overview (INT-W-10)
-│   ├── pat-28-themenseite-search.md   ←   Themenseiten-Suche (INT-W-03)
-│   ├── pat-crisis-empathie.md         ←   Krisen-Pattern (Safety-erzwungen)
-│   └── pat-refuse-threat.md           ←   Bedrohungs-Refuse (Safety-erzwungen)
-│
-├── 04-personas/                       ← Schicht 4a: 9 Personas (je eine Markdown-Datei)
-│   ├── lk.md                          ←   P-W-LK  — Lehrkraft
-│   ├── sl.md                          ←   P-W-SL  — Schueler:in
-│   ├── elt.md                         ←   P-ELT   — Elternteil
-│   ├── pol.md                         ←   P-W-POL — Politik / Multiplikator:in
-│   ├── presse.md                      ←   P-W-PRESSE — Presse / Journalist:in
-│   ├── red.md                         ←   P-W-RED — Redakteur:in / Autor:in
-│   ├── ber.md                         ←   P-BER   — Berater:in
-│   ├── ver.md                         ←   P-VER   — Verwaltung
-│   └── and.md                         ←   P-AND   — Allgemein (Default)
-│
-├── 04-intents/                        ← Schicht 4b: 13 Intents (inkl. INT-W-11 Create, INT-W-12 Edit; nach Welle C Sprint 4)
-│   └── intents.yaml
-│
-├── 04-entities/                       ← Schicht 4c: 5 Entities/Slots
-│   └── entities.yaml
-│
-├── 04-signals/                        ← Schicht 4d: 17 Signale in 4 Dimensionen
-│   └── signal-modulations.yaml
-│
-├── 04-states/                         ← Schicht 4e: 12 Gespraechszustaende (inkl. state-12 Canvas)
-│   └── states.yaml
-│
-├── 04-contexts/                       ← Schicht 4f: 5 Seitenkontexte
-│   └── contexts.yaml
-│
-├── 05-canvas/                         ← Schicht 5: Canvas-Ausgabe-Formate
-│   ├── material-types.yaml            ←   18 Material-Typen (13 didaktisch + 5 analytisch)
-│   │                                       — typed GUI-Editor im Studio
-│   ├── type-aliases.yaml              ←   Keyword-Aliase + LRT-Mapping (Remix)
-│   ├── create-triggers.yaml           ←   Verben die „Neu erstellen" signalisieren
-│   ├── edit-triggers.yaml             ←   Edit-Verben + explizite Create-Overrides
-│   └── persona-priorities.yaml        ←   Welche Personas sehen analytische Typen zuerst
-│
-├── 05-knowledge/                      ← Schicht 6: Wissen
-│   ├── rag-config.yaml                ←   4 RAG-Wissensbereiche (mode: always/on-demand)
-│   └── mcp-servers.yaml               ←   MCP-Server-Registry (1 Server, 10 Tools)
-│
-└── 06-rules/                          ← Routing-Rules-Engine (Steuerungs-Ebene)
-    └── routing-rules.yaml             ←   Pre/Post-Route-Regeln (~37 Regeln, live/shadow-Flag)
-```
+> Ausführliche Architektur-/Element-Doku: **[../docs/02-architektur.md](../docs/02-architektur.md)** + **[../docs/03-elemente.md](../docs/03-elemente.md)**. Hier nur der Überblick.
 
-Welche Datei wann in den Prompt wandert, ist im Quelltext nachvollziehbar:
-`app/services/llm_service.py → generate_response()`, Variable `system_parts`.
+### Konfigurations-Schichten (`chatbots/wlo/v1/`)
 
-**Routing-Rules-Engine** (`app/services/rule_engine.py`): laeuft 2x pro Turn (Pre-Route +
-Post-Route) und kann Persona, Intent, State und Pattern-Selection ueberschreiben — dokumentiert
-im Studio unter „Architektur ⚙️ Routing-Rules" inkl. Test-Bench (sub-ms, kein LLM-Call).
+| Verzeichnis | Inhalt |
+|---|---|
+| `01-base/` | Identität, Guardrails, Safety-/Quality-/Privacy-Config, Geräte-Limits, Display-Rules, Web-Tour, Guide-Mode, Card-Pipeline, Widget-Modi |
+| `02-domain/` | WLO-Plattform-Wissen (Struktur, Angebote, Zielgruppen) |
+| `03-patterns/` | **16 Konversations-Patterns** (`M01`–`M16`) |
+| `04-personas/` | **6 Personas** (s.u.) |
+| `04-intents/` | **8 Intents** (`I01`–`I08`) |
+| `04-states/` | **4 Gesprächsphasen** (`S0`–`S3`) |
+| `04-entities/`, `04-signals/` | Slots + Signale (Klassifikations-Hilfsdimensionen) |
+| `05-canvas/` | Material-Typen + Trigger/Aliase für die KI-Generierung (M10/M11) — Studio-Tab „Material-Formate“ |
+| `05-knowledge/` | MCP-Server-Registry + RAG-Wissensbereiche |
 
----
+Alle Dateien sind ohne Code-Deploy editierbar (mtime-Cache); das Studio bietet GUI-Editoren pro Schicht.
 
-## 4. Input-Dimensionen (Klassifikation)
+## 4. Klassifikations-Dimensionen
 
-Jede Nutzernachricht wird per LLM-Klassifikation in **7 Dimensionen** zerlegt. Diese bilden den
-Input fuer die Pattern-Engine (Abschnitt 5).
+Jede Nutzernachricht wird per LLM in Dimensionen zerlegt — Input für die Pattern-Auswahl.
 
-### 4a. Personas (9)
+### 4a. Personas (6)
 
-Jede Persona hat eine eigene Markdown-Datei mit Erkennungshinweisen, primaeren Zielen und
-Anrede-Heuristiken. Die erkannte Persona bestimmt, welche Patterns in Frage kommen (Gate) und
-welche Tonalitaet/Formalitaet verwendet wird.
+Personas steuern nur **Tonalität/Anrede**, nicht die Pattern-Wahl.
 
-| ID | Label | Beschreibung |
-|----|-------|-------------|
-| `P-W-LK` | Lehrkraft | Sucht Unterrichtsmaterial, plant Stunden, braucht Fachdidaktik |
-| `P-W-SL` | Schueler:in | Sucht Lerninhalte, braucht einfache Sprache und Ermutigung |
-| `P-ELT` | Elternteil | Sucht altersgerechte Inhalte fuer das Kind, braucht Orientierung |
-| `P-W-POL` | Politik | Braucht Fakten und Zahlen zu WLO, keine Materialsuche |
-| `P-W-PRESSE` | Presse | Braucht zitierfaehige Fakten, keine Materialsuche |
-| `P-W-RED` | Redakteur:in | Recherchiert systematisch Fachgebiete, redaktioneller Fokus |
-| `P-BER` | Berater:in | Bewertet Plattform-Features, braucht Ueberblicke und Vergleiche |
-| `P-VER` | Verwaltung | Braucht Zahlen, Statistiken, strukturierte Uebersichten |
-| `P-AND` | Allgemein | Default-Persona fuer nicht zuordenbare Nutzer:innen |
+| ID | Rolle |
+|----|-------|
+| `P-AND` | Andere / unbekannt (neutraler Default) |
+| `P-LEH` | Lehrkraft (kollegial, siezt) |
+| `P-LER` | Lernende:r (ermutigend, duzt) |
+| `P-ELT` | Eltern |
+| `P-ENT` | Entscheider / Verwaltung / Politik / Schulleitung (formell, evidenzbasiert) |
+| `P-RED` | Redaktion / Presse |
 
-### 4b. Intents (13)
+### 4b. Intents (8)
 
-Erkannte Absicht der Nutzernachricht. Steuert Pattern-Gates und Tool-Auswahl.
+`I01` Orientierung · `I02` Wissensfrage · `I03` Inhalte-Suchen · `I04` Lernpfad · `I05` Inhalt-Generieren · `I06` Inhalt-Nachbearbeiten · `I07` Bot-Feedback · `I08` Einreichen / Melden.
 
-> **Welle C Sprint 4 (2026-05-15):** INT-W-03a/03b/03c → **INT-W-03 "Inhalte abrufen"** konsolidiert.
-> INT-W-07 (Material herunterladen) entfernt — Download ist technisch identisch mit INT-W-03.
+### 4c. States (4)
 
-| ID | Label | Beschreibung |
-|----|-------|-------------|
-| `INT-W-01` | WLO kennenlernen | Was ist WLO? Was bietet die Plattform? |
-| `INT-W-02` | Soft Probing | Bot klaert aktiv Bedarf, Rolle oder Kontext |
-| `INT-W-03` | Inhalte abrufen | Universeller Such-/Abruf-Intent: Themenseite, Material, Lerninhalt, Download — Pattern-Wahl (PAT-28/PAT-07/PAT-14/PAT-09) deterministisch über Anker-Wörter + Persona |
-| `INT-W-04` | Feedback | Rueckmeldung zu Ergebnissen oder zum Bot → PAT-22 (Feedback-Echo) |
-| `INT-W-05` | Routing Redaktion | Weiterleitung an Redaktion (Luecken, Fehler, Wuensche) → PAT-23 (Redaktions-Routing) |
-| `INT-W-06` | Faktenfragen | Faktenfragen ueber WLO, edu-sharing oder Metaventis |
-| `INT-W-08` | Inhalte evaluieren | Qualitaet, Lizenz oder Eignung pruefen |
-| `INT-W-09` | Analyse & Reporting | Zahlen, Statistiken, Uebersichten fuer Verwaltung/Beratung → PAT-26 (Fakten-Bulletin) |
-| `INT-W-10` | Unterrichtsplanung | Strukturierte Materialzusammenstellung → PAT-27 (News-Overview) bei Verwaltung/Politik |
-| `INT-W-11` | Inhalt erstellen | Canvas-Create: neues Material (Arbeitsblatt/Quiz/Bericht/Factsheet/…) KI-generiert → PAT-21 |
-| `INT-W-12` | Canvas-Edit | Bestehenden Canvas-Inhalt verfeinern („einfacher", „Loesungen hinzu") → direkter Handler `_handle_canvas_edit` |
-| `INT-W-13` | Sammlungs-Empfehlung | Curated-Collection-Hinweise (Redaktion) |
-| `INT-W-14` | Repo-Frage | Spezifische Frage zur edu-sharing-Plattform/Workspace |
+Gesprächsphasen `S0`–`S3` (Einstieg → Klärung → Ergebnis → Vertiefung), je mit `bot_directive` + plausiblen Übergängen (`next_likely`).
 
-### 4c. Entities / Slots (5)
+### 4d. Entities & Signale
 
-Aus der Nachricht extrahierte Informationsfragmente. Werden ueber Turns hinweg akkumuliert.
-Zwei Patterns (PAT-18, PAT-19) haben Hard Gates auf `fach` + `stufe` + `thema`.
+**Entities/Slots** (z.B. `thema`, `fach`, `stufe`, `material_typ`) + **Signale** (situative Hinweise). Marker/Diskriminatoren je Dimension: [docs/03-elemente.md](../docs/03-elemente.md).
 
-| ID | Label | Beispiele |
-|----|-------|----------|
-| `fach` | Fach / Fachgebiet | Mathematik, Deutsch, Biologie, Informatik |
-| `stufe` | Bildungsstufe | Grundschule, Sek I, Klasse 7, Berufliche Bildung |
-| `thema` | Thema | Bruchrechnung, Fotosynthese, Lyrik der Romantik |
-| `medientyp` | Medientyp | Video, Arbeitsblatt, Simulation, Podcast |
-| `lizenz` | Lizenz | CC BY, CC BY-SA, CC0, Alle OER |
+## 5. Pattern-Auswahl (LLM-Hint)
 
-**Akkumulations-Regeln pro Turn-Typ:**
+Der Klassifikator liefert pro Turn neben Persona/Intent/State auch einen **`pattern_id_hint`** (`M01`–`M16`). `select_pattern()` (`app/services/pattern_engine.py`) wählt in dieser Reihenfolge:
 
-| Turn-Typ | Verhalten |
-|-----------|-----------|
-| `initial` | keep + extend |
-| `follow_up` | keep + extend |
-| `clarification` | keep + extend |
-| `correction` | overwrite |
-| `topic_switch` | reset all |
+1. **Safety-erzwungenes Pattern** (z.B. `M01` im Schutzfall) — gewinnt immer
+2. **`pattern_id_hint`** des Klassifikators — der Normalfall
+3. **Fallback** (`M15` Orientierung, sonst `M03` Klärung)
 
-### 4d. Signale (17 in 4 Dimensionen)
+Intent und Pattern-Hint entstehen im **selben** LLM-Call — sie korrelieren stark, es gibt aber keine deterministische Intent→Pattern-Tabelle. Nach der Generierung wird das Label ggf. an die tatsächlich ausgeführte Aktion angeglichen (`M09` Lernpfad / `M10` KI-Material / `M03` Slot-Klärung), damit Telemetrie + InlineDocument-Box-Routing stimmen.
 
-Emotionale und situative Hinweise in der Nachricht. Steuern Phase 2 (Scoring) und Phase 3
-(Modulation) der Pattern-Engine. Jedes Signal hat deterministische IF-THEN-Regeln fuer
-Ton, Laenge und weitere Ausgabeoptionen.
-
-| Dimension | Signal | Tone-Override | Length | Besonderheit |
-|-----------|--------|---------------|--------|-------------|
-| **D1 — Zeit & Druck** | `zeitdruck` | sachlich | kurz | skip_intro |
-| | `ungeduldig` | sachlich | kurz | skip_intro, reduce_items |
-| | `gestresst` | beruhigend | kurz | skip_intro, reduce_items |
-| | `effizient` | sachlich | kurz | skip_intro |
-| **D2 — Sicherheit** | `unsicher` | empathisch | mittel | one_option |
-| | `ueberfordert` | empathisch | kurz | one_option |
-| | `unerfahren` | niedrigschwellig | mittel | one_option |
-| | `erfahren` | sachlich | kurz | skip_intro |
-| | `entscheidungsbereit` | sachlich | kurz | skip_intro |
-| **D3 — Haltung** | `neugierig` | spielerisch | mittel | show_more |
-| | `zielgerichtet` | sachlich | kurz | — |
-| | `skeptisch` | transparent | mittel | add_sources |
-| | `vertrauend` | empfehlend | mittel | — |
-| **D4 — Kontext** | `orientierungssuchend` | orientierend | mittel | show_overview |
-| | `vergleichend` | analytisch | mittel | — |
-| | `validierend` | belegend | mittel | add_sources |
-| | `delegierend` | proaktiv | mittel | — |
-
-### 4e. States (12)
-
-Gespraechszustand, der sich ueber die Turns hinweg entwickelt. Steuert Pattern-Gates
-und bestimmt den Gespraechsfortschritt. **state-12** wird durch einen expliziten Guard
-(`chat.py`) geschuetzt: er wird nur bei INT-W-11/12 UND entweder vorhandenem Canvas-Markdown
-ODER einem konkreten Thema aktiviert, sonst fällt der State auf state-5 zurueck.
-
-> **Welle C Sprint 6 (2026-05-16)**: State-Konzept refactored — States sind jetzt **Conversation Flow Phasen** (nicht zweite Klassifikations-Achse zum Intent). Jeder State hat eine `bot_directive` (Handlungsanweisung) und `next_likely` (plausible Übergänge). state-10 (Redaktions-Recherche) entfernt — redundant zu Persona P-W-RED.
-
-| ID | Label (DE) | Rolle / bot_directive (Kurzform) |
-|----|-------|-------------|
-| `state-1` | Orientierung | Bot sondiert offen, EINE Frage + 2-3 Einstiegs-QRs, kein Tool |
-| `state-2` | Slot-Erfassung | Bot fragt nach EINEM fehlenden Slot, QRs mit wahrscheinlichen Werten |
-| `state-3` | Information | Bot beantwortet Fakten/Konzept-Frage knapp, Quelle nennen |
-| `state-4` | Erkundung | Bot zeigt 2-3 Einstiegs-Sammlungen/Themenseiten |
-| `state-5` | Suche | Bot ruft Such-Tool auf, 1 Satz Einleitung |
-| `state-6` | Ergebnis-Kuratierung | Bot bestätigt + fragt nach Pass via Refinement-QRs |
-| `state-7` | Verfeinerung | Bot adjustiert Filter, bestätigt was geändert wurde |
-| `state-8` | Lernen & Arbeiten | Bot hilft bei Anwendung, bietet ggf. Canvas-Erstellung |
-| `state-9` | Bewertung & Feedback | Bot paraphrasiert, probt nach Detail bei Negativ |
-| `state-11` | System & Meta | Bot erklärt sich/Plattform, kein Such-Tool |
-| `state-12` | Canvas-Arbeit | Bot editiert Canvas iterativ, kompakte Bubble + Edit-QRs |
-
-### 4f. Kontexte (5)
-
-Seitenbasierte Situationen, die aus der `environment`-Information des Widgets abgeleitet werden.
-Beeinflussen Pattern-Scoring (page_bonus) und Bot-Verhalten.
-
-| ID | Label | Trigger | Verhalten |
-|----|-------|---------|-----------|
-| `ctx-search-page` | Suchergebnis-Seite | `/suche`, `/startseite`, `/` | Suchbegriff aufgreifen, nicht nochmal fragen |
-| `ctx-collection-detail` | Sammlungs-Detail | `/sammlung/*` | Auf angezeigte Sammlung Bezug nehmen |
-| `ctx-material-detail` | Material-Detail | `/material/*` | Auf angezeigtes Material Bezug nehmen |
-| `ctx-mobile-quick` | Mobile Schnellinteraktion | device=mobile, <60s Session | Maximal kurze Antworten, max. 3 Karten |
-| `ctx-fachportal` | Fachportal-Seite | `/fach/*` | Fach aus Pfad ableiten, nicht nochmal fragen |
-
----
-
-## 5. Pattern-Engine (3-Phasen-Modell)
-
-Die Pattern-Engine waehlt pro Nachricht deterministisch eines von **23 Patterns** (PAT-01 bis PAT-28 mit Luecken nach Konsolidierung Welle B/C) aus und
-moduliert die Ausgabe. Implementiert in `app/services/pattern_engine.py`. Vor und nach der
-Pattern-Auswahl laeuft die deklarative Routing-Rules-Engine
-(`app/services/rule_engine.py` + `06-rules/routing-rules.yaml`), die Persona, Intent, State
-oder Pattern-Selection ueber YAML-Regeln korrigieren kann (siehe Abschnitt 5d).
-
-### Phase 1: Gate-Pruefung (binaere Elimination)
-
-Jedes Pattern definiert Gates auf Persona, State und Intent. Ein Pattern wird **eliminiert** wenn:
-- Die erkannte Persona nicht in `gate_personas` ist (sofern nicht `*`)
-- Der aktuelle State nicht in `gate_states` ist (sofern nicht `*`)
-- Der erkannte Intent nicht in `gate_intents` ist (sofern nicht `*`)
-- Definierte `precondition_slots` **nicht alle** gefuellt sind (Hard Gate)
-
-Beispiel: PAT-19 (Unterrichts-Lernpfad) hat `precondition_slots: [fach, stufe, thema]` —
-fehlt auch nur ein Slot, wird das Pattern eliminiert und PAT-18 oder PAT-06 uebernimmt.
-
-### Phase 2: Scoring (gewichtete Rangfolge)
-
-Unter den verbleibenden Kandidaten wird per Scoring der Gewinner ermittelt:
-
-| Faktor | Gewicht | Erklaerung |
-|--------|---------|-----------|
-| Signal-Fit | 30% | Wie gut passen die erkannten Signale zu `signal_high_fit` / `signal_medium_fit` / `signal_low_fit`? |
-| Context-Match | 20% | Passt die aktuelle Seite zu `page_bonus`? |
-| Precondition-Completeness | 30% | Wie viele der `precondition_slots` sind gefuellt? |
-| Intent-Confidence | 20% | Wie sicher ist die Intent-Klassifikation? |
-| Priority-Bonus | +p/10000 | Hoeherer `priority`-Wert = kleiner Bonus bei Gleichstand |
-
-### Phase 3: Modulation (deterministische Ausgabe-Anpassung)
-
-Das gewinnende Pattern liefert Defaults fuer Ton, Laenge, Detailgrad und weitere Optionen.
-Signale ueberschreiben diese deterministisch (IF Signal X → THEN tone=Y, length=Z).
-Geraet und Persona beeinflussen max_items und Formalitaet.
-
-**Ausgabe-Konfiguration nach Phase 3:**
-
-| Feld | Werte | Beschreibung |
-|------|-------|-------------|
-| `tone` | sachlich, empathisch, spielerisch, transparent, empfehlend, einladend, beruhigend, niedrigschwellig, orientierend, analytisch, belegend, proaktiv | Tonalitaet der Antwort |
-| `length` | kurz, mittel, ausfuehrlich | Antwortlaenge |
-| `detail_level` | minimal, standard, ausfuehrlich | Detailtiefe |
-| `formality` | neutral, du, Sie | Anrede (persona-abhaengig) |
-| `response_type` | answer, question, suggestion | Art der Antwort |
-| `sources` | mcp, rag | Erlaubte Wissensquellen |
-| `format_primary` | text, list, cards | Primaeres Ausgabeformat |
-| `format_follow_up` | quick_replies, inline, none | Gespraechsfortsetzung: Buttons / Texthaken + Buttons / keine |
-| `card_text_mode` | minimal, reference, highlight | Wie Text und Kacheln zusammenspielen (siehe unten) |
-| `max_items` | 3–6 | Max. Ergebnis-Karten (geraete- und signalabhaengig) |
-| `tools` | Liste | Erlaubte MCP-Tools fuer dieses Pattern |
-| `skip_intro` | bool | Einleitung weglassen (bei Zeitdruck) |
-| `one_option` | bool | Nur 1 Option zeigen (bei Unsicherheit) |
-| `add_sources` | bool | Quellen/Lizenzen explizit nennen (bei Skepsis) |
-
-### Alle 23 Patterns im Ueberblick
-
-> **Welle B/C Konsolidierung:** PAT-11 (Nachfrage-Schleife), PAT-13 (Schritt-fuer-Schritt) und
-> PAT-15/16/17 wurden teils gemerged/entfernt; PAT-24 (Download-Hinweis) wurde in PAT-07 als
-> Sub-Modus integriert. Neue Patterns: PAT-14 (Eltern-Empfehlung), PAT-25 (Canvas-Edit),
-> PAT-26 (Fakten-Bulletin), PAT-27 (News-Overview), PAT-28 (Themenseiten-Suche).
-
-| ID | Label | Prio | Kernregel | Personas | States | Intents | Precond. | Sources | Follow-Up |
-|----|-------|------|-----------|----------|--------|---------|----------|---------|-----------|
-| PAT-01 | Direkt-Antwort | 500 | Max. 2 Saetze + Gespraechshaken | * | * | * | — | mcp | inline |
-| PAT-02 | Gefuehrte Klaerung | 450 | Exakt 1 Frage/Turn, warm + ermutigend | * | * | * | — | mcp | quick_replies |
-| PAT-03 | Transparenz-Beweis | 440 | Herkunft, Lizenz, Pruefdatum nennen | LK, BER, VER, RED | * | * | — | mcp | inline |
-| PAT-04 | Inspiration-Opener | 420 | 2-3 Sammlungen/Themenseiten zeigen | LK, SL, ELT, AND | 1, 4 | * | — | mcp | quick_replies |
-| PAT-05 | Profi-Filter | 430 | lookup_wlo_vocabulary vorab, Filteroptionen | LK, BER | 5 | * | — | mcp | inline |
-| PAT-06 | Degradation-Bruecke | 600 | Breite Suche ohne fehlende Parameter + Soft Probe | * | * | * | — | mcp | quick_replies |
-| PAT-07 | Ergebnis-Kuratierung | 410 | Sammlungen als Kacheln + Download-Sub-Modus (ehem. PAT-24) | LK, SL, BER | 6 | * | — | mcp | quick_replies |
-| PAT-08 | Null-Treffer | 590 | Ehrlich zugeben, Alternativen anbieten | * | * | * | — | mcp | quick_replies |
-| PAT-09 | Redaktions-Recherche | 400 | Modus A/B (kompakt/ausfuehrlich), fachgebiet-erkundend | RED | * | 01, 03, 05, 06, 08, 09 | — | mcp | inline |
-| PAT-10 | Fakten-Bulletin | 460 | Bullet-Facts, zitierfaehig, kein Suche-Angebot | POL, PRESSE, AND, LK, BER, VER, SL, ELT | * | 01, 06, 09 | — | rag, mcp | inline |
-| PAT-14 | Eltern-Empfehlung | 400 | Altersgruppe + Thema → 2-3 Empfehlungen, kein Fachjargon | ELT | * | 01, 03, 06, 08, 10 | — | mcp | quick_replies |
-| PAT-18 | Unterrichts-Paket | 470 | Fach+Stufe+Thema → Sammlungssuche → 3-5 Treffer | LK, AND, ELT | * | * | fach, stufe, thema | mcp | quick_replies |
-| PAT-19 | Unterrichts-Lernpfad | 480 | Stundenentwurf mit Lernzielen und Zeitangaben | LK | 5, 6, 12 | 03, 10 | thema *(Welle B: gelockert)* | mcp | quick_replies |
-| PAT-20 | Orientierungs-Guide | 480 | Persona-spezifische konkrete Beispiele (Mathe/Bio/…), KEIN Tool | AND, LK, SL, ELT, BER, VER | 1, 4 | 02, 01 | — | — | quick_replies |
-| PAT-21 | Canvas-Create | 470 | Neues Material KI-generiert im Canvas-Pane | * | 5, 6, 8, 12 | 11 | thema, material_typ | llm | quick_replies |
-| PAT-22 | Feedback-Echo | 420 | Feedback bestaetigen, konkrete Folgehandlung (Sprint 5) | * | * | 04 | — | llm | quick_replies |
-| PAT-23 | Redaktions-Routing | 440 | An Redaktion weiterleiten + Alternative anbieten | * | * | 05 | — | llm | quick_replies |
-| PAT-25 | Canvas-Edit-Dialog | 470 | Bestehenden Canvas-Inhalt verfeinern (kuerzer/Loesungen/…) | * | 12 | 12 | — | llm | inline |
-| PAT-26 | Fakten-Bulletin (Analytik) | 460 | Analyse-Bulletin mit Zahlen + Belegen | VER, BER, POL, PRESSE | * | 09 | — | rag, mcp | inline |
-| PAT-27 | News-Overview | 450 | Aktuelle Themen-Uebersicht (Curated) | VER, POL, PRESSE | * | 10 | — | rag, mcp | inline |
-| PAT-28 | Themenseiten-Suche | 470 | Anker „themenseite zu …" → PAT-28 enforced | * | * | 03 | — | mcp | quick_replies |
-| PAT-CRISIS | Crisis-Empathie | — | Notfall-Pattern: Bei Krisen-Signalen sofort deeskalieren | * | * | * | — | — | — |
-| PAT-REFUSE-THREAT | Refuse-Threat | — | Abweisung von Bedrohungs-/Policy-Verletzungen | * | * | * | — | — | — |
-
-**Legende Personas:** LK=Lehrkraft, SL=Schueler:in, ELT=Eltern, POL=Politik, PRESSE=Presse, RED=Redaktion, BER=Beratung, VER=Verwaltung, AND=Allgemein
-
-**Priority-Hierarchie (hoeher = bevorzugt bei Gleichstand):**
-- 600: PAT-06 (Degradation) — universeller Fallback
-- 590: PAT-08 (Null-Treffer) — Fehlerbehandlung
-- 470–500: PAT-01, PAT-18, PAT-19, PAT-20, PAT-21, PAT-25, PAT-28 — Kern-Use-Cases (inkl. Canvas/Themenseite)
-- 420–460: PAT-02, PAT-03, PAT-04, PAT-05, PAT-07, PAT-10, PAT-22, PAT-23, PAT-26, PAT-27 — situative Patterns
-- 400: PAT-09 (Redaktion), PAT-14 (Eltern) — niedrigste Prioritaet
-
-### card_text_mode — Text vs. Kacheln
-
-Steuert, wie der Antworttext mit den Material-Kacheln zusammenspielt und verhindert
-doppelte Informationsdarstellung:
-
-| Wert | Verhalten | Patterns |
-|------|-----------|----------|
-| `minimal` | Text ist nur eine kurze Einleitung (1-2 Saetze). Keine Materialtitel oder -beschreibungen im Text. Kacheln tragen alle Material-Details. | PAT-01, PAT-05, PAT-06, PAT-07, PAT-08, PAT-10, PAT-11, PAT-12, PAT-13, PAT-15, PAT-17, PAT-20 |
-| `reference` | Text darf Materialien namentlich nennen und didaktisch einordnen (Reihenfolge, Lernziele, Zeitangaben). Beschreibungen und Metadaten kommen nur ueber die Kacheln. | PAT-18, PAT-19 |
-| `highlight` | Text darf 1-2 Materialien hervorheben und kurz begruenden warum sie besonders passen. Nicht alle einzeln auflisten. | PAT-02, PAT-03, PAT-04, PAT-09, PAT-14 |
-
-### format_follow_up
-
-Steuert, wie Gespraechsfortsetzung angeboten wird:
-
-| Wert | Verhalten |
-|------|-----------|
-| `quick_replies` | LLM generiert 2-4 klickbare Vorschlaege (aus User-Perspektive formuliert) |
-| `inline` | LLM schreibt Gespraechshaken in den Antworttext UND generiert Quick Replies |
-| `none` | Keine Vorschlaege (derzeit bei keinem Pattern verwendet) |
-
-### 5d. Routing-Rules-Engine (deklarativ, Pre + Post)
-
-Die Routing-Rules-Engine (`app/services/rule_engine.py` + `06-rules/routing-rules.yaml`)
-laeuft zweimal pro Turn und kann das Verhalten korrigieren, bevor / nachdem die
-Pattern-Engine entschieden hat:
-
-| Phase | Code-Anker | Wirkung |
-|-------|-----------|---------|
-| **Pre-Route** | `chat.py:_pre_run_shadow_pre` | Korrigiert `persona`, `intent`, `state` des Classifiers (z.B. explizite Self-IDs „ich bin Lehrerin", state-12-Guard fuer Non-Canvas-Intents, low-confidence-Fallbacks) |
-| **Post-Route** | `chat.py:_engine.evaluate(_peek_ctx)` | Tiebreaker bei knappen Score-Differenzen, intent-spezifische Patterns durchsetzen (PAT-22 Feedback, PAT-23 Redaktion, PAT-25 Canvas-Edit, PAT-28 Themenseiten), enforce-Routing fuer klare Persona-Intent-Konstellationen |
-
-**Live vs Shadow:** Jede Regel hat ein `live`-Flag. `true` = wirkt sofort, `false` = nur in
-Shadow-Log gemessen — ermoeglicht kontrollierten Roll-Out neuer Regeln ohne Risiko.
-
-**Rule-Schema** (Beispiel — alle 37 Regeln im Studio unter „Architektur ⚙️ Routing-Rules"):
-
-```yaml
-- id: rule_recherche_personas_force_pat09
-  description: "Recherche-Personas + Thema → PAT-09."
-  priority: 55
-  live: true
-  when:
-    all:
-      - persona: { in: ["P-W-RED", "P-W-PRESSE", "P-W-POL", "P-BER"] }
-      - intent:  { in: ["INT-W-03", "INT-W-09"] }
-      - entity.thema: { non_empty: true }
-      - pattern_winner: { in: ["PAT-06", "PAT-01", "PAT-02", "PAT-10"] }
-  then:
-    enforced_pattern_id: "PAT-09"
-```
-
-**Komparatoren:** `eq, neq, in, not_in, regex, not_regex, empty, non_empty, exists, lt, gt, lte, gte`
-+ boolesche Kombinatoren `all, any, not`. Verfuegbare Kontextpfade: `intent, state, persona,
-entities.<key>, message, signals, pattern_winner, pattern_runner_up, pattern_score_gap,
-intent_confidence, persona_confidence, safety.*, canvas_state.*, session_state.*`.
-
-**Effekte:** `intent_override`, `state_override`, `persona_override`, `enforced_pattern_id`,
-`direct_action`, `direct_action_params`, `quick_replies`, `degradation`, optional
-`stop_on_match: true`. Konflikt-Policy: First-write-wins fuer Skalare, Listen/Dicts mergen.
-
-**Reload zur Laufzeit:** `POST /api/routing-rules/reload` lädt die YAML neu (force_reload=True),
-kein Backend-Restart nötig.
-
----
+Die 16 Patterns + ihre `when_to_use` / `core_rule` / `forbidden_phrases` liegen in `03-patterns/*.md` und sind im Studio editierbar.
 
 ## 6. Output-Struktur (ChatResponse)
 
@@ -992,15 +667,13 @@ Init in `app/services/database.py`. Beim ersten Start werden Seed-Chunks aus
 Jede `/api/chat`-Antwort enthaelt ein `debug`-Objekt mit:
 
 * `persona` — z.B. `P-W-LK (Lehrkraft)` — ID mit Label in Klammern
-* `intent` — z.B. `INT-W-06 (Faktenfragen)` — ID mit Label
+* `intent` — z.B. `I02 (Wissensfrage)` — ID mit Label
 * `state` — z.B. `state-3 (Information)` — ID mit Label
 * `turn_type` — `initial`, `follow_up`, `topic_switch`, `correction`, `clarification`
 * `signals` — erkannte Signale (z.B. `["zielgerichtet", "Faktenfrage"]`)
-* `pattern` — z.B. `PAT-10 (Fakten-Bulletin)` — Gewinner-Pattern
+* `pattern` — z.B. `M04 (Wissens-Antwort)` — gewähltes Pattern
 * `entities` — extrahierte Slots (interne `_`-Keys werden gefiltert)
 * `tools_called` — tatsaechlich aufgerufene Tools (inkl. prefetch)
-* `phase1_eliminated` — durch Gate eliminierte Patterns
-* `phase2_scores` — Score pro Kandidat-Pattern
 * `phase3_modulations` — vollstaendiger Output der Modulations-Phase:
   - `tone`, `formality`, `length`, `detail_level`, `max_items`, `card_text_mode`
   - `response_type`, `format_primary`, `format_follow_up`, `sources`
@@ -1118,7 +791,7 @@ der in der Konfig definierten Personas/Intents/Patterns. Im Studio unter dem Tab
 {
   "mode": "scenarios|conversations|both",
   "persona_ids": ["P-W-LK", "P-W-SL"],     // leer = alle
-  "intent_ids":  ["INT-W-02", "INT-W-04"], // leer = alle
+  "intent_ids":  ["I02", "I04"],          // leer = alle
   "scenarios_per_combo": 2,                 // nur fuer mode=scenarios/both
   "turns_per_conv": 3,                      // nur fuer mode=conversations/both
   "config_slug": ""                         // optional, fuer Cross-Config-Tracking
@@ -1173,40 +846,21 @@ LLM-as-Judge). Weiterhin nutzbar fuer Retrieval-Tuning, unabhaengig vom Evaluati
 
 ---
 
-## 13. Canvas-Arbeitsflaeche
+## 13. KI-Material-Generierung (M10 / M11)
 
-Die Canvas-Arbeitsflaeche erlaubt KI-generierte Ausgaben (Arbeitsblatt, Quiz, Bericht, …) neben
-dem Chat. Zwei Intents steuern den Flow:
+Auf Erstell-Anfragen (Intent `I05`) generiert der Bot strukturiertes Material (Arbeitsblatt, Quiz, Factsheet, Lernpfad, …) und zeigt es als **InlineDocument-Box** direkt im Chat-Verlauf — es gibt **kein** separates Canvas-Pane mehr (in Welle E entfernt). Nachbearbeitung (Intent `I06`, Pattern `M11`) verfeinert die zuletzt erzeugte Box (kürzer fassen, Lösungen ergänzen, …).
 
-| Intent | Pattern/Handler | Beschreibung |
-|--------|-----------------|-------------|
-| `INT-W-11` Inhalt erstellen | PAT-21 (Canvas-Create) | Neu generieren: `canvas_service.generate_canvas_content(topic, material_type)` → strukturiertes Markdown + `page_action: canvas_open` |
-| `INT-W-12` Canvas-Edit | direkter Handler `_handle_canvas_edit()` | Bestehenden Canvas-Inhalt verfeinern — triggert NICHT die Pattern-Engine |
-
-**Konfiguration** in `chatbots/wlo/v1/05-canvas/`:
+**Konfiguration** in `chatbots/wlo/v1/05-canvas/` (Studio-Tab **Material-Formate**, mtime-Cache → kein Restart):
 
 | Datei | Inhalt |
 |-------|--------|
-| `material-types.yaml` | 18 Typen (13 didaktisch + 5 analytisch), jeder mit `id`, `label`, `emoji`, `category`, `structure` (LLM-Vorgabe). **Typed GUI-Editor** im Studio (`CanvasFormatsEditor.tsx`) ueber `GET/PUT /api/config/canvas/material-types` — Multi-line `structure` round-trippt als YAML-Block-Scalar `\|`. |
-| `type-aliases.yaml` | Alias-Mapping (74 Keywords → Typ-ID), Short-Whitelist (z.B. `quiz`, `test`, `pm`), LRT→Typ-Mapping fuer Remix |
-| `create-triggers.yaml` | 44 Create-Verb-Phrasen + Negative-Search-Verb-Liste |
-| `edit-triggers.yaml` | 56 Edit-Verben + 13 Explicit-Create-Override-Phrasen (`neues Quiz`, `anderes Thema`) |
-| `persona-priorities.yaml` | Welche Personas sehen analytische Typen zuerst (VER, POL, BER, PRESSE, RED) |
+| `material-types.yaml` | Material-Typen (didaktisch + analytisch), je mit `id`, `label`, `emoji`, `category`, `structure` (LLM-Vorgabe). Typed GUI-Editor via `GET/PUT /api/config/canvas/material-types`. |
+| `type-aliases.yaml` | Alias-Mapping (Keyword → Typ-ID) + LRT→Typ-Mapping. |
+| `create-triggers.yaml` | Erstell-Verb-Phrasen + Negativ-Liste (Such-Verben grenzen ab). |
+| `edit-triggers.yaml` | Nachbearbeitungs-Verben + Explizit-Neu-Override-Phrasen. |
+| `persona-priorities.yaml` | Welche Personas zuerst analytische Typen sehen (P-ENT, P-RED). |
 
-Alle 5 Dateien sind live im Studio-Layer **Canvas-Formate** editierbar (mtime-Cache → keine
-Backend-Restarts). `material-types.yaml` hat einen GUI-Editor (Liste + Form), die anderen vier
-nutzen den Roh-YAML-Editor.
-
-**Detection-Logik** (Wort-Grenzen-Matching in `canvas_service.py`):
-- `looks_like_create_intent(msg)` — erkennt Create-Verben nur an Wort-Grenzen („mach ein" matcht nicht „mach es einfacher")
-- `looks_like_edit_intent(msg)` — Edit-Verben, nur geprueft wenn state-12 aktiv und Canvas-Markdown vorhanden
-- `has_explicit_new_create_override(msg)` — „neues Quiz" setzt sich auch in state-12 durch und geht auf Create
-
-**State-12-Guard** (`chat.py`): state-12 darf nur aktiv sein bei INT-W-11/12 UND entweder
-vorhandenem Canvas-Markdown ODER konkretem Thema. Sonst fällt state auf state-5 zurueck —
-verhindert State-Pollution.
-
----
+> Der Verzeichnisname `05-canvas/` ist historisch — das frühere User-Canvas-Pane wurde durch die InlineDocument-Box im Chat ersetzt; die Material-Typen-Konfiguration darunter ist weiterhin aktiv.
 
 ## 14. Themenseiten-Resolution (page_context_service)
 

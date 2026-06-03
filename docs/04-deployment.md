@@ -339,6 +339,20 @@ dmesg -T | grep -i "killed.*uvicorn\|oom" | tail -10
 docker inspect badboerdi-backend --format 'Restarts: {{.RestartCount}}  OOMKilled: {{.State.OOMKilled}}'
 ```
 
+### Karten-Auswahl & Ranking (ENV)
+
+Welche WLO-Treffer als Karten erscheinen und wie viele, steuern Backend-Env-Variablen — in Docker über die `.env` (werden in `docker-compose.yml` durchgereicht):
+
+| ENV | Default | Wirkung |
+|---|---|---|
+| `CARD_CE_TOP_N` | `3` | Max. Karten je Box (Sammlungen / Themenseiten / Einzelinhalte). |
+| `CARD_CE_GATE_COLLECTION` | `0.0` | Cross-Encoder-Score-Schwelle für Sammlungen + Themenseiten. Höher = strenger / weniger Karten. |
+| `CARD_CE_GATE_CONTENT` | `-1.5` | CE-Schwelle für Einzelinhalte (großzügiger, da seltener exakt). |
+| `CHAT_DISABLE_SELECT_TOP_CARDS` | _aus_ | `1` überspringt den LLM-Kuratierungs-Schritt (spart 1 Call, weniger kuratiert). |
+| `CARD_PIPELINE_V2` | _aus_ | `1` aktiviert die neue modulare Karten-Pipeline (Opt-in). |
+
+Vollständige Liste aller Backend-ENV-Variablen (inkl. `RAG_*`, `EMBED_DIM`, `SPEECH_FORCE_ENABLE`, `REPO_BASE_URL`, …) mit Defaults: **`backend/.env.example`**.
+
 ---
 
 ## 3. Chat-Widget einbinden
@@ -422,15 +436,9 @@ Das Widget wird in einen festen Container auf der Seite eingebettet, ohne schweb
 | `trusted-domains` | String | `""` | Komma-separierte Hostnamen fuer Cross-TLD-Session-Handoff (`?bsid=`). Additiv zur Backend-Allow-Liste. |
 | `page-context` | JSON-String | `""` | Zusaetzlicher Kontext (z.B. `'{"thema":"eiszeit"}'`) |
 | `auto-context` | Boolean | `true` | Automatisch URL, Titel, Referrer erfassen |
-| `cards-enabled` | Boolean | `true` | Kachel-Anzeige. `false` rendert Treffer als dezente Inline-Markdown-Links im Bot-Text. |
-| `canvas-enabled` | Boolean | `true` | Canvas-Pane (Material-Erstellung, Lernpfad-Anzeige). `false` rendert Material direkt im Chat. |
-| `ai-content-enabled` | Boolean | `true` | KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix). `false` lehnt Erstell-Anfragen freundlich ab. |
-| `quick-replies-enabled` | Boolean | `true` | Gespraechsvorschlaege-Pillen. `false` blendet alle QR-Buttons aus; Lotsen-Hinweise werden inline eingebaut. |
-| `inline-result-grouping` | Boolean | `true` | **Default seit Welle C.5 (2026-05-21): an.** Gruppierte Treffer-Darstellung — Top-3-Themenseiten, Top-3-Sammlungen und (falls vorhanden) Webseiten-Inhalte aus dem Bot-Text in separaten Boxen plus Card-Button „Treffer zur Suche „<Term>"". Einzelinhalte erscheinen nicht mehr als Kacheln — User springt direkt in die MCP-Suchergebnisliste. Hosts, die das alte Flat-Card-Layout zurück wollen, setzen `inline-result-grouping="false"`. |
+| `ai-content-enabled` | Boolean | `true` | KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad). `false` lehnt Erstell-Anfragen freundlich ab. |
 | `show-debug-button` | Boolean | `true` | Debug-Toggle im Header. `false` fuer Produktiv-Embeddings. |
 | `show-language-buttons` | Boolean | `true` | TTS- und STT-Buttons. `false` = keine Sprach-Features. |
-| `show-guide-button` | Boolean | `true` | Lotsen-Toggle im Header. `false` blendet Button aus, Modus bleibt per `guide-mode-default` steuerbar. |
-| `guide-mode-default` | Tristate | `auto` | Lotsen-Modus-Initial: `true`/`false`/`auto` (URL `?bgm` → localStorage → Backend-Default). |
 | `emit-guide-suggestion` | Boolean | `false` | Passive Top-Result-Emission als `badboerdi:guide-suggestion`-CustomEvent. |
 | `emit-routing-debug` | Boolean | `false` | Routing-Telemetrie-Emission als `badboerdi:routing-debug`-CustomEvent. |
 | `intercept-edu-sharing-links` | Boolean | `false` | edu-sharing-Links im Bot-Text abfangen statt navigieren → `(linkClicked)`-Output. |
@@ -439,7 +447,7 @@ Das Widget wird in einen festen Container auf der Seite eingebettet, ohne schweb
 
 | Event | Opt-in? | Payload |
 |-------|---------|---------|
-| `badboerdi:page-action` | immer aktiv | `{ action, payload }` — navigate, show_results, canvas_open, canvas_update, canvas_show_cards, canvas_close |
+| `badboerdi:page-action` | immer aktiv | `{ action, payload }` — navigate, show_results |
 | `badboerdi:guide-suggestion` | `emit-guide-suggestion="true"` | `{ url, title, node_id, node_type, query, alternatives[] }` |
 | `badboerdi:routing-debug` | `emit-routing-debug="true"` | `{ pattern, intent, state, persona, tools_called[], sources[], modifier{} }` |
 | `badboerdi:query-meta` | immer aktiv | `{ queries[] }` — MCP-Suchanfragen (tool_name, search_term, criteria[], search_url) |
@@ -460,7 +468,7 @@ Vollstaendige Payload-Schemas und Embed-Beispiele → [docs/05-widget-javascript
 
 ### Webseiten-Tour (gefuehrte Besucherfuehrung)
 
-Optionale gefuehrte Tour durch die wichtigsten WLO-Seiten (Startseite → Zielgruppe → Bildungsinhalte → Angebote → Mitmachen). Inhalt (Texte, Ziel-URLs, die 7 Besucher-Gruppen, Gruppe→Angebot-Mapping) ist **Studio-pflegbar** in `chatbots/wlo/v1/01-base/website-tour.yaml` — Studio-Tab **🌐 Domain & Regeln → „Webseiten-Tour"**. Das Verhalten (State-Machine, Ankunfts-Erkennung) ist deterministischer Code (`app/services/tour_service.py`), **kein** Pattern. Feature-Doku: README §2.8.
+Optionale gefuehrte Tour durch die wichtigsten WLO-Seiten (Startseite → Zielgruppe → Bildungsinhalte → Angebote → Mitmachen). Inhalt (Texte, Ziel-URLs, die 7 Besucher-Gruppen, Gruppe→Angebot-Mapping) ist **Studio-pflegbar** in `chatbots/wlo/v1/01-base/website-tour.yaml` — Studio-Tab **🌐 Domain-Wissen → „Webseiten-Tour"**. Das Verhalten (State-Machine, Ankunfts-Erkennung) ist deterministischer Code (`app/services/tour_service.py`), **kein** Pattern. Feature-Doku: README §2.8.
 
 **Deployment-Voraussetzungen** (sonst greift die Ankunfts-Erkennung nicht):
 
@@ -468,50 +476,21 @@ Optionale gefuehrte Tour durch die wichtigsten WLO-Seiten (Startseite → Zielgr
 2. `persist-session="true"` (bzw. Cookie / `?bsid=`) — damit die laufende Tour den WordPress-Full-Page-Reload nach jedem „Bring mich hin"-Klick ueberlebt.
 3. `base_host` in `website-tour.yaml` auf den laufenden Host setzen (Test: `wp-test…`, Prod: `https://wirlernenonline.de`).
 
-### Widget-Embed-Modi (kompakte Embed-Varianten)
+### Widget-Embed-Modi
 
-Die vier `*-enabled`-Properties lassen die einbettende Seite das Widget **feature-by-feature minimaler** auftreten — wichtig fuer WordPress, Edu-Sharing, Themenseiten und andere Hosts mit eigenem Layout. Alle Defaults bleiben `true`, Bestandsintegrationen sehen keine Aenderung.
+Das Widget rendert Treffer immer als kompakte **Gruppen-Boxen** (Themenseiten / Sammlungen / Materialien) im Chat-Verlauf — es gibt **kein** separates Canvas-Pane und keine Flat-Card-/Grouping-Umschaltung mehr (in Welle E entfernt). KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad) erscheinen als **InlineDocument-Box** direkt im Verlauf.
 
-**Studio-pflegbar:** Die Schwellen fuer den Inline-Link-Modus (max. Anzahl, Titel-Kuerzung, Alt-Antwort-Text) liegen in `chatbots/wlo/v1/01-base/widget-modes.yaml` und koennen ohne Deploy ueber das Studio angepasst werden.
-
-#### Variante D — Schlanke Themenseite (nur Chat + Inline-Links)
-
-Fuer Themenseiten mit viel eigenem Content: keine Kachel-Komponente und kein Canvas-Aufgehen — der Bot bleibt eine textuelle Chat-Bubble mit dezenten Inline-Links.
+Die einzige verbliebene Feature-Umschaltung ist **`ai-content-enabled`**: Wo der Host selbst Material-Erstellungs-Tools anbietet, lehnt der Bot konkurrierende KI-Generierungs-Anfragen freundlich ab.
 
 ```html
 <boerdi-chat
   api-url="https://api.meinedomain.de"
-  cards-enabled="false"
-  canvas-enabled="false"
+  ai-content-enabled="false"
   position="bottom-right">
 </boerdi-chat>
 ```
 
-#### Variante E — Reduziert (Kacheln ja, KI-Erstellung nein)
-
-Wo der Host selbst Material-Erstellungs-Tools anbietet, lehnt der Bot konkurrierende KI-Generierungs-Anfragen freundlich ab.
-
-```html
-<boerdi-chat
-  api-url="https://api.meinedomain.de"
-  ai-content-enabled="false"
-  quick-replies-enabled="false">
-</boerdi-chat>
-```
-
-#### Variante F — Minimal-Bubble (nur Text + Inline-Links)
-
-Praktisch nur ein Text-Chat — der "in fremder Plattform eingebettet"-Anwendungsfall. Kein Canvas, keine Kacheln, keine Pillen, keine KI-Generierung.
-
-```html
-<boerdi-chat
-  api-url="https://api.meinedomain.de"
-  cards-enabled="false"
-  canvas-enabled="false"
-  ai-content-enabled="false"
-  quick-replies-enabled="false">
-</boerdi-chat>
-```
+**Studio-pflegbar:** Anzeige-Limits (Karten pro Box, Inline-Doc-Anzeige, Schriftgrößen) liegen zentral in `chatbots/wlo/v1/01-base/display-rules.yaml` (Studio-Tab **🎨 Anzeige**) — ohne Deploy anpassbar. Welche Treffer überhaupt als Karten erscheinen, steuern Backend-ENV-Variablen → Abschnitt „Karten-Auswahl & Ranking (ENV)".
 
 ### Backend-URL zur Laufzeit setzen
 
