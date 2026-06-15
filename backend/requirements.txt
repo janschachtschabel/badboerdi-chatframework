@@ -9,6 +9,8 @@ pydantic==2.9.0
 python-dotenv==1.0.1
 aiosqlite==0.20.0
 httpx==0.27.0
+psutil==6.1.1            # Lasttest: CPU-/RAM-Sampling (loadtest_service)
+uvloop==0.21.0; sys_platform != "win32"   # schnellerer Event-Loop; uvicorn nutzt ihn automatisch (loop=auto)
 markitdown==0.1.1
 python-multipart==0.0.12
 pyyaml==6.0.2

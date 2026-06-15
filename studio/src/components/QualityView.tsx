@@ -689,7 +689,9 @@ export default function QualityView() {
   };
 
   /* ── Derived metrics ─────────────────────────────────────────────── */
-  const tightRaceLogs = logs.filter(l => l.phase2_score_gap < 0.02 && l.phase2_score_gap >= 0);
+  // Aufräumung 2026-06-10: tightRaceLogs entfernt — basierte auf der
+  // längst entfernten Score-Phase (phase2_score_gap) und hatte keine
+  // Verwendung mehr in der View.
   const degradedLogs = logs.filter(l => l.degradation);
 
   return (

@@ -20,9 +20,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.services.auth import require_studio_key
+from app.services.config_loader import load_gold_flows
 from app.services.database import DB_PATH
 from app.services.eval_service import (
     estimate_cost,
+    execute_golden_run,
     execute_run,
     list_personas_and_intents,
 )
@@ -30,6 +32,54 @@ from app.services.eval_service import (
 router = APIRouter(prefix="/api/eval", tags=["eval"])
 
 _studio = [Depends(require_studio_key)]
+
+# B4 (2026-06-10): starke Referenzen auf laufende Eval-Tasks — der Loop
+# hält nur Weak-Refs, ein nacktes create_task kann mitten im Run GC'd
+# werden. Dazu Exception-Retrieval, damit Fehler nicht als "Task
+# exception was never retrieved" enden (execute_* loggen selbst).
+_EVAL_TASKS: set[asyncio.Task] = set()
+
+
+def _spawn_eval_task(coro: Any) -> None:
+    t = asyncio.create_task(coro)
+    _EVAL_TASKS.add(t)
+
+    def _done(task: asyncio.Task) -> None:
+        _EVAL_TASKS.discard(task)
+        try:
+            task.exception()
+        except (asyncio.CancelledError, asyncio.InvalidStateError):
+            pass
+
+    t.add_done_callback(_done)
+
+
+async def _ensure_no_running_run() -> None:
+    """B4: Parallel-Guard — zwei gleichzeitige Runs teilen sich Tool-Cache
+    (clear_tool_cache löscht global!) und SQLite-Writes; Ergebnis wäre
+    vermischt. Stale 'running'-Leichen (Backend-Crash) älter als 2h werden
+    dabei automatisch auf failed gesetzt, damit sie nicht ewig blockieren."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE eval_runs SET status='failed', "
+            "error_message='stale running-Run beim Start-Check abgeräumt' "
+            "WHERE status='running' AND created_at < ?",
+            (cutoff,),
+        )
+        await db.commit()
+        cur = await db.execute(
+            "SELECT id FROM eval_runs WHERE status='running' LIMIT 1"
+        )
+        row = await cur.fetchone()
+    if row:
+        raise HTTPException(
+            409,
+            f"Eval-Run {row[0]} läuft bereits — bitte abwarten oder löschen. "
+            "Parallele Runs teilen sich Tool-Cache und DB und würden sich "
+            "gegenseitig verfälschen.",
+        )
 
 
 # ── Config snapshot ────────────────────────────────────────────────
@@ -107,9 +157,10 @@ async def start_run(req: StartRequest) -> dict[str, Any]:
             f"Available intents: {sorted(known_intent_ids)}.",
         )
 
+    await _ensure_no_running_run()
     run_id = f"eval-{uuid.uuid4().hex[:12]}"
-    # Fire-and-forget background task
-    asyncio.create_task(execute_run(
+    # Background task mit starker Referenz (B4)
+    _spawn_eval_task(execute_run(
         run_id=run_id,
         mode=req.mode,
         personas=personas,
@@ -123,6 +174,68 @@ async def start_run(req: StartRequest) -> dict[str, Any]:
         "status": "running",
         "personas_used": [p["id"] for p in personas],
         "intents_used": [i["id"] for i in intents],
+        "warnings": warnings,
+    }
+
+
+# ── Golden-Flow Eval (deterministische, geprüfte Multi-Turn-Abläufe) ──
+
+@router.get("/gold-flows", dependencies=_studio)
+async def get_gold_flows() -> dict[str, Any]:
+    """Return the parsed Gold-Standard flow specs (eval/gold-flows.yaml).
+
+    Light payload — the Studio uses this to list flows, show their per-turn
+    expectations, and let the user pick which flows to run.
+    """
+    flows = load_gold_flows()
+    return {"flows": flows, "count": len(flows)}
+
+
+class GoldenRunRequest(BaseModel):
+    flow_ids: list[str] = Field(default_factory=list, description="empty = all flows")
+    judge: bool = Field(True, description="run the LLM judge for soft quality dims")
+    config_slug: str = ""
+
+
+@router.post("/runs/golden", dependencies=_studio)
+async def start_golden_run(req: GoldenRunRequest) -> dict[str, Any]:
+    """Start a deterministic Gold-Flow run in the background. Inputs are
+    fixed (gold-flows.yaml), so the run is reproducible and A/B-comparable.
+    """
+    all_flows = load_gold_flows()
+    if not all_flows:
+        raise HTTPException(
+            400, "Keine Gold-Flows konfiguriert (eval/gold-flows.yaml fehlt oder leer)."
+        )
+    flows = all_flows
+    warnings: list[str] = []
+    if req.flow_ids:
+        requested = set(req.flow_ids)
+        known = {str(f.get("id")) for f in all_flows}
+        unknown = sorted(requested - known)
+        if unknown:
+            warnings.append(f"Unbekannte Flow-IDs ignoriert: {unknown}")
+        flows = [f for f in all_flows if str(f.get("id")) in requested]
+    if not flows:
+        raise HTTPException(
+            400,
+            "Keine Flows matchten den Filter. Verfügbar: "
+            f"{sorted({str(f.get('id')) for f in all_flows})}",
+        )
+
+    await _ensure_no_running_run()
+    run_id = f"eval-{uuid.uuid4().hex[:12]}"
+    _spawn_eval_task(execute_golden_run(
+        run_id=run_id, flows=flows,
+        judge_enabled=req.judge, config_slug=req.config_slug,
+    ))
+    return {
+        "run_id": run_id,
+        "status": "running",
+        "mode": "golden",
+        "flows_used": [str(f.get("id")) for f in flows],
+        "turns_total": sum(len(f.get("turns") or []) for f in flows),
+        "judge": req.judge,
         "warnings": warnings,
     }
 
@@ -321,29 +434,41 @@ async def delete_run(run_id: str) -> dict[str, Any]:
 async def delete_all_runs(
     status_filter: str | None = Query(None, alias="status",
         description="Optional: 'done', 'failed', or 'running' to restrict deletion"),
+    mode_filter: str | None = Query(None, alias="mode",
+        description="Optional: 'golden' | 'generative' (= mode != golden) | exact mode value"),
     confirm: bool = Query(False, description="Must be true for unrestricted bulk delete"),
 ) -> dict[str, Any]:
-    """Bulk-delete eval runs. Safety: without status filter, requires ?confirm=true
-    to avoid accidental wipes. With a filter (e.g. only failed), deletes without confirm.
+    """Bulk-delete eval runs, optionally restricted by status and/or mode
+    (combinable). ``mode=golden`` deletes only Golden-Flow runs; ``mode=generative``
+    deletes only the generative Persona-Dialog runs (mode != 'golden'); any other
+    value is matched exactly. Safety: a wholly unrestricted delete (no status AND
+    no mode) still requires ?confirm=true to avoid accidental wipes.
     """
-    if not status_filter and not confirm:
+    where: list[str] = []
+    params: list[Any] = []
+    if status_filter:
+        where.append("status = ?")
+        params.append(status_filter)
+    if mode_filter == "golden":
+        where.append("mode = 'golden'")
+    elif mode_filter == "generative":
+        where.append("mode != 'golden'")
+    elif mode_filter:
+        where.append("mode = ?")
+        params.append(mode_filter)
+
+    if not where and not confirm:
         raise HTTPException(
             400,
-            "Bulk delete without status filter requires ?confirm=true to prevent accidents.",
+            "Bulk delete without any filter requires ?confirm=true to prevent accidents.",
         )
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     async with aiosqlite.connect(DB_PATH) as db:
-        if status_filter:
-            cur = await db.execute(
-                "SELECT COUNT(*) FROM eval_runs WHERE status=?", (status_filter,),
-            )
-            count = (await cur.fetchone())[0]
-            await db.execute("DELETE FROM eval_runs WHERE status=?", (status_filter,))
-        else:
-            cur = await db.execute("SELECT COUNT(*) FROM eval_runs")
-            count = (await cur.fetchone())[0]
-            await db.execute("DELETE FROM eval_runs")
+        cur = await db.execute(f"SELECT COUNT(*) FROM eval_runs {where_sql}", params)
+        count = (await cur.fetchone())[0]
+        await db.execute(f"DELETE FROM eval_runs {where_sql}", params)
         await db.commit()
-    return {"deleted": count, "filter": status_filter or "all"}
+    return {"deleted": count, "filter": {"status": status_filter, "mode": mode_filter}}
 
 
 @router.delete("/quality-logs", dependencies=_studio)

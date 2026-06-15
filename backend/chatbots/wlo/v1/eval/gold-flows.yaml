@@ -1,0 +1,349 @@
+# ════════════════════════════════════════════════════════════════════
+# Gold-Standard Conversation Flows — Golden-Flow Eval-Modus
+# ════════════════════════════════════════════════════════════════════
+#
+# Deterministische, geprüfte Multi-Turn-Abläufe für die wichtigsten
+# Intents je Persona. Anders als die generative Eval (LLM-Simulator
+# erzeugt zufällige Turns) sind diese Flows FEST und mit expliziten
+# Soll-Werten pro Turn versehen → ein Lauf ist reproduzierbar und
+# A/B-vergleichbar (Modell-/Config-Wechsel).
+#
+# Die Nachrichten sind als NATÜRLICHE, zusammenhängende Gespräche
+# formuliert: die Rolle taucht organisch auf (keine künstlichen Marker),
+# Folge-Turns knüpfen an die Bot-Antwort an. Jeder Flow ist ein
+# „optimaler Ablauf" über 3–4 User-Aktionen: Eröffnung → Verfeinerung
+# → konkretes Angebot/Abschluss.
+#
+# Hart geprüft (programmatisch, deterministisch):
+#   persona   — debug.persona == expect.persona  (oder "*" = beliebig)
+#   intent    — debug.intent  == expect.intent
+#   register  — Tonalität: sie | du | any  (Sie/du-Heuristik auf den
+#               Antworttext; "any" = kein Check; sonst Fehler nur bei
+#               gegenteiliger Anrede)
+#   structure — idoc (≥1 inline_document) | cards (≥1 Karte) | none
+#   qr        — ≥1 Quick-Reply vorhanden
+#   host_ok   — alle Karten-Links auf REPO_BASE_URL-Host
+#
+# Weich (optionaler LLM-Judge): intent_fit, persona_tone, info_quality.
+# ``must_offer`` dokumentiert das ideale Angebot je Turn (menschenlesbar).
+# ════════════════════════════════════════════════════════════════════
+version: 1
+
+flows:
+  - id: GS-1
+    persona: P-LEH
+    title: "Lehrkraft: Material → Lernpfad → Arbeitsblatt → Lösungen ergänzen"
+    intents: [I03, I04, I05, I06]
+    turns:
+      - message: "Ich bereite eine Mathestunde für meine 3. Klasse zum Thema Brüche vor und suche passendes Material."
+        expect:
+          persona: P-LEH
+          intent: I03
+          register: sie
+          must_offer: "Konkrete Material-/Sammlungstreffer zu Brüchen Primarstufe, mit Anschlussangebot."
+      - message: "Gibt es dazu auch einen fertigen Lernpfad, den ich direkt einsetzen kann?"
+        expect:
+          persona: P-LEH
+          intent: I04
+          register: sie
+          structure: idoc
+          must_offer: "Lernpfad-Vorschlag als strukturiertes Inline-Dokument."
+      - message: "Können Sie mir daraus ein kurzes Arbeitsblatt für die Stunde erstellen?"
+        expect:
+          persona: P-LEH
+          intent: I05
+          register: sie
+          structure: idoc
+          must_offer: "Generiertes Arbeitsblatt als Inline-Dokument, mit Bearbeiten-Quick-Replies."
+      - message: "Super — ergänzen Sie bitte noch einen Lösungsteil für mich als Lehrkraft."
+        expect:
+          persona: P-LEH
+          intent: I06
+          register: sie
+          structure: idoc
+          must_offer: "Re-Render des Arbeitsblatts mit ergänztem Lösungsteil."
+
+  - id: GS-2
+    persona: P-LER
+    title: "Lernende: Bruchrechnung verstehen → Übungen → Schritt erklären"
+    intents: [I02, I03]
+    turns:
+      - message: "Ich schreib bald eine Mathearbeit und kapier Bruchrechnung irgendwie nicht."
+        expect:
+          persona: P-LER
+          intent: I02
+          register: du
+          must_offer: "Verständnis-Hilfe/Erklärung anbieten (Wissensfrage), nicht nur Materialsuche."
+      - message: "Hast du Übungen dazu?"
+        expect:
+          persona: P-LER
+          intent: I03
+          register: du
+          must_offer: "Übungsmaterial/Treffer zur Bruchrechnung."
+      - message: "Kannst du mir das mit dem Kürzen nochmal Schritt für Schritt erklären?"
+        expect:
+          persona: P-LER
+          intent: I02
+          register: du
+          must_offer: "Schritt-für-Schritt-Erklärung des Kürzens, lerngerecht."
+
+  - id: GS-3
+    persona: P-ELT
+    title: "Eltern: Englisch-Vokabeln → spielerisch → Vokabelliste erstellen"
+    intents: [I03, I05]
+    turns:
+      - message: "Mein Sohn ist in der 5. Klasse und tut sich mit den Englisch-Vokabeln echt schwer. Gibt's da was Hilfreiches?"
+        expect:
+          persona: P-ELT
+          intent: I03
+          register: any   # Eltern dürfen ruhig geduzt werden — kein harter Check
+          must_offer: "Material/Sammlungen zu Englisch-Vokabeln Klasse 5."
+      - message: "Und gibt es auch etwas, womit er spielerisch üben kann?"
+        expect:
+          persona: P-ELT
+          intent: I03
+          register: any
+          must_offer: "Spielerische/interaktive Vokabel-Übungen."
+      - message: "Können Sie mir eine kleine Vokabelliste erstellen, die wir zu Hause zusammen durchgehen?"
+        expect:
+          persona: P-ELT
+          intent: I05
+          register: any
+          structure: idoc
+          must_offer: "Generierte Vokabelliste als Inline-Dokument."
+
+  - id: GS-4
+    persona: P-ENT
+    title: "Entscheider: OER-Zahlen → Integrationsangebote → Argumentationshilfe"
+    intents: [I02, I05]
+    turns:
+      - message: "Wir interessieren uns als Schulträger für Zahlen zur OER-Nutzung auf WLO — was können Sie uns dazu sagen?"
+        expect:
+          persona: P-ENT
+          intent: I02
+          register: sie
+          must_offer: "Konkrete OER-Kennzahlen mit Quelle, sachlich-formell."
+      - message: "Und welche Möglichkeiten bietet WLO, das in unsere bestehenden Systeme zu integrieren?"
+        expect:
+          persona: P-ENT
+          intent: I02
+          register: sie
+          must_offer: "Sachlich-formelle Antwort zu Integrations-/Schnittstellen-Möglichkeiten mit konkretem Verweis/Quelle."
+      - message: "Könnten Sie uns daraus eine kurze Argumentationshilfe für die nächste Gremiensitzung erstellen?"
+        expect:
+          persona: P-ENT
+          intent: I05
+          register: sie
+          structure: idoc
+          must_offer: "Generierte Argumentationshilfe als Inline-Dokument, formell."
+
+  - id: GS-5
+    persona: P-RED
+    title: "Redaktion: Lehrplan-Fehler melden → beisteuern → Prüfprozess"
+    intents: [I02, I08]
+    turns:
+      - message: "Ich sichte für unsere Redaktion gerade Lehrplan-Materialien und bin auf einen inhaltlichen Fehler gestoßen — wie melde ich den?"
+        expect:
+          persona: P-RED
+          intent: I08
+          register: sie
+          must_offer: "Weg zum Melden/Einreichen (Inhalt vorschlagen)."
+      - message: "Und wenn ich selbst Material beisteuern möchte — wie geht das?"
+        expect:
+          persona: P-RED
+          intent: I08
+          register: sie
+          must_offer: "Einreichungs-Weg für eigenes Material (NICHT als Bot-Feedback I07 missdeuten)."
+      - message: "Wie läuft die redaktionelle Prüfung danach eigentlich ab?"
+        expect:
+          persona: P-RED
+          intent: I02
+          register: sie
+          must_offer: "Auskunft zum Redaktions-/Prüfprozess nach der Einreichung."
+
+  - id: GS-6
+    persona: P-AND
+    title: "Andere: Was ist WLO → mitmachen → Beispiele entdecken"
+    intents: [I01, I03]
+    turns:
+      - message: "Was ist WissenLebtOnline eigentlich?"
+        expect:
+          persona: P-AND
+          intent: I01
+          register: any
+          must_offer: "Kurze Orientierung was WLO ist + Anschlussfrage."
+      - message: "Und wie kann ich da mitmachen?"
+        expect:
+          persona: P-AND
+          intent: I01
+          register: any
+          must_offer: "Wege zum Mitmachen (Einreichen/Community)."
+      - message: "Zeig mir doch mal ein paar Beispiele, was es hier so gibt."
+        expect:
+          persona: P-AND
+          intent: I03
+          register: any
+          must_offer: "Konkrete Beispiel-Treffer aus WLO."
+
+  - id: GS-7
+    persona: P-AND
+    title: "Andere: Klimawandel → Sekundarstufe → interaktiv → Quiz erstellen"
+    intents: [I03, I05]
+    turns:
+      - message: "Ich suche Material zum Thema Klimawandel."
+        expect:
+          persona: P-AND
+          intent: I03
+          register: any
+          must_offer: "Material-Treffer zum Klimawandel."
+      - message: "Hast du auch was für die Sekundarstufe?"
+        expect:
+          persona: P-AND
+          intent: I03
+          register: any
+          must_offer: "Auf Sekundarstufe gefilterte Treffer."
+      - message: "Gibt's da auch was Interaktives?"
+        expect:
+          persona: P-AND
+          intent: I03
+          register: any
+          must_offer: "Auf interaktive Materialtypen gefilterte Treffer."
+      - message: "Mach mir doch ein kurzes Quiz zum Treibhauseffekt."
+        expect:
+          persona: P-AND
+          intent: I05
+          register: any
+          structure: idoc
+          must_offer: "Generiertes Quiz zum Treibhauseffekt als Inline-Dokument."
+
+  - id: GS-8
+    persona: P-LEH
+    title: "Lehrkraft: Arbeitsblatt-Fehler melden → beisteuern → korrektes Blatt erstellen"
+    intents: [I05, I08]
+    turns:
+      - message: "Ich nutze im Unterricht ein Arbeitsblatt zur Prozentrechnung und da ist mir ein fachlicher Fehler aufgefallen — wie melde ich den?"
+        expect:
+          persona: P-LEH
+          intent: I08
+          register: sie
+          must_offer: "Weg zum Melden (Inhalt vorschlagen)."
+      - message: "Und wie kann ich eigenes Material beisteuern?"
+        expect:
+          persona: P-LEH
+          intent: I08
+          register: sie
+          must_offer: "Einreichungs-Weg für eigenes Material (NICHT als Bot-Feedback I07 missdeuten)."
+      - message: "Können Sie mir stattdessen direkt ein korrektes Arbeitsblatt zur Prozentrechnung erstellen?"
+        expect:
+          persona: P-LEH
+          intent: I05
+          register: sie
+          structure: idoc
+          must_offer: "Generiertes, korrektes Arbeitsblatt zur Prozentrechnung als Inline-Dokument."
+
+  - id: GS-9
+    persona: P-ENT
+    title: "Entscheider: Factsheet erstellen → kürzen → Kennzahlen ergänzen"
+    intents: [I05, I06]
+    turns:
+      - message: "Erstellen Sie uns bitte ein Factsheet zur Bedeutung von OER für Schulträger."
+        expect:
+          persona: P-ENT
+          intent: I05
+          register: sie
+          structure: idoc
+          must_offer: "Generiertes Factsheet als Inline-Dokument, formell."
+      - message: "Bitte fassen Sie das auf eine halbe Seite zusammen."
+        expect:
+          persona: P-ENT
+          intent: I06
+          register: sie
+          structure: idoc
+          must_offer: "Gekürzte Re-Render-Version des Factsheets als Inline-Dokument."
+      - message: "Und ergänzen Sie bitte noch die wichtigsten Kennzahlen."
+        expect:
+          persona: P-ENT
+          intent: I06
+          register: sie
+          structure: idoc
+          must_offer: "Re-Render des Factsheets mit ergänzten Kennzahlen."
+
+  - id: GS-10
+    persona: P-RED
+    title: "Redaktion: Demokratie-Materialien → Anbieter/Quellen → Oberstufe filtern"
+    intents: [I02, I03]
+    turns:
+      - message: "Ich stelle für unsere Redaktion eine Sammlung zum Thema Demokratie zusammen und suche gute Materialien."
+        expect:
+          persona: P-RED
+          intent: I03
+          register: sie
+          must_offer: "Material-Treffer zu Demokratie (Suche, nicht Lernpfad-Generierung)."
+      - message: "Welche Anbieter oder Quellen stecken da eigentlich dahinter?"
+        expect:
+          persona: P-RED
+          intent: I02
+          register: sie
+          must_offer: "Anbieter/Quellen/Urheber-Auskunft."
+      - message: "Zeigen Sie mir bitte nur die für die Oberstufe."
+        expect:
+          persona: P-RED
+          intent: I03
+          register: sie
+          must_offer: "Auf Oberstufe gefilterte Treffer."
+
+  - id: GS-11
+    persona: P-LER
+    title: "Lernende: Lernweg Bruchrechnung → womit anfangen → Schritt erklären → Übungen"
+    intents: [I02, I03, I04]
+    turns:
+      - message: "Ich muss für die Schule Bruchrechnung lernen — kannst du mir dafür einen Lernweg zusammenstellen?"
+        expect:
+          persona: P-LER
+          intent: I04
+          register: du
+          structure: idoc
+          must_offer: "Lernpfad als strukturiertes Inline-Dokument."
+      - message: "Und womit fang ich am besten an?"
+        expect:
+          persona: P-LER
+          intent: I04
+          register: du
+          structure: idoc
+          must_offer: "Einstiegs-Empfehlung im Lernpfad-Kontext (NICHT als Edit I06 missdeuten); Text MUSS vorhanden sein."
+      - message: "Kannst du mir den ersten Schritt nochmal genauer erklären?"
+        expect:
+          persona: P-LER
+          intent: I02
+          register: du
+          must_offer: "Erklärung des ersten Lernschritts, lerngerecht."
+      - message: "Gibt's dazu auch Übungen?"
+        expect:
+          persona: P-LER
+          intent: I03
+          register: du
+          must_offer: "Übungsmaterial zum Einstieg in die Bruchrechnung."
+
+  - id: GS-12
+    persona: "*"
+    title: "Bot-Feedback: Photosynthese-Suche → hat nicht geholfen → gezielt nachsteuern"
+    intents: [I03, I07]
+    turns:
+      - message: "Ich suche Material zu Photosynthese."
+        expect:
+          persona: "*"
+          intent: I03
+          register: any
+          must_offer: "Material-Treffer zur Photosynthese."
+      - message: "Hmm, das hat mir leider nicht wirklich weitergeholfen."
+        expect:
+          persona: "*"
+          intent: I07
+          register: any
+          must_offer: "Feedback aufnehmen + gezielte Rückfrage was unpassend war (NICHT erneut blind suchen)."
+      - message: "Zeig mir doch mal was für die Oberstufe."
+        expect:
+          persona: "*"
+          intent: I03
+          register: any
+          must_offer: "Gezielte erneute Suche auf Oberstufe nach dem Feedback."

@@ -7,6 +7,7 @@ default_tone: kollegial
 default_length: kurz
 response_type: question
 output_mode: clarify
+quick_replies_mode: speculative
 core_rule: |
   GENAU EINE Frage zum wichtigsten fehlenden Slot. 3 Quick-Replies mit
   konkreten Optionen — niemals generische Platzhalter, niemals Beispiele
@@ -23,6 +24,7 @@ when_to_use:
   - User antwortet auf Bot-Frage mit unkonkretem „mach was draus" o.ä.
 when_not_to_use:
   - Topic + Material-Typ vollständig → M10 direkt
+  - Konkretes Artefakt-Substantiv genannt (Arbeitsblatt, Quiz, Vokabelliste, Glossar, Übung, Infoblatt, Bericht …) → Material-Typ gilt als gesetzt → NICHT nach dem Typ fragen, direkt M10
   - I03 (Suche) mit Topic+Filter → M05/M06 direkt
   - Reine Wissensfrage ohne Material-Wunsch → M04
   - Edit-Anfrage auf Vor-Inhalt → M11
@@ -34,10 +36,10 @@ trigger_phrases:
 discriminators:
   - vs: M10
     rule: Slots VOLLSTÄNDIG (topic + material_type) → M10. Mindestens ein Pflicht-Slot fehlt → M03.
-    example: "Erstell mir ein Quiz zu Bruchrechnung → M10. Erstell mir ein Quiz → M03."
+    example: Erstell mir ein Quiz zu Bruchrechnung → M10. Erstell mir ein Quiz → M03.
   - vs: M15
     rule: Eingrenzbarer Pflicht-Slot fehlt → M03. Gar kein konkretes Anliegen (Erstkontakt) → M15.
-    example: "Mach mir ein Arbeitsblatt → M03. Was kann ich hier? → M15."
+    example: Mach mir ein Arbeitsblatt → M03. Was kann ich hier? → M15.
 ---
 
 # M03 — Slot-Klärung

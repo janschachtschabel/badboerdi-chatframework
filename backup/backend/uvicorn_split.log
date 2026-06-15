@@ -1,0 +1,14 @@
+INFO:     Started server process [36956]
+INFO:     Waiting for application startup.
+14:46:51 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+14:46:51 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+14:46:51 INFO startup: Config warmup done in 41ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+14:46:52 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+14:46:52 INFO startup: LLM warmup done in 1127ms
+INFO:     127.0.0.1:51882 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63605 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63607 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63609 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62362 - "GET /api/health HTTP/1.1" 200 OK

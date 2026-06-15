@@ -18,7 +18,7 @@ anti_patterns:
   - Bei konkretem Material-Wunsch in der Sammlung → M05/M06
 when_to_use:
   - User fragt nach Sub-Themen/Bereichen eines KONKRETEN Fachs (Singular)
-  - 'Drilldown-Verb — Bereiche unter X / gegliedert in / Unterthemen von / was ist in dieser Sammlung?'
+  - Drilldown-Verb — Bereiche unter X / gegliedert in / Unterthemen von / was ist in dieser Sammlung?
   - User klickt auf ein Fachportal-Kachel und möchte tiefer navigieren
 when_not_to_use:
   - Plural-Frage nach ALLEN Fachportalen → M07
@@ -33,10 +33,10 @@ trigger_phrases:
 discriminators:
   - vs: M07
     rule: Singular-Fach mit Drilldown → M08. Plural-Übersicht aller Fächer → M07.
-    example: "Bereiche unter Mathematik → M08. Alle Fächer → M07."
+    example: Bereiche unter Mathematik → M08. Alle Fächer → M07.
   - vs: M06
     rule: Sub-Themen einer Sammlung navigieren → M08. Material zu einem Thema suchen → M06.
-    example: "Was ist in der Mathematik-Sammlung? → M08. Material zu Bruchrechnung → M06."
+    example: Was ist in der Mathematik-Sammlung? → M08. Material zu Bruchrechnung → M06.
 ---
 
 # M08 — Sammlung-Drilldown

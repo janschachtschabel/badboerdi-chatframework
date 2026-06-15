@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { fetchJson } from '@/lib/api';
 
 interface Session {
   session_id: string;
@@ -39,11 +40,14 @@ export function SessionsView() {
   useEffect(() => { loadSessions(); }, []);
 
   const loadSessions = async () => {
+    // Fix 2026-06-10: Fehler nicht mehr komplett verschlucken — der
+    // Nutzer sah vorher einfach eine leere Liste ohne Hinweis.
     try {
-      const resp = await fetch('/api/sessions/');
-      if (!resp.ok) return;
-      setSessions(await resp.json());
-    } catch {}
+      const data = await fetchJson<Session[]>('/api/sessions/');
+      setSessions(data);
+    } catch (e) {
+      setFlash(`Sessions laden fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    }
   };
 
   const loadMessages = async (sessionId: string) => {

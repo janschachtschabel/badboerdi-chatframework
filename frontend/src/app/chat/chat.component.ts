@@ -12,7 +12,7 @@ import {
   WloCard, DebugInfo, PaginationInfo,
 } from '../services/api.service';
 import { getCardPrimaryUrl } from '../services/card-utils';
-import { BOERDI_LOGO_SVG, BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
+import { BOERDI_LOGO_DATA_URL } from '../shared/boerdi-logo';
 import { ICONS } from '../shared/icons';
 import { SafeSvgPipe } from '../shared/safe-svg.pipe';
 
@@ -191,11 +191,6 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   /** Show the language/voice buttons in header (🔊 TTS) and footer (🎤 STT).
    *  Default true. Set to false to disable speech features in the UI. */
   @Input() showLanguageButtons: boolean | string = true;
-  /** Welle E (2026-05-23): KI-Content abschaltbar pro Embed (Host-Override).
-   *  Bei ``false`` lehnt der Bot Material/Lernpfad-Erstellung mit der
-   *  Alt-Response aus ``widget-modes.yaml`` ab. Das Studio-Default
-   *  ist ``true``. */
-  @Input() aiContentEnabled: boolean | string = true;
   /** Vom Widget durchgereichte Trusted-Hosts-Whitelist (Backend-Default
    *  aus ``guide-mode.yaml`` + ``trusted-domains``-HTML-Attribut, mergiert).
    *  Verwendung: Inline-Markdown-Links zu Hosts auf dieser Liste öffnen
@@ -245,14 +240,6 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
 
   constructor(private api: ApiService, private zone: NgZone, private sanitizer: DomSanitizer) {}
 
-  /** Coerces a boolean | string input (HTML attributes always arrive as
-   *  strings) into a true boolean. */
-  private modeFlag(v: boolean | string): boolean {
-    if (typeof v === 'boolean') return v;
-    if (typeof v === 'string') return v.toLowerCase() !== 'false';
-    return true;
-  }
-  get aiContentEnabledBool(): boolean { return this.modeFlag(this.aiContentEnabled); }
   // Welle E (2026-05-23) — Compat-Hüllen: alte Pfade lesen diese Bools
   // immer noch. Statt jede Stelle anzufassen, geben wir konstantes ``true``
   // zurück. Die View-Conditionals werden separat aufgeräumt.
@@ -338,13 +325,6 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
     this.api.getSpeechEnabled()
       .then((ok) => { this.speechBackendEnabled = ok; })
       .catch(() => { /* optimistisch sichtbar lassen */ });
-
-    // Welle E (2026-05-23): einziger Embed-Override ist aiContentEnabled.
-    // Wir setzen ihn nur dann explizit ``false``, wenn der Host es
-    // aktiv abgeschaltet hat — sonst Backend-Default greift.
-    this.api.setWidgetModes(
-      this.aiContentEnabledBool ? undefined : false,
-    );
 
     // Parse page-context attribute (JSON string or already an object)
     if (typeof this.pageContext === 'string' && this.pageContext.trim()) {
@@ -510,6 +490,15 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
       }
     } catch { /* ignore */ }
     this._autoFollowScrollListener = null;
+    // B9 (2026-06-10): laufende Aufnahme/TTS beim Zerstören stoppen — sonst
+    // bleibt das Mikrofon aktiv (Privacy!), der Recording-Timer tickt weiter
+    // und eine laufende Sprachausgabe spielt ins Leere.
+    try { this.stopRecording(); } catch { /* ignore */ }
+    try {
+      (this.mediaRecorder as any)?.stream?.getTracks?.()
+        ?.forEach((t: MediaStreamTrack) => t.stop());
+    } catch { /* ignore */ }
+    try { this.stopSpeaking(); } catch { /* ignore */ }
   }
 
   async sendMessage(text?: string) {
@@ -549,6 +538,22 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
       try {
         resp = await this.api.sendMessageStream(this.sessionId, msg, onEvent, envOverride);
       } catch (streamErr) {
+        // B10 (2026-06-11): Server lebt, wird aber nicht fertig (z.B.
+        // hängender LLM-Call hinter dem Stream). KEIN Fallback-POST — der
+        // würde denselben hängenden Turn nochmal anstoßen und die Wartezeit
+        // verdoppeln. Stattdessen ehrliche Meldung; die Antwort wird
+        // serverseitig fertig gespeichert und steht im Verlauf.
+        if ((streamErr as Error)?.name === 'StreamStaleError') {
+          this.removeMessage(loadingId);
+          const staleId = this.addBotMessage(
+            'Das dauert gerade ungewöhnlich lange — bitte stell deine Frage '
+            + 'gleich noch einmal. Falls meine Antwort doch noch fertig '
+            + 'geworden ist, findest du sie beim nächsten Öffnen im Verlauf.');
+          this.scrollTargetId = staleId;
+          this.isLoading = false;
+          setTimeout(() => this.inputField?.nativeElement?.focus(), 100);
+          return;
+        }
         // Stream-API failed (network, proxy, parser) → silent fallback to
         // the legacy non-streaming endpoint so the user still gets an
         // answer. This also covers older backends without the /stream route.
@@ -1030,7 +1035,11 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/\[(.+?)\]\((https?:[^)]+)\)/g,
-          '<a href="$2" target="_blank" rel="noopener">$1</a>');
+          // A4 (2026-06-10): URL-Sonderzeichen encoden — ein '"' in der
+          // Markdown-URL brach sonst aus dem href-Attribut aus (XSS im
+          // Druckfenster, das die Host-Origin erbt).
+          (_m: string, label: string, url: string) =>
+            `<a href="${url.replace(/["'\s]/g, (c: string) => encodeURIComponent(c))}" target="_blank" rel="noopener">${label}</a>`);
       const lines = html.split('\n');
       const out: string[] = [];
       for (const raw of lines) {
@@ -1103,7 +1112,11 @@ a{color:#1c4587}@media print{a{color:inherit;text-decoration:none}}</style></hea
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/^&gt;\s?/gm, '> ')
         .replace(/\[(.+?)\]\((https?:[^)]+)\)/g,
-          '<a href="$2" target="_blank" rel="noopener">$1</a>');
+          // A4 (2026-06-10): URL-Sonderzeichen encoden — ein '"' in der
+          // Markdown-URL brach sonst aus dem href-Attribut aus (XSS im
+          // Druckfenster, das die Host-Origin erbt).
+          (_m: string, label: string, url: string) =>
+            `<a href="${url.replace(/["'\s]/g, (c: string) => encodeURIComponent(c))}" target="_blank" rel="noopener">${label}</a>`);
       const lines = html.split('\n');
       const out: string[] = [];
       for (const raw of lines) {
@@ -1238,7 +1251,11 @@ a{color:#1c4587}@media print{a{color:inherit;text-decoration:none}}</style></hea
         // Restore blockquote markers (we just HTML-escaped them to &gt;)
         .replace(/^&gt;\s?/gm, '> ')
         .replace(/\[(.+?)\]\((https?:[^)]+)\)/g,
-          '<a href="$2" target="_blank" rel="noopener">$1</a>');
+          // A4 (2026-06-10): URL-Sonderzeichen encoden — ein '"' in der
+          // Markdown-URL brach sonst aus dem href-Attribut aus (XSS im
+          // Druckfenster, das die Host-Origin erbt).
+          (_m: string, label: string, url: string) =>
+            `<a href="${url.replace(/["'\s]/g, (c: string) => encodeURIComponent(c))}" target="_blank" rel="noopener">${label}</a>`);
       const lines = html.split('\n');
       const out: string[] = [];
       for (const raw of lines) {
@@ -2850,6 +2867,13 @@ ${cards.length ? `<section class="cards"><h2>Verwendete Inhalte (${cards.length}
       } catch { /* fall back to unprocessed clean */ }
     }
     const safe = this.sanitizer.bypassSecurityTrustHtml(final);
+    // B9 (2026-06-10): FIFO-Cap — die Map wuchs sonst unbegrenzt (ein
+    // Eintrag pro einzigartiger Nachricht, Komponente lebt die ganze
+    // Seiten-Session). 300 deckt sehr lange Chats; Älteste fliegen raus.
+    if (this._renderCache.size >= 300) {
+      const oldest = this._renderCache.keys().next().value;
+      if (oldest !== undefined) this._renderCache.delete(oldest);
+    }
     this._renderCache.set(cacheKey, safe);
     return safe;
   }

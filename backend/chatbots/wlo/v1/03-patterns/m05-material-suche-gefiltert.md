@@ -12,6 +12,7 @@ tools:
   - search_wlo_content
   - lookup_wlo_vocabulary
   - get_node_details
+quick_replies_mode: speculative
 core_rule: |
   Direkte MCP-Suche mit den vom User gelieferten Filtern. 3–5 Treffer als
   Kacheln zurückgeben.
@@ -35,10 +36,10 @@ trigger_phrases:
 discriminators:
   - vs: M06
     rule: Filter vorhanden (Medientyp/Stufe) → M05 (gezielter Search). Nur Thema → M06 (Cascade über Themenseite/Sammlung/Content).
-    example: "Videos zu Bruchrechnung Klasse 5 → M05. Material zu Bruchrechnung → M06."
+    example: Videos zu Bruchrechnung Klasse 5 → M05. Material zu Bruchrechnung → M06.
   - vs: M10
     rule: User SUCHT bestehende Inhalte → M05. User will KI-Create → M10.
-    example: "Such mir Arbeitsblätter zu Brüchen → M05. Erstell mir ein Arbeitsblatt zu Brüchen → M10."
+    example: Such mir Arbeitsblätter zu Brüchen → M05. Erstell mir ein Arbeitsblatt zu Brüchen → M10.
 ---
 
 # M05 — Material-Suche gefiltert

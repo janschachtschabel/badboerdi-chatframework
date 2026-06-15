@@ -419,13 +419,13 @@ export default function InfoView() {
             <tr>
               <td style={tdStyle}><strong>1 — Identität & Schutz</strong></td>
               <td style={tdStyle}><span style={{ color: '#ef4444', fontWeight: 700 }}>1000</span></td>
-              <td style={tdStyle}>Persona-Definition, Guardrails, Safety-Config, Geräte-Config</td>
+              <td style={tdStyle}>Persona-Definition, Guardrails, Safety-Config, Policy-Regeln, Geräte-Config</td>
               <td style={tdStyle}>Wird <strong>nie</strong> entladen. Guardrails stehen immer am Ende.</td>
             </tr>
             <tr>
               <td style={tdStyle}><strong>2 — Domain & Regeln</strong></td>
               <td style={tdStyle}><span style={{ color: '#f59e0b', fontWeight: 700 }}>900</span></td>
-              <td style={tdStyle}>Plattform-Regeln, Policy, WLO-Fachwissen</td>
+              <td style={tdStyle}>Plattform-Regeln, WLO-Fachwissen</td>
               <td style={tdStyle}>Wird <strong>nie</strong> entladen.</td>
             </tr>
             <tr>
@@ -709,7 +709,6 @@ export default function InfoView() {
 <!-- Edu-Sharing-Embed: keine KI-Erzeugung, eigenes Routing für Links -->
 <boerdi-chat
   api-url="https://api.example.de"
-  ai-content-enabled="false"
   intercept-edu-sharing-links="true"
   emit-routing-debug="true">
 </boerdi-chat>`}
@@ -744,7 +743,6 @@ export default function InfoView() {
               ['Kontext', 'page-context', '—', 'JSON-Objekt mit zusätzlichem Kontext'],
               ['Header-UI', 'show-debug-button', 'true', '🔍 Debug-Toggle in Header anzeigen'],
               ['Header-UI', 'show-language-buttons', 'true', '🔊 TTS und 🎤 Mic-Buttons anzeigen'],
-              ['Embed-Modi', 'ai-content-enabled', 'true', 'Bei "false": Erstell-Anfragen (M09/M10) werden mit Alt-Response aus widget-modes.yaml abgelehnt'],
               ['Integration', 'intercept-edu-sharing-links', 'false', 'Bei "true": Link-Klicks emitten (linkClicked)-Event statt zu navigieren'],
               ['Integration', 'emit-guide-suggestion', 'false', 'Bei "true": Bot-Turns mit Lotsen-Treffer feuern badboerdi:guide-suggestion CustomEvent'],
               ['Integration', 'emit-routing-debug', 'false', 'Bei "true": Pro Bot-Turn ein badboerdi:routing-debug CustomEvent mit Pattern/Intent/State/Tools'],

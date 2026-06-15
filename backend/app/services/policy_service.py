@@ -4,8 +4,9 @@ Org/regulatory rules — distinct from Safety (which handles user risk).
 Policy decides what's *allowed* by configuration: tool whitelists per
 persona, mandatory disclaimers, license restrictions, etc.
 
-Rules are loaded from `02-domain/policy.yaml` so they can be edited
-in the Studio without code changes.
+Rules are loaded from `01-base/policy.yaml` so they can be edited
+in the Studio (tab "Identität & Schutz", alongside Guardrails + Safety)
+without code changes.
 """
 
 from __future__ import annotations
@@ -21,13 +22,16 @@ def assess_policy(
     message: str,
     persona_id: str,
     intent_id: str,
-    pattern_id: str = "",
 ) -> PolicyDecision:
     """Apply policy rules and return a PolicyDecision.
 
     Each rule in policy.yaml may define:
-      match: { persona?, intent?, pattern?, message_regex? }
-      effect: { allow?, block_tools?, disclaimer? }
+      match: { persona?, intent?, message_regex? }
+      effect: { block_tools?, disclaimer? }
+
+    Hinweis: Policy erzwingt KEINE harte Blockade (Guardrail R-01 „nie
+    blockieren") — sie sperrt nur einzelne Tools und hängt Pflicht-
+    Disclaimer an.
     """
     decision = PolicyDecision()
     cfg = load_policy_config()
@@ -39,8 +43,6 @@ def assess_policy(
         if "persona" in match and match["persona"] != persona_id:
             continue
         if "intent" in match and match["intent"] != intent_id:
-            continue
-        if "pattern" in match and match["pattern"] != pattern_id:
             continue
         regex = match.get("message_regex")
         if regex:
@@ -54,8 +56,6 @@ def assess_policy(
         rid = rule.get("id", "policy-rule")
         decision.matched_rules.append(rid)
 
-        if effect.get("allow") is False:
-            decision.allowed = False
         for t in effect.get("block_tools", []) or []:
             if t not in decision.blocked_tools:
                 decision.blocked_tools.append(t)

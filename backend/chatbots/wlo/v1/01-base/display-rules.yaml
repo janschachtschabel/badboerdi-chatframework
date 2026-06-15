@@ -30,6 +30,10 @@ display_rules:
     themenseiten_max: 3
     sammlungen_max: 3
     materialien_max: 3
+    # Lernpfad-Ausnahme: M09 verlinkt seine Materialien im Pfad-Text —
+    # die Box darunter darf bis zu diesem Wert zeigen, damit alle
+    # verwendeten Inhalte abgedeckt sind (Text↔Box-Konsistenz).
+    materialien_max_lernpfad: 5
     webseiten_max: 3
 
   inline_card_links:

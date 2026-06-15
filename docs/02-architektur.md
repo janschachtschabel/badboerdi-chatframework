@@ -42,7 +42,7 @@ zusammensetzt. Jede Schicht ist eine separate Datei-Hierarchie unter
 | `device-config.yaml` | Geräte-Limits (max_items pro Desktop/Tablet/Mobile) + Persona-Anrede-Fallback |
 | `tone-modifiers.yaml` | Default-Modifier wenn Persona-MD `formality: wie_user` setzt |
 | `display-rules.yaml` | Frontend-Display-Limits (Cards-pro-Box, Inline-Doc-Anzeige, …) |
-| `widget-modes.yaml` | Widget-Embed-Schwellen (Inline-Link-Modus, `ai-content-enabled`) |
+| `widget-modes.yaml` | Widget-Embed-Schwellen (Inline-Link-Limits) |
 | `placeholder-topics.yaml` | Beispielthemen für leere QR-Slots |
 | `privacy-config.yaml` | Privacy-Toggles (Logging an/aus pro Datenklasse) |
 | `card-pipeline.yaml` | MCP-Card-Rendering-Konfiguration |

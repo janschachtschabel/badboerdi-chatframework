@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import GoldFlowView from './GoldFlowView';
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -12,7 +13,7 @@ interface RunSummary {
   created_at: string;
   completed_at: string | null;
   status: 'running' | 'done' | 'failed';
-  mode: 'scenarios' | 'conversations' | 'both';
+  mode: 'scenarios' | 'conversations' | 'both' | 'golden';
   config_slug: string;
   total_turns: number;
   avg_score: number;
@@ -169,6 +170,9 @@ export default function EvaluationView() {
   const [showNew, setShowNew] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Zwei Eval-Arten unter einem Dach: generativ (LLM-Simulator) vs. Gold-Flows
+  // (deterministische, geprüfte Abläufe). Umschalter statt eigenem Menüpunkt.
+  const [evalMode, setEvalMode] = useState<'generative' | 'golden'>('generative');
 
   const loadRuns = useCallback(async () => {
     setLoading(true);
@@ -184,7 +188,12 @@ export default function EvaluationView() {
         throw new Error(`HTTP ${r.status}`);
       }
       const data = await r.json();
-      setRuns(Array.isArray(data.runs) ? data.runs : []);
+      // Golden-Flow-Läufe leben im eigenen „Gold-Flows"-Tab (mit der
+      // deterministischen Scorecard). Hier nur die generativen Persona-
+      // Dialog-Läufe zeigen, damit ein Golden-Lauf nicht in der generischen
+      // Detail-Ansicht geöffnet wird.
+      const all: RunSummary[] = Array.isArray(data.runs) ? data.runs : [];
+      setRuns(all.filter(x => x.mode !== 'golden'));
       setError(null);
     } catch (e: any) {
       setError(e.message);
@@ -217,7 +226,10 @@ export default function EvaluationView() {
 
   const deleteRun = async (runId: string) => {
     if (!confirm(`Run ${runId} löschen?`)) return;
-    await fetch(`/api/eval/runs/${runId}`, { method: 'DELETE' });
+    // Fix 2026-06-10: Status prüfen — vorher wurde bei 4xx/5xx still neu
+    // geladen und der Run "tauchte wieder auf", ohne sichtbaren Fehler.
+    const r = await fetch(`/api/eval/runs/${runId}`, { method: 'DELETE' });
+    if (!r.ok) { setError(`Löschen fehlgeschlagen: HTTP ${r.status}`); return; }
     if (selectedRun?.id === runId) setSelectedRun(null);
     loadRuns();
   };
@@ -225,12 +237,13 @@ export default function EvaluationView() {
   const deleteAllRuns = async () => {
     if (runs.length === 0) return;
     const ok = confirm(
-      `Wirklich alle ${runs.length} Eval-Protokolle löschen?\n\n` +
-      `Das entfernt auch die zugehörigen quality_logs-Einträge, damit die ` +
-      `Quality-Statistik (mit Scope „Nur Eval") sauber zurückgesetzt wird.`
+      `Wirklich alle ${runs.length} Persona-Dialog-Protokolle löschen?\n\n` +
+      `Gold-Flow-Läufe bleiben erhalten (eigener Tab). Das entfernt auch die ` +
+      `zugehörigen quality_logs-Einträge, damit die Quality-Statistik (Scope ` +
+      `„Nur Eval") sauber zurückgesetzt wird.`
     );
     if (!ok) return;
-    const r = await fetch('/api/eval/runs?confirm=true', { method: 'DELETE' });
+    const r = await fetch('/api/eval/runs?mode=generative', { method: 'DELETE' });
     if (!r.ok) { alert(`Fehler beim Löschen: HTTP ${r.status}`); return; }
     // Cascade the eval quality_logs so Quality analytics match
     await fetch('/api/eval/quality-logs', { method: 'DELETE' });
@@ -241,68 +254,91 @@ export default function EvaluationView() {
   const deleteFailedRuns = async () => {
     const failed = runs.filter(r => r.status === 'failed').length;
     if (failed === 0) { alert('Keine fehlgeschlagenen Runs vorhanden.'); return; }
-    if (!confirm(`${failed} fehlgeschlagene Runs löschen?`)) return;
-    await fetch('/api/eval/runs?status=failed', { method: 'DELETE' });
+    if (!confirm(`${failed} fehlgeschlagene Persona-Dialog-Runs löschen?`)) return;
+    await fetch('/api/eval/runs?status=failed&mode=generative', { method: 'DELETE' });
     loadRuns();
   };
 
   return (
     <div style={{ padding: 24, maxWidth: 1400 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ margin: 0 }}>Evaluation · Persona-getriebene Chat-Tests</h2>
-        <button
-          className="btn-primary"
-          onClick={() => setShowNew(true)}
-          style={{ padding: '8px 16px', background: 'var(--primary)', color: '#fff', border: 0, borderRadius: 6, cursor: 'pointer' }}
-        >
-          ＋ Neuer Eval-Run
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <h2 style={{ margin: 0 }}>Evaluation</h2>
+          {/* Umschalter: generative Persona-Dialoge vs. deterministische Gold-Flows */}
+          <div style={{ display: 'inline-flex', border: '1px solid #D1D5DB', borderRadius: 8, overflow: 'hidden' }}>
+            {(([['generative', 'Persona-Dialoge'], ['golden', 'Gold-Flows']]) as const).map(([k, label]) => (
+              <button key={k} onClick={() => setEvalMode(k)}
+                style={{
+                  padding: '6px 14px', fontSize: 13, fontWeight: 600, border: 0, cursor: 'pointer',
+                  background: evalMode === k ? 'var(--primary)' : '#fff',
+                  color: evalMode === k ? '#fff' : '#374151',
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {evalMode === 'generative' && (
+          <button
+            className="btn-primary"
+            onClick={() => setShowNew(true)}
+            style={{ padding: '8px 16px', background: 'var(--primary)', color: '#fff', border: 0, borderRadius: 6, cursor: 'pointer' }}
+          >
+            ＋ Neuer Eval-Run
+          </button>
+        )}
       </div>
 
-      {error && (
-        <div style={{ padding: 12, background: '#FEF2F2', color: '#991B1B', borderRadius: 6, marginBottom: 16 }}>
-          {error}
-        </div>
-      )}
-
-      {!selectedRun && (
+      {evalMode === 'golden' ? (
+        <GoldFlowView />
+      ) : (
         <>
-          {runs.length > 0 && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, justifyContent: 'flex-end' }}>
-              <button onClick={deleteFailedRuns}
-                style={{ padding: '6px 10px', background: '#fff', border: '1px solid #D1D5DB', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-                Fehlgeschlagene löschen
-              </button>
-              <button onClick={deleteAllRuns}
-                style={{ padding: '6px 10px', background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-                Alle Protokolle löschen
-              </button>
+          {error && (
+            <div style={{ padding: 12, background: '#FEF2F2', color: '#991B1B', borderRadius: 6, marginBottom: 16 }}>
+              {error}
             </div>
           )}
-          <RunsList runs={runs} onOpen={openRun} onDelete={deleteRun} loading={loading} />
 
-          {/* Hinweis auf Quality-Tab statt redundanter Analytics-Panel hier. */}
-          <div style={{
-            marginTop: 24, padding: 12, background: '#F0F9FF', borderRadius: 6,
-            fontSize: 13, color: '#0C4A6E', border: '1px solid #BAE6FD',
-          }}>
-            💡 <strong>Analytics &amp; Pattern-Diagnose:</strong> Die Pattern-Häufigkeiten,
-            Intent-Verteilung und Tight-Race-Analyse sind im <strong>Quality</strong>-Tab.
-            Dort lässt sich per Scope-Umschalter zwischen „Alle", „Produktion" und „Nur Eval"
-            wechseln — so vergleichst du, wie sich reale Nutzung und Eval-Runs unterscheiden.
-          </div>
+          {!selectedRun && (
+            <>
+              {runs.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, justifyContent: 'flex-end' }}>
+                  <button onClick={deleteFailedRuns}
+                    style={{ padding: '6px 10px', background: '#fff', border: '1px solid #D1D5DB', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                    Fehlgeschlagene löschen
+                  </button>
+                  <button onClick={deleteAllRuns}
+                    style={{ padding: '6px 10px', background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                    Alle Protokolle löschen
+                  </button>
+                </div>
+              )}
+              <RunsList runs={runs} onOpen={openRun} onDelete={deleteRun} loading={loading} />
+
+              {/* Hinweis auf Quality-Tab statt redundanter Analytics-Panel hier. */}
+              <div style={{
+                marginTop: 24, padding: 12, background: '#F0F9FF', borderRadius: 6,
+                fontSize: 13, color: '#0C4A6E', border: '1px solid #BAE6FD',
+              }}>
+                💡 <strong>Analytics &amp; Pattern-Diagnose:</strong> Die Pattern-Häufigkeiten,
+                Intent-Verteilung und Tight-Race-Analyse sind im <strong>Quality</strong>-Tab.
+                Dort lässt sich per Scope-Umschalter zwischen „Alle", „Produktion" und „Nur Eval"
+                wechseln — so vergleichst du, wie sich reale Nutzung und Eval-Runs unterscheiden.
+              </div>
+            </>
+          )}
+
+          {selectedRun && (
+            <RunDetailView run={selectedRun} onBack={() => setSelectedRun(null)} />
+          )}
+
+          {showNew && (
+            <NewRunModal
+              onClose={() => setShowNew(false)}
+              onStarted={() => { setShowNew(false); loadRuns(); }}
+            />
+          )}
         </>
-      )}
-
-      {selectedRun && (
-        <RunDetailView run={selectedRun} onBack={() => setSelectedRun(null)} />
-      )}
-
-      {showNew && (
-        <NewRunModal
-          onClose={() => setShowNew(false)}
-          onStarted={() => { setShowNew(false); loadRuns(); }}
-        />
       )}
     </div>
   );

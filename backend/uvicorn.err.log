@@ -1,942 +1,176 @@
-INFO:     Started server process [29136]
+INFO:     Started server process [32488]
 INFO:     Waiting for application startup.
-22:43:26 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
-22:43:26 INFO app.services.database: DB not empty (rag=906 sessions=336 messages=859) — factory skipped
-22:43:26 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
-22:43:26 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
-22:43:26 INFO startup: Config warmup done in 94ms
+19:46:11 WARNING startup: \u26a0 STUDIO_API_KEY ist nicht gesetzt (oder noch der Platzhalter) — alle Studio-/Admin-/Eval-Endpunkte sind UNGESCHÜTZT. Für Staging/Produktion einen langen Zufallswert in STUDIO_API_KEY setzen.
+19:46:11 WARNING startup: \u26a0 CORS_ORIGINS='*' (offen für alle Ursprünge). Für Produktion eine Allow-Liste der einbettenden Domains in CORS_ORIGINS setzen.
+19:46:11 INFO app.services.database: DB not empty (rag=906 sessions=570 messages=1777) — factory skipped
+19:46:11 INFO app.services.database: Seed version 2026-06-08 already imported, skipping
+19:46:11 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
+19:46:11 INFO startup: Config warmup done in 95ms
 INFO:     Application startup complete.
-22:43:26 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
-22:43:26 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
-22:43:26 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
-22:43:27 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
-22:43:27 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'userRole'}
+19:46:11 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
+19:46:11 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+19:46:11 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+19:46:11 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+19:46:12 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'userRole'}
 C:\Users\jan\miniconda3\Lib\site-packages\torch\cuda\__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
   import pynvml  # type: ignore[import]
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-22:43:28 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:43:28 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
-22:43:29 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:43:29 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:43:29 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:43:29 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
-22:43:29 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
-22:43:30 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
-22:43:30 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:43:30 INFO startup: LLM warmup done in 4271ms
-22:43:30 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
-22:43:30 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
-22:43:31 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
-22:43:31 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
-22:43:31 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
-22:43:31 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
-22:43:31 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
-22:43:32 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
-22:43:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:43:32 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars in 6068 ms
-22:43:32 INFO app.services.mcp_client: discipline label\u2192URI cache loaded: 190 entries
-22:43:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:43:32 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars in 6575 ms
-22:43:32 INFO app.services.mcp_client: lrt label\u2192URI cache loaded: 100 entries
-22:43:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:43:32 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars in 5622 ms
-22:43:32 INFO app.services.mcp_client: educationalContext label\u2192URI cache loaded: 48 entries
-22:43:32 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:43:32 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 943 chars in 5176 ms
-22:43:32 INFO app.services.mcp_client: userRole label\u2192URI cache loaded: 31 entries
-22:43:32 INFO app.services.mcp_client: vocabulary prewarm: 4/4 geladen
-22:43:35 INFO numexpr.utils: NumExpr defaulting to 16 threads.
-22:43:37 INFO app.services.rag_service: Reranker warmup done in 11519ms
-22:44:11 INFO app.services.eval_service: [eval eval-426c5d82b298] cleared tool cache (4 entries)
-22:44:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:17 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:18 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:20 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:21 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:22 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:24 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:26 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:28 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:28 INFO app.services.eval_service: Persona-Marker-Telemetrie P-ELT/I02: 1/1 Eröffnungen ohne harten Marker (werden trotzdem behalten).
-22:44:29 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:31 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:32 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:34 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:38 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:44 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:46 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:47 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:48 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:51 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:52 INFO app.services.eval_service: Persona-Marker-Telemetrie P-ENT/I07: 1/1 Eröffnungen ohne harten Marker (werden trotzdem behalten).
-22:44:54 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:54 INFO app.services.eval_service: Persona-Marker-Telemetrie P-ENT/I08: 1/1 Eröffnungen ohne harten Marker (werden trotzdem behalten).
-22:44:56 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:44:57 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:00 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:01 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:04 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:05 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:07 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:10 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:10 INFO app.services.eval_service: Persona-Marker-Telemetrie P-LER/I01: 1/1 Eröffnungen ohne harten Marker (werden trotzdem behalten).
-22:45:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:18 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:21 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:23 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:24 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:27 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:27 INFO app.services.eval_service: Persona-Marker-Telemetrie P-LER/I08: 1/1 Eröffnungen ohne harten Marker (werden trotzdem behalten).
-22:45:29 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:29 INFO app.services.eval_service: Persona-Marker-Telemetrie P-RED/I01: 1/1 Eröffnungen ohne harten Marker (werden trotzdem behalten).
-22:45:31 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:31 INFO app.services.eval_service: Persona-Marker-Telemetrie P-RED/I02: 1/1 Eröffnungen ohne harten Marker (werden trotzdem behalten).
-22:45:33 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:39 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:40 INFO app.services.eval_service: Persona-Marker-Telemetrie P-RED/I07: 1/1 Eröffnungen ohne harten Marker (werden trotzdem behalten).
-22:45:42 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:42 INFO app.services.eval_service: Persona-Marker-Telemetrie P-RED/I08: 1/1 Eröffnungen ohne harten Marker (werden trotzdem behalten).
-22:45:42 INFO app.services.eval_service: [eval eval-426c5d82b298] generated 48 scenarios
-22:45:43 INFO app.services.llm_service: system_prompt[classify] tokens=17011 (was=0, cache-eligible=True)
-22:45:44 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:45:44 INFO app.services.safety_service: safety stages=openai level=standard took 1281ms
-22:45:45 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:45 INFO app.services.llm_service: system_prompt[response] tokens=9044 (was=0, cache-eligible=True)
-22:45:45 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:45:45 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
-22:45:48 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:48 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
-22:45:48 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was kann ich hier eigentlich machen? Ich bin neu und schau m'
-22:45:48 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:45:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:54 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:45:54 INFO app.services.safety_service: safety stages=openai level=standard took 898ms
-22:45:55 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:55 INFO app.services.llm_service: system_prompt[response] tokens=6865 (was=9044, cache-eligible=True)
-22:45:55 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:45:55 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] \u2192 allowed=True
-22:45:57 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:45:57 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:45:57 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist eigentlich OER und wie wird das verwendet?'
+19:46:12 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+19:46:12 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+19:46:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+19:46:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+19:46:13 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+19:46:13 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+19:46:13 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+19:46:13 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+19:46:14 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+19:46:14 INFO startup: LLM warmup done in 2905ms
+19:46:14 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+19:46:14 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+19:46:14 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+19:46:14 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+19:46:14 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+19:46:14 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+19:46:15 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+19:46:15 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+19:46:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+19:46:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+19:46:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+19:46:15 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars in 4032 ms
+19:46:15 INFO app.services.mcp_client: educationalContext label\u2192URI cache loaded: 48 entries
+19:46:15 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars in 4327 ms
+19:46:15 INFO app.services.mcp_client: discipline label\u2192URI cache loaded: 190 entries
+19:46:15 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars in 4651 ms
+19:46:15 INFO app.services.mcp_client: lrt label\u2192URI cache loaded: 100 entries
+19:46:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+19:46:15 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 943 chars in 3721 ms
+19:46:15 INFO app.services.mcp_client: userRole label\u2192URI cache loaded: 31 entries
+19:46:15 INFO app.services.mcp_client: vocabulary prewarm: 4/4 geladen
+19:46:18 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+19:46:20 INFO app.services.rag_service: Reranker warmup done in 9479ms
+19:46:32 INFO app.services.llm_service: system_prompt[classify] tokens=18651 (was=0, cache-eligible=True)
+19:46:33 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+19:46:33 INFO app.services.safety_service: safety stages=openai level=standard took 1380ms
+19:46:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+19:46:35 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Bruchrechnung&limit=3 "HTTP/1.1 200 OK"
+19:46:35 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Bruchrechnung "HTTP/1.1 200 OK"
+19:46:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+19:46:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+19:46:36 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
+19:46:36 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Erstell mir ein Arbeitsblatt zum Thema Bruchrechnung'
+19:46:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+19:46:36 INFO app.services.safety_service: safety stages=openai level=standard took 708ms
+19:46:39 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+19:46:39 INFO app.services.llm_service: system_prompt[response] tokens=6878 (was=0, cache-eligible=True)
+19:46:39 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
+19:46:39 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] \u2192 allowed=True
+19:46:41 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/embeddings "HTTP/1.1 200 "
+19:46:42 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/embeddings "HTTP/1.1 200 "
+19:46:43 INFO app.services.llm_service: RAG pre-fetch for areas ['Plattformwissen', 'WissenLebtOnline']: 3494 chars
+19:46:44 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+19:46:47 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+19:46:47 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
+19:46:47 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist OER?'
 C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
-  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'OER-Bereich au...irlernenonline.de/oer/'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'OER bei WLO', ...e/bildungsinhalte/oer/'}, input_type=dict])
   return self.serializer.to_json(
-22:45:57 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:46:00 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:01 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:46:01 INFO app.services.safety_service: safety stages=openai level=standard took 648ms
-22:46:03 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:03 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Zuerst nach Mathematik-Inhalten im Bestand suchen, um eine kuratierte Auswahl zu)
-22:46:03 INFO app.routers.chat: speculative primary=search_wlo_all for intent=I03 hint_pattern=M06 args={'query': 'Mathematik', 'maxContent': 10, 'maxCollections': 5, 'discipline': 'Mathematik'}
-22:46:03 INFO app.services.mcp_client: MCP tool search_wlo_all args: {'query': 'Mathematik', 'maxContent': 10, 'maxCollections': 5, 'discipline': 'Mathematik'}
-22:46:03 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
-22:46:05 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:46:05 INFO app.services.mcp_client: MCP tool search_wlo_all returned 25908 chars in 1751 ms
-22:46:05 INFO app.routers.chat: speculative search_wlo_all split \u2192 content=10 collections=5 topicPages=0
-22:46:05 INFO app.services.card_reranker: card_reranker search_wlo_content: 10\u21921 (gate=-1.5, dropped=9) scores=[-1.17, -1.87, -1.89, -1.97, -2.49, -2.92]
-22:46:05 INFO app.services.card_reranker: card_reranker search_wlo_collections: 5\u21922 (gate=0.0, dropped=3) scores=[2.63, 0.3, -0.02, -1.31, -1.43]
-22:46:05 INFO app.services.llm_service: system_prompt[response] tokens=8790 (was=6865, cache-eligible=True)
-22:46:05 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:46:05 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] \u2192 allowed=False
-22:46:07 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:07 INFO app.routers.chat: Outcome-based state hint: S2 -> S3
-22:46:07 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:46:07 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:46:10 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:11 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:46:11 INFO app.services.safety_service: safety stages=openai level=standard took 889ms
-22:46:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:13 INFO app.services.llm_service: system_prompt[response] tokens=7621 (was=8790, cache-eligible=True)
-22:46:13 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:46:13 INFO app.services.llm_service: rag-prefetch-gate: pattern=Slot-Klärung sources=['mcp'] \u2192 allowed=False
-22:46:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:15 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:46:15 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Was kann ich hier machen, um einen Lernpfad zusammenzustelle'
-22:46:15 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:46:18 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:20 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:46:20 INFO app.services.safety_service: safety stages=openai level=standard took 901ms
-22:46:21 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:22 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Wasser&limit=3 "HTTP/1.1 200 OK"
-22:46:23 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Wasser "HTTP/1.1 200 OK"
-22:46:29 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:30 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:31 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:46:31 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Kannst du mir ein Quiz zum Thema Wasser erstellen?'
-22:46:31 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:46:33 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:34 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:46:34 INFO app.services.safety_service: safety stages=openai level=standard took 467ms
-22:46:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:36 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Photosynthese&limit=3 "HTTP/1.1 200 OK"
-22:46:37 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Photosynthese "HTTP/1.1 200 OK"
-22:46:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:37 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:46:37 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Erstelle mir bitte ein Arbeitsblatt zur Photosynthese für Kl'
-22:46:37 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:46:38 INFO app.services.llm_service: system_prompt[classify] tokens=18166 (was=17011, cache-eligible=True)
-22:46:39 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:46:39 INFO app.services.safety_service: safety stages=openai level=standard took 1329ms
-22:46:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:41 INFO app.services.llm_service: system_prompt[response] tokens=8553 (was=7621, cache-eligible=True)
-22:46:41 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
-22:46:41 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:46:41 INFO app.services.llm_service: rag-prefetch-gate: pattern=Iterative Nachbearbeitung sources=['llm'] \u2192 allowed=False
-22:46:45 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:45 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:46:45 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Kannst du den Text vorher ein bisschen kürzer fassen?'
-22:46:45 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:46:48 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:49 INFO app.services.llm_service: system_prompt[classify] tokens=17011 (was=18166, cache-eligible=True)
-22:46:49 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:46:49 INFO app.services.safety_service: safety stages=openai level=standard took 521ms
-22:46:51 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:51 INFO app.services.llm_service: system_prompt[response] tokens=9021 (was=8553, cache-eligible=True)
-22:46:51 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:46:51 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
-22:46:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:52 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
-22:46:52 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was kann ich hier eigentlich machen?'
-22:46:52 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:46:56 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:57 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:46:57 INFO app.services.safety_service: safety stages=openai level=standard took 617ms
-22:46:58 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:46:58 INFO app.services.llm_service: system_prompt[response] tokens=8545 (was=9021, cache-eligible=True)
-22:46:58 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:46:58 INFO app.services.llm_service: rag-prefetch-gate: pattern=Inhalt-Einreichen / Melden sources=['mcp'] \u2192 allowed=False
-22:47:00 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:00 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
-22:47:00 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich habe da eine Ungereimtheit entdeckt, wo kann ich das an '
+19:47:49 INFO app.routers.config: factory-snapshot rebuilt from live state (12910084 bytes)
+20:36:03 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+20:36:03 INFO app.services.safety_service: safety stages=openai level=standard took 2109ms
+20:36:04 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:04 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
+20:36:04 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] \u2192 allowed=True
+20:36:04 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/embeddings "HTTP/1.1 200 "
+20:36:04 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/embeddings "HTTP/1.1 200 "
+20:36:05 INFO app.services.llm_service: RAG pre-fetch for areas ['Plattformwissen', 'WissenLebtOnline']: 3494 chars
+20:36:06 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:10 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:10 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
+20:36:10 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist OER?'
 C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
-  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'Inhalt vorschl...en/?type=quelle#esform'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'OER bei Wissen...e/bildungsinhalte/oer/'}, input_type=dict])
   return self.serializer.to_json(
-22:47:00 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:47:03 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:04 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:47:04 INFO app.services.safety_service: safety stages=openai level=standard took 574ms
-22:47:05 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:05 INFO app.services.llm_service: system_prompt[response] tokens=9227 (was=8545, cache-eligible=True)
-22:47:05 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:47:05 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
-22:47:07 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:07 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
-22:47:07 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was kann ich hier für mein Kind finden? Ich schau erstmal, w'
-22:47:07 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:47:10 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:12 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:47:12 INFO app.services.safety_service: safety stages=openai level=standard took 577ms
-22:47:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:13 INFO app.services.llm_service: system_prompt[response] tokens=7050 (was=9227, cache-eligible=True)
-22:47:13 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:47:13 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] \u2192 allowed=True
-22:47:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:15 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:47:15 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist WLO und wie kann das meinem Kind bei den Hausaufgabe'
+20:36:11 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+20:36:11 INFO app.services.safety_service: safety stages=openai level=standard took 1311ms
+20:36:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:13 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Bruchrechnung&limit=3 "HTTP/1.1 200 OK"
+20:36:13 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Bruchrechnung "HTTP/1.1 200 OK"
+20:36:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:13 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
+20:36:13 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Erstell mir ein Arbeitsblatt zum Thema Bruchrechnung'
+20:36:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+20:36:15 INFO app.services.safety_service: safety stages=openai level=standard took 1450ms
+20:36:19 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:19 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Für eine gefilterte Suche nach vorhandenen WLO-Materialien zu Photosynthese in S)
+20:36:19 INFO app.routers.chat: speculative primary=search_wlo_all for intent=I03 hint_pattern=M05 args={'query': 'Photosynthese', 'maxContent': 10, 'maxCollections': 5, 'educationalContext': 'Sekundarstufe I'}
+20:36:19 INFO app.services.mcp_client: MCP tool search_wlo_all args: {'query': 'Photosynthese', 'maxContent': 10, 'maxCollections': 5, 'educationalContext': 'Sekundarstufe I'}
+20:36:19 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
+20:36:22 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+20:36:22 INFO app.services.mcp_client: MCP tool search_wlo_all returned 39786 chars in 3188 ms
+20:36:22 INFO app.routers.chat: speculative search_wlo_all split \u2192 content=10 collections=5 topicPages=1
+20:36:22 INFO app.services.card_reranker: card_reranker search_wlo_content: 10\u21923 (gate=-1.5, dropped=4) scores=[6.37, 4.97, 4.81, 3.51, 2.83, -1.29]
+20:36:22 INFO app.services.card_reranker: card_reranker search_wlo_collections: 5\u21921 (gate=0.0, dropped=4) scores=[2.72, -1.36, -3.8, -4.09, -6.35]
+20:36:23 INFO app.services.card_reranker: card_reranker search_wlo_topic_pages: 1\u21920 (gate=0.0, dropped=1) scores=[-5.98]
+20:36:23 INFO app.services.llm_service: system_prompt[response] tokens=7945 (was=6878, cache-eligible=True)
+20:36:23 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
+20:36:23 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche gefiltert sources=['mcp'] \u2192 allowed=False
+20:36:24 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:24 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
+20:36:25 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+20:36:25 INFO app.services.safety_service: safety stages=openai level=standard took 596ms
+20:36:26 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:26 INFO app.services.llm_service: system_prompt[response] tokens=9021 (was=7945, cache-eligible=True)
+20:36:26 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
+20:36:26 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
+20:36:28 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/embeddings "HTTP/1.1 200 "
+20:36:28 INFO app.services.llm_service: RAG pre-fetch for areas ['Plattformwissen']: 3374 chars
+20:36:29 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:32 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:33 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
+20:36:33 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Hallo, was kannst du eigentlich?'
 C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
-  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'Bildungsinhalt...ne.de/bildungsinhalte/'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'WLO', 'url': '...st.wirlernenonline.de/'}, input_type=dict])
+  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'Mitmach-Mögli...enonline.de/mitmachen/'}, input_type=dict])
   return self.serializer.to_json(
-22:47:15 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:47:18 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:20 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:47:20 INFO app.services.safety_service: safety stages=openai level=standard took 610ms
-22:47:22 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:22 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Zuerst nach passenden Nachhilfe-/Mathe-Inhalten im WLO-Bestand suchen, dann kura)
-22:47:22 INFO app.routers.chat: speculative primary=search_wlo_all for intent=I03 hint_pattern=M06 args={'query': 'Mathematik', 'maxContent': 10, 'maxCollections': 5, 'discipline': 'Mathematik'}
-22:47:22 INFO app.services.mcp_client: MCP tool search_wlo_all args: {'query': 'Mathematik', 'maxContent': 10, 'maxCollections': 5, 'discipline': 'Mathematik'}
-22:47:22 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
-22:47:22 INFO app.services.mcp_client: MCP tool search_wlo_all cache HIT (1 entries)
-22:47:22 INFO app.routers.chat: speculative search_wlo_all split \u2192 content=10 collections=5 topicPages=0
-22:47:22 INFO app.services.card_reranker: card_reranker search_wlo_content: 10\u21921 (gate=-1.5, dropped=9) scores=[-1.17, -1.87, -1.89, -1.97, -2.49, -2.92]
-22:47:22 INFO app.services.card_reranker: card_reranker search_wlo_collections: 5\u21922 (gate=0.0, dropped=3) scores=[2.63, 0.3, -0.02, -1.31, -1.43]
-22:47:22 INFO app.services.llm_service: system_prompt[response] tokens=8234 (was=7050, cache-eligible=True)
-22:47:22 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:47:22 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] \u2192 allowed=False
-22:47:23 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:23 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Mathematik', 'targetGroup': 'learner', 'maxResults': 5}
-22:47:25 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:47:25 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 138 chars in 1405 ms
-22:47:25 WARNING app.services.mcp_client: parse_wlo_topic_page_cards: not a JSON envelope (first 80 chars: 'Keine Themenseiten für "Mathematik" gefunden. Die Sammlung hat möglicherweise ke')
-22:47:26 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:26 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:47:26 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:47:31 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:32 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:47:32 INFO app.services.safety_service: safety stages=openai level=standard took 496ms
-22:47:34 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:34 INFO app.services.llm_service: system_prompt[response] tokens=7817 (was=8234, cache-eligible=True)
-22:47:34 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:47:34 INFO app.services.llm_service: rag-prefetch-gate: pattern=Slot-Klärung sources=['mcp'] \u2192 allowed=False
-22:47:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:35 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:47:35 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich plane gerade eine Nachhilfestunde für meine Tochter und '
-22:47:35 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:47:38 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:39 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:47:39 INFO app.services.safety_service: safety stages=openai level=standard took 580ms
-22:47:41 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:41 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Grundrechenarten&limit=3 "HTTP/1.1 200 OK"
-22:47:42 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Grundrechenart "HTTP/1.1 200 OK"
-22:47:45 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:48 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:48 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:47:48 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Mach mir bitte ein Arbeitsblatt für meine Tochter über die G'
-22:47:48 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:47:51 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:47:52 INFO app.services.safety_service: safety stages=openai level=standard took 465ms
-22:47:54 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:54 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Photosynthese&limit=3 "HTTP/1.1 200 OK"
-22:47:54 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Photosynthese "HTTP/1.1 200 OK"
-22:47:54 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:55 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:55 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:47:55 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Erstelle mir bitte ein Arbeitsblatt zur Photosynthese für Kl'
-22:47:55 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:47:56 INFO app.services.llm_service: system_prompt[classify] tokens=18166 (was=17011, cache-eligible=True)
-22:47:56 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:47:56 INFO app.services.safety_service: safety stages=openai level=standard took 461ms
-22:47:58 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:47:58 INFO app.services.llm_service: system_prompt[response] tokens=8751 (was=7817, cache-eligible=True)
-22:47:58 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
-22:47:58 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:47:58 INFO app.services.llm_service: rag-prefetch-gate: pattern=Iterative Nachbearbeitung sources=['llm'] \u2192 allowed=False
-22:48:02 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:02 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:48:02 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Kannst du den Text von dem Lernpfad, den du mir vorher gegeb'
-22:48:02 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:48:05 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:05 INFO app.services.llm_service: system_prompt[classify] tokens=17011 (was=18166, cache-eligible=True)
-22:48:06 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:48:06 INFO app.services.safety_service: safety stages=openai level=standard took 600ms
-22:48:07 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:07 INFO app.services.llm_service: system_prompt[response] tokens=9441 (was=8751, cache-eligible=True)
-22:48:07 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:48:07 INFO app.services.llm_service: rag-prefetch-gate: pattern=Bot-Feedback-Echo sources=['mcp'] \u2192 allowed=False
-22:48:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:09 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:48:09 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Danke für die Hilfe bei den Hausaufgaben meines Kindes! Ich '
-22:48:09 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:48:11 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:12 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:48:12 INFO app.services.safety_service: safety stages=openai level=standard took 657ms
-22:48:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:13 INFO app.services.llm_service: system_prompt[response] tokens=8756 (was=9441, cache-eligible=True)
-22:48:13 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:48:13 INFO app.services.llm_service: rag-prefetch-gate: pattern=Inhalt-Einreichen / Melden sources=['mcp'] \u2192 allowed=False
-22:48:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:15 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:48:15 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich habe einen Fehler in den Materialien für meine Tochter g'
-22:48:15 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:48:18 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:19 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:48:19 INFO app.services.safety_service: safety stages=openai level=standard took 617ms
-22:48:21 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:21 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_topic_pages (reasoning=Zuerst Themenseiten/Topic-Pages zu „Schulentwicklung“ finden, um passende kurati)
-22:48:21 INFO app.routers.chat: speculative primary=search_wlo_topic_pages for intent=I03 hint_pattern=M06 args={'query': 'Schulentwicklung', 'maxResults': 10}
-22:48:21 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Schulentwicklung', 'maxResults': 5}
-22:48:21 INFO app.routers.chat: speculative extra=search_wlo_content args={'query': 'Schulentwicklung', 'maxResults': 5}
-22:48:21 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Schulentwicklung', 'maxResults': 5}
-22:48:21 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Schulentwicklung', 'maxResults': 5}
-22:48:21 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Schulentwicklung', 'maxResults': 5}
-22:48:23 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:48:23 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 10108 chars in 1837 ms
-22:48:23 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Schulentwicklung', 'maxResults': 10}
-22:48:23 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:48:23 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 12337 chars in 2128 ms
-22:48:24 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:48:24 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 144 chars in 1137 ms
-22:48:24 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'maxResults': 20}
-22:48:24 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:48:24 INFO app.services.mcp_client: MCP tool search_wlo_content returned 9120 chars in 2677 ms
-22:48:34 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:48:34 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 8528 chars in 10281 ms
-22:48:34 INFO app.routers.chat: topic_pages global-fallback (no title match): returning 5 TP-cards as suggestions for 'Schulentwicklung'
-22:48:34 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_content']
-22:48:34 INFO app.services.card_reranker: card_reranker search_wlo_topic_pages: 5\u21920 (gate=0.0, dropped=5) scores=[-4.67, -4.67, -4.77, -4.83, -4.88]
-22:48:34 INFO app.services.card_reranker: card_reranker search_wlo_collections: 5\u21921 (gate=0.0, dropped=4) scores=[2.44, -0.29, -3.28, -3.36, -3.49]
-22:48:34 INFO app.services.card_reranker: card_reranker search_wlo_content: 5\u21923 (gate=-1.5, dropped=2) scores=[0.81, 0.7, 0.13, -4.62, -5.61]
-22:48:34 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:48:34 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] \u2192 allowed=False
-22:48:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:37 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:48:37 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:48:43 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:45 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:48:45 INFO app.services.safety_service: safety stages=openai level=standard took 587ms
-22:48:46 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:46 INFO app.services.llm_service: system_prompt[response] tokens=6845 (was=8756, cache-eligible=True)
-22:48:46 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:48:46 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] \u2192 allowed=True
-22:48:48 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:48 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:48:48 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist WLO und wer steht hinter dieser Plattform im Kontext'
-C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
-  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'WissenLebtOnli...ueber-wirlernenonline/'}, input_type=dict])
-  return self.serializer.to_json(
-22:48:48 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:48:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:53 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:48:53 INFO app.services.safety_service: safety stages=openai level=standard took 620ms
-22:48:55 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:55 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_topic_pages (reasoning=Zuerst Themenseiten/Topic-Pages zu Schulentwicklung/Schulentwicklung finden, um )
-22:48:55 INFO app.routers.chat: speculative primary=search_wlo_topic_pages for intent=I03 hint_pattern=M06 args={'query': 'Schulentwicklung', 'maxResults': 10, 'discipline': 'Schulentwicklung'}
-22:48:55 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Schulentwicklung', 'maxResults': 5, 'discipline': 'Schulentwicklung'}
-22:48:55 INFO app.routers.chat: speculative extra=search_wlo_content args={'query': 'Schulentwicklung', 'maxResults': 5, 'discipline': 'Schulentwicklung'}
-22:48:55 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Schulentwicklung', 'maxResults': 5}
-22:48:55 INFO app.services.mcp_client: MCP tool search_wlo_collections cache HIT (6 entries)
-22:48:55 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Schulentwicklung', 'maxResults': 10, 'discipline': 'Schulentwicklung'}
-22:48:55 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages cache HIT (6 entries)
-22:48:55 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'maxResults': 20, 'discipline': 'Schulentwicklung'}
-22:48:55 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages cache HIT (6 entries)
-22:48:55 INFO app.routers.chat: topic_pages global-fallback (no title match): returning 5 TP-cards as suggestions for 'Schulentwicklung'
-22:48:55 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Schulentwicklung', 'maxResults': 5, 'discipline': 'Schulentwicklung'}
-22:48:55 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Schulentwicklung', 'maxResults': 5, 'discipline': 'Schulentwicklung'}
-22:48:55 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:55 INFO app.services.mcp_client: LLM declined vocab match: discipline='Schulentwicklung'
-22:48:55 INFO app.services.mcp_client: no URI for discipline='Schulentwicklung' (vocab=discipline); passing label through
-22:48:56 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:48:56 INFO app.services.mcp_client: LLM declined vocab match: discipline='Schulentwicklung'
-22:48:56 INFO app.services.mcp_client: no URI for discipline='Schulentwicklung' (vocab=discipline); passing label through
-22:48:57 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:48:57 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 12337 chars in 1842 ms
-22:48:58 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:48:58 INFO app.services.mcp_client: MCP tool search_wlo_content returned 8824 chars in 3049 ms
-22:48:58 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_content']
-22:48:58 INFO app.services.card_reranker: card_reranker search_wlo_topic_pages: 5\u21920 (gate=0.0, dropped=5) scores=[-4.67, -4.67, -4.77, -4.83, -4.88]
-22:48:58 INFO app.services.card_reranker: card_reranker search_wlo_collections: 5\u21921 (gate=0.0, dropped=4) scores=[2.44, -0.29, -3.28, -3.36, -3.49]
-22:48:58 INFO app.services.card_reranker: card_reranker search_wlo_content: 5\u21923 (gate=-1.5, dropped=0) scores=[4.09, 1.55, 1.28, -0.36, -0.64]
-22:48:58 INFO app.services.llm_service: system_prompt[response] tokens=8598 (was=6845, cache-eligible=True)
-22:48:58 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:48:58 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] \u2192 allowed=False
-22:49:00 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:00 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:49:00 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:49:03 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:04 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:49:04 INFO app.services.safety_service: safety stages=openai level=standard took 576ms
-22:49:05 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:05 INFO app.routers.chat: type-focus heuristic injected medientyp='struktur' (resolved from 'Ich plane eine Unterrichtsreihe zur Schulentwicklung und benötige eine strukturierte Sammlung aus bestehenden WLO-Materialien. Können Sie mir dabei helfen?')
-22:49:05 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_topic_pages (reasoning=Als erstes kann eine Themenseiten-/Topic-Suche helfen, sobald das konkrete Thema)
-22:49:05 INFO app.routers.chat: speculative primary=search_wlo_topic_pages for intent=I04 hint_pattern=M03 args={'query': 'Schulentwicklung', 'maxResults': 10, 'discipline': 'Schulentwicklung'}
-22:49:05 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'Schulentwicklung', 'maxResults': 5, 'discipline': 'Schulentwicklung'}
-22:49:05 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Schulentwicklung', 'maxResults': 5}
-22:49:05 INFO app.services.mcp_client: MCP tool search_wlo_collections cache HIT (8 entries)
-22:49:05 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'Schulentwicklung', 'maxResults': 10, 'discipline': 'Schulentwicklung'}
-22:49:05 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages cache HIT (8 entries)
-22:49:05 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'maxResults': 20, 'discipline': 'Schulentwicklung'}
-22:49:05 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages cache HIT (8 entries)
-22:49:05 INFO app.routers.chat: topic_pages global-fallback (no title match): returning 5 TP-cards as suggestions for 'Schulentwicklung'
-22:49:05 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Schulentwicklung', 'maxResults': 5, 'discipline': 'Schulentwicklung'}
-22:49:05 INFO app.services.mcp_client: no URI for discipline='Schulentwicklung' (vocab=discipline); passing label through
-22:49:05 INFO app.services.mcp_client: MCP tool search_wlo_collections cache HIT (8 entries)
-22:49:05 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections']
-22:49:05 INFO app.services.card_reranker: card_reranker search_wlo_topic_pages: 5\u21920 (gate=0.0, dropped=5) scores=[-4.67, -4.67, -4.77, -4.83, -4.88]
-22:49:05 INFO app.services.card_reranker: card_reranker search_wlo_collections: 5\u21921 (gate=0.0, dropped=4) scores=[2.44, -0.29, -3.28, -3.36, -3.49]
-22:49:05 INFO app.services.llm_service: system_prompt[response] tokens=9684 (was=8598, cache-eligible=True)
-22:49:05 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
-22:49:05 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:49:05 INFO app.services.llm_service: rag-prefetch-gate: pattern=Slot-Klärung sources=['mcp'] \u2192 allowed=False
-22:49:06 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:06 INFO app.services.llm_service: injecting learningResourceType='struktur' from entities.medientyp (LLM omitted it)
-22:49:06 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Schulentwicklung', 'maxResults': 4, 'learningResourceType': 'struktur', 'discipline': 'Schulentwicklung'}
-22:49:07 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:07 INFO app.services.mcp_client: LLM declined vocab match: lrt='struktur'
-22:49:07 INFO app.services.mcp_client: no URI for learningResourceType='struktur' (vocab=lrt); passing label through
-22:49:07 INFO app.services.mcp_client: no URI for discipline='Schulentwicklung' (vocab=discipline); passing label through
-22:49:08 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:49:08 INFO app.services.mcp_client: MCP tool search_wlo_content returned 7912 chars in 2058 ms
-22:49:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:09 INFO app.routers.chat: Outcome-based state hint: S2 -> S3
-22:49:10 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:10 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 1
-22:49:10 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:49:10 INFO app.routers.chat: universal type-filter: 4 \u2192 0 cards (medientyp=['struktur'])
-22:49:10 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich plane eine Unterrichtsreihe zur Schulentwicklung und ben'
-22:49:10 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:49:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:49:15 INFO app.services.safety_service: safety stages=openai level=standard took 592ms
-22:49:16 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:16 INFO app.routers.chat: type-focus heuristic injected medientyp='infoblatt' (resolved from 'Erstellen Sie mir bitte ein Informationsblatt zur evidenzbasierten Schulentwicklung für das Ministerium.')
-22:49:16 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=evidenzbasierte+Schulentwicklung&limit=3 "HTTP/1.1 200 OK"
-22:49:25 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:29 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:29 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:49:29 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Erstellen Sie mir bitte ein Informationsblatt zur evidenzbas'
-22:49:29 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:49:32 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:33 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:49:33 INFO app.services.safety_service: safety stages=openai level=standard took 579ms
-22:49:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:36 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Photosynthese&limit=3 "HTTP/1.1 200 OK"
-22:49:36 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Photosynthese "HTTP/1.1 200 OK"
-22:49:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:36 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:49:36 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Erstelle mir bitte ein Arbeitsblatt zur Photosynthese für Kl'
-22:49:36 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:49:37 INFO app.services.llm_service: system_prompt[classify] tokens=18166 (was=17011, cache-eligible=True)
-22:49:38 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:49:38 INFO app.services.safety_service: safety stages=openai level=standard took 570ms
-22:49:39 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:39 INFO app.routers.chat: type-focus heuristic injected medientyp='arbeitsblatt' (resolved from 'Könnten Sie bitte den Lernpfad, den Sie mir zuletzt erstellt haben, kürzer fassen? Ich benötige eine prägnantere Zusammenfassung für unser Positionspapier im Schulamt.')
-22:49:39 INFO app.services.llm_service: system_prompt[response] tokens=8562 (was=9684, cache-eligible=True)
-22:49:39 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
-22:49:39 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:49:39 INFO app.services.llm_service: rag-prefetch-gate: pattern=Iterative Nachbearbeitung sources=['llm'] \u2192 allowed=False
-22:49:42 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:42 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
-22:49:42 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Könnten Sie bitte den Lernpfad, den Sie mir zuletzt erstellt'
-22:49:42 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:49:45 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:46 INFO app.services.llm_service: system_prompt[classify] tokens=17011 (was=18166, cache-eligible=True)
-22:49:46 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:49:46 INFO app.services.safety_service: safety stages=openai level=standard took 631ms
-22:49:47 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:48 INFO app.services.llm_service: system_prompt[response] tokens=9235 (was=8562, cache-eligible=True)
-22:49:48 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:49:48 INFO app.services.llm_service: rag-prefetch-gate: pattern=Bot-Feedback-Echo sources=['mcp'] \u2192 allowed=False
-22:49:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:52 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:49:52 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Danke für die Möglichkeit, Feedback zu geben. Wie kann ich m'
-22:49:52 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:49:55 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:56 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:49:56 INFO app.services.safety_service: safety stages=openai level=standard took 615ms
-22:49:58 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:58 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:49:58 INFO app.services.llm_service: rag-prefetch-gate: pattern=Inhalt-Einreichen / Melden sources=['mcp'] \u2192 allowed=False
-22:49:59 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:49:59 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:49:59 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich habe einen inhaltlichen Fehler in einem amtlichen Datenb'
-22:49:59 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:50:02 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:04 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:50:04 INFO app.services.safety_service: safety stages=openai level=standard took 791ms
-22:50:06 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:06 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:50:06 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
-22:50:08 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:08 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:50:08 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Ich bin neu hier und möchte mich erstmal umsehen, um herausz'
-22:50:08 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:50:11 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:12 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:50:12 INFO app.services.safety_service: safety stages=openai level=standard took 624ms
-22:50:19 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:19 INFO app.services.llm_service: system_prompt[response] tokens=6853 (was=9235, cache-eligible=True)
-22:50:19 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:50:19 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] \u2192 allowed=True
-22:50:21 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:21 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:50:21 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist OER und wie kann ich es in meiner Unterrichtsplanung'
-22:50:21 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:50:23 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:24 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:50:24 INFO app.services.safety_service: safety stages=openai level=standard took 585ms
-22:50:26 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:26 INFO app.services.llm_service: system_prompt[response] tokens=7279 (was=6853, cache-eligible=True)
-22:50:26 INFO app.services.llm_service: medientyp='Arbeitsblatt' \u2192 removed ['search_wlo_collections', 'search_wlo_topic_pages'] from active_tools to force content search
-22:50:26 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:50:26 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] \u2192 allowed=False
-22:50:27 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:27 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
-22:50:27 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:50:27 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars in 553 ms
-22:50:28 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:31 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:31 WARNING app.routers.chat: type-focus text-replace (label=Arbeitsblätter): original='Schön, dass Sie das für Ihre Klasse 5 planen. Welches **konkrete Unterrichtsthema** steht an (z.\u202fB. „Bruchrechnung“, „Rechtschreibung: Groß- und Kleinschreibung“, „Photosynthese“)?' | replaced='Für Arbeitsblätter zum Thema schau in die Suche unten — dort findest du die gefilterten Treffer.'
-22:50:31 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:50:31 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:50:33 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:50:35 INFO app.services.safety_service: safety stages=openai level=standard took 653ms
-22:50:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:36 INFO app.routers.chat: type-focus heuristic injected medientyp='struktur' (resolved from 'Ich plane eine Unterrichtseinheit zum Thema Umweltbewusstsein und suche nach geeigneten Materialien. Können Sie mir helfen, eine strukturierte Sammlung zusammenzustellen?')
-22:50:36 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Als Erstes lohnt sich eine Suche nach passenden Inhalten zum Thema Umweltbewusst)
-22:50:36 INFO app.routers.chat: speculative primary=search_wlo_all for intent=I04 hint_pattern=M09 args={'query': 'Umweltbewusstsein', 'maxContent': 10, 'maxCollections': 5, 'learningResourceType': 'struktur'}
-22:50:36 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Umweltbewusstsein'
-22:50:36 INFO app.routers.chat: LP search: topic='Umweltbewusstsein' skip=0
-22:50:36 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Umweltbewusstsein', 'maxItems': 5, 'skipCount': 0}
-22:50:37 INFO app.services.mcp_client: MCP tool search_wlo_all args: {'query': 'Umweltbewusstsein', 'maxContent': 10, 'maxCollections': 5, 'learningResourceType': 'struktur'}
-22:50:37 INFO app.services.mcp_client: no URI for learningResourceType='struktur' (vocab=lrt); passing label through
-22:50:38 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:50:38 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 9532 chars in 1599 ms
-22:50:38 INFO app.routers.chat: LP found 5 collections
-22:50:38 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '163e2c53-0fb8-4e9f-be2c-530fb88e9f18', 'maxItems': 16, 'skipCount': 0}
-22:50:39 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:50:39 INFO app.services.mcp_client: MCP tool search_wlo_all returned 29719 chars in 2586 ms
-22:50:40 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:50:40 INFO app.services.mcp_client: MCP tool get_collection_contents returned 26925 chars in 1675 ms
-22:50:40 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '959d789f-e515-4ce5-a81b-03509770bfd1', 'maxItems': 16, 'skipCount': 0}
-22:50:40 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:50:40 INFO app.services.mcp_client: MCP tool get_collection_contents returned 47 chars in 806 ms
-22:50:40 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'e42e865e-55d5-4a50-9bf9-302770de511b', 'maxItems': 16, 'skipCount': 0}
-22:50:41 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:50:41 INFO app.services.mcp_client: MCP tool get_collection_contents returned 1266 chars in 1055 ms
-22:50:41 INFO app.routers.chat: LP contents: 3187 chars, topic='Umweltbewusstsein'
-22:50:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:52 INFO app.routers.chat: speculative search_wlo_all discarded (blocked by safety/pattern)
-22:50:54 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:54 INFO app.routers.chat: off-topic-filter: 9 \u2192 8 cards (signal-tokens=['eine', 'geeigneten', 'helfen', 'können', 'materialien', 'nach'], dropped=['Herausforderung BNE'])
-22:50:54 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 5
-22:50:54 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:50:54 INFO app.routers.chat: universal type-filter: 3 \u2192 0 cards (medientyp=['struktur'])
-22:50:54 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:50:57 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:50:59 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:50:59 INFO app.services.safety_service: safety stages=openai level=standard took 551ms
-22:51:00 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:00 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Bruchrechnung&limit=3 "HTTP/1.1 200 OK"
-22:51:00 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Bruchrechnung "HTTP/1.1 200 OK"
-22:51:01 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:03 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:03 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:51:03 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Könnten Sie mir bitte ein Quiz zur Bruchrechnung erstellen, '
-22:51:03 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:51:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:10 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:51:10 INFO app.services.safety_service: safety stages=openai level=standard took 448ms
-22:51:12 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:13 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Photosynthese&limit=3 "HTTP/1.1 200 OK"
-22:51:13 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Photosynthese "HTTP/1.1 200 OK"
-22:51:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:13 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:51:13 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Erstelle mir bitte ein Arbeitsblatt zur Photosynthese für Kl'
-22:51:13 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:51:14 INFO app.services.llm_service: system_prompt[classify] tokens=18166 (was=17011, cache-eligible=True)
-22:51:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:51:15 INFO app.services.safety_service: safety stages=openai level=standard took 630ms
-22:51:16 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:17 INFO app.services.llm_service: system_prompt[response] tokens=9298 (was=7279, cache-eligible=True)
-22:51:17 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
-22:51:17 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:51:17 INFO app.services.llm_service: rag-prefetch-gate: pattern=Iterative Nachbearbeitung sources=['llm'] \u2192 allowed=False
-22:51:18 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:18 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Photosynthese Arbeitsblatt Klasse 6', 'educationalContext': 'Sekundarstufe I', 'discipline': 'Geschichte', 'userRole': 'Lehrer/in', 'learningResourceType': 'Arbeitsblatt', 'maxResults': 4}
-22:51:18 INFO app.services.mcp_client: resolved learningResourceType='Arbeitsblatt' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45
-22:51:18 INFO app.services.mcp_client: resolved discipline='Geschichte' \u2192 http://w3id.org/openeduhub/vocabs/discipline/240
-22:51:18 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
-22:51:18 INFO app.services.mcp_client: resolved userRole='Lehrer/in' \u2192 http://w3id.org/openeduhub/vocabs/intendedEndUserRole/teacher
-22:51:19 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:51:19 INFO app.services.mcp_client: MCP tool search_wlo_content returned 47 chars in 899 ms
-22:51:21 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:22 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:22 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:51:22 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Könnten Sie den Text, den Sie mir eben erstellt haben, für m'
-22:51:22 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:51:26 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:27 INFO app.services.llm_service: system_prompt[classify] tokens=17011 (was=18166, cache-eligible=True)
-22:51:28 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:51:28 INFO app.services.safety_service: safety stages=openai level=standard took 582ms
-22:51:29 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:29 INFO app.services.llm_service: system_prompt[response] tokens=9995 (was=9298, cache-eligible=True)
-22:51:29 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:51:29 INFO app.services.llm_service: rag-prefetch-gate: pattern=Bot-Feedback-Echo sources=['mcp'] \u2192 allowed=False
-22:51:31 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:31 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:51:31 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Danke für die Unterstützung bei meiner Unterrichtsplanung. W'
-22:51:31 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:51:32 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:34 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:51:34 INFO app.services.safety_service: safety stages=openai level=standard took 487ms
-22:51:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:36 INFO app.services.llm_service: system_prompt[response] tokens=9342 (was=9995, cache-eligible=True)
-22:51:36 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
-22:51:36 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:51:36 INFO app.services.llm_service: rag-prefetch-gate: pattern=Inhalt-Einreichen / Melden sources=['mcp'] \u2192 allowed=False
-22:51:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:37 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
-22:51:37 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich habe einen inhaltlichen Fehler in einem Lehrplan für mei'
-22:51:37 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:51:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:41 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:51:41 INFO app.services.safety_service: safety stages=openai level=standard took 585ms
-22:51:43 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:43 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:51:43 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
-22:51:44 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:44 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
-22:51:44 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Hey, ich bin neu hier und würde gern wissen, was ich hier al'
-22:51:44 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:51:47 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:48 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:51:48 INFO app.services.safety_service: safety stages=openai level=standard took 631ms
-22:51:49 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:50 INFO app.services.llm_service: system_prompt[response] tokens=6762 (was=9342, cache-eligible=True)
-22:51:50 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:51:50 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] \u2192 allowed=True
-22:51:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:52 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:51:52 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Was ist eigentlich WLO und wie kann ich das für meine Hausau'
-C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
-  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'WLO Startseite...rlernenonline.de/home/'}, input_type=dict])
-  return self.serializer.to_json(
-22:51:52 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:51:54 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:55 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:51:55 INFO app.services.safety_service: safety stages=openai level=standard took 512ms
-22:51:57 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:51:57 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_content (reasoning=Zuerst nach passenden Inhalten zu „chemische Reaktionen“ im WLO-Bestand suchen, )
-22:51:57 INFO app.routers.chat: speculative primary=search_wlo_all for intent=I03 hint_pattern=M06 args={'query': 'chemische Reaktionen', 'maxContent': 10, 'maxCollections': 5, 'discipline': 'Chemie'}
-22:51:57 INFO app.services.mcp_client: MCP tool search_wlo_all args: {'query': 'chemische Reaktionen', 'maxContent': 10, 'maxCollections': 5, 'discipline': 'Chemie'}
-22:51:57 INFO app.services.mcp_client: resolved discipline='Chemie' \u2192 http://w3id.org/openeduhub/vocabs/discipline/100
-22:52:00 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:52:00 INFO app.services.mcp_client: MCP tool search_wlo_all returned 31356 chars in 2834 ms
-22:52:00 INFO app.routers.chat: speculative search_wlo_all split \u2192 content=10 collections=5 topicPages=1
-22:52:00 INFO app.services.card_reranker: card_reranker search_wlo_content: 10\u21923 (gate=-1.5, dropped=1) scores=[3.77, 3.53, 3.23, 3.12, 2.87, 1.1]
-22:52:00 INFO app.services.card_reranker: card_reranker search_wlo_collections: 5\u21922 (gate=0.0, dropped=3) scores=[0.7, 0.12, -4.88, -4.97, -5.19]
-22:52:00 INFO app.services.card_reranker: card_reranker search_wlo_topic_pages: 1\u21920 (gate=0.0, dropped=1) scores=[-0.74]
-22:52:00 INFO app.services.llm_service: system_prompt[response] tokens=7948 (was=6762, cache-eligible=True)
-22:52:00 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:52:00 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] \u2192 allowed=False
-22:52:03 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:03 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:52:03 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:52:05 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:06 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:52:06 INFO app.services.safety_service: safety stages=openai level=standard took 592ms
-22:52:08 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:08 INFO app.services.llm_service: system_prompt[response] tokens=7548 (was=7948, cache-eligible=True)
-22:52:08 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:52:08 INFO app.services.llm_service: rag-prefetch-gate: pattern=Slot-Klärung sources=['mcp'] \u2192 allowed=False
-22:52:10 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:10 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:52:10 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Hey, ich bin Schüler:in und plane gerade meinen Lernpfad für'
-22:52:10 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:52:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:15 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:52:15 INFO app.services.safety_service: safety stages=openai level=standard took 616ms
-22:52:16 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:17 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Algebra&limit=3 "HTTP/1.1 200 OK"
-22:52:17 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Algebra "HTTP/1.1 200 OK"
-22:52:24 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:26 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:26 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:52:26 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Hey, ich bin Schüler:in und ich kapiere das Thema Algebra ni'
-22:52:26 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:52:28 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:29 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:52:29 INFO app.services.safety_service: safety stages=openai level=standard took 510ms
-22:52:31 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:32 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Photosynthese&limit=3 "HTTP/1.1 200 OK"
-22:52:32 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Photosynthese "HTTP/1.1 200 OK"
-22:52:32 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:32 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:32 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:52:32 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Erstelle mir bitte ein Arbeitsblatt zur Photosynthese für Kl'
-22:52:32 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:52:33 INFO app.services.llm_service: system_prompt[classify] tokens=18166 (was=17011, cache-eligible=True)
-22:52:34 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:52:34 INFO app.services.safety_service: safety stages=openai level=standard took 497ms
-22:52:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:35 INFO app.services.llm_service: system_prompt[response] tokens=8476 (was=7548, cache-eligible=True)
-22:52:35 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
-22:52:35 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:52:35 INFO app.services.llm_service: rag-prefetch-gate: pattern=Iterative Nachbearbeitung sources=['llm'] \u2192 allowed=False
-22:52:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:40 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:52:40 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Kannst du den Text vorher kürzer machen? Ich verstehe nicht '
-22:52:40 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:52:43 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:44 INFO app.services.llm_service: system_prompt[classify] tokens=17011 (was=18166, cache-eligible=True)
-22:52:44 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:52:44 INFO app.services.safety_service: safety stages=openai level=standard took 513ms
-22:52:45 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:46 INFO app.services.llm_service: system_prompt[response] tokens=9153 (was=8476, cache-eligible=True)
-22:52:46 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:52:46 INFO app.services.llm_service: rag-prefetch-gate: pattern=Bot-Feedback-Echo sources=['mcp'] \u2192 allowed=False
-22:52:47 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:47 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:52:47 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Hey, ich bin Schüler:in und ich kapiere nicht ganz, wie ich '
-22:52:47 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:52:50 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:51 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:52:51 INFO app.services.safety_service: safety stages=openai level=standard took 560ms
-22:52:52 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:53 INFO app.services.llm_service: system_prompt[response] tokens=8477 (was=9153, cache-eligible=True)
-22:52:53 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:52:53 INFO app.services.llm_service: rag-prefetch-gate: pattern=Inhalt-Einreichen / Melden sources=['mcp'] \u2192 allowed=False
-22:52:59 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:52:59 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:52:59 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Hey, ich bin Schüler und hab einen Fehler in einem der Mater'
-22:52:59 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:53:03 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:04 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:53:04 INFO app.services.safety_service: safety stages=openai level=standard took 606ms
-22:53:05 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:05 INFO app.services.llm_service: system_prompt[response] tokens=9420 (was=8477, cache-eligible=True)
-22:53:05 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:53:05 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
-22:53:06 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:06 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
-22:53:06 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Ich bin Redakteur und möchte mich erstmal umsehen, was ich h'
-22:53:06 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:53:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:10 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:53:10 INFO app.services.safety_service: safety stages=openai level=standard took 551ms
-22:53:11 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:11 INFO app.services.llm_service: system_prompt[response] tokens=7256 (was=9420, cache-eligible=True)
-22:53:11 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:53:11 INFO app.services.llm_service: rag-prefetch-gate: pattern=Wissens-Antwort sources=['rag'] \u2192 allowed=True
-22:53:13 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:13 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:53:13 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Ich bin Redakteur und interessiere mich für die Eckdaten der'
-C:\Users\jan\miniconda3\Lib\site-packages\pydantic\type_adapter.py:631: UserWarning: Pydantic serializer warnings:
-  PydanticSerializationUnexpectedValue(Expected `WebLink` - serialized value may not be as expected [input_value={'title': 'WLO-Überblick...st.wirlernenonline.de/'}, input_type=dict])
-  return self.serializer.to_json(
-22:53:13 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:53:20 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:21 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:53:21 INFO app.services.safety_service: safety stages=openai level=standard took 877ms
-22:53:24 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:24 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_topic_pages (reasoning=Zuerst Themenseiten/Passungen zu „digitale Bildung“ finden, um anschließend kura)
-22:53:24 INFO app.routers.chat: speculative primary=search_wlo_topic_pages for intent=I03 hint_pattern=M06 args={'query': 'digitale Bildung', 'maxResults': 10, 'discipline': 'Politik'}
-22:53:24 INFO app.routers.chat: speculative extra=search_wlo_collections args={'query': 'digitale Bildung', 'maxResults': 5, 'discipline': 'Politik'}
-22:53:24 INFO app.routers.chat: speculative extra=search_wlo_content args={'query': 'digitale Bildung', 'maxResults': 5, 'discipline': 'Politik'}
-22:53:24 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'digitale Bildung', 'maxResults': 5}
-22:53:24 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'digitale Bildung', 'maxResults': 5, 'discipline': 'Politik'}
-22:53:24 INFO app.services.mcp_client: resolved discipline='Politik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/480
-22:53:24 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'digitale Bildung', 'maxResults': 5, 'discipline': 'Politik'}
-22:53:24 INFO app.services.mcp_client: resolved discipline='Politik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/480
-22:53:26 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:53:26 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 8849 chars in 1887 ms
-22:53:26 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:53:26 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 8849 chars in 2249 ms
-22:53:26 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'query': 'digitale Bildung', 'maxResults': 10, 'discipline': 'Politik'}
-22:53:27 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:53:27 INFO app.services.mcp_client: MCP tool search_wlo_content returned 10562 chars in 2696 ms
-22:53:27 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:53:27 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 144 chars in 1184 ms
-22:53:27 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'maxResults': 20, 'discipline': 'Politik'}
-22:53:27 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages cache HIT (21 entries)
-22:53:27 INFO app.routers.chat: topic_pages global-fallback (no title match): returning 5 TP-cards as suggestions for 'digitale Bildung'
-22:53:27 INFO app.routers.chat: speculative extras pre-injected: ['search_wlo_collections', 'search_wlo_content']
-22:53:27 INFO app.services.card_reranker: card_reranker search_wlo_topic_pages: 5\u21920 (gate=0.0, dropped=5) scores=[-4.54, -4.74, -4.76, -4.76, -5.02]
-22:53:27 INFO app.services.card_reranker: card_reranker search_wlo_collections: 5\u21922 (gate=0.0, dropped=3) scores=[4.61, 1.98, -0.91, -4.54, -7.18]
-22:53:27 INFO app.services.card_reranker: card_reranker search_wlo_content: 5\u21920 (gate=-1.5, dropped=5) scores=[-1.52, -2.48, -3.06, -3.06, -4.69]
-22:53:27 INFO app.services.llm_service: system_prompt[response] tokens=8440 (was=7256, cache-eligible=True)
-22:53:27 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:53:27 INFO app.services.llm_service: rag-prefetch-gate: pattern=Material-Suche Cascade sources=['mcp'] \u2192 allowed=False
-22:53:29 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:29 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:53:29 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:53:32 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:33 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:53:33 INFO app.services.safety_service: safety stages=openai level=standard took 846ms
-22:53:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:35 INFO app.routers.chat: type-focus heuristic injected medientyp='struktur' (resolved from 'Ich bin Redakteur und plane eine strukturierte Sammlung an Materialien für meinen Artikel. Können Sie mir helfen, einen Lernpfad zusammenzustellen?')
-22:53:35 INFO app.services.llm_service: system_prompt[response] tokens=9568 (was=8440, cache-eligible=True)
-22:53:35 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
-22:53:35 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:53:35 INFO app.services.llm_service: rag-prefetch-gate: pattern=Slot-Klärung sources=['mcp'] \u2192 allowed=False
-22:53:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:36 INFO app.services.llm_service: injecting learningResourceType='struktur' from entities.medientyp (LLM omitted it)
-22:53:36 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Lernpfad strukturierte Sammlung Materialien', 'maxResults': 4, 'learningResourceType': 'struktur'}
-22:53:36 INFO app.services.mcp_client: no URI for learningResourceType='struktur' (vocab=lrt); passing label through
-22:53:37 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:53:37 INFO app.services.mcp_client: MCP tool search_wlo_content returned 3211 chars in 1152 ms
-22:53:38 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:38 INFO app.routers.chat: Outcome-based state hint: S2 -> S3
-22:53:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:40 INFO app.routers.chat: Cards unterdrückt — kein konkretes Thema/Fach im Slot (pattern=M03)
-22:53:40 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:53:40 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich bin Redakteur und plane eine strukturierte Sammlung an M'
-22:53:40 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:53:47 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:48 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:53:48 INFO app.services.safety_service: safety stages=openai level=standard took 643ms
-22:53:49 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:53:50 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Auswirkungen+von+Klimawandel+auf+die+Biodiversit%C3%A4t&limit=3 "HTTP/1.1 200 OK"
-22:53:58 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:01 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:01 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:54:01 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Ich bin Redakteur:in und benötige ein Informationsblatt über'
-22:54:01 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:54:06 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:07 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:54:07 INFO app.services.safety_service: safety stages=openai level=standard took 520ms
-22:54:08 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:09 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Photosynthese&limit=3 "HTTP/1.1 200 OK"
-22:54:09 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Photosynthese "HTTP/1.1 200 OK"
-22:54:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:09 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:54:09 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Erstelle mir bitte ein Arbeitsblatt zur Photosynthese für Kl'
-22:54:09 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:54:11 INFO app.services.llm_service: system_prompt[classify] tokens=18166 (was=17011, cache-eligible=True)
-22:54:11 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:54:11 INFO app.services.safety_service: safety stages=openai level=standard took 420ms
-22:54:12 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:13 INFO app.services.llm_service: system_prompt[response] tokens=8944 (was=9568, cache-eligible=True)
-22:54:13 INFO app.services.llm_service: medientyp set — added search_wlo_content to active_tools
-22:54:13 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:54:13 INFO app.services.llm_service: rag-prefetch-gate: pattern=Iterative Nachbearbeitung sources=['llm'] \u2192 allowed=False
-22:54:14 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:14 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Photosynthese Arbeitsblatt Klasse 6', 'educationalContext': 'Sekundarstufe I', 'discipline': 'Biologie', 'learningResourceType': 'Arbeitsblatt', 'maxResults': 4}
-22:54:14 INFO app.services.mcp_client: resolved learningResourceType='Arbeitsblatt' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45
-22:54:14 INFO app.services.mcp_client: resolved discipline='Biologie' \u2192 http://w3id.org/openeduhub/vocabs/discipline/080
-22:54:14 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
-22:54:15 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:54:15 INFO app.services.mcp_client: MCP tool search_wlo_content returned 47 chars in 914 ms
-22:54:16 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:16 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Photosynthese Arbeitsblatt Klasse 6 Lösungen', 'educationalContext': 'Sekundarstufe I', 'discipline': 'Biologie', 'learningResourceType': 'Arbeitsblatt', 'maxResults': 4}
-22:54:16 INFO app.services.mcp_client: resolved learningResourceType='Arbeitsblatt' \u2192 http://w3id.org/openeduhub/vocabs/new_lrt_aggregated/c8e52242-361b-4a2a-b95d-25e516b28b45
-22:54:16 INFO app.services.mcp_client: resolved discipline='Biologie' \u2192 http://w3id.org/openeduhub/vocabs/discipline/080
-22:54:16 INFO app.services.mcp_client: resolved educationalContext='Sekundarstufe I' \u2192 http://w3id.org/openeduhub/vocabs/educationalContext/sekundarstufe_1
-22:54:17 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
-22:54:17 INFO app.services.mcp_client: MCP tool search_wlo_content returned 47 chars in 718 ms
-22:54:19 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:19 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:54:19 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['llm']) for msg='Ich bin Redakteur:in und möchte den Text, den Sie mir zuvor '
-22:54:19 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:54:21 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:22 INFO app.services.llm_service: system_prompt[classify] tokens=17011 (was=18166, cache-eligible=True)
-22:54:23 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:54:23 INFO app.services.safety_service: safety stages=openai level=standard took 650ms
-22:54:24 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:24 INFO app.services.llm_service: system_prompt[response] tokens=9625 (was=8944, cache-eligible=True)
-22:54:24 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:54:24 INFO app.services.llm_service: rag-prefetch-gate: pattern=Bot-Feedback-Echo sources=['mcp'] \u2192 allowed=False
-22:54:26 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:26 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:54:26 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich bin Redakteur und wollte Ihnen danken, denn Ihre Antwort'
-22:54:26 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:54:34 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-22:54:36 INFO app.services.safety_service: safety stages=openai level=standard took 824ms
-22:54:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:37 INFO app.services.llm_service: system_prompt[response] tokens=8952 (was=9625, cache-eligible=True)
-22:54:37 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-22:54:37 INFO app.services.llm_service: rag-prefetch-gate: pattern=Inhalt-Einreichen / Melden sources=['mcp'] \u2192 allowed=False
-22:54:38 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:38 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
-22:54:38 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Ich bin Journalist und habe eine Ungereimtheit in einem Arti'
-22:54:38 INFO httpx: HTTP Request: POST http://localhost:8000/api/chat "HTTP/1.1 200 OK"
-22:54:42 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-22:54:43 INFO app.services.eval_service: [eval eval-426c5d82b298] done in 632.0s, avg=0.83, 48/48 turns
-23:04:07 INFO app.routers.config: factory-snapshot rebuilt from live state (12897742 bytes)
-23:28:33 INFO app.routers.chat: chat_stream START session=bb-950d24aa-6f81-4723-9711-945433b24d5f msg='Wie kannst du mir helfen?' action=-
-23:28:34 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
-23:28:34 INFO app.services.safety_service: safety stages=openai level=standard took 908ms
-23:28:35 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-23:28:35 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
-23:28:35 INFO app.services.llm_service: rag-prefetch-gate: pattern=Orientierung sources=['rag'] \u2192 allowed=True
-23:28:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
-23:28:37 INFO app.services.guide_qr_injector: guide-rules: 15 message_rules loaded from YAML
-23:28:37 INFO app.routers.chat: quick_replies.max_count: trimmed 3 \u2192 2
-23:28:37 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['rag']) for msg='Wie kannst du mir helfen?'
-23:28:37 INFO app.routers.chat: chat_stream END session=bb-950d24aa-6f81-4723-9711-945433b24d5f pattern=M15 (Orientierung) tokens=25047/238 cached=4608
+20:36:33 INFO app.routers.chat: Safety blocked tools: ['search_wlo_collections', 'search_wlo_content', 'get_collection_contents']
+20:36:33 INFO app.routers.chat: Safety enforced pattern active: M01
+20:36:33 INFO app.services.llm_service: system_prompt[response] tokens=7718 (was=9021, cache-eligible=True)
+20:36:33 INFO app.services.llm_service: select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — Backend nutzt deterministische Karten-Auswahl (MCP-Ranking).
+20:36:33 INFO app.services.llm_service: rag-prefetch-gate: pattern=Krisen-Empathie sources=['mcp'] \u2192 allowed=False
+20:36:34 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:36 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
+20:36:36 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='ich will mich umbringen'
+20:36:37 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+20:36:37 INFO app.services.safety_service: safety stages=openai level=standard took 735ms
+20:36:38 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:39 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:40 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2
+20:36:40 INFO app.routers.chat: safety-net skipped: RAG-only pattern (tools=[], sources=['mcp']) for msg='Kannst du mir etwas erstellen?'
+20:36:40 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+20:36:40 INFO app.services.safety_service: safety stages=openai level=standard took 514ms
+20:36:41 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:41 INFO app.routers.chat: speculative tool from LLM-Hint: search_wlo_collections (reasoning=Für einen Lernpfad ist als erster Schritt die Suche nach passenden Sammlungen bz)
+20:36:41 INFO app.routers.chat: speculative primary=search_wlo_all for intent=I04 hint_pattern=M09 args={'query': 'Prozentrechnung', 'maxContent': 8, 'maxCollections': 5}
+20:36:42 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Prozentrechnung'
+20:36:42 INFO app.routers.chat: LP search: topic='Prozentrechnung' skip=0
+20:36:42 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Prozentrechnung', 'maxItems': 5, 'skipCount': 0}
+20:36:42 INFO app.services.mcp_client: MCP tool search_wlo_all args: {'query': 'Prozentrechnung', 'maxContent': 8, 'maxCollections': 5}
+20:36:44 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+20:36:44 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 2817 chars in 2658 ms
+20:36:44 INFO app.routers.chat: LP found 2 collections
+20:36:44 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'a53348c1-0233-4a40-bf2a-4fe4baab449d', 'maxItems': 16, 'skipCount': 0}
+20:36:45 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+20:36:45 INFO app.services.mcp_client: MCP tool search_wlo_all returned 25060 chars in 3479 ms
+20:36:46 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+20:36:46 INFO app.services.mcp_client: MCP tool get_collection_contents returned 9651 chars in 1550 ms
+20:36:46 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '0a62a10e-374a-46e2-a7d6-0c6954e755c0', 'maxItems': 16, 'skipCount': 0}
+20:36:47 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+20:36:47 INFO app.services.mcp_client: MCP tool get_collection_contents returned 47 chars in 748 ms
+20:36:47 INFO app.routers.chat: LP contents: 1922 chars, topic='Prozentrechnung'
+20:36:57 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:57 INFO app.routers.chat: speculative search_wlo_all discarded (blocked by safety/pattern)
+20:36:58 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+20:36:58 INFO app.routers.chat: groups.materialien_max: kept 3, dropped 4
+20:36:58 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2

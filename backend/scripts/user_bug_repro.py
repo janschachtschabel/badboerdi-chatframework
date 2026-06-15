@@ -183,16 +183,14 @@ async def main():
     env_a = {
         "guide_mode": False, "host": "",
         "cards_enabled": True, "canvas_enabled": True,
-        "quick_replies_enabled": True, "ai_content_enabled": True,
-    }
+        "quick_replies_enabled": True, }
     res_a = await run_test("A — Widget-Demo (Lotsen AUS, Kacheln+Canvas AN)", env_a, cards_enabled=True)
 
     # Test B: Inline-Widget Modus
     env_b = {
         "guide_mode": True, "host": "wirlernenonline.de",
         "cards_enabled": False, "canvas_enabled": False,
-        "quick_replies_enabled": True, "ai_content_enabled": True,
-    }
+        "quick_replies_enabled": True, }
     res_b = await run_test("B — Inline-Widget (Lotsen AN, Kacheln+Canvas AUS)", env_b, cards_enabled=False)
 
     print("\n" + "═" * 100)

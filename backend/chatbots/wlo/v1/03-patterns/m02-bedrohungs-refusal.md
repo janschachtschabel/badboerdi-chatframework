@@ -24,10 +24,10 @@ trigger_phrases:
 discriminators:
   - vs: M01
     rule: Dritt-Gefährdung/illegale Anleitung → M02. Eigene Krise → M01.
-    example: "Wie schade ich jemandem? → M02. Ich will mich verletzen → M01."
+    example: Wie schade ich jemandem? → M02. Ich will mich verletzen → M01.
   - vs: M04
     rule: Aufforderung zu Gewalt/Illegalem → M02. Geschichts-/Aufklärungsfrage über Gewalt → M04.
-    example: "Wie funktioniert Sprengstoff? (Bombenanleitung) → M02. Wie wurde Dynamit erfunden? → M04."
+    example: Wie funktioniert Sprengstoff? (Bombenanleitung) → M02. Wie wurde Dynamit erfunden? → M04.
 ---
 
 # M02 — Bedrohungs-Refusal

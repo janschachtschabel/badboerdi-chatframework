@@ -46,6 +46,9 @@ intents:
       - Wie funktioniert das hier?
       - Ich will mich erst mal umschauen
       - Stell dich vor
+      - Was ist WirLernenOnline?
+      - Was ist WissenLebtOnline?
+      - Welche Möglichkeiten bietet WLO?
     trigger_verbs:
       - was kann ich hier
       - was kannst du
@@ -56,18 +59,28 @@ intents:
       - stell dich vor
       - wofür ist diese plattform
       - hilf mir loszulegen
+      - was ist wlo
+      - was ist wirlernenonline
+      - was ist wissenlebtonline
+      - was bietet wlo
+      - was bietet die plattform
     negative_triggers:
       - phrase: fach|thema|material
         redirect_to: I03
         rationale: Material-/Fach-Anker im Text → Such-Intent, nicht reine Orientierung.
-      - phrase: was ist (oer|wlo|wirlernenonline|cc by)
+      - phrase: was ist (oer|cc by|cc-by|creative commons|eine lizenz|open educational)
         redirect_to: I02
-        rationale: Definitions-Frage → I02 Wissensfrage.
+        rationale: Konzept-Definition (OER, Lizenz, CC) → I02. ABER "Was ist WLO/WissenLebtOnline" = Plattform-Identität → bleibt I01.
+      - phrase: welche rolle (spielt|hat)|wie (hilft|unterstützt) (wlo|die plattform)|welche möglichkeiten bietet (wlo|die plattform|ihr).{0,40}(integrier|für |um |in )
+        redirect_to: I02
+        rationale: Substantielle Funktions-/Rollen-/Möglichkeitsfrage zu WLO in konkretem Kontext will eine INHALTLICHE Antwort (I02/M04), keine Erst-Orientierung.
     discriminators:
       - vs: I02
-        rule: I01 = Handlungs-Orientierung (Was kann ich tun?). I02 = Definitions-Frage (Was ist X?).
-        example_a: Was kann ich hier machen? → I01
-        example_b: Was ist OER? → I02
+        rule: I01 = reine Erst-Orientierung/Identität (Was ist WLO, was kann ich hier, was bietet WLO allgemein). I02 = (a) Konzept-Definition (OER/CC BY), (b) konkreter WLO-Fakt/Statistik, ODER (c) 
+          SUBSTANTIELLE Funktions-/Rollenfrage mit Kontext (welche Rolle spielt WLO in der Schulaufsicht, welche Möglichkeiten bietet WLO um X zu integrieren) — die will eine inhaltliche Antwort, 
+          keine Begrüßung.
+        example_a: Was ist WissenLebtOnline? → I01
+        example_b: Welche Rolle spielt WLO in der Schulaufsicht? → I02
   - id: I02
     label: Wissensfrage
     description: "Konkrete Definitions-/Konzept-/Faktenfrage zu WLO, OER, Lizenz, Plattform-Eckdaten ODER aggregierte Statistik ODER Bewertung eines konkreten Materials. Knappe Antwort aus RAG, keine Suche.\n"
@@ -78,6 +91,8 @@ intents:
       - Wie viele Materialien hat WLO?
       - Passt das Material für Klasse 6?
       - Welche Statistiken zur Nutzung gibt es?
+      - Welche Rolle spielt WLO in der Schulaufsicht?
+      - Welche Möglichkeiten bietet WLO, das in unsere Systeme zu integrieren?
     trigger_verbs:
       - was ist
       - was bedeutet
@@ -95,18 +110,24 @@ intents:
       - phrase: was kann ich hier|was kannst du
         redirect_to: I01
         rationale: Handlungs-Orientierung → I01.
+      - phrase: was ist (wlo|wirlernenonline|wissenlebtonline)|was kann ich hier
+        redirect_to: I01
+        rationale: REINE Plattform-Identität/Erst-Orientierung ("Was ist WLO?", "Was kann ich hier?") → I01. Substantielle Funktions-/Rollen-/Möglichkeitsfragen ("welche Rolle spielt WLO in X", 
+          "welche Möglichkeiten bietet WLO um Y") bleiben I02 — wollen eine inhaltliche Antwort.
     discriminators:
       - vs: I01
-        rule: I02 fragt nach FAKT/DEFINITION, I01 nach Plattform-Funktionen.
-        example_a: Was ist CC BY? → I02
-        example_b: Was kann ich hier? → I01
+        rule: I02 = Konzept-Definition (OER/CC BY), konkreter WLO-Fakt/Statistik, ODER substantielle Funktions-/Rollenfrage mit Kontext (welche Rolle spielt WLO in der Schulaufsicht, welche 
+          Möglichkeiten bietet WLO um X zu integrieren). I01 = reine Erst-Orientierung/Identität (Was ist WLO, was kann ich hier).
+        example_a: Welche Rolle spielt WLO in der Schulaufsicht? → I02
+        example_b: Was ist WissenLebtOnline? → I01
       - vs: I03
         rule: I02 = reine Definition ohne Lern-/Material-Wunsch. Sobald 'erklär mir' oder Material-Wort → I03.
         example_a: Was ist Photosynthese? → I02
         example_b: Erklär mir Photosynthese Schritt für Schritt → I03
   - id: I03
     label: Inhalte-Suchen
-    description: "Universal-Such-Intent: Material, Themenseite, Sammlung, Drilldown unter einem konkreten Fach. Bot sucht IM BESTAND von WirLernenOnline, liefert Original-Links — KEINE KI-Generierung neuer Inhalte.\n\nLeitsatz: 'Suchen = aus dem WLO-Repository raussuchen'. 'Generieren/Erstellen = KI baut etwas Neues' (das ist I05).\n"
+    description: "Universal-Such-Intent: Material, Themenseite, Sammlung, Drilldown unter einem konkreten Fach. Bot sucht IM BESTAND von WirLernenOnline, liefert Original-Links — KEINE KI-Generierung neuer
+      Inhalte.\n\nLeitsatz: 'Suchen = aus dem WLO-Repository raussuchen'. 'Generieren/Erstellen = KI baut etwas Neues' (das ist I05).\n"
     examples:
       - Zeig mir Videos zu Bruchrechnung Klasse 5
       - Material zu Photosynthese
@@ -119,6 +140,8 @@ intents:
       - Such mir was zu Photosynthese
       - Was hast du zu Klimawandel?
       - Welches Material gibt es zu Mathe?
+      - Ich bereite eine Stunde vor und suche passendes Material
+      - Ich stelle eine Sammlung zusammen und suche gute Materialien dazu
     trigger_verbs:
       - zeig mir
       - suche
@@ -164,6 +187,11 @@ intents:
         rule: Edit-Verb auf vorherigen Bot-Inhalt → I06. Sonst I03.
         example_a: Zeig mir andere Materialien → I03
         example_b: Mach den Lernpfad kürzer → I06
+      - vs: I04
+        rule: Hauptverb entscheidet. Such-Verb (suche/brauche/zeig/hast du/gibt es) auf 'Material(ien)' → I03 — AUCH wenn es 'für eine Stunde/Klasse/Sammlung' ist (der Nutzer kuratiert selbst). NUR 
+          ein Sequenz-/Struktur-Substantiv (Lernpfad/Unterrichtsreihe/Stundenentwurf/Materialzusammenstellung) → I04, auch mit Such-Verb davor ('gibt es einen Lernpfad').
+        example_a: Ich bereite eine Stunde vor und suche passendes Material → I03
+        example_b: Gibt es dazu einen fertigen Lernpfad? → I04
   - id: I04
     label: Lernpfad
     description: "Mehrstufiger Stundenentwurf / Unterrichtsreihe / Lernpfad aus EXISTIERENDEN WLO-Materialien zusammensetzen. Auch: Materialzusammenstellungen, kuratierte Mehrfach-Quellen.\n"
@@ -189,18 +217,25 @@ intents:
       - materialpaket
       - übersicht von materialien
       - mehrere materialien
+    negative_triggers:
+      - phrase: (suche|brauche|finde) (passendes |gutes |geeignetes |dazu )?material(ien)?
+        redirect_to: I03
+        rationale: Reine Material-Suche (auch "für eine Stunde/Klasse" oder "für eine Sammlung, die ich selbst zusammenstelle") = I03. I04 NUR bei explizitem Auftrag, eine 
+          Sequenz/Reihe/Zusammenstellung zu BAUEN (plane/Lernpfad/Unterrichtsreihe/stell zusammen).
     discriminators:
       - vs: I05
         rule: Plural/Sammlung/Zusammenstellung/Stunden-Sequenz → I04. SINGULÄRER neuer Material-Typ → I05.
         example_a: Erstelle eine Materialzusammenstellung zu X → I04
         example_b: Erstelle ein Arbeitsblatt zu X → I05
       - vs: I03
-        rule: Plan-/Strukturierungs-Wort + mehrschrittig → I04. Reine Anzeige bestehender Inhalte → I03.
-        example_a: Lernpfad zu Bruchrechnung → I04
-        example_b: Zeig mir Material zu Bruchrechnung → I03
+        rule: Hauptverb entscheidet. Sequenz-/Struktur-Substantiv (Lernpfad/Unterrichtsreihe/Stundenentwurf) ODER Plan-Verb → I04, auch mit Such-Verb ('gibt es einen Lernpfad'). Reine Material-Suche →
+          I03, auch wenn 'für eine Stunde/Sammlung'.
+        example_a: Gibt es dazu einen fertigen Lernpfad? → I04
+        example_b: Ich bereite eine Stunde vor und suche passendes Material → I03
   - id: I05
     label: Inhalt-Generieren
-    description: "KI-Generierung EINES neuen Materials — Arbeitsblatt, Quiz, Info- blatt, Präsentation, Checkliste, Glossar, Übungen, Bericht/ Faktenblatt, Pressemitteilung, Remix. Singular, NICHT mehrteilig.\n\nLeitsatz: 'Generieren/Erstellen = KI baut neu'. 'Suchen/Finden = aus dem WLO-Repository raussuchen' (das ist I03).\n"
+    description: "KI-Generierung EINES neuen Materials — Arbeitsblatt, Quiz, Info- blatt, Präsentation, Checkliste, Glossar, Übungen, Bericht/ Faktenblatt, Pressemitteilung, Remix. Singular, NICHT mehrteilig.\n\
+      \nLeitsatz: 'Generieren/Erstellen = KI baut neu'. 'Suchen/Finden = aus dem WLO-Repository raussuchen' (das ist I03).\n"
     examples:
       - Erstelle ein Arbeitsblatt zu Bruchrechnung
       - Mach mir ein Quiz zur Photosynthese
@@ -208,6 +243,8 @@ intents:
       - Schreib eine Pressemitteilung zu unserer OER-Strategie
       - Bau mir ein Rollenspiel zu Klimawandel
       - Entwirf eine Checkliste für Eltern-Sprechtag
+      - Können Sie mir daraus ein kurzes Arbeitsblatt erstellen?
+      - Erstellen Sie uns daraus eine Argumentationshilfe
     trigger_verbs:
       - erstelle
       - erstell mir
@@ -259,16 +296,20 @@ intents:
         example_a: Zeig mir Quizze zu Bruchrechnung → I03
         example_b: Mach mir ein Quiz zu Bruchrechnung → I05
       - vs: I06
-        rule: Voriger Bot-Turn enthält erstellten Inhalt + Edit-Verb → I06. Ohne Vor-Inhalt → I05.
-        example_a: Erstelle ein Arbeitsblatt zu X (Turn 1) → I05
-        example_b: Mach das Arbeitsblatt kürzer (Turn 2, mit Canvas) → I06
+        rule: Create-Verb + (neuer) Material-Typ → I05, AUCH mit Bezug auf Vor-Inhalt ('daraus/davon ein Arbeitsblatt erstellen') — ein neues Artefakt zu bauen ist eine Generierung, kein Edit. I06 NUR
+          beim Ändern DESSELBEN zuvor erzeugten Dokuments mit Änderungs-Verb (kürzer/ergänze/entferne).
+        example_a: Können Sie mir daraus ein Arbeitsblatt erstellen? → I05
+        example_b: Mach das Arbeitsblatt jetzt kürzer → I06
   - id: I06
     label: Inhalt-Nachbearbeiten
-    description: "Vom Bot zuvor gerenderter Inhalt (Lernpfad oder KI-Material) soll angepasst werden — Edit statt Neu-Erzeugung. Voraussetzung: voriger Bot-Turn enthält erstellten Inhalt.\n"
+    description: "Ein vom Bot ZUVOR gerendertes Dokument (Lernpfad oder KI-Material) soll VERÄNDERT werden — Edit am bestehenden Inhalt, keine Neu-Erzeugung. Voraussetzung: voriger Bot-Turn enthält erstellten
+      Inhalt.\n\nNUR bei echten Änderungs-Verben am Dokument: kürzer/länger, einfacher, ergänzen, Lösungen rein, entfernen, umstrukturieren, umformulieren. NICHT wenn der Nutzer (a) etwas VERSTEHEN will
+      ('erklär mir', 'genauer erklären' → I02), (b) einen Einstieg/Reihenfolge im Lernpfad sucht ('womit fange ich an' → I04) oder (c) ein NEUES Material erstellt ('erstell mir daraus ein Arbeitsblatt'
+      → I05) — auch wenn er sich dabei auf den Vorinhalt bezieht ('daraus', 'das', 'nochmal').\n"
     examples:
       - Mach den Lernpfad kürzer
       - Füge Lösungen hinzu
-      - Erkläre Schritt 2 ausführlicher
+      - Mach Abschnitt 2 im Dokument ausführlicher
       - Anders strukturieren bitte
       - Ergänze ein Beispiel zu Bruchrechnung
       - Entferne den letzten Abschnitt
@@ -286,17 +327,34 @@ intents:
       - umformulieren
       - schreib um
     negative_triggers:
+      - phrase: \b(erstell|generier|entwirf|produzier|erzeug)\w*|\b(bau|mach|schreib) (mir )?ein
+        redirect_to: I05
+        rationale: Erstell-/Generier-Verb = NEUES Material (I05), auch bei Bezug auf den Vorinhalt ("daraus"). Nur echte Änderungs-Verben am Vorinhalt (kürzer/ergänze/entferne) bleiben I06.
+      - phrase: kannst du.*erklär|erklär.*(mir|nochmal|genauer|verständlich|schritt für schritt)
+        redirect_to: I02
+        rationale: Verständnis-Wunsch (Erklärung AN den Nutzer) — kein Dokument-Edit, auch bei Bezug auf einen Schritt/Vorinhalt.
+      - phrase: womit (fange|fang|soll ich)|wo (fange|fang|soll ich)|wie fange ich an|was (mache|soll) ich zuerst|womit (starte|anfangen)
+        redirect_to: I04
+        rationale: Einstiegs-/Reihenfolge-Frage im Lernpfad-Kontext — kein Dokument-Edit.
       - phrase: stattdessen|anderes thema|neues thema|mach mir.*zu
         redirect_to: I05
         rationale: Themenwechsel mit Create-Verb → neues Material, kein Edit.
     discriminators:
       - vs: I05
-        rule: Bezug auf vorherigen Bot-Output (das/der/den + Inhalts-Wort) → I06. Neues Thema → I05.
+        rule: I06 NUR bei Änderungs-Verb am Vorinhalt (kürzer/ergänze/entferne/umschreibe). Erstell-/Generier-Verb + Material-Typ = NEUES Material → I05, auch bei "daraus".
         example_a: Mach es kürzer → I06
-        example_b: Mach mir eins zu einem anderen Thema → I05
+        example_b: Erstell mir daraus ein Arbeitsblatt → I05
+      - vs: I02
+        rule: Dokument verändern → I06. "Erklär mir / genauer erklären / verständlicher" = Verständnis-Wunsch → I02 (auch mit Bezug auf einen Schritt).
+        example_a: Mach Schritt 2 im Dokument ausführlicher → I06
+        example_b: Kannst du mir Schritt 2 genauer erklären? → I02
+      - vs: I04
+        rule: Edit am gerenderten Lernpfad → I06. Folgefrage nach Einstieg/Reihenfolge ("womit anfangen") → I04.
+        example_a: Mach den Lernpfad kürzer → I06
+        example_b: Womit fange ich am besten an? → I04
       - vs: I03
         rule: Edit-Verb auf bestehenden Inhalt → I06. Suche nach neuem Material → I03.
-        example_a: Erkläre Schritt 2 ausführlicher → I06
+        example_a: Ergänze ein Beispiel im Dokument → I06
         example_b: Zeig mir andere Materialien → I03
   - id: I07
     label: Feedback-Bot
@@ -336,13 +394,12 @@ intents:
         rule: I07 bezieht sich auf Bot-Interaktion oder die FUNKTIONSWEISE des Feedback-Gebens. I08 bezieht sich auf konkreten Plattform-Inhalt mit Weiterleitungs-Wunsch.
         example_a: Das war hilfreich → I07
         example_b: Wie kann ich dir Feedback geben? → I07
-        example_c: Hier ist ein Fehler im Material, bitte an Redaktion → I08
       - vs: I02
         rule: I07 = Reflexion über die Konversation oder Frage zur Bot-Bedienung. I02 = Wissens-/Faktenfrage zur Plattform/Welt.
         example_a: Du hast nicht verstanden was ich meinte → I07
         example_b: Was bedeutet OER? → I02
       - vs: I03
-        rule: "I07 = Frage zur Bot-/Feedback-Bedienung. I03 = Suche nach Inhalten. „Wie kann ich X geben/melden\" mit X=Feedback → I07. „Wie kann ich X finden\" mit X=Material → I03."
+        rule: I07 = Frage zur Bot-/Feedback-Bedienung. I03 = Suche nach Inhalten. „Wie kann ich X geben/melden" mit X=Feedback → I07. „Wie kann ich X finden" mit X=Material → I03.
         example_a: Wie kann ich Feedback geben? → I07
         example_b: Wie kann ich Material zu Photosynthese finden? → I03
       - vs: I01

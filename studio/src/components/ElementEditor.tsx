@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { Elements, PersonaData, IntentData, StateData, EntityData, SignalData } from '@/app/page';
+import { StringListField, RecordListField } from './shared/ListFields';
+import { useCollectionEditor } from '@/lib/useCollectionEditor';
 
 type DimTab = 'personas' | 'intents' | 'states' | 'entities' | 'signals';
 
@@ -351,30 +353,34 @@ function PersonaDetail({ persona, allPersonas, allIntents, onPersonaChange, onSa
 }
 
 // ── Persona Editor Container — manages list state + Save-All ─────────
-function PersonaEditor({ personas, intents, selectedId, onSelect, onReload }: {
+function PersonaEditor({ personas, intents, selectedId, onSelect, onReload, onDirtyChange }: {
   personas: PersonaData[];
   intents: IntentData[];
   selectedId: string;
   onSelect: (id: string) => void;
   onReload: () => Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [rows, setRows] = useState<PersonaData[]>([]);
-  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState<string>('');
-
-  useEffect(() => {
-    setRows(personas.map(p => ({
-      ...p,
-      positive_markers: p.positive_markers ?? p.hints ?? [],
-      anti_markers: p.anti_markers ?? [],
-      discriminators: p.discriminators ?? [],
-      goals: p.goals ?? [],
-      rules: p.rules ?? [],
-      typical_intents: p.typical_intents ?? [],
-    })));
-    setStatus('idle');
-    setErrorMsg('');
-  }, [personas]);
+  const { rows, status, errorMsg, updateRow, handleSave: handleSaveAll } =
+    useCollectionEditor<PersonaData>({
+      source: personas,
+      normalize: p => ({
+        ...p,
+        positive_markers: p.positive_markers ?? p.hints ?? [],
+        anti_markers: p.anti_markers ?? [],
+        discriminators: p.discriminators ?? [],
+        goals: p.goals ?? [],
+        rules: p.rules ?? [],
+        typical_intents: p.typical_intents ?? [],
+      }),
+      resetStatusOnSeed: true,
+      // hints-Alias für Backward-Compat-Konsumenten: spiegelt positive_markers.
+      save: rows => _savePut('personas', {
+        personas: rows.map(p => ({ ...p, hints: p.positive_markers ?? [] })),
+      }),
+      onSaved: onReload,
+      onDirtyChange,
+    });
 
   const selected = rows.find(p => p.id === selectedId);
 
@@ -382,28 +388,7 @@ function PersonaEditor({ personas, intents, selectedId, onSelect, onReload }: {
     if (!selected) return;
     const idx = rows.findIndex(p => p.id === selectedId);
     if (idx < 0) return;
-    const updated = [...rows];
-    updated[idx] = { ...updated[idx], ...patch };
-    setRows(updated);
-  };
-
-  const handleSaveAll = async () => {
-    setStatus('saving');
-    setErrorMsg('');
-    // hints-Alias für Backward-Compat-Konsumenten: spiegelt positive_markers.
-    const payload = rows.map(p => ({
-      ...p,
-      hints: p.positive_markers ?? [],
-    }));
-    const res = await _savePut('personas', { personas: payload });
-    if (res.ok) {
-      setStatus('saved');
-      await onReload();
-      setTimeout(() => setStatus('idle'), 2000);
-    } else {
-      setStatus('error');
-      setErrorMsg(res.error || `HTTP ${res.status}`);
-    }
+    updateRow(idx, patch);
   };
 
   return (
@@ -458,106 +443,8 @@ function PersonaEditor({ personas, intents, selectedId, onSelect, onReload }: {
 // ruamel.yaml round-trip und behalten Header-Kommentare.
 // ──────────────────────────────────────────────────────────────────────
 
-/** Klein-Helper-Komponente: editierbare String-Liste mit Add/Remove. */
-function StringListField({ label, hint, values, onChange, placeholder }: {
-  label: string;
-  hint?: string;
-  values: string[];
-  onChange: (v: string[]) => void;
-  placeholder?: string;
-}) {
-  const items = values || [];
-  const update = (idx: number, v: string) => {
-    const next = [...items];
-    next[idx] = v;
-    onChange(next);
-  };
-  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx));
-  const add = () => onChange([...items, '']);
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
-          {label} <span style={{ color: '#9CA3AF', fontWeight: 400 }}>({items.length})</span>
-        </label>
-        <button type="button" className="btn btn-sm" onClick={add}
-          style={{ fontSize: '.7rem', padding: '2px 8px' }}>+ hinzufügen</button>
-      </div>
-      {hint && <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>{hint}</div>}
-      {items.length === 0 && (
-        <div style={{ fontSize: 11, color: '#9CA3AF', fontStyle: 'italic', padding: '4px 0' }}>
-          (keine Einträge)
-        </div>
-      )}
-      {items.map((v, idx) => (
-        <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 3 }}>
-          <input
-            className="form-input form-input-sm"
-            value={v}
-            placeholder={placeholder}
-            onChange={e => update(idx, e.target.value)}
-            style={{ flex: 1, fontSize: 12 }}
-          />
-          <button type="button" className="btn btn-danger btn-sm btn-icon"
-            onClick={() => remove(idx)} title="Entfernen"
-            style={{ padding: '2px 6px', fontSize: '.7rem' }}>✕</button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** Generic helper: editable record list (one nested form per item). */
-function RecordListField<T>({
-  label, hint, values, onChange, makeEmpty, renderItem,
-}: {
-  label: string;
-  hint?: string;
-  values: T[];
-  onChange: (v: T[]) => void;
-  makeEmpty: () => T;
-  renderItem: (item: T, update: (patch: Partial<T>) => void) => React.ReactNode;
-}) {
-  const items = values || [];
-  const update = (idx: number, patch: Partial<T>) => {
-    const next = [...items];
-    next[idx] = { ...next[idx], ...patch };
-    onChange(next);
-  };
-  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx));
-  const add = () => onChange([...items, makeEmpty()]);
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
-          {label} <span style={{ color: '#9CA3AF', fontWeight: 400 }}>({items.length})</span>
-        </label>
-        <button type="button" className="btn btn-sm" onClick={add}
-          style={{ fontSize: '.7rem', padding: '2px 8px' }}>+ hinzufügen</button>
-      </div>
-      {hint && <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>{hint}</div>}
-      {items.length === 0 && (
-        <div style={{ fontSize: 11, color: '#9CA3AF', fontStyle: 'italic', padding: '4px 0' }}>
-          (keine Einträge)
-        </div>
-      )}
-      {items.map((it, idx) => (
-        <div key={idx} style={{
-          background: '#FFF', border: '1px solid #E5E7EB', borderRadius: 4,
-          padding: 8, marginBottom: 6, position: 'relative',
-        }}>
-          <button type="button" className="btn btn-danger btn-sm btn-icon"
-            onClick={() => remove(idx)} title="Eintrag entfernen"
-            style={{
-              position: 'absolute', top: 4, right: 4,
-              padding: '2px 6px', fontSize: '.7rem',
-            }}>✕</button>
-          {renderItem(it, (patch) => update(idx, patch))}
-        </div>
-      ))}
-    </div>
-  );
-}
+// StringListField/RecordListField leben jetzt geteilt in
+// ./shared/ListFields.tsx (Dedup mit PatternEditor, 2026-06-10).
 
 /** Save-Helper für die strukturierten Backend-PUT-Endpoints. */
 async function _savePut(path: string, body: unknown): Promise<{ ok: boolean; status?: number; error?: string }> {
@@ -582,65 +469,39 @@ async function _savePut(path: string, body: unknown): Promise<{ ok: boolean; sta
 // Karten-Layout: pro Intent eine ausklappbare Card mit allen Feldern.
 // Save geht durch PUT /api/config/intents (strukturierter Endpoint mit
 // Pydantic-Validierung + ruamel-Roundtrip).
-function IntentEditor({ intents, onReload }: {
+function IntentEditor({ intents, onReload, onDirtyChange }: {
   intents: IntentData[];
   loadFile: (path: string) => Promise<string>;
   saveFile: (path: string, content: string) => Promise<boolean>;
   onReload: () => Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [rows, setRows] = useState<IntentData[]>([]);
-  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState<string>('');
-  const [dirty, setDirty] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { rows, status, errorMsg, dirty, updateRow, deleteRow: hookDeleteRow, addRow: hookAddRow, handleSave } =
+    useCollectionEditor<IntentData>({
+      source: intents,
+      normalize: i => ({
+        ...i,
+        examples: i.examples ?? [],
+        trigger_verbs: i.trigger_verbs ?? [],
+        negative_triggers: i.negative_triggers ?? [],
+        discriminators: i.discriminators ?? [],
+      }),
+      save: rows => _savePut('intents', { intents: rows }),
+      onSaved: onReload,
+      onDirtyChange,
+    });
 
-  useEffect(() => {
-    setRows(intents.map(i => ({
-      ...i,
-      examples: i.examples ?? [],
-      trigger_verbs: i.trigger_verbs ?? [],
-      negative_triggers: i.negative_triggers ?? [],
-      discriminators: i.discriminators ?? [],
-    })));
-    setDirty(false);
-  }, [intents]);
-
-  const updateRow = (idx: number, patch: Partial<IntentData>) => {
-    const updated = [...rows];
-    updated[idx] = { ...updated[idx], ...patch };
-    setRows(updated);
-    setDirty(true);
-  };
-
-  const deleteRow = (idx: number) => {
-    if (!confirm(`Intent "${rows[idx].id}" wirklich löschen?`)) return;
-    setRows(rows.filter((_, i) => i !== idx));
-    setDirty(true);
-  };
+  const deleteRow = (idx: number) =>
+    hookDeleteRow(idx, `Intent "${rows[idx].id}" wirklich löschen?`);
 
   const addRow = () => {
-    const newId = `I${String(rows.length + 1).padStart(2, '0')}`;
-    setRows([...rows, {
-      id: newId, label: 'Neuer Intent', description: '',
+    const added = hookAddRow(rows => ({
+      id: `I${String(rows.length + 1).padStart(2, '0')}`,
+      label: 'Neuer Intent', description: '',
       examples: [], trigger_verbs: [], negative_triggers: [], discriminators: [],
-    }]);
-    setExpandedId(newId);
-    setDirty(true);
-  };
-
-  const handleSave = async () => {
-    setStatus('saving');
-    setErrorMsg('');
-    const res = await _savePut('intents', { intents: rows });
-    if (res.ok) {
-      setStatus('saved');
-      setDirty(false);
-      await onReload();
-      setTimeout(() => setStatus('idle'), 2000);
-    } else {
-      setStatus('error');
-      setErrorMsg(res.error || `HTTP ${res.status}`);
-    }
+    }));
+    setExpandedId(added.id);
   };
 
   return (
@@ -844,64 +705,38 @@ function IntentCard({ intent, isOpen, allIntents, onToggle, onChange, onDelete }
 }
 
 // ── Form-based State Editor ──────────────────────────────────────────
-function StateEditor({ states, onReload }: {
+function StateEditor({ states, onReload, onDirtyChange }: {
   states: StateData[];
   loadFile: (path: string) => Promise<string>;
   saveFile: (path: string, content: string) => Promise<boolean>;
   onReload: () => Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [rows, setRows] = useState<StateData[]>([]);
-  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState<string>('');
-  const [dirty, setDirty] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { rows, status, errorMsg, dirty, updateRow, deleteRow: hookDeleteRow, addRow: hookAddRow, handleSave } =
+    useCollectionEditor<StateData>({
+      source: states,
+      normalize: s => ({
+        ...s,
+        next_likely: s.next_likely ?? [],
+        selection_criteria: s.selection_criteria ?? [],
+      }),
+      save: rows => _savePut('states', { states: rows }),
+      onSaved: onReload,
+      onDirtyChange,
+    });
 
-  useEffect(() => {
-    setRows(states.map(s => ({
-      ...s,
-      next_likely: s.next_likely ?? [],
-      selection_criteria: s.selection_criteria ?? [],
-    })));
-    setDirty(false);
-  }, [states]);
-
-  const updateRow = (idx: number, patch: Partial<StateData>) => {
-    const updated = [...rows];
-    updated[idx] = { ...updated[idx], ...patch };
-    setRows(updated);
-    setDirty(true);
-  };
-
-  const deleteRow = (idx: number) => {
-    if (!confirm(`State "${rows[idx].id}" wirklich löschen?`)) return;
-    setRows(rows.filter((_, i) => i !== idx));
-    setDirty(true);
-  };
+  const deleteRow = (idx: number) =>
+    hookDeleteRow(idx, `State "${rows[idx].id}" wirklich löschen?`);
 
   const addRow = () => {
-    const newId = `S${rows.length + 1}`;
-    setRows([...rows, {
-      id: newId, label: 'Neue Phase', description: '',
+    const added = hookAddRow(rows => ({
+      id: `S${rows.length + 1}`,
+      label: 'Neue Phase', description: '',
       role: '', bot_directive: '',
       next_likely: [], selection_criteria: [],
-    }]);
-    setExpandedId(newId);
-    setDirty(true);
-  };
-
-  const handleSave = async () => {
-    setStatus('saving');
-    setErrorMsg('');
-    const res = await _savePut('states', { states: rows });
-    if (res.ok) {
-      setStatus('saved');
-      setDirty(false);
-      await onReload();
-      setTimeout(() => setStatus('idle'), 2000);
-    } else {
-      setStatus('error');
-      setErrorMsg(res.error || `HTTP ${res.status}`);
-    }
+    }));
+    setExpandedId(added.id);
   };
 
   const allStateIds = rows.map(r => r.id);
@@ -1094,64 +929,38 @@ function StateCard({ state, isOpen, allStateIds, onToggle, onChange, onDelete }:
 }
 
 // ── Form-based Entity Editor ─────────────────────────────────────────
-function EntityEditor({ entities, onReload }: {
+function EntityEditor({ entities, onReload, onDirtyChange }: {
   entities: EntityData[];
   loadFile: (path: string) => Promise<string>;
   saveFile: (path: string, content: string) => Promise<boolean>;
   onReload: () => Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [rows, setRows] = useState<EntityData[]>([]);
-  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState<string>('');
-  const [dirty, setDirty] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { rows, status, errorMsg, dirty, updateRow, deleteRow: hookDeleteRow, addRow: hookAddRow, handleSave } =
+    useCollectionEditor<EntityData>({
+      source: entities,
+      normalize: e => ({
+        ...e,
+        examples: e.examples ?? [],
+        positive_examples: e.positive_examples ?? [],
+        negative_examples: e.negative_examples ?? [],
+        discriminators: e.discriminators ?? [],
+      }),
+      save: rows => _savePut('entities', { entities: rows }),
+      onSaved: onReload,
+      onDirtyChange,
+    });
 
-  useEffect(() => {
-    setRows(entities.map(e => ({
-      ...e,
-      examples: e.examples ?? [],
-      positive_examples: e.positive_examples ?? [],
-      negative_examples: e.negative_examples ?? [],
-      discriminators: e.discriminators ?? [],
-    })));
-    setDirty(false);
-  }, [entities]);
-
-  const updateRow = (idx: number, patch: Partial<EntityData>) => {
-    const updated = [...rows];
-    updated[idx] = { ...updated[idx], ...patch };
-    setRows(updated);
-    setDirty(true);
-  };
-
-  const deleteRow = (idx: number) => {
-    if (!confirm(`Entity "${rows[idx].id}" wirklich löschen?`)) return;
-    setRows(rows.filter((_, i) => i !== idx));
-    setDirty(true);
-  };
+  const deleteRow = (idx: number) =>
+    hookDeleteRow(idx, `Entity "${rows[idx].id}" wirklich löschen?`);
 
   const addRow = () => {
-    setRows([...rows, {
+    hookAddRow(() => ({
       id: 'neu', label: '', type: 'string', description: '',
       examples: [], positive_examples: [], negative_examples: [], discriminators: [],
-    }]);
+    }));
     setExpandedId('neu');
-    setDirty(true);
-  };
-
-  const handleSave = async () => {
-    setStatus('saving');
-    setErrorMsg('');
-    const res = await _savePut('entities', { entities: rows });
-    if (res.ok) {
-      setStatus('saved');
-      setDirty(false);
-      await onReload();
-      setTimeout(() => setStatus('idle'), 2000);
-    } else {
-      setStatus('error');
-      setErrorMsg(res.error || `HTTP ${res.status}`);
-    }
   };
 
   return (
@@ -1397,66 +1206,48 @@ function signalToRow(s: SignalData): SignalRow {
   };
 }
 
-function SignalEditor({ signals, loadFile, saveFile, onReload }: {
+function SignalEditor({ signals, loadFile, saveFile, onReload, onDirtyChange }: {
   signals: SignalData[];
   loadFile: (path: string) => Promise<string>;
   saveFile: (path: string, content: string) => Promise<boolean>;
   onReload: () => Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [rows, setRows] = useState<SignalRow[]>([]);
-  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [dirty, setDirty] = useState(false);
+  const { rows, status, dirty, updateRow: hookUpdateRow, deleteRow, handleSave } =
+    useCollectionEditor<SignalData, SignalRow>({
+      source: signals,
+      normalize: signalToRow,
+      save: async rows => {
+        const lines = [
+          '# Signal-Modulationen',
+          '# Jedes Signal kann Ton, Länge und weitere Ausgabe-Parameter modulieren.',
+          '',
+          'signals:',
+        ];
+        for (const r of rows) {
+          lines.push(`  - id: ${r.id}`);
+          if (r.dimension) lines.push(`    dimension: ${r.dimension}`);
+          const mods: string[] = [];
+          if (r.tone) mods.push(`      tone: ${r.tone}`);
+          if (r.length) mods.push(`      length: ${r.length}`);
+          if (r.skip_intro) mods.push(`      skip_intro: true`);
+          if (r.one_option) mods.push(`      one_option: true`);
+          if (r.show_more) mods.push(`      show_more: true`);
+          if (r.add_sources) mods.push(`      add_sources: true`);
+          if (mods.length > 0) {
+            lines.push(`    modulations:`);
+            lines.push(...mods);
+          }
+        }
+        const ok = await saveFile('04-signals/signal-modulations.yaml', lines.join('\n') + '\n');
+        return { ok };
+      },
+      onSaved: onReload,
+      onDirtyChange,
+    });
 
-  useEffect(() => {
-    setRows(signals.map(signalToRow));
-    setDirty(false);
-  }, [signals]);
-
-  const updateRow = (idx: number, field: string, value: any) => {
-    const updated = [...rows];
-    updated[idx] = { ...updated[idx], [field]: value };
-    setRows(updated);
-    setDirty(true);
-  };
-
-  const deleteRow = (idx: number) => {
-    setRows(rows.filter((_, i) => i !== idx));
-    setDirty(true);
-  };
-
-  const handleSave = async () => {
-    setStatus('saving');
-    const lines = [
-      '# Signal-Modulationen',
-      '# Jedes Signal kann Ton, Länge und weitere Ausgabe-Parameter modulieren.',
-      '',
-      'signals:',
-    ];
-    for (const r of rows) {
-      lines.push(`  - id: ${r.id}`);
-      if (r.dimension) lines.push(`    dimension: ${r.dimension}`);
-      const mods: string[] = [];
-      if (r.tone) mods.push(`      tone: ${r.tone}`);
-      if (r.length) mods.push(`      length: ${r.length}`);
-      if (r.skip_intro) mods.push(`      skip_intro: true`);
-      if (r.one_option) mods.push(`      one_option: true`);
-      if (r.show_more) mods.push(`      show_more: true`);
-      if (r.add_sources) mods.push(`      add_sources: true`);
-      if (mods.length > 0) {
-        lines.push(`    modulations:`);
-        lines.push(...mods);
-      }
-    }
-    const ok = await saveFile('04-signals/signal-modulations.yaml', lines.join('\n') + '\n');
-    if (ok) {
-      setStatus('saved');
-      setDirty(false);
-      await onReload();
-      setTimeout(() => setStatus('idle'), 2000);
-    } else {
-      setStatus('error');
-    }
-  };
+  const updateRow = (idx: number, field: keyof SignalRow, value: any) =>
+    hookUpdateRow(idx, { [field]: value } as Partial<SignalRow>);
 
   return (
     <div>
@@ -1543,6 +1334,23 @@ function SignalEditor({ signals, loadFile, saveFile, onReload }: {
 export default function ElementEditor({ elements, loadFile, saveFile, onReload, createFile, appendToYaml }: Props) {
   const [tab, setTab] = useState<DimTab>('personas');
   const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
+
+  // Tab-Dirty-Guard (2026-06-10): Der Tab-Wechsel unmountet den aktiven
+  // Sub-Editor samt rows-State — ungespeicherte Änderungen wären
+  // kommentarlos weg. Jeder Sub-Editor meldet seinen Dirty-Zustand über
+  // den useCollectionEditor-Hook hierher; vor dem Wechsel fragt ein
+  // confirm() nach (gleiche Wortwahl wie der Guard im PatternEditor).
+  // Ref statt State: das Dirty-Wissen ändert kein Rendering des Parents.
+  const dirtyRef = useRef(false);
+  const reportDirty = useCallback((d: boolean) => {
+    dirtyRef.current = d;
+  }, []);
+  const switchTab = (next: DimTab) => {
+    if (next === tab) return;
+    if (dirtyRef.current && !confirm('Ungespeicherte Änderungen verwerfen?')) return;
+    dirtyRef.current = false;
+    setTab(next);
+  };
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newId, setNewId] = useState('');
   const [newLabel, setNewLabel] = useState('');
@@ -1559,24 +1367,33 @@ export default function ElementEditor({ elements, loadFile, saveFile, onReload, 
     const label = newLabel.trim() || id;
     if (!id) return;
 
+    // Fix 2026-06-10: User-Eingaben sicher in YAML einbetten — ein '"',
+    // ':' oder Zeilenumbruch in Label/Beschreibung/ID erzeugte vorher
+    // invalides YAML, das der Backend-Loader ablehnt oder falsch parst.
+    const yq = (s: string): string =>
+      `"${String(s ?? '')
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\r?\n/g, ' ')}"`;
+
     let ok = false;
     if (tab === 'personas') {
       const filename = id.toLowerCase().replace(/[^a-z0-9-]/g, '-') + '.md';
       const path = `04-personas/${filename}`;
-      const content = `---\nid: ${id}\nlabel: ${label}\ndescription: "${newDesc}"\nhints: []\n---\n\n# ${label}\n\nBeschreibe hier die Persona.`;
+      const content = `---\nid: ${yq(id)}\nlabel: ${yq(label)}\ndescription: ${yq(newDesc)}\nhints: []\n---\n\n# ${label}\n\nBeschreibe hier die Persona.`;
       ok = await createFile(path, content);
       if (ok) setSelectedPersona(id);
     } else if (tab === 'intents') {
-      const snippet = `  - id: ${id}\n    label: "${label}"\n    description: "${newDesc}"`;
+      const snippet = `  - id: ${yq(id)}\n    label: ${yq(label)}\n    description: ${yq(newDesc)}`;
       ok = await appendToYaml('04-intents/intents.yaml', snippet);
     } else if (tab === 'states') {
-      const snippet = `  - id: ${id}\n    label: "${label}"\n    description: "${newDesc}"\n    cluster: general`;
+      const snippet = `  - id: ${yq(id)}\n    label: ${yq(label)}\n    description: ${yq(newDesc)}\n    cluster: general`;
       ok = await appendToYaml('04-states/states.yaml', snippet);
     } else if (tab === 'entities') {
-      const snippet = `  - id: ${id}\n    label: "${label}"\n    type: string\n    examples: []`;
+      const snippet = `  - id: ${yq(id)}\n    label: ${yq(label)}\n    type: string\n    examples: []`;
       ok = await appendToYaml('04-entities/entities.yaml', snippet);
     } else if (tab === 'signals') {
-      const snippet = `  - id: ${id}\n    dimension: custom\n    modulations:\n      tone: sachlich`;
+      const snippet = `  - id: ${yq(id)}\n    dimension: custom\n    modulations:\n      tone: sachlich`;
       ok = await appendToYaml('04-signals/signal-modulations.yaml', snippet);
     }
 
@@ -1672,7 +1489,7 @@ export default function ElementEditor({ elements, loadFile, saveFile, onReload, 
           ['entities', 'Entities', entities.length],
           ['signals', 'Signale', signals.length],
         ] as [DimTab, string, number][]).map(([id, label, count]) => (
-          <button key={id} className={`tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>
+          <button key={id} className={`tab ${tab === id ? 'active' : ''}`} onClick={() => switchTab(id)}>
             {label}<span className="tab-count">{count}</span>
           </button>
         ))}
@@ -1686,27 +1503,28 @@ export default function ElementEditor({ elements, loadFile, saveFile, onReload, 
           selectedId={selectedPersona || ''}
           onSelect={(id) => setSelectedPersona(id)}
           onReload={onReload}
+          onDirtyChange={reportDirty}
         />
       )}
 
       {/* ── Intents ───────────────────────────────────────── */}
       {tab === 'intents' && (
-        <IntentEditor intents={intents} loadFile={loadFile} saveFile={saveFile} onReload={onReload} />
+        <IntentEditor intents={intents} loadFile={loadFile} saveFile={saveFile} onReload={onReload} onDirtyChange={reportDirty} />
       )}
 
       {/* ── States ────────────────────────────────────────── */}
       {tab === 'states' && (
-        <StateEditor states={states} loadFile={loadFile} saveFile={saveFile} onReload={onReload} />
+        <StateEditor states={states} loadFile={loadFile} saveFile={saveFile} onReload={onReload} onDirtyChange={reportDirty} />
       )}
 
       {/* ── Entities ──────────────────────────────────────── */}
       {tab === 'entities' && (
-        <EntityEditor entities={entities} loadFile={loadFile} saveFile={saveFile} onReload={onReload} />
+        <EntityEditor entities={entities} loadFile={loadFile} saveFile={saveFile} onReload={onReload} onDirtyChange={reportDirty} />
       )}
 
       {/* ── Signals ───────────────────────────────────────── */}
       {tab === 'signals' && (
-        <SignalEditor signals={signals} loadFile={loadFile} saveFile={saveFile} onReload={onReload} />
+        <SignalEditor signals={signals} loadFile={loadFile} saveFile={saveFile} onReload={onReload} onDirtyChange={reportDirty} />
       )}
     </div>
   );

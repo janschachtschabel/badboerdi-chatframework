@@ -1,0 +1,213 @@
+Überarbeitete Antwort: Wird boerdi_widget_open bei openChatbot() gesetzt?
+Ja, immer auf den aktuellen Zeitstempel — auch dann, wenn das Panel bereits offen ist.
+
+Aktion	LocalStorage boerdi_widget_open
+openChatbot() aus geschlossenem Zustand	wird gesetzt: Unix-Timestamp (Date.now()) ✓
+openChatbot() wenn schon offen	wird aktualisiert auf den neuen Timestamp ✓
+toggleChatbot() (öffnen-Richtung)	wird gesetzt ✓
+FAB-Klick (öffnen)	wird gesetzt ✓
+Reaktives initial-state="expanded"-Attribut	wird gesetzt ✓
+closeChatbot()	wird entfernt (localStorage.removeItem) ✓
+Was die Variable steuert (widget.component.ts:911-925): Cross-Page-Persistenz innerhalb einer TTL. Bootstrap auf jeder Seite prüft:
+
+Wenn Date.now() - ts < OPEN_TTL_MS → Widget öffnet sich automatisch
+Sonst → Eintrag wird entfernt, Widget bleibt zu
+Durch den jetzt gesetzten Refresh-bei-jedem-Open ist garantiert, dass die TTL nicht abläuft, solange der User das Widget aktiv per externen Trigger anpingt — egal ob er auf derselben Seite bleibt oder navigiert.
+
+Code-Pfad (in setExpanded):
+
+private setExpanded(open: boolean): void {
+  // Timestamp IMMER aktualisieren bei open=true (auch bei Re-Open),
+  // damit die Cross-Page-TTL die aktuelle Nutzung als „letzte Aktivität"
+  // wertet.
+  if (open) {
+    localStorage.setItem(this.OPEN_KEY, String(Date.now()));
+  }
+  if (this.expanded === open) return;   // Rest idempotent
+  this.expanded = open;
+  if (!open) {
+    localStorage.removeItem(this.OPEN_KEY);
+  }
+  // ... markForCheck + Scroll ...
+}
+Damit ist die Persistenz wasserdicht: Öffnen aktualisiert den Timestamp jedes Mal, Schließen entfernt ihn.
+
+
+
+
+
+
+
+Aus den heutigen Beobachtungen heraus sehe ich sechs Stellschrauben — geordnet vom kleinen Hebel mit großer Wirkung bis zum Architektur-Eingriff:
+
+1. Eval-Suite & Telemetrie auswerten (höchstes ROI)
+Aktuell fixen wir reaktiv, wenn du etwas im Screenshot siehst. Ein paar Schritte:
+
+Goldener Test-Korpus mit 30-50 typischen Anfragen + erwarteten Outcomes (Pattern-Match, Tool-Calls, Inline-Treffer-Anzahl, Sentinel-Präsenz). Lässt sich nach jedem Prompt-Edit als Regression-Sweep durchspielen.
+Aggregat-Auswertung der Traces in debug.trace und phase3_modulations: Welche Patterns greifen nie, welche oft mit niedriger Confidence, welche Tools failen häufig? Im Code ist schon viel Telemetrie drin — aber es fehlt das Dashboard das sie sichtbar macht.
+LLM-as-Judge für subjektive Qualität (Tonalität, Relevanz, Mismatch zwischen Prosa und Treffern). Stichproben automatisiert bewerten lassen, statt jedes Mal selbst lesen zu müssen.
+2. Few-Shot-Examples in System-Prompts
+Die heutigen Bugs (Liefer-Behauptung ohne Tool-Call, "im Canvas rechts" wenn aus, 1-Treffer-Antwort statt 5) sind klassische Cases, in denen das Modell weiß was richtig wäre, aber den Anker für wie's konkret aussieht verliert. Drei kurze Beispiel-Turns (richtig/falsch) im Prompt sind oft wirksamer als zusätzliche Regeln.
+
+Konkrete Stellen, wo das helfen würde:
+
+select_top_cards-Tool-Description: ein Beispiel-Call mit 5 gemischten IDs + Reasoning.
+Inline-Mode-Prompt: ein „Goldener" Antwort-Block (Prosa-Intro + perfekte 5-Card-Liste), ein Anti-Pattern-Beispiel (Liefer-Behauptung ohne Tool-Call).
+Lernpfad-Prompt: ein Mini-Beispiel mit Unicode-Brüchen statt nur die Regel „kein LaTeX".
+3. Slot-Filling-State (das von dir genannte Problem)
+Wenn PAT-21 Canvas-Create gestartet hat und auf material_type wartet, sollte der nächste Turn als Antwort auf die offene Frage klassifiziert werden, nicht als neue Intent-Anfrage. Aktuell ist state-12 als „Canvas-aktiv" markiert; was fehlt ist eher ein awaiting_slot:material_type-State, der dem Classifier mitgibt: „die nächste User-Antwort ist ein Slot-Fill". Würde auch andere Multi-Turn-Klärungen verbessern (Fach, Stufe, Thema).
+
+4. Reflection-/Self-Critique-Pass vor dem Senden
+Im Code sehe ich _reflection_done als Flag — wird aber wohl nur in Edge-Cases genutzt. Ein expliziter Self-Critique-Schritt vor jedem finalen Response (mini-Prompt: „Schaue auf deine Antwort: enthält sie Halluzinationen, LaTeX, eine Liefer-Behauptung ohne Tool-Call?") fängt die Restklasse Bugs, die wir manuell sehen.
+
+Trade-off: +1 LLM-Call pro Turn (~1s, ~200 Tokens). Lohnt sich vermutlich nur, wenn die Qualität messbar besser wird — und das misst man am sinnvollsten über die Eval-Suite (#1).
+
+5. Persona-spezifische Tonalität schärfen
+Es gibt das Persona-System (P-LK, P-SC, P-AND…), aber der Output liest sich zwischen den Personas ähnlich. Konkret schärfen:
+
+Lehrkraft (P-LK): mehr Fachbegriffe, didaktische Hinweise, Klassenstufen-Bezug
+Schüler:in (P-SC): kürzere Sätze, lockerer Ton, Du-Form konsequent
+Andere (P-AND): Mittelweg
+Wäre ein gutes Few-Shot-Target: zwei identische Anfragen, einmal für LK, einmal für SC, als Vorbild im Prompt.
+
+6. Filter strenger durchsetzen
+Klassenstufen-Filter: User sagt „Klasse 7", aber das LLM picked auch Material für Sek II. Hier könnte das Backend nach select_top_cards ein Soft-Filter draufsetzen, der Treffer außerhalb der genannten Stufe abwertet (nicht eliminiert — das wäre zu hart bei dünner Treffer-Lage).
+Disziplin-Mismatch-Detection: Wenn User „Mathe" sagt aber 4 von 5 gepickte Treffer Geographie-Tags haben → expliziter Disclaimer im Antwort-Text statt stiller Mismatch.
+Treffer-Qualitäts-Signale: Cards mit leerer Description / fehlendem Vorschaubild systematisch hinten anstellen.
+Praktische Empfehlung der Reihenfolge
+Wenn ich heute eines auswählen müsste, würde ich mit #1 (Eval-Setup) anfangen — alles andere wird ohne Messbarkeit zu Hin-und-Her-Iterationen mit Bauchgefühl. Mit 30 Test-Cases + automatischer Bewertung weißt du nach jedem Prompt-Edit binnen Minuten, ob's besser oder schlechter ist.
+
+Danach #2 (Few-Shots), weil das in 20 Minuten umsetzbar ist und sofort messbar (via #1).
+
+#3 (Slot-Filling) ist der einzige Punkt, bei dem ich Architektur-Code anfassen würde — das ist tiefer als nur Prompt-Tuning.
+
+#4–6 sind dann iterative Verfeinerungen, die du je nach Eval-Ergebnis ausspielen kannst.
+
+
+
+
+
+
+Stimmt — und das ist eine substantielle Beobachtung, die mehr ist als nur „Stil"-Frage. Lass mich das einordnen:
+
+Warum Frameworks Persona als Modifier behandeln
+In LangGraph/LangChain/OpenAI-Agents/DSPy ist die übliche Trennung:
+
+Intent: Was will der User → Routing-Entscheidung. Persona-blind klassifiziert.
+Tools/Pattern: Was wird ausgeführt → folgt aus Intent.
+Persona/Profile: Wie kommuniziert man → Output-Modifier (System-Prompt-Header, Tonalität, Wording). Wird im State mitgeführt, aber nicht für Routing-Entscheidungen verwendet.
+Gründe für diese Trennung:
+
+Skalierung: Persona × Intent × State explodiert quadratisch. Bei 4 Personas × 15 Intents × 3 States hätte man theoretisch 180 Pattern-Knoten. Real vielleicht 30, aber jede Pattern-Änderung wirkt potenziell mehrfach.
+Wartbarkeit: neue Persona dazu = ein Profil-Eintrag, nicht 15 neue Pattern-Varianten.
+Klarheit: Intent ist eine Eigenschaft der Nachricht, Persona ist eine Eigenschaft des Users. Sie sollten nicht im gleichen Entscheidungsgraph hängen.
+Wo wir aktuell stehen
+In unserem System sehe ich:
+
+persona_id (P-LK, P-SC, P-AND, …) ist tatsächlich tiefer verdrahtet als nur Tonalität — die Pattern-Auswahl liest sie mit aus.
+P-AND als Catch-All ist ein typischer Indikator für „Persona trägt mehr Routing-Last als gesund ist".
+Patterns wie PAT-19 / PAT-21 haben implizit Persona-Annahmen (Lernpfad-Erzeugung ist primär ein LK-Tool, KI-Material-Erzeugung auch). Das funktioniert, aber bricht in Edge-Cases (Schüler:in fragt nach Lernpfad → grätscht ins Pattern oder muss extra abgefangen werden).
+Konkrete Symptome aus den heutigen Beobachtungen:
+
+Multi-Turn-Slot-Filling-Bug (PAT-21 → „Lernpfad") ist teilweise Symptom davon: weil Pattern-State + Persona-State ineinandergreifen, ist die offene Slot-Frage schwer als isolierter „awaiting"-Zustand zu fassen.
+Eval-Komplexität: Tests müssten 3-4 Persona-Varianten × N Intents abdecken, statt nur N Intents + ein Persona-Smoke-Test.
+Vor- und Nachteile beider Modelle (für unseren Kontext)
+Unser Ansatz (verdrahtet) — Vorteile:
+
+Mehr Kontrolle bei Safety-relevanten Persona-Unterschieden (Schüler:in vs. Lehrer:in: andere Risiko-Schwellen)
+Deterministische Audit-Trails („Pattern X wurde gewählt weil Persona+Intent")
+Klarere Pattern-Engine-Entscheidung
+Unser Ansatz — Nachteile:
+
+Pattern-Matrix-Wachstum bei neuen Personas/Intents
+Persona-Mismatch (User wechselt implizit Persona im Verlauf) wird zur Edge-Case-Hölle
+Iteration langsamer — Persona-Anpassung erfordert Pattern-Audit
+Framework-Ansatz — Vorteile:
+
+Lineare Komplexität (separate Achsen)
+Persona-Anpassung ändert nur Tonalität, nicht Pattern-Logik
+Robust gegen Persona-Unklarheiten (Fallback ist nur Tonalitäts-Fallback)
+Framework-Ansatz — Nachteile:
+
+Inhaltliche Differenzierung schwerer (Schüler:in soll andere Tools haben als LK)
+Mehr LLM-Spielraum für Drift im Tonfall
+Safety-Layer braucht eigene Persona-Kopplung außerhalb des Routings
+Pragmatische Empfehlung
+Nicht alles umstellen — aber graduell entkoppeln:
+
+Intent persona-blind: Classifier liest Persona, aber für die Intent-Entscheidung wird sie nicht herangezogen. Intent ist „User will X erledigen", nicht „LK will X erledigen".
+Pattern-Engine: Persona als Parameter, nicht als Selektor. Statt PAT-19a (für LK) und PAT-19b (für SC) gibt's ein PAT-19 mit tone: pedagogical|peer|simple, gesteuert von Persona.
+System-Prompt-Header für Persona: ein stabiler Block am Anfang („Du sprichst mit einer Lehrkraft im Sekundarbereich. Sprich fachlich, nicht herablassend, siezend.") — und der Rest des Prompts ist persona-agnostisch.
+Safety-Schicht behält Persona-Kopplung: das ist okay, denn da geht's um Zugriffsrechte/Risiko, nicht um Routing-Logik.
+pattern_output-Modulationen erweitern: length, skip_intro, tone, formality, disclaimer_level — alles persona-gesteuerte Output-Modifier statt persona-gesteuerter Pattern-Auswahl.
+Migration-Pfad (falls du das angehen willst)
+Audit: jede PAT-ID anschauen — „würde dieses Pattern bei anderer Persona inhaltlich anders aussehen, oder nur im Ton?" Wenn nur im Ton → konsolidieren.
+Konsolidierte Patterns bekommen einen persona_modulation-Block: zwei Output-Felder (tone, disclaimer_level) die persona-spezifisch gesetzt werden.
+System-Prompt: Persona-Header als separater stabiler Cache-Block (spart Token via Prompt-Caching).
+Eval: nach Migration eine Persona-Smoke-Suite (10 Anfragen × 3 Personas) statt der heutigen vollen Matrix.
+Realistischer Aufwand
+Vermutlich 2-3 Tage konzentriert für die Konsolidierung der bestehenden 20+ Patterns, plus 1-2 Tage Eval-Re-Anpassung. Risiko überschaubar, weil die Patterns weiterleben — sie werden nur generischer parametrisiert.
+
+Der größte Gewinn: jede zukünftige Iteration (neue Persona, neue Intents, neue Edge-Cases) wird messbar billiger. Das ist genau das Argument der Frameworks — und für ein System, das du längerfristig pflegen willst, wiegt das den einmaligen Refactor-Aufwand fast immer auf.
+
+
+
+
+
+
+
+
+Berechtigte Sorge — und die Antwort ist nicht „nein, wird besser", sondern: es kommt drauf an, wofür die Persona aktuell filtert.
+
+Zwei Arten von Persona-Filtern
+Typ A — Berechtigter Inhalts-Filter:
+Bestimmte Patterns/Tools sind inhaltlich an eine Rolle gekoppelt. Beispiel: KI-Material-Erzeugung (PAT-21) ist primär ein Lehrer:innen-Werkzeug. Wenn eine Schüler:in danach fragt, sollte das Gate sagen „nein, oder mit Disclaimer". Hier ist die Filterung substantiell — sie verhindert nicht nur einen anderen Tonfall, sondern eine andere Antwort.
+
+Typ B — Wording-Variante als Filter getarnt:
+PAT-XX-LK und PAT-XX-SC führen denselben Tool-Pfad aus, generieren dieselben Cards, treffen dieselben Architektur-Entscheidungen — sie unterscheiden sich nur darin, wie das Ergebnis verbalisiert wird. Hier ist die Filterung künstliche Komplexität: man hat eine Tonalitätsfrage in eine Routing-Frage umgewidmet.
+
+Beim Entkoppeln willst du nur Typ B auflösen, nicht Typ A.
+
+Wo die Ungenauigkeit tatsächlich kippen würde
+Wenn man Persona komplett aus dem Gate nimmt, ohne Ersatzmechanismus, dann:
+
+Mehrere Patterns konkurrieren um denselben Slot
+Die Pattern-Engine muss anders disambiguieren — derzeit war Persona oft der Tie-Breaker
+Aber die heutige Architektur hat schon andere Mechanismen, die das auffangen:
+
+pattern_id_hint vom LLM (Shadow-Mode) → konkurriert mit Rule-Engine, Tie-Breaker existiert
+core_rule mit Confidence-Score
+precondition_slots (Thema, Fach, Stufe)
+Safety-Layer (blockierte Tools)
+Persona als Disambiguator ist also nicht alternativlos — sie ist eine von mehreren Spuren.
+
+Eine andere Lesart der Sorge
+Die wahre Frage ist nicht „mehr oder weniger Filter" — sondern wo darf Persona Information sein vs. wo muss sie Entscheidung sein.
+
+Persona als Information im Pattern-Output: tone: pedagogical_LK, formality: sie, disclaimer_level: low — das LLM bekommt das im Prompt und passt sich an.
+Persona als Entscheidung im Pattern-Gate: nur bestimmte Patterns überhaupt anwendbar — das gehört zur Safety/Access-Layer, nicht zur Routing-Layer.
+Heute mischt unser System beides. Die Konsolidierung wäre, klar zu trennen:
+
+Intent-Klassifizierung persona-blind: „User will Material erstellen", egal wer fragt.
+Safety-Layer mit Persona-Awareness: „Schüler:in darf KI-Material erstellen? Ja, aber mit Hinweis." oder „Nein, biete stattdessen Suche an." — das ist berechtigtes Gating, hier bleibt Persona.
+Pattern-Auswahl nur an Intent + State + Slots: keine PAT-XX-LK vs. PAT-XX-SC mehr.
+Output-Modulation persona-spezifisch: ein Persona-Block im System-Prompt, plus pattern_output.tone/length-Modifier.
+Praktische Heuristik zur Audit-Entscheidung
+Für jedes existierende Pattern eine Frage stellen:
+
+„Wenn ich Persona ignoriere und nur Intent + Slots betrachte — würde dasselbe inhaltliche Pattern gewählt, nur mit anderem Wording? Oder wäre die Pattern-Entscheidung selbst eine andere?"
+
+Antwort „nur Wording anders" → Persona-Filter raus, in Output-Modulation verschieben. Hier wird's nicht ungenauer, weil die Pattern-Wahl ohnehin nur eine inhaltliche Variante hatte.
+Antwort „andere Entscheidung" → Persona-Filter bleibt, gehört aber sauber in Safety/Access-Schicht. Hier ist die Sorge berechtigt — aber das ist genau Typ A, das wir behalten wollen.
+Wenn 80% der bestehenden Persona-Gates in Kategorie 1 fallen (typisch nach meinen Erfahrungen mit ähnlichen Systemen), gewinnt man durch die Konsolidierung Wartbarkeit ohne Genauigkeitsverlust. Die 20% in Kategorie 2 bleiben — und sind sauberer auditierbar, weil sie nicht mehr im Pattern-Wust untergehen.
+
+Wo es trotzdem Verluste geben kann
+Drei reale Risiken bei der Migration:
+
+Persona-Erkennung war stilles Backup: heute fängt das System manche Schwächen der Intent-Klassifizierung über die Persona-Filterung auf („wenn der Intent unklar ist, aber Persona LK ist, dann wahrscheinlich Material-Erzeugung"). Diese impliziten Korrelationen verschwinden — und müssen explizit (Confidence-Scores, Klärungsfragen) ersetzt werden.
+Tonalitäts-Drift: wenn Persona nur noch im System-Prompt-Header steht, kann das LLM bei langen Sessions in den falschen Tonfall driften. Lösung: Persona-Reminder in jeder N-ten User-Message oder beim Streaming-Final-Pass.
+Eval-Lücke während Migration: die heutigen Pattern-Tests sind persona-gefärbt. Bevor du konsolidierst, brauchst du Persona-Smoke-Tests, die nach Migration noch greifen. Sonst ist die Regression schwer messbar.
+TL;DR
+Persona-Filtern aus Gates kann Ungenauigkeit erhöhen — aber nur in den Fällen, wo Persona heute eine inhaltliche (nicht stilistische) Entscheidung getrieben hat. Diese Fälle willst du behalten, nur klarer separieren (Safety-Layer statt Pattern-Engine). Für die Fälle, in denen Persona-Filter nur Wording-Varianten gating sind, gewinnst du Klarheit ohne Verlust — das sind erfahrungsgemäß die meisten.
+
+Die Sorge ist also nicht falsch, sondern zeigt genau auf den Audit-Punkt: nicht ob entkoppeln, sondern welche Persona-Filter zur Safety-Layer wandern und welche zu Output-Modulationen werden.

@@ -184,7 +184,7 @@ states:
 
 ## 5. Pattern (Antwort-Muster)
 
-**Datei:** `03-patterns/*.md` (15 Patterns)
+**Datei:** `03-patterns/*.md` (16 Patterns, M01–M16)
 
 **Pattern-Selektion (Welle E v4):** kein 3-Phasen-Engine mehr.
 
@@ -305,7 +305,7 @@ in `phase3_modulate`.
 
 ### 8. Policy-Entscheidung
 
-**Erzeugt von:** `policy_service.evaluate()` mit `02-domain/policy.yaml`
+**Erzeugt von:** `policy_service.assess_policy()` mit `01-base/policy.yaml`
 
 **Felder:**
 - `blocked_tools`: Persona/Intent-basierte Tool-Blockaden

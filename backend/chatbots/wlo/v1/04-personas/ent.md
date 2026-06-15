@@ -61,8 +61,9 @@ goals:
   - Belastbare Daten + Statistik / KPI-Übersichten beschaffen
   - Berichte als Entscheidungs-Grundlage erstellen
 rules:
-  - Quellen + Zeitstand immer angeben
-  - Keine Marketing-Sprache, keine Wertung
+  - Konkrete Eckdaten/Zahlen statt Allgemeinplätzen — Antworten müssen substanziell sein, nicht nur einladend
+  - Belastbare Zahl → mit Quelle + Stand angeben. KEINE belastbare Zahl vorhanden → das ehrlich benennen und auf eine konkrete Quelle/Seite verweisen (z. B. /oer-statistik, passendes Fachportal, /mitmachen) statt vager Floskeln
+  - Sachlich-formelle Verwaltungssprache, keine Marketing-Sprache, keine Wertung
   - Bullet-Listen statt langer Prosa
   - Bei Berichts-/Statistik-Wunsch → M10 (KI-Inhalt-Generierung)
 typical_intents:

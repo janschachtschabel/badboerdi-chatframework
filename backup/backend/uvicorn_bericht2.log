@@ -1,0 +1,66 @@
+INFO:     Started server process [24204]
+INFO:     Waiting for application startup.
+21:19:56 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+21:19:56 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+21:19:56 INFO startup: Config warmup done in 205ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+21:20:00 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+21:20:00 INFO startup: LLM warmup done in 3895ms
+INFO:     127.0.0.1:53604 - "GET /api/health HTTP/1.1" 200 OK
+21:21:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+21:21:08 INFO app.services.safety_service: safety stages=openai level=standard took 1355ms
+21:21:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:21:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+21:21:15 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+21:21:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+21:21:17 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+21:21:17 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 14063 chars
+21:21:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:21:23 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'OER Statistik Deutschland', 'maxResults': 4}
+21:21:25 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+21:21:25 INFO app.services.mcp_client: MCP server: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+21:21:25 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+21:21:25 INFO app.services.mcp_client: MCP handshake complete
+21:21:26 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+21:21:32 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 2977 chars
+21:21:32 INFO app.services.mcp_client: MCP tool get_wirlernenonline_info args: {'query': 'OER-Lage in Deutschland, aktuelle Zahlen, Entwicklung, wer zählt OER und wie ist die Lage 2025?'}
+21:21:33 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+21:21:34 INFO app.services.mcp_client: MCP tool get_wirlernenonline_info returned 8061 chars
+21:21:38 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:21:38 INFO app.routers.chat: Outcome-based state hint: state-11 -> state-6
+21:21:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:51415 - "POST /api/chat HTTP/1.1" 200 OK
+21:21:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+21:21:44 INFO app.services.safety_service: safety stages=openai level=standard took 1129ms
+21:21:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:21:46 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=WirLernenOnline&limit=3 "HTTP/1.1 200 OK"
+21:21:56 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:21:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57554 - "POST /api/chat HTTP/1.1" 200 OK
+21:22:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:22:03 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+21:22:03 INFO app.services.safety_service: safety stages=openai level=standard took 4234ms
+21:22:09 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:65309 - "POST /api/chat HTTP/1.1" 200 OK
+21:22:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+21:22:10 INFO app.services.safety_service: safety stages=openai level=standard took 1078ms
+21:22:10 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:22:10 INFO app.routers.chat: Intent override: INT-W-08 -> INT-W-11 (create verb + material_typ=vergleich, prior_state=state-1)
+21:22:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58045 - "POST /api/chat HTTP/1.1" 200 OK
+21:22:13 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+21:22:13 INFO app.services.safety_service: safety stages=openai level=standard took 521ms
+21:22:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:22:17 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=JOINTLY-Projekt&limit=3 "HTTP/1.1 200 OK"
+21:22:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:22:25 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:59372 - "POST /api/chat HTTP/1.1" 200 OK
+21:22:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:22:27 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+21:22:27 INFO app.services.safety_service: safety stages=openai level=standard took 1549ms
+21:22:28 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Photosynthese&limit=3 "HTTP/1.1 200 OK"
+21:22:28 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Photosynthese "HTTP/1.1 200 OK"
+21:22:33 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+21:22:36 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56476 - "POST /api/chat HTTP/1.1" 200 OK

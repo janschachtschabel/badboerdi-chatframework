@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -153,7 +154,29 @@ async def convert_to_markdown(file_path: str) -> str:
 
 
 async def convert_url_to_markdown(url: str) -> str:
-    """Fetch a URL and convert to markdown using markitdown."""
+    """Fetch a URL and convert to markdown using markitdown.
+
+    SSRF-Schutz: blockt nicht-http(s)-Schemata und private/interne Netz-
+    bereiche (Loopback, link-local inkl. Cloud-Metadaten 169.254.169.254,
+    private Ranges), damit eine eingereichte URL nicht das interne Netz
+    abfragen kann.
+    """
+    from urllib.parse import urlparse
+    import ipaddress
+    import socket
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme not in ("http", "https") or not hostname:
+        return "Fehler: Nur http(s)-URLs mit gültigem Host erlaubt."
+    if hostname in ("localhost", "0.0.0.0", "::1") or hostname.endswith(".local"):
+        return "Fehler: Interne URLs sind nicht erlaubt."
+    try:
+        for *_, addr in socket.getaddrinfo(hostname, None):
+            ip = ipaddress.ip_address(addr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return "Fehler: URLs aus internen/privaten Netzbereichen sind nicht erlaubt."
+    except (socket.gaierror, ValueError):
+        return f"Fehler: Hostname nicht auflösbar: {hostname}"
     try:
         from markitdown import MarkItDown
         mid = MarkItDown()
@@ -231,6 +254,75 @@ _reranker: Any = None
 _reranker_loaded = False
 
 
+# ── Reranker-CPU-Budget (2026-06-15, Lasttest lt-e91ef209c1d6) ─────
+# Der ONNX-Cross-Encoder lief mit ORT-Default ``intra_op`` = physische
+# Kerne — d.h. EIN Rerank fächerte über ALLE Kerne. Bei vielen
+# gleichzeitigen Such-Turns (Lasttest @32) führte das zu Thread-
+# Oversubscription: CPU-Peak ~13/16 Kernen, Durchsatz-Kollaps, Tail
+# explodierte (MAX 85 s). Zwei Stellschrauben dagegen:
+#   * RERANK_INTRA_OP_THREADS (Default 1): Kerne PRO Inferenz. 1 = jede
+#     Inferenz nutzt 1 Kern; Parallelität entsteht über mehrere
+#     gleichzeitige Requests, nicht über interne Op-Parallelität.
+#   * RERANK_MAX_CONCURRENCY (Default = physische Kerne): max. gleich-
+#     zeitige Rerank-Inferenzen über einen dedizierten Threadpool —
+#     deckelt den CPU-Peak deterministisch, egal über wie viele Turns
+#     die Reranks kommen. Überzählige warten im Pool (etwas Latenz)
+#     statt die CPU zu überbuchen.
+def _rerank_intra_op_threads() -> int:
+    try:
+        return max(1, int(os.getenv("RERANK_INTRA_OP_THREADS") or 1))
+    except ValueError:
+        return 1
+
+
+def _rerank_max_concurrency() -> int:
+    raw = (os.getenv("RERANK_MAX_CONCURRENCY") or "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    # Default: physische Kerne (sonst halbe logische), Fallback 4.
+    try:
+        import psutil
+        n = psutil.cpu_count(logical=False)
+    except Exception:
+        n = None
+    if not n:
+        n = (os.cpu_count() or 8) // 2 or 4
+    return max(1, n)
+
+
+_rerank_executor: Any = None
+
+
+def _get_rerank_executor():
+    """Gedeckelter Threadpool NUR für Reranker-Inferenzen. Geteilt von
+    RAG-Rerank und Card-CE-Gate, damit die Summe gleichzeitiger ONNX-
+    Inferenzen auf ``max_workers`` begrenzt bleibt."""
+    global _rerank_executor
+    if _rerank_executor is None:
+        from concurrent.futures import ThreadPoolExecutor
+        import logging as _lg
+        n = _rerank_max_concurrency()
+        _rerank_executor = ThreadPoolExecutor(
+            max_workers=n, thread_name_prefix="rerank"
+        )
+        _lg.getLogger(__name__).info(
+            "Rerank-Threadpool: max_workers=%d, intra_op_threads=%d",
+            n, _rerank_intra_op_threads(),
+        )
+    return _rerank_executor
+
+
+async def run_in_rerank_pool(fn, *args):
+    """Eine (synchrone) Rerank-Funktion im gedeckelten Rerank-Pool
+    ausführen. ``fn`` mit Keyword-Args bitte als ``functools.partial``
+    übergeben (Executor reicht nur positionale Args durch)."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_get_rerank_executor(), fn, *args)
+
+
 class _OnnxReranker:
     """Minimal onnxruntime-based cross-encoder. No torch dependency."""
 
@@ -254,6 +346,15 @@ class _OnnxReranker:
         # for CPU perf. Threads left at ORT's default (physical cores).
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        # Threads PRO Inferenz begrenzen (2026-06-15): ORT-Default =
+        # physische Kerne → EIN Rerank greift alle Kerne, was unter
+        # paralleler Last zu Oversubscription führt. Mit intra_op=1
+        # nutzt jede Inferenz 1 Kern; die Parallelität kommt über den
+        # gedeckelten Rerank-Threadpool (mehrere Requests gleichzeitig).
+        _n_intra = _rerank_intra_op_threads()
+        sess_options.intra_op_num_threads = _n_intra
+        sess_options.inter_op_num_threads = 1
+        sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         self.session = ort.InferenceSession(
             str(onnx_file),
             sess_options=sess_options,
@@ -525,8 +626,15 @@ async def get_rag_context(query: str, areas: list[str] | None = None, top_k: int
 
     # Cross-encoder rerank is always on (ONNX int8). If the model file
     # is missing, rerank_results transparently falls back to score-sort.
+    # A5 (2026-06-10): der ONNX-Predict ist CPU-bound (~600 ms) und lief
+    # synchron im Event-Loop — währenddessen standen ALLE parallelen
+    # Requests. In den Default-ThreadPool auslagern (onnxruntime gibt das
+    # GIL während der Inferenz frei, echte Parallelität).
     candidates = plausible[:max(_RERANK_CANDIDATES, top_k)]
-    top = rerank_results(query, candidates, top_k)
+    # Gedeckelter Rerank-Pool statt Default-Executor (2026-06-15): so
+    # konkurrieren RAG-Rerank und Card-CE-Gate um dieselben max_workers
+    # und überbuchen die CPU nicht.
+    top = await run_in_rerank_pool(rerank_results, query, candidates, top_k)
 
     if not top:
         return ""

@@ -47,8 +47,12 @@ class PatternDef(BaseModel):
     label: str
     priority: int = 400
     # Slot-Vorbedingung (für Degradation-Flag in phase3_modulate, NICHT
-    # für Pattern-Selektion). M09 braucht ``topic``, M10 braucht
-    # ``material_type`` + ``topic``.
+    # für Pattern-Selektion). Gültige Namen = Entity-IDs aus
+    # 04-entities/entities.yaml (z.B. ``thema``, ``fach``, ``stufe``) —
+    # andere Namen laufen ins Leere, weil gegen classification.entities
+    # geprüft wird. M09/M10 deklarieren ``thema``. Fehlt ein Slot, wird
+    # die Suche geblockt, Tools gesperrt und die Rückfrage instruiert
+    # (generisch für beliebige Slots, 2026-06-10).
     precondition_slots: list[str] = Field(default_factory=list)
     # Phase 3 defaults
     default_tone: str = "sachlich"
@@ -71,6 +75,18 @@ class PatternDef(BaseModel):
     # Welle B.5: When True, the post-LLM cards-list is filtered to only
     # contain cards whose URL/node_id/title appears in the response text.
     card_text_link_required: bool = False
+    # QR-Policy (2026-06-10) — Studio-steuerbar pro Pattern:
+    #   exact       = QR-LLM-Call NACH der Antwort (heutiges Verhalten)
+    #   speculative = QR-LLM-Call PARALLEL zum Antwort-LLM (kennt Pattern,
+    #                 Entities + Prefetch-Treffer statt des Antworttexts;
+    #                 deterministisches Konsistenz-Gate mit exact-Fallback)
+    #   none        = kein generierter QR-Vorschlag + kein Auto-Followup
+    #                 (deterministische System-QRs wie Slot-Optionen,
+    #                 Tour-Navigation und Lotsen-Buttons bleiben aktiv)
+    quick_replies_mode: str = "exact"
+    # Anzahl-Override pro Pattern (1–6); None = globaler Wert aus
+    # display-rules.quick_replies.max_count.
+    quick_replies_max: int | None = None
     core_rule: str = ""
     forbidden_phrases: list[str] = Field(default_factory=list)
     anti_patterns: list[str] = Field(default_factory=list)
@@ -239,6 +255,8 @@ def phase3_modulate(
         "force_tool_use": pattern.force_tool_use,
         "requires_all_tools": pattern.requires_all_tools,
         "card_text_link_required": pattern.card_text_link_required,
+        "quick_replies_mode": pattern.quick_replies_mode,
+        "quick_replies_max": pattern.quick_replies_max,
         "core_rule": pattern.core_rule,
         "short_purpose": pattern.short_purpose,
         "body_md": pattern.body_md,

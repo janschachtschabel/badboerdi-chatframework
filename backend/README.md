@@ -85,6 +85,12 @@ reiner Embedding-Suche; er ist daher immer an.
 | `EVAL_JUDGE_MODEL` | `gpt-4o-mini` | Modell für den LLM-as-Judge-Scorer. |
 | `REPO_BASE_URL` | _Code-Default_ | edu-sharing-Repo-Basis für `wlo_url`/`preview_url`. MUSS zum Repo der `MCP_SERVER_URL` passen. Staging: `https://repository.staging.openeduhub.net`. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR`. |
+| `TRUST_FORWARDED_FOR` | _aus_ | `1` = per-IP-Rate-Limit liest `X-Forwarded-For`. NUR hinter eigenem Reverse-Proxy setzen (sonst spoofbar); ohne das Flag zählt hinter einem Proxy alles als eine IP. |
+| `LLM_MAX_CONCURRENCY` | `20` | Bulkhead: max. gleichzeitige B-API-/OpenAI-Requests (geteilter Pool Chat+Moderation+Embedding). Glättet p95 unter Burst statt 429-Lawinen. **Provider-/modellabhängig** (B-API-Staging/-Prod/native OpenAI haben je eigene Limits) — vor Prod/Lasttest anpassen: zu hoch → 429/504 beim Provider, zu niedrig → Queue-Latenz. Sicheren Wert via `scripts/probe_b_api_ratelimit.py`; für Lasttests ≥ Test-Concurrency setzen. |
+| `LLM_READ_TIMEOUT` | `75` | Sekunden pro LLM-Call, bevor der Client abbricht und der SDK-Retry neu ansetzt. Reagiert auf hängende Backend-Knoten schneller als das Staging-Gateway (504 erst nach ~120 s). |
+| `MCP_MAX_CONNECTIONS` | `50` | HTTP-Pool zum WLO-MCP-Suchdienst. |
+| `RERANK_INTRA_OP_THREADS` | `1` | Kerne pro ONNX-Reranker-Inferenz. `1` verhindert, dass ein einzelner Rerank alle Kerne greift (Oversubscription unter Last); Parallelität kommt über mehrere Requests. |
+| `RERANK_MAX_CONCURRENCY` | _phys. Kerne_ | Max. gleichzeitige Rerank-Inferenzen (dedizierter Threadpool, geteilt von RAG-Rerank + Card-CE-Gate). Deckelt den CPU-Peak deterministisch. |
 | `RAG_RERANKER_ENABLED` | `true` | Cross-Encoder-Reranker an/aus. Auf ≤ 2-GB-vServern `false` (Embedding-only). Siehe „Memory-Sizing“ in docs/04. |
 | `EMBED_DIM` | _Modell-Default_ | Embedding-Dimension. Nur für exotische Embed-Modelle; Änderung erfordert Re-Embedding. |
 | `SPEECH_FORCE_ENABLE` | _aus_ | `1` erzwingt Speech-Features trotz Auto-Deaktivierung (Debug). |

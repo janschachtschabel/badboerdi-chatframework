@@ -59,7 +59,16 @@ confidence_adjustments:
   timeout: -0.15
   success: 0.05
 
-# Rate-Limits (0 = unlimited)
+# Rate-Limits (0 = unlimited) — wirken auf die ECHTE Verbindungs-IP (server-
+# seitig), nicht auf client-gelieferte Werte.
+# • per_session = feines Limit je Browser-Session (jeder Schüler-Browser hat
+#   eine eigene Session) → bremst Einzel-Spam.
+# • per_ip = GROBE Missbrauchs-Obergrenze. BEWUSST großzügig, weil in Schulen
+#   viele Rechner hinter EINER Router-/NAT-IP sitzen (ganze Computerräume) —
+#   soll nur Runaway-Bots stoppen, nicht eine Klasse drosseln.
+# • ip_whitelist = bekannte Schul-/Partner-IPs ganz vom IP-Limit ausnehmen.
+# Hinweis: Hinter einem Reverse-Proxy TRUST_FORWARDED_FOR=1 setzen, damit die
+#   echte Client-IP aus X-Forwarded-For (1. Hop) gelesen wird.
 rate_limits:
   enabled: true
   per_session:
@@ -68,9 +77,9 @@ rate_limits:
     requests_per_hour: 600
   per_ip:
     enabled: true
-    requests_per_minute: 300
-    requests_per_hour: 3000
-  ip_whitelist: []
+    requests_per_minute: 1200   # NAT-tauglich: voller Computerraum
+    requests_per_hour: 30000
+  ip_whitelist: []   # z.B. ["1.2.3.4"] für bekannte Schulnetze
   blocked_message: |
     Du hast aktuell zu viele Anfragen gestellt. Bitte warte einen Moment
     und versuche es gleich nochmal.

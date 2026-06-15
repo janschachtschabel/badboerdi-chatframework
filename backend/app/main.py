@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from app.services.auth import require_studio_key  # noqa: E402
 from app.services.database import init_db  # noqa: E402
-from app.routers import chat, config, rag, speech, sessions, safety, quality, widget, eval as eval_router  # noqa: E402
+from app.routers import chat, config, rag, speech, sessions, safety, quality, widget, eval as eval_router, loadtest as loadtest_router  # noqa: E402
 
 # Configure root logging so INFO-level messages (warmup, safety timings,
 # quality logs) are actually emitted. Override with LOG_LEVEL env var.
@@ -39,11 +39,20 @@ async def lifespan(app: FastAPI):
 
     log = logging.getLogger("startup")
 
-    # Warn if Studio API key is not configured (all admin endpoints unprotected)
-    if not (os.getenv("STUDIO_API_KEY") or "").strip():
+    # Warn if Studio API key is missing OR still the .env-example placeholder
+    # (all admin/config/eval endpoints are unprotected in that case).
+    _studio_key = (os.getenv("STUDIO_API_KEY") or "").strip()
+    if not _studio_key or _studio_key.upper().startswith("CHANGE_ME"):
         log.warning(
-            "⚠ STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. "
-            "Set STUDIO_API_KEY in your environment for production deployments."
+            "⚠ STUDIO_API_KEY ist nicht gesetzt (oder noch der Platzhalter) — alle "
+            "Studio-/Admin-/Eval-Endpunkte sind UNGESCHÜTZT. Für Staging/Produktion "
+            "einen langen Zufallswert in STUDIO_API_KEY setzen."
+        )
+    # CORS wide open? OK für das einbettbare Widget, aber für Prod flaggen.
+    if "*" in (os.getenv("CORS_ORIGINS", "*")):
+        log.warning(
+            "⚠ CORS_ORIGINS='*' (offen für alle Ursprünge). Für Produktion eine "
+            "Allow-Liste der einbettenden Domains in CORS_ORIGINS setzen."
         )
 
     await init_db()
@@ -200,6 +209,9 @@ app.include_router(quality.router, prefix="/api/quality", tags=["quality"], depe
 # classify-overrides.yaml + Pattern-Hint-Primary-Architektur.
 # Eval router brings its own /api/eval prefix and per-endpoint Studio guards
 app.include_router(eval_router.router)
+# Lasttest (2026-06-10) — Studio-Selbsttest für Skalierbarkeit; eigener
+# /api/loadtest-Prefix, alle Endpoints Studio-geschützt.
+app.include_router(loadtest_router.router)
 
 
 # ── Static assets ────────────────────────────────────────────────

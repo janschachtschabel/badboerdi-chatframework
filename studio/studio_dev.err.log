@@ -18,3 +18,26 @@
   digest: '89072853'
 }
  ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./src/app/page.tsx:14:1
+Module not found: Can't resolve '@/components/GoldFlowView'
+  12 | import QualityView from '@/components/QualityView';
+  13 | import EvaluationView from '@/components/EvaluationView';
+> 14 | import GoldFlowView from '@/components/GoldFlowView';
+     | ^
+  15 | import InfoView from '@/components/InfoView';
+  16 | import PrivacyView from '@/components/PrivacyView';
+  17 | import CanvasFormatsEditor from '@/components/CanvasFormatsEditor';
+
+https://nextjs.org/docs/messages/module-not-found
+ ⨯ ./src/app/page.tsx:14:1
+Module not found: Can't resolve '@/components/GoldFlowView'
+  12 | import QualityView from '@/components/QualityView';
+  13 | import EvaluationView from '@/components/EvaluationView';
+> 14 | import GoldFlowView from '@/components/GoldFlowView';
+     | ^
+  15 | import InfoView from '@/components/InfoView';
+  16 | import PrivacyView from '@/components/PrivacyView';
+  17 | import CanvasFormatsEditor from '@/components/CanvasFormatsEditor';
+
+https://nextjs.org/docs/messages/module-not-found
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.

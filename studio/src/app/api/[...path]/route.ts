@@ -51,15 +51,22 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     // @ts-expect-error duplex is required by undici when streaming a body
     duplex: 'half',
     redirect: 'manual',
+    // B10 (2026-06-10): Timeout — hängt das Backend (lange LLM-Calls,
+    // Eval-Starts), blieb der Studio-Request sonst unbegrenzt offen.
+    // 120 s deckt auch träge Endpunkte (Backup/Restore, Golden-Start).
+    signal: AbortSignal.timeout(120_000),
   };
 
   let upstream: Response;
   try {
     upstream = await fetch(target, init);
   } catch (err) {
+    // B10: keine internen Details (Backend-URL, Roh-Fehlertext) an den
+    // Browser leaken; Timeout separat als 504 ausweisen.
+    const isTimeout = err instanceof Error && err.name === 'TimeoutError';
     return NextResponse.json(
-      { error: 'Backend unreachable', detail: String(err), backend: BACKEND_URL },
-      { status: 502 },
+      { error: isTimeout ? 'Backend timeout' : 'Backend unreachable' },
+      { status: isTimeout ? 504 : 502 },
     );
   }
 
@@ -68,6 +75,21 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   upstream.headers.forEach((value, key) => {
     const k = key.toLowerCase();
     if (['transfer-encoding', 'connection', 'content-encoding'].includes(k)) return;
+    // B10: Backend-Redirects zeigen auf den INTERNEN Host
+    // (http://localhost:8000/...) — der Browser würde dem Location-Header
+    // am Proxy vorbei folgen (ohne Key/Cookie). Auf den Studio-Origin
+    // umschreiben; fremde Ziele strippen.
+    if (k === 'location') {
+      try {
+        const loc = new URL(value, BACKEND_URL);
+        const backend = new URL(BACKEND_URL);
+        if (loc.host === backend.host) {
+          respHeaders.set(key, loc.pathname + loc.search);
+        }
+        // anderes Ziel → Header weglassen (kein Offsite-Redirect via Proxy)
+      } catch { /* unparsebar → weglassen */ }
+      return;
+    }
     respHeaders.set(key, value);
   });
 

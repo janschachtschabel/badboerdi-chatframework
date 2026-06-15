@@ -35,6 +35,7 @@ interface DisplayRulesShape {
     themenseiten_max: number;
     sammlungen_max: number;
     materialien_max: number;
+    materialien_max_lernpfad: number;
     webseiten_max: number;
   };
   inline_card_links: {
@@ -62,6 +63,7 @@ const DEFAULTS: DisplayRulesShape = {
     themenseiten_max: 3,
     sammlungen_max: 3,
     materialien_max: 3,
+    materialien_max_lernpfad: 5,
     webseiten_max: 3,
   },
   inline_card_links: { limit: 3, title_max_chars: 70 },
@@ -98,6 +100,7 @@ ${perPat}
     themenseiten_max: ${rules.groups.themenseiten_max}
     sammlungen_max: ${rules.groups.sammlungen_max}
     materialien_max: ${rules.groups.materialien_max}
+    materialien_max_lernpfad: ${rules.groups.materialien_max_lernpfad}
     webseiten_max: ${rules.groups.webseiten_max}
 
   inline_card_links:
@@ -308,6 +311,12 @@ export default function DisplayRulesView({ loadFile, saveFile }: Props) {
               onChange={(v) => updateRule('groups', 'materialien_max', v)}
             />
             <NumberInput
+              label="🛤️  Materialien bei Lernpfaden (M09)"
+              hint="Lernpfade verlinken ihre Materialien im Pfad-Text — die Box darunter darf bis zu diesem Wert zeigen, damit alle verwendeten Inhalte abgedeckt sind."
+              value={rules.groups.materialien_max_lernpfad} min={1} max={8}
+              onChange={(v) => updateRule('groups', 'materialien_max_lernpfad', v)}
+            />
+            <NumberInput
               label="🌐  Webseiten-Inhalte"
               hint="RAG-Quellen — Unterseiten der WLO-Webseite, FAQ-Artikel, externe Referenzen aus den Wissensbereichen."
               value={rules.groups.webseiten_max} min={1} max={30}
@@ -360,7 +369,7 @@ export default function DisplayRulesView({ loadFile, saveFile }: Props) {
 
           <Section
             title="💬 Quick-Replies"
-            desc="Gesprächs-Vorschlags-Pillen unter der Bot-Antwort. Bei max_count: 0 sind alle Pillen ausgeblendet."
+            desc="Gesprächs-Vorschlags-Pillen unter der Bot-Antwort. Bei max_count: 0 sind alle Pillen ausgeblendet. Pro Pattern überschreibbar (Patterns → Antwort-Form: Modus Genau/Spekulativ/Keine + Anzahl)."
           >
             <NumberInput label="Max. Anzahl Pillen" value={rules.quick_replies.max_count} min={0} max={6} onChange={(v) => updateRule('quick_replies', 'max_count', v)} />
             <Toggle

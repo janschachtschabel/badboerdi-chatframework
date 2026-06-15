@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BOERDi — Chatbot</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #f5f7fb 0%, #e8ecf5 100%);
+      color: #1f2937;
+    }
+    .wrap {
+      max-width: 820px; margin: 0 auto; padding: 60px 24px 120px;
+    }
+    h1 {
+      color: #1c4587; font-size: 32px; margin: 0 0 8px;
+    }
+    .subtitle { color: #6b7280; font-size: 16px; margin: 0 0 32px; }
+    .card {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+      padding: 28px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      margin-bottom: 20px;
+    }
+    .card h2 { margin-top: 0; color: #1c4587; font-size: 20px; }
+    code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .hint { color: #6b7280; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🦉 BOERDi</h1>
+    <p class="subtitle">Dein KI-Assistent für WirLernenOnline</p>
+
+    <div class="card">
+      <h2>Willkommen</h2>
+      <p>Klicke unten rechts auf die Eule, um den Chatbot zu öffnen. Frag nach
+         Lernmaterialien, Themen oder Unterrichtsideen — BOERDi durchsucht für
+         dich die offenen Bildungsinhalte von WirLernenOnline.</p>
+      <p class="hint">Diese Seite ist eine eigenständige Chatbot-Host-Seite und
+         kommuniziert mit dem Backend unter <code>__BACKEND_URL__</code>.</p>
+    </div>
+  </div>
+
+  <script src="__BACKEND_URL__/widget/boerdi-widget.js" defer></script>
+  <boerdi-chat
+    api-url="__BACKEND_URL__"
+    position="bottom-right"
+    primary-color="#1c4587"
+    initial-state="collapsed">
+  </boerdi-chat>
+</body>
+</html>

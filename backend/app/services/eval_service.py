@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -1471,6 +1472,17 @@ def _aggregate_classification_metrics(
             engine_pattern = _strip_id(dbg.get("pattern", ""))
             llm_hint = (dbg.get("pattern_id_hint") or "").strip()
 
+            # Golden-Flow: per-turn Soll überschreibt conv-Level (Multi-Intent-
+            # Flows haben je Turn ein eigenes Soll-Intent). Generative Runs
+            # haben keine turn-level Keys → Fallback auf conv-Level. "*" = kein
+            # Soll (z. B. Bot-Feedback-Flow ohne feste Persona).
+            exp_p = _strip_id(turn.get("expected_persona") or "") or expected_persona
+            exp_i = _strip_id(turn.get("expected_intent") or "") or expected_intent
+            if exp_p == "*":
+                exp_p = ""
+            if exp_i == "*":
+                exp_i = ""
+
             # Welle C Sprint 6 — Conversation-Flow-Tracking pro Turn.
             # state_id und prev_state_id wurden vom Simulator gesetzt
             # (simulate_conversation, ~line 580). transition_plausible ist
@@ -1492,40 +1504,40 @@ def _aggregate_classification_metrics(
                         transitions_plausible += 1
 
             # Persona-Confusion + Genauigkeit
-            if expected_persona and actual_persona:
+            if exp_p and actual_persona:
                 persona_total += 1
-                if expected_persona == actual_persona:
+                if exp_p == actual_persona:
                     persona_correct += 1
-                row = persona_confusion.setdefault(expected_persona, {})
+                row = persona_confusion.setdefault(exp_p, {})
                 row[actual_persona] = row.get(actual_persona, 0) + 1
                 # Fair-Score: prüfe ob die Eröffnung überhaupt einen
                 # Persona-Marker enthält. Wenn nicht (z.B. "Was ist OER?"
                 # mit Soll=P-LEH), ist die einzig korrekte Antwort des
                 # Klassifikators P-AND.
                 user_msg = (turn.get("user") or "").strip()
-                if expected_persona == "P-AND":
+                if exp_p == "P-AND":
                     # P-AND erwartet, dass KEINE anderen Marker im Text sind.
                     # _has_persona_marker liefert True wenn das stimmt.
                     if _has_persona_marker(user_msg, "P-AND"):
                         persona_achievable_total += 1
-                        if expected_persona == actual_persona:
+                        if exp_p == actual_persona:
                             persona_achievable_correct += 1
                 else:
                     # Non-P-AND: nur achievable wenn der Text einen Marker
                     # der erwarteten Persona enthält.
-                    if _has_persona_marker(user_msg, expected_persona):
+                    if _has_persona_marker(user_msg, exp_p):
                         persona_achievable_total += 1
-                        if expected_persona == actual_persona:
+                        if exp_p == actual_persona:
                             persona_achievable_correct += 1
                     else:
                         persona_neutral_total += 1
 
             # Intent-Confusion + Genauigkeit
-            if expected_intent and actual_intent:
+            if exp_i and actual_intent:
                 intent_total += 1
-                if expected_intent == actual_intent:
+                if exp_i == actual_intent:
                     intent_correct += 1
-                row = intent_confusion.setdefault(expected_intent, {})
+                row = intent_confusion.setdefault(exp_i, {})
                 row[actual_intent] = row.get(actual_intent, 0) + 1
 
             # LLM-Hint vs Engine-Pattern
@@ -1817,6 +1829,15 @@ def _compute_target_turns(
     return scen_turns + conv_turns
 
 
+# B4 (2026-06-10): conversations_json wuchs bei jedem Progress-Tick neu in
+# die Row (O(n²)-Schreibvolumen, leicht dreistellige MB pro 288-Turn-Run).
+# Jetzt: Status-Felder bei jedem Tick, die kompletten Transkripte nur jeden
+# N-ten Tick — ein Crash verliert maximal die letzten N-1 Dialoge, der
+# finale Write in execute_run/execute_golden_run schreibt immer alles.
+_PERSIST_COUNTER: dict[str, int] = {}
+_PERSIST_CONV_EVERY = 5
+
+
 async def _persist_progress(
     run_id: str, conversations: list[dict], target_turns: int,
     current_activity: str,
@@ -1826,13 +1847,16 @@ async def _persist_progress(
     summary = _aggregate(conversations)
     summary["target_turns"] = target_turns
     summary["current_activity"] = current_activity
-    await _update_run(
-        run_id,
+    n = _PERSIST_COUNTER.get(run_id, 0) + 1
+    _PERSIST_COUNTER[run_id] = n
+    kwargs: dict[str, Any] = dict(
         total_turns=summary["total_judged_turns"],
         avg_score=summary["avg_score"],
         summary_json=json.dumps(summary, ensure_ascii=False),
-        conversations_json=json.dumps(conversations, ensure_ascii=False),
     )
+    if n % _PERSIST_CONV_EVERY == 0:
+        kwargs["conversations_json"] = json.dumps(conversations, ensure_ascii=False)
+    await _update_run(run_id, **kwargs)
 
 
 async def execute_run(
@@ -2178,6 +2202,424 @@ async def execute_run(
             summary_json=json.dumps(summary, ensure_ascii=False),
             conversations_json=json.dumps(conversations, ensure_ascii=False),
             total_turns=summary.get("total_judged_turns", 0),
+        )
+
+
+# ════════════════════════════════════════════════════════════════════
+# Golden-Flow Eval (2026-06-03) — deterministische, geprüfte Multi-Turn-
+# Abläufe für die 2 wichtigsten Intents je Persona.
+#
+# Anders als die generative Eval (LLM-Simulator + LLM-Judge, stochastisch)
+# sind die Eingaben hier FEST (eval/gold-flows.yaml) und pro Turn mit Soll-
+# Werten versehen. Die harten Metriken (persona/intent/register/structure/
+# qr/host) werden PROGRAMMATISCH geprüft → deterministisch, reproduzierbar,
+# A/B-vergleichbar. Der LLM-Judge läuft optional als weiche Qualitäts-Ebene
+# (intent_fit/persona_tone/info_quality — „richtige Angebote/Tonalität").
+#
+# Läufe landen in derselben ``eval_runs``-Tabelle (mode='golden') und
+# tauchen in der bestehenden Studio-Liste/Detail-Ansicht auf. Die
+# deterministische Scorecard liegt in ``summary.golden_metrics``.
+# ════════════════════════════════════════════════════════════════════
+
+_SIE_RE = re.compile(r"\b(?:Sie|Ihnen|Ihr|Ihre[nmrs]?|Ihrem)\b")
+_DU_RE = re.compile(r"\b(?:[Dd]u|[Dd]ich|[Dd]ir|[Dd]eine?[nmrs]?|[Dd]ein)\b")
+
+
+def _detect_register(text: str) -> tuple[str, int, int]:
+    """Sie/du-Heuristik: zähle formale (Sie/Ihnen/Ihr…) vs informelle
+    (du/dich/dir/dein…) Marker. Label = sie | du | neutral."""
+    s = len(_SIE_RE.findall(text or ""))
+    d = len(_DU_RE.findall(text or ""))
+    label = "sie" if s > d else ("du" if d > s else "neutral")
+    return label, s, d
+
+
+def _repo_host() -> str:
+    # C (2026-06-10): denselben Resolver wie der Karten-Link-Bau nutzen —
+    # vorher wich der Eval-Default (staging) vom config_loader-Default
+    # (production) ab → der host-Check lief bei unsetztem REPO_BASE_URL
+    # systematisch gegen den falschen Host.
+    from app.services.config_loader import get_repo_base_url
+    base = get_repo_base_url()
+    try:
+        from urllib.parse import urlparse
+        return urlparse(base).netloc or base
+    except Exception:
+        return base
+
+
+def _flatten_debug(debug: dict[str, Any]) -> dict[str, Any]:
+    """Same flat debug shape as the scenario stage (for judge + metrics)."""
+    return {
+        "pattern": debug.get("pattern"),
+        "persona": debug.get("persona"),
+        "intent": debug.get("intent"),
+        "safety": debug.get("safety"),
+        "tools_called": debug.get("tools_called", []),
+        "pattern_id_hint": debug.get("pattern_id_hint"),
+        "pattern_reasoning": debug.get("pattern_reasoning"),
+        "llm_engine_match": debug.get("llm_engine_match"),
+        "token_usage": debug.get("token_usage"),
+        "phase3_modulations": debug.get("phase3_modulations"),
+    }
+
+
+def _augment_bot_text_for_judge(bot_resp: dict[str, Any]) -> str:
+    """Append inline-document / card / query-meta content to the bot text so
+    the judge (and the human reader) sees what the user actually got. Mirrors
+    the scenario-stage merge in execute_run()."""
+    bot_text = bot_resp.get("content", "") or ""
+    _idocs = bot_resp.get("inline_documents") or []
+    if _idocs:
+        _md_parts: list[str] = []
+        for _doc in _idocs:
+            if not isinstance(_doc, dict):
+                continue
+            _content = (_doc.get("content") or "").strip()
+            if _content:
+                _title = (_doc.get("title") or _doc.get("kind") or "").strip()
+                _md_parts.append(
+                    "---\n[Inline-Document — vom Nutzer sichtbar"
+                    + (f": {_title}" if _title else "") + "]\n\n" + _content
+                )
+        if _md_parts:
+            bot_text = (bot_text or "").rstrip() + "\n\n" + "\n\n".join(_md_parts)
+    _cards = bot_resp.get("cards") or []
+    if _cards:
+        _card_lines: list[str] = []
+        for _card in _cards[:8]:
+            if not isinstance(_card, dict):
+                continue
+            _ct = (_card.get("title") or "").strip()
+            _cu = (_card.get("url") or _card.get("wlo_url") or "").strip()
+            _cd = (_card.get("description") or _card.get("abstract") or "").strip()[:200]
+            if _ct or _cu:
+                _line = f"  - **{_ct or '(ohne Titel)'}**"
+                if _cu:
+                    _line += f" — {_cu}"
+                if _cd:
+                    _line += f"\n    {_cd}"
+                _card_lines.append(_line)
+        if _card_lines:
+            bot_text = (
+                (bot_text or "").rstrip()
+                + f"\n\n---\n[Material-Cards — vom Nutzer sichtbar, {len(_cards)} Treffer]\n"
+                + "\n".join(_card_lines)
+            )
+    _qmetas = bot_resp.get("query_metas") or []
+    if _qmetas:
+        _qm_lines: list[str] = []
+        for _qm in _qmetas[:5]:
+            if not isinstance(_qm, dict):
+                continue
+            _qt = (_qm.get("title") or _qm.get("type") or "").strip()
+            _qu = (_qm.get("url") or "").strip()
+            if _qt or _qu:
+                _qm_lines.append(f"  - {_qt}" + (f" — {_qu}" if _qu else ""))
+        if _qm_lines:
+            bot_text = (
+                (bot_text or "").rstrip()
+                + "\n\n---\n[Query-Metas — vom Nutzer sichtbar]\n"
+                + "\n".join(_qm_lines)
+            )
+    return bot_text
+
+
+def _check_golden_turn(
+    expect: dict[str, Any], bot_resp: dict[str, Any], debug: dict[str, Any],
+) -> dict[str, Any]:
+    """Programmatic, deterministic per-turn checks against the gold-standard
+    expectations. Returns {expected, observed, checks}. A check value of
+    None means "not asserted for this turn" (excluded from rates)."""
+    exp_persona = str(expect.get("persona") or "*").strip()
+    exp_intent = str(expect.get("intent") or "").strip()
+    exp_register = str(expect.get("register") or "any").strip().lower()
+    exp_structure = str(expect.get("structure") or "").strip().lower()
+
+    obs_persona = _strip_id(debug.get("persona", ""))
+    obs_intent = _strip_id(debug.get("intent", ""))
+    obs_pattern = _strip_id(debug.get("pattern", ""))
+    content = bot_resp.get("content") or ""
+    cards = bot_resp.get("cards") or []
+    idocs = bot_resp.get("inline_documents") or []
+    qr = bot_resp.get("quick_replies") or []
+    reg_label, sie_n, du_n = _detect_register(content)
+
+    persona_ok = True if exp_persona == "*" else (obs_persona == exp_persona)
+    intent_ok = True if not exp_intent else (obs_intent == exp_intent)
+    if exp_register == "sie":
+        register_ok: bool | None = reg_label != "du"
+    elif exp_register == "du":
+        register_ok = reg_label != "sie"
+    else:
+        register_ok = None  # "any" → nicht geprüft
+    if exp_structure == "idoc":
+        structure_ok: bool | None = len(idocs) >= 1
+    elif exp_structure == "cards":
+        structure_ok = len(cards) >= 1
+    else:
+        structure_ok = None
+    qr_ok = len(qr) >= 1
+    repo_host = _repo_host()
+    urls = [
+        (c.get("wlo_url") or c.get("url") or "")
+        for c in cards if isinstance(c, dict)
+    ]
+    urls = [u for u in urls if u]
+    host_ok: bool | None = (all(repo_host in u for u in urls) if urls else None)
+
+    return {
+        "expected": {
+            "persona": exp_persona, "intent": exp_intent,
+            "register": exp_register,
+            "structure": exp_structure or None,
+            "must_offer": expect.get("must_offer") or "",
+        },
+        "observed": {
+            "persona": obs_persona, "intent": obs_intent, "pattern": obs_pattern,
+            "register": reg_label, "sie": sie_n, "du": du_n,
+            "cards": len(cards), "idocs": len(idocs), "qr": len(qr),
+            "content_len": len(content),
+        },
+        "checks": {
+            "persona": persona_ok, "intent": intent_ok, "register": register_ok,
+            "structure": structure_ok, "qr": qr_ok, "host": host_ok,
+        },
+    }
+
+
+_GOLDEN_CATS = ["persona", "intent", "register", "structure", "qr", "host"]
+# Harte Bestehens-Kriterien für die Headline-Quote (host = Infra, ausgeklammert).
+_GOLDEN_HARD = ["persona", "intent", "register", "structure", "qr"]
+
+
+def _aggregate_golden(conversations: list[dict]) -> dict[str, Any]:
+    """Deterministische Scorecard über alle Golden-Flow-Turns.
+
+    Liefert Raten pro Kategorie + per_turn (für die Studio-Tabelle/den
+    A/B-Vergleich) + per_flow. ``overall_pass_rate`` ist der Anteil
+    bestandener harter Checks (persona/intent/register/structure/qr)."""
+    tot = {c: 0 for c in _GOLDEN_CATS}
+    ok = {c: 0 for c in _GOLDEN_CATS}
+    per_turn: list[dict[str, Any]] = []
+    per_flow: dict[str, dict[str, Any]] = {}
+
+    for conv in conversations:
+        fid = conv.get("flow_id") or conv.get("persona_id") or "?"
+        title = conv.get("title", "")
+        pf = per_flow.setdefault(
+            fid, {"title": title, "persona": conv.get("persona_id", ""),
+                  **{c: {"ok": 0, "total": 0} for c in _GOLDEN_CATS}},
+        )
+        for ti, turn in enumerate(conv.get("turns", []), start=1):
+            g = turn.get("golden") or {}
+            checks = g.get("checks") or {}
+            per_turn.append({
+                "flow": fid, "title": title, "turn": ti,
+                "message": turn.get("user", ""),
+                "expected": g.get("expected") or {},
+                "observed": g.get("observed") or {},
+                "checks": checks,
+                "judge_total": (turn.get("judge") or {}).get("total"),
+            })
+            for c in _GOLDEN_CATS:
+                v = checks.get(c)
+                if v is None:
+                    continue
+                tot[c] += 1
+                pf[c]["total"] += 1
+                if v:
+                    ok[c] += 1
+                    pf[c]["ok"] += 1
+
+    rates = {
+        c: (round(ok[c] / tot[c], 3) if tot[c] else None) for c in _GOLDEN_CATS
+    }
+    hard_ok = sum(ok[c] for c in _GOLDEN_HARD)
+    hard_tot = sum(tot[c] for c in _GOLDEN_HARD)
+    return {
+        "categories": _GOLDEN_CATS,
+        "totals": tot,
+        "passed": ok,
+        "rates": rates,
+        "overall_pass_rate": round(hard_ok / hard_tot, 3) if hard_tot else 0.0,
+        "hard_passed": hard_ok,
+        "hard_total": hard_tot,
+        "flows": len(conversations),
+        "turns": len(per_turn),
+        "per_turn": per_turn,
+        "per_flow": per_flow,
+    }
+
+
+async def execute_golden_run(
+    run_id: str, flows: list[dict[str, Any]],
+    judge_enabled: bool = True, config_slug: str = "",
+) -> None:
+    """Run the deterministic Gold-Standard flows in the background.
+
+    Each flow runs in its own fresh session (multi-turn context preserved).
+    Per turn: fire at /api/chat → programmatic checks → optional LLM-judge.
+    Writes progress to the eval_runs row incrementally (mode='golden')."""
+    persona_ids = sorted({str(f.get("persona") or "*") for f in flows})
+    intent_ids = sorted({
+        iid for f in flows for iid in (f.get("intents") or []) if iid
+    })
+    await _create_run(
+        run_id, "golden", persona_ids, intent_ids,
+        turns_per_conv=0, config_slug=config_slug,
+    )
+    target_turns = sum(len(f.get("turns") or []) for f in flows)
+    await _update_run(
+        run_id,
+        summary_json=json.dumps({
+            "target_turns": target_turns,
+            "current_activity": "Starte Gold-Flows …",
+            "matrix": {}, "pattern_usage": {},
+            "avg_score": 0.0, "total_judged_turns": 0,
+        }, ensure_ascii=False),
+    )
+
+    persona_defs = {p.get("id"): p for p in load_persona_definitions()}
+    intent_defs = {i.get("id"): i for i in load_intents()}
+    conversations: list[dict] = []
+    t0 = time.perf_counter()
+
+    try:
+        from app.services.mcp_client import clear_tool_cache as _clear_tc
+        _clear_tc()
+    except Exception:
+        pass
+
+    try:
+        for fi, flow in enumerate(flows, start=1):
+            flow_id = str(flow.get("id") or f"flow-{fi}")
+            flow_persona = str(flow.get("persona") or "*")
+            turns_spec = flow.get("turns") or []
+            session_id = f"eval-{uuid.uuid4().hex[:12]}"
+            turn_records: list[dict[str, Any]] = []
+            for ti, tspec in enumerate(turns_spec, start=1):
+                msg = str(tspec.get("message") or "").strip()
+                expect = tspec.get("expect") or {}
+                await _persist_progress(
+                    run_id, conversations, target_turns,
+                    f"Gold-Flow {flow_id} — Turn {ti}/{len(turns_spec)}",
+                )
+                try:
+                    bot_resp = await _post_chat(msg, session_id=session_id)
+                except Exception as e:
+                    logger.warning("[golden %s] turn failed %s/%d: %s",
+                                   run_id, flow_id, ti, e)
+                    turn_records.append({
+                        "user": msg, "bot": f"(chat error: {e})",
+                        "debug": {}, "error": str(e),
+                        "expected_persona": expect.get("persona"),
+                        "expected_intent": expect.get("intent"),
+                    })
+                    continue
+                debug = bot_resp.get("debug", {}) or {}
+                dbg_flat = _flatten_debug(debug)
+                gold = _check_golden_turn(expect, bot_resp, debug)
+                bot_text = _augment_bot_text_for_judge(bot_resp)
+                rec: dict[str, Any] = {
+                    "user": msg,
+                    "bot": bot_text,
+                    "debug": dbg_flat,
+                    "golden": gold,
+                    "expected_persona": expect.get("persona"),
+                    "expected_intent": expect.get("intent"),
+                    "cards_count": len(bot_resp.get("cards") or []),
+                    "response_length": len(bot_resp.get("content") or ""),
+                }
+                if judge_enabled:
+                    persona = persona_defs.get(flow_persona) or {
+                        "id": flow_persona, "label": flow_persona, "description": "",
+                    }
+                    _iid = str(expect.get("intent") or "")
+                    intent = intent_defs.get(_iid) or {
+                        "id": _iid, "label": _iid, "description": "",
+                    }
+                    try:
+                        rec["judge"] = await judge_turn(
+                            persona, intent, msg, bot_text, dbg_flat,
+                        )
+                    except Exception as e:
+                        rec["judge"] = {"total": 0.0, "notes": str(e)[:200]}
+                turn_records.append(rec)
+
+            primary_intent = ""
+            if turns_spec:
+                primary_intent = str(
+                    (turns_spec[0].get("expect") or {}).get("intent") or ""
+                )
+            conversations.append({
+                "kind": "golden",
+                "flow_id": flow_id,
+                "title": str(flow.get("title") or ""),
+                "persona_id": flow_persona,
+                "intent_id": primary_intent,
+                "session_id": session_id,
+                "turns": turn_records,
+            })
+            await _persist_progress(
+                run_id, conversations, target_turns, f"Gold-Flow {flow_id} fertig",
+            )
+
+        summary = _aggregate(conversations)
+        summary["target_turns"] = target_turns
+        summary["current_activity"] = "Fertig"
+        summary["classification_metrics"] = _aggregate_classification_metrics(conversations)
+        golden_metrics = _aggregate_golden(conversations)
+        summary["golden_metrics"] = golden_metrics
+        # Headline-Score = deterministische harte Bestehensquote
+        # (overall_pass_rate). Reproduzierbar UND identisch zur Scorecard-
+        # "Gesamt"-Zahl — sonst zeigt die Liste (avg_score) eine andere Zahl
+        # als die Scorecard. Der optionale Judge-Schnitt wird SEPARAT
+        # ausgewiesen (judge_avg), nicht in die Headline gemischt.
+        if summary.get("total_judged_turns"):
+            judge_avg = summary.get("avg_score")
+            summary["judge_avg"] = judge_avg
+            golden_metrics["judge_avg"] = judge_avg
+            golden_metrics["judged_turns"] = summary.get("total_judged_turns")
+        summary["avg_score"] = golden_metrics["overall_pass_rate"]
+        try:
+            from app.services.mcp_client import get_tool_cache_stats as _get_tc_stats
+            summary["tool_cache"] = _get_tc_stats()
+        except Exception:
+            pass
+        await _update_run(
+            run_id,
+            status="done",
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            total_turns=golden_metrics["turns"],
+            avg_score=summary["avg_score"],
+            summary_json=json.dumps(summary, ensure_ascii=False),
+            conversations_json=json.dumps(conversations, ensure_ascii=False),
+        )
+        logger.info(
+            "[golden %s] done in %.1fs, pass=%.2f, %d flows / %d turns",
+            run_id, time.perf_counter() - t0,
+            golden_metrics["overall_pass_rate"],
+            golden_metrics["flows"], golden_metrics["turns"],
+        )
+    except Exception as e:
+        logger.exception("[golden %s] failed", run_id)
+        try:
+            summary = _aggregate(conversations)
+            summary["target_turns"] = target_turns
+            summary["current_activity"] = f"Fehler: {str(e)[:200]}"
+            summary["classification_metrics"] = _aggregate_classification_metrics(conversations)
+            summary["golden_metrics"] = _aggregate_golden(conversations)
+        except Exception:
+            summary = {"target_turns": target_turns}
+        await _update_run(
+            run_id,
+            status="failed",
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            error_message=str(e)[:500],
+            summary_json=json.dumps(summary, ensure_ascii=False),
+            conversations_json=json.dumps(conversations, ensure_ascii=False),
+            total_turns=(summary.get("golden_metrics") or {}).get("turns", 0),
         )
 
 

@@ -91,8 +91,10 @@ export const ICONS = {
   language: `<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor"><path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-82q26-36 45-75t31-83H404q12 44 31 83t45 75Zm-104-16q-18-33-31.5-68.5T322-320H204q29 50 72.5 87t99.5 55Zm208 0q56-18 99.5-55t72.5-87H638q-9 38-22.5 73.5T584-178ZM170-400h136q-3-20-4.5-39.5T300-480q0-21 1.5-40.5T306-560H170q-5 20-7.5 39.5T160-480q0 21 2.5 40.5T170-400Zm216 0h188q3-20 4.5-39.5T580-480q0-21-1.5-40.5T574-560H386q-3 20-4.5 39.5T380-480q0 21 1.5 40.5T386-400Zm268 0h136q5-20 7.5-39.5T800-480q0-21-2.5-40.5T790-560H654q3 20 4.5 39.5T660-480q0 21-1.5 40.5T654-400Zm-16-240h118q-29-50-72.5-87T584-782q18 33 31.5 68.5T638-640Zm-234 0h152q-12-44-31-83t-45-75q-26 36-45 75t-31 83Zm-200 0h118q9-38 22.5-73.5T376-782q-56 18-99.5 55T204-640Z"/></svg>`,
   /** Sammlung / Buch-Stapel */
   collections_bookmark: `<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor"><path d="M560-440 458-498l-98 58v-280h200v280ZM320-280q-33 0-56.5-23.5T240-360v-480q0-33 23.5-56.5T320-920h480q33 0 56.5 23.5T880-840v480q0 33-23.5 56.5T800-280H320Zm0-80h480v-480H320v480ZM160-120q-33 0-56.5-23.5T80-200v-560h80v560h560v80H160Zm160-720v480-480Z"/></svg>`,
-  /** Themenseite / Stern / topic */
-  topic: `<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor"><path d="m233-240 53-227-176-153 232-20 98-214 98 214 232 20-176 153 53 227-207-125-207 125Zm150-138 124-75 124 75-33-142 110-95-145-13-56-133-56 133-145 13 110 95-33 142Zm124-202Z"/></svg>`,
+  /** Themenseite / Fachportal / Stern (outlined, passend zu den anderen Header-Icons).
+   *  Äußere Sternkontur unverändert (gleiche Größe/Position wie zuvor), inneres
+   *  konzentrisches Loch via fill-rule="evenodd" → Kontur statt gefülltem Stern. */
+  topic: `<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor"><path fill-rule="evenodd" d="M233 -240L286 -467L110 -620L342 -640L440 -854L538 -640L770 -620L594 -467L647 -240L440 -365ZM299 -328L335 -482L216 -586L373 -600L440 -746L507 -600L664 -586L545 -482L581 -328L440 -413Z"/></svg>`,
 
   // ── Card-Typ-Icons (Inhaltstyp-Ribbon) ─────────────────────────────
   /** Sammlung (Ordner) — universell als "Container von Inhalten" lesbar. */

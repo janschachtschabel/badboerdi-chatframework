@@ -138,8 +138,8 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
       icon: '\u{1F6E1}️',
       label: 'Identität & Schutz',
       headline: 'Wer ist der Chatbot? Was darf er nie tun?',
-      primaryCount: 'Persona · Guardrails · Safety',
-      tags: ['Basis-Persona', 'Guardrails', 'Safety-Preset', 'Geräte-Config'],
+      primaryCount: 'Persona · Guardrails · Safety · Policy',
+      tags: ['Basis-Persona', 'Guardrails', 'Safety-Preset', 'Policy-Regeln', 'Geräte-Config'],
       color: '#2B6CB0',
     },
     {
@@ -147,8 +147,8 @@ export default function HomeOverview({ elements, backendOnline, onNavigate, onOp
       icon: '\u{1F310}',
       label: 'Domain-Wissen',
       headline: 'Was weiß der Chatbot über WLO und seine Umgebung?',
-      primaryCount: 'Plattform-Wissen + Policy',
-      tags: ['Domain-Rules', 'WLO-Fachwissen', 'Policy-Matrix'],
+      primaryCount: 'Plattform-Wissen · Domain-Regeln',
+      tags: ['Domain-Rules', 'WLO-Fachwissen', 'Web-Tour'],
       color: '#0891B2',
     },
     {

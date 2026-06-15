@@ -29,8 +29,8 @@ forbidden_phrases:
   - Neu-Generieren statt Editieren (das wäre M10)
 when_to_use:
   - Intent I06 (Iterative Nachbearbeitung) UND Vor-Inhalt vorhanden (last_pattern in M09/M10/M11)
-  - 'Edit-Verben — kürzer / einfacher / umformulieren / ergänze / anpassen'
-  - 'User-Bezug auf Vor-Inhalt — der Text / das Arbeitsblatt / die Aufgabe'
+  - Edit-Verben — kürzer / einfacher / umformulieren / ergänze / anpassen
+  - User-Bezug auf Vor-Inhalt — der Text / das Arbeitsblatt / die Aufgabe
   - Frontend hat zuvor ein Inline-Document gerendert (Canvas-Marker in Conversation)
 when_not_to_use:
   - Kein Vor-Inhalt (last_pattern fehlt / kein M09/M10) → M10 (frisch generieren)
@@ -46,10 +46,10 @@ trigger_phrases:
 discriminators:
   - vs: M10
     rule: Edit-Verb + Vor-Inhalt → M11. Edit-Verb OHNE Vor-Inhalt → M10 (Bot generiert das Material zum ersten Mal).
-    example: "Mach das kürzer (nach M10-Turn) → M11. Mach das kürzer (kein Vor-Turn) → M10."
+    example: Mach das kürzer (nach M10-Turn) → M11. Mach das kürzer (kein Vor-Turn) → M10.
   - vs: M06
     rule: Bezug auf Vor-Inhalt → M11. Bezug auf andere Materialien („zeig mir mehr") → M06.
-    example: "Mach das einfacher → M11. Zeig mir andere Materialien → M06."
+    example: Mach das einfacher → M11. Zeig mir andere Materialien → M06.
 ---
 
 # M11 — Iterative Nachbearbeitung

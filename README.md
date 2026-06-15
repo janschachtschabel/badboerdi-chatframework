@@ -104,8 +104,8 @@ nachvollziehbar (siehe Kommentare `# Layer 1: …` bis `# Layer 6: …`).
 
 | # | Schicht | Quelle im Repo | Wann geladen | Inhalt |
 |---|---------|----------------|--------------|--------|
-| **1** | **Identität & Schutz** | `chatbots/wlo/v1/01-base/base-persona.md`, `guardrails.md`, `safety-config.yaml`, `quality-log-config.yaml`, `device-config.yaml` | **Immer** — bei jedem Turn als erstes in den Prompt | Wer ist BOERDi, was darf er nie tun (Guardrails als _letzter_ Block, nicht überschreibbar), Sicherheits-Preset (off/basic/standard/strict/paranoid), Quality-Logging, Geräte-Heuristiken |
-| **2** | **Domain & Regeln** | `chatbots/wlo/v1/02-domain/domain-rules.md`, `policy.yaml`, `wlo-plattform-wissen.md` | **Immer** — direkt nach Schicht 1 | Plattform-Wissen (WLO-Sammlungen, Lizenzen, Zielgruppen), Dauerregeln, Policy-Decisions (`policy_service.py`) |
+| **1** | **Identität & Schutz** | `chatbots/wlo/v1/01-base/base-persona.md`, `guardrails.md`, `safety-config.yaml`, `policy.yaml`, `quality-log-config.yaml`, `device-config.yaml` | **Immer** — bei jedem Turn als erstes in den Prompt | Wer ist BOERDi, was darf er nie tun (Guardrails als _letzter_ Block, nicht überschreibbar), Sicherheits-Preset (off/basic/standard/strict/paranoid), Policy-Regeln (konditionale Tool-Sperren/Disclaimer via `policy_service.py`), Quality-Logging, Geräte-Heuristiken |
+| **2** | **Domain & Regeln** | `chatbots/wlo/v1/02-domain/domain-rules.md`, `wlo-plattform-wissen.md` | **Immer** — direkt nach Schicht 1 | Plattform-Wissen (WLO-Sammlungen, Lizenzen, Zielgruppen), Dauerregeln |
 | **3** | **Patterns** | `chatbots/wlo/v1/03-patterns/M*.md` (**16 Patterns**, M01–M16) | **Nach Bedarf** — das vom LLM-Hint gewählte Pattern (`pattern_engine.py → select_pattern()`, siehe 2.4) — keine Score-Engine, keine Routing-Rules mehr | Aktives Konversations-Muster mit `core_rule`, `tone`, `length`, `max_items`, `tools`, Modulationen wie `skip_intro`, `one_option`, `add_sources`, `degradation` |
 | **4** | **Dimensionen** | Klassifikator-Output aus `llm_service.py → classify_input()` + `04-*/*.yaml` (Personas, Intents, States, Entities, Signals) | **Pro Turn neu** | Persona-ID, Intent-ID + Confidence, Signals, Entities, Slots, next_state — strukturierte Werte für genau diesen Turn |
 | **5** | **Material-Formate** | `chatbots/wlo/v1/05-canvas/*.yaml` (material-types, type-aliases, create-triggers, edit-triggers, persona-priorities) | **Nur bei KI-Generierung (Intent I05/I06)** — liefert die Struktur-Vorgabe des Material-Typs | Material-Typen (didaktisch + analytisch), Alias-Mapping, Create-/Edit-Trigger-Phrasen, Persona-abhängige Reihenfolge |
@@ -390,7 +390,7 @@ Verzeichnis auf und prüfen anschließend, dass `main.js` existiert. Mehr in
 Das Widget akzeptiert die folgenden Attribute auf `<boerdi-chat>`. Werte sind Strings (HTML-Attribute);
 Booleans erkennen `"true"` / `"false"`.
 
-> **Welle E:** `ai-content-enabled` ist die einzige verbliebene Feature-Umschaltung (siehe Tabelle).
+> **Stand 2026-06-10:** Es gibt keine Feature-Umschaltung pro Embed mehr — `ai-content-enabled` wurde entfernt, KI-generierte Inhalte sind immer aktiv.
 > Die früheren `cards-`/`canvas-`/`grouping-`/`quick-replies-`/`guide-mode-`-Attribute wurden
 > entfernt; Treffer erscheinen als Gruppen-Boxen, der Lotsen-Modus ist dauerhaft aktiv.
 > - `trusted-domains` ist jetzt **additiv** zur Backend-Allow-Liste
@@ -418,12 +418,8 @@ Booleans erkennen `"true"` / `"false"`.
 | `page-context` | _leer_ | Zusätzlicher Kontext als JSON-String oder Objekt |
 | `show-debug-button` | `true` | 🔍 Debug-Toggle im Header. `false` = Button ausgeblendet (für Produktiv-Embeddings) |
 | `show-language-buttons` | `true` | 🔊 Text-to-Speech und 🎤 Mic-Aufnahme. `false` = beide Buttons aus (kein Sprach-Feature) |
-| `ai-content-enabled` | `true` | KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix). `false` lehnt Erstell-Anfragen mit der Alt-Antwort aus `widget-modes.yaml` freundlich ab — kein LLM-Aufruf für Material-Erstellung. |
 
-> **`ai-content-enabled`** ist die einzige verbliebene Feature-Umschaltung: `false` lehnt KI-Erstell-Anfragen
-> freundlich ab (Alt-Antwort in `widget-modes.yaml`, kein LLM-Aufruf). Treffer erscheinen immer als kompakte
-> Gruppen-Boxen, KI-Material als InlineDocument-Box — die früheren `cards-`/`canvas-`/`grouping-`/`guide-mode-`-
-> Attribute wurden in Welle E entfernt (Guide-Modus ist dauerhaft aktiv).
+> **Entfernt (2026-06-10):** `ai-content-enabled` existiert nicht mehr — KI-generierte Inhalte sind immer aktiv; ein noch gesendetes Attribut wird ignoriert.
 
 > **Lotsen-Modus** wird **nicht** über ein Custom-Element-Attribut gesteuert, sondern
 > komplett serverseitig via `chatbots/wlo/v1/01-base/guide-mode.yaml` (Allow-Liste,
@@ -459,7 +455,7 @@ Booleans erkennen `"true"` / `"false"`.
      (Treffer bleiben als kompakte Boxen) -->
 <boerdi-chat
   api-url="https://api.example.de"
-  ai-content-enabled="false">
+>
 </boerdi-chat>
 ```
 
@@ -498,7 +494,7 @@ Live-Demos: `/widget/` (Default), `/widget/inline` (kompakter Inline-Modus).
 #### Embed-Inputs + Outputs/Events
 
 Das Widget hat darüber hinaus eine **umfangreiche Embed-API**: HTML-
-Attribute wie die Feature-Umschaltung (`ai-content-enabled`), die
+Attribute wie die
 passive Lotsen-/Telemetrie-Emission (`emit-guide-suggestion`,
 `emit-routing-debug`) und die Link-Interception
 (`intercept-edu-sharing-links`) — plus vier globale CustomEvents
@@ -513,6 +509,22 @@ WordPress-iframe-Routing / Minimal-Bubble / Vollausstattung mit
 Telemetrie / Cross-Domain-Session-Sharing):
 
 → **[docs/05-widget-javascript-api.md](./docs/05-widget-javascript-api.md)**
+
+---
+
+## Doku-Wegweiser
+
+| Doc | Inhalt |
+|-----|--------|
+| [docs/02-architektur.md](./docs/02-architektur.md) | Schichten, Phasen, Config-Dateibaum |
+| [docs/03-elemente.md](./docs/03-elemente.md) | Alle Dimensionen/Elemente im Detail |
+| [docs/04-deployment.md](./docs/04-deployment.md) | Docker/vServer-Setup, Prod-Checkliste |
+| [docs/05-widget-javascript-api.md](./docs/05-widget-javascript-api.md) | Embed-Attribute, Events, Beispiele |
+| [docs/06-request-pipeline.md](./docs/06-request-pipeline.md) | **Ablauf pro Turn** (was läuft wann/parallel, optionale Pfade wie Sprach-LLM), Skalierung, Lasttest |
+
+Das Studio bringt unter **Auswertung → Lasttest** einen Skalierbarkeits-Selbsttest mit
+(gemischte Abfragen mit steigender Parallelität, Latenz-/Fehler-Kurve, CPU-/RAM-Verlauf,
+Fazit „stabil bis N gleichzeitige Nutzer"). Achtung: feuert echte LLM-Requests.
 
 ---
 

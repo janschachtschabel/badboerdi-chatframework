@@ -231,7 +231,10 @@ export default function KnowledgeManager() {
           }
           if (currentLine.trim()) lines.push(currentLine.trimEnd());
         } else {
-          lines.push(`  description: "${cfg.description}"`);
+          // Fix 2026-06-10: '"' und '\' escapen — sonst erzeugt eine
+          // Beschreibung mit Anführungszeichen invalides YAML.
+          const esc = cfg.description.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          lines.push(`  description: "${esc}"`);
         }
       }
       lines.push('');

@@ -38,10 +38,10 @@ trigger_phrases:
 discriminators:
   - vs: M14
     rule: Konkretes Material/Fehler mit Weiterleitungs-Wunsch → M13. Allgemeines Bot-Feedback ohne Inhalts-Bezug → M14.
-    example: "Hier ist Fehler, an Redaktion → M13. Hat geholfen, danke → M14."
+    example: Hier ist Fehler, an Redaktion → M13. Hat geholfen, danke → M14.
   - vs: M04
     rule: M13 = Routing zur Submit-Maske. M04 = Wissensfrage „Wie funktioniert die Einreichung allgemein?".
-    example: "Wie reiche ich Video ein? (mit konkretem Material) → M13. Wie funktioniert OER-Einreichung allgemein? → M04."
+    example: Wie reiche ich Video ein? (mit konkretem Material) → M13. Wie funktioniert OER-Einreichung allgemein? → M04.
 ---
 
 # M13 — Inhalt-Einreichen / Melden

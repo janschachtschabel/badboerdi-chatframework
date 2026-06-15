@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authToken, timingSafeEqualStr } from '@/lib/auth-token';
 
 /**
  * Studio access gate.
@@ -23,7 +24,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const COOKIE_NAME = 'boerdi_studio_auth';
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/logout'];
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const expected = process.env.STUDIO_PASSWORD;
 
   // No password configured → studio is open (dev default).
@@ -40,8 +41,11 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const cookie = req.cookies.get(COOKIE_NAME)?.value;
-  if (cookie === expected) return NextResponse.next();
+  // B10 (2026-06-10): Cookie trägt das HMAC-Token (nicht mehr das
+  // Klartext-Passwort); Vergleich konstantzeitig.
+  const cookie = req.cookies.get(COOKIE_NAME)?.value || '';
+  const expectedTok = await authToken(expected);
+  if (cookie && timingSafeEqualStr(cookie, expectedTok)) return NextResponse.next();
 
   // Redirect to login (preserve the intended path for nicer UX).
   const url = req.nextUrl.clone();

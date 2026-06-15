@@ -4,8 +4,9 @@
        in widget.component.ts. Das hier startet direkt mit dem
        Messages-Bereich.) -->
 
-  <!-- Messages -->
-  <div class="messages-area" #messagesContainer>
+  <!-- Messages. role="log"+aria-live: Screenreader bekommen neue
+       Bot-Antworten angesagt (a11y, 2026-06-10). -->
+  <div class="messages-area" #messagesContainer role="log" aria-live="polite" aria-label="Chat-Verlauf">
     <div *ngFor="let msg of messages()" [id]="'msg-' + msg.id" class="message-row" [class.bot-row]="msg.sender === 'bot'" [class.user-row]="msg.sender === 'user'">
 
       <!-- Bot avatar -->
@@ -325,7 +326,8 @@
                 <!-- Dropdown toggle for alternative variants -->
                 <div *ngIf="card.topic_pages.length > 1" class="tp-dropdown-wrap">
                   <button class="tp-toggle" (click)="toggleTopicDropdown($event, card.node_id)"
-                          [attr.aria-expanded]="openTopicDropdown === card.node_id">
+                          [attr.aria-expanded]="openTopicDropdown === card.node_id"
+                          aria-label="Weitere Themenseiten anzeigen">
                     <span class="bb-icon" [innerHTML]="ICONS.arrow_drop_down | safeSvg"></span>
                   </button>
                   <div class="tp-dropdown" *ngIf="openTopicDropdown === card.node_id">
@@ -374,18 +376,16 @@
           </button>
         </div>
 
-        <!-- Action buttons for bot messages: TTS + Lernpfad drucken -->
+        <!-- Action buttons for bot messages: TTS.
+             Fix 2026-06-10: die beiden Print-Buttons hier (Bubble-Ebene,
+             oben rechts) sind entfernt — bei Nachrichten MIT InlineDocument-
+             Box druckten sie nur den kurzen Intro-Text (das Material lebt in
+             doc.content) und waren damit funktionslos-doppelt. Drucken läuft
+             über den Button IN der Box; Legacy-Messages ohne Box behalten
+             ihre beschrifteten Print-Bars weiter oben im Template. -->
         <div *ngIf="msg.sender === 'bot' && !msg.isLoading && msg.content" class="msg-actions">
           <button *ngIf="languageButtonsVisible" class="btn-speak" (click)="speakText(msg.content)" [title]="isSpeaking ? 'Stop' : 'Vorlesen'">
             <span class="bb-icon" [innerHTML]="(isSpeaking ? ICONS.stop_circle : ICONS.volume_up) | safeSvg"></span>
-          </button>
-          <button *ngIf="isLearningPath(msg)" class="btn-speak btn-print" (click)="printLearningPath(msg)" title="Lernpfad als PDF drucken">
-            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
-          </button>
-          <button *ngIf="isPrintableCanvasMaterial(msg)" class="btn-speak btn-print"
-                  (click)="printCanvasMaterial(msg)"
-                  [title]="printableCanvasLabel(msg) + ' als PDF drucken'">
-            <span class="bb-icon" [innerHTML]="ICONS.print | safeSvg"></span>
           </button>
         </div>
 

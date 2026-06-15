@@ -251,10 +251,15 @@ class TestBuildCardLinkTopicPage:
         out = build_card_link(card, repo_base=PROD)
         assert out == "https://wirlernenonline.de/variant"
 
-    def test_fallback_to_collection_browse(self):
+    def test_fallback_to_topic_page_renderer(self):
+        # Themenseite ohne explizite URL → Themenseiten-Renderer, NICHT der
+        # generische Sammlungs-Browse-Link (Welle E / Task #236). Eine
+        # Themenseite (ccm:map mit page_config_ref) wird immer als topic-page
+        # geöffnet, auch wenn weder topic_page_url noch eine Variante eine URL
+        # mitliefert.
         card = {"node_id": "tp1", "node_type": "topic_page"}
         out = build_card_link(card, repo_base=PROD)
-        assert out == f"{PROD}/edu-sharing/components/collections?id=tp1"
+        assert out == f"{PROD}/edu-sharing/components/topic-pages?collectionId=tp1"
 
 
 class TestBuildCardLinkCollection:

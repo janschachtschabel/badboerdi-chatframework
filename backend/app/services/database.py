@@ -213,6 +213,33 @@ async def init_db():
                 )
         except Exception:
             pass
+        # B3 (2026-06-10): WAL einmalig aktivieren — journal_mode=WAL ist
+        # DB-persistent (im File-Header) und gilt für ALLE künftigen
+        # Verbindungen. Reader blockieren Writer nicht mehr → deutlich
+        # weniger "database is locked" bei parallelen Chat-/Eval-Writes.
+        try:
+            await db.execute("PRAGMA journal_mode=WAL")
+        except Exception:
+            pass
+        # A3 (2026-06-10): memory hatte keinen UNIQUE-Constraint — das
+        # "INSERT OR REPLACE" in save_memory konnte nie ersetzen und hat
+        # pro Save eine neue Zeile angelegt. Migration: Bestands-Duplikate
+        # deduplizieren (neueste Zeile je (session_id, key, memory_type)
+        # gewinnt), dann UNIQUE-Index anlegen, damit REPLACE greift.
+        # Idempotent — läuft bei jedem Start gefahrlos durch.
+        try:
+            await db.execute(
+                "DELETE FROM memory WHERE id NOT IN ("
+                "  SELECT MAX(id) FROM memory"
+                "  GROUP BY session_id, key, memory_type"
+                ")"
+            )
+            await db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_unique "
+                "ON memory(session_id, key, memory_type)"
+            )
+        except Exception as _mig_err:
+            _db_logger.warning("memory dedupe migration skipped: %s", _mig_err)
         await db.commit()
 
     # Second: create vec0 virtual table (needs sqlite-vec extension)

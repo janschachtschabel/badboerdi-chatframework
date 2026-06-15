@@ -157,9 +157,12 @@ async def fetch_card_pool(
             )
             return []
         try:
+            # B7 (2026-06-10): das Tool verlangt ``nodeId`` (Pydantic +
+            # MCP-Schema, required) — ``collectionId`` fiel durch die
+            # Validierung, der v2-Collection-Branch war funktional tot.
             raw = await call_mcp_tool(
                 "get_collection_contents",
-                {"collectionId": collection_id, "maxResults": effective_pool},
+                {"nodeId": collection_id, "maxResults": effective_pool},
             )
         except Exception as e:  # pragma: no cover — network failure
             logger.warning("get_collection_contents failed: %s", e)

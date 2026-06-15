@@ -16,7 +16,8 @@ tools:
   - get_node_details
   - lookup_wlo_vocabulary
 precondition_slots:
-  - topic
+  - thema
+card_text_link_required: true
 core_rule: |
   Strukturierter Plan mit 4–6 Schritten, jeder Schritt mit 1 konkretem
   WLO-Material. Direkt im Chat als Markdown — keine Such-CTA, keine
@@ -27,7 +28,7 @@ forbidden_phrases:
   - KI-Generierung statt MCP-Arrangement (= M10-Verhalten)
 when_to_use:
   - Intent I04 (Lernpfad / Mehrstufige Komposition) UND Topic vorhanden
-  - 'Plan-Verben — planen / Stundenentwurf / Unterrichtsreihe / Lernpfad'
+  - Plan-Verben — planen / Stundenentwurf / Unterrichtsreihe / Lernpfad
   - User möchte SEQUENZ aus bestehenden WLO-Materialien
   - „Materialzusammenstellung zu X" / „strukturierte Sammlung zu Y"
 when_not_to_use:
@@ -35,7 +36,7 @@ when_not_to_use:
   - Such-Verb mit Singular-Material → M05/M06
   - User möchte ein KI-generiertes neues Material → M10
   - Reine Wissensfrage über das Thema → M04
-  - 'Hauptverb ist suche/finde/zeig/hast du — auch wenn der Satz mit um-zu-planen oder für meine Unterrichtseinheit weitergeht → M06 (Material-Suche). Das Hauptverb gewinnt, nicht der Nebensatz-Zweck.'
+  - Hauptverb ist suche/finde/zeig/hast du — auch wenn der Satz mit um-zu-planen oder für meine Unterrichtseinheit weitergeht → M06 (Material-Suche). Das Hauptverb gewinnt, nicht der Nebensatz-Zweck.
 trigger_phrases:
   - Plane mir eine Stunde zu X
   - Stundenentwurf zu X
@@ -45,14 +46,15 @@ trigger_phrases:
   - Mehrere Stunden zu X planen
 discriminators:
   - vs: M06
-    rule: 'Hauptverb entscheidet. Plan-Verb als Hauptverb (planen/Reihe/Sequenz/zusammenstellen) → M09. Such-Verb als Hauptverb (suche/finde/zeig/hast du Material) → M06 — auch wenn ein um-zu-planen-Nebensatz folgt.'
-    example: 'Plane Reihe zu Bruchrechnung → M09. Material zu Bruchrechnung → M06. Ich suche Material um Unterricht zu planen → M06 (Hauptverb=suche). Stell mir einen Lernpfad zusammen → M09.'
+    rule: Hauptverb entscheidet. Plan-Verb als Hauptverb (planen/Reihe/Sequenz/zusammenstellen) → M09. Such-Verb als Hauptverb (suche/finde/zeig/hast du Material) → M06 — auch wenn ein 
+      um-zu-planen-Nebensatz folgt.
+    example: Plane Reihe zu Bruchrechnung → M09. Material zu Bruchrechnung → M06. Ich suche Material um Unterricht zu planen → M06 (Hauptverb=suche). Stell mir einen Lernpfad zusammen → M09.
   - vs: M10
     rule: Sequenzielle Komposition aus EXISTIERENDEN Inhalten → M09. SINGULÄRES NEUES KI-Material → M10.
-    example: "Lernpfad zu X → M09. Erstell mir EIN Arbeitsblatt zu X → M10."
+    example: Lernpfad zu X → M09. Erstell mir EIN Arbeitsblatt zu X → M10.
   - vs: M03
     rule: Topic vorhanden → M09. Topic fehlt → M03.
-    example: "Lernpfad zu Bruchrechnung → M09. Lernpfad → M03 (Topic fehlt)."
+    example: Lernpfad zu Bruchrechnung → M09. Lernpfad → M03 (Topic fehlt).
 ---
 
 # M09 — Lernpfad-Erstellung

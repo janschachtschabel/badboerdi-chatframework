@@ -455,7 +455,7 @@ _DEMO_HTML = """<!doctype html>
       <span class="tag" style="background:#dbeafe;color:#1e3a8a;">primary-color="#1c4587"</span>
       <span class="tag" style="background:#dcfce7;color:#166534;">emit-guide-suggestion="true"</span>
       <span class="tag" style="background:#dcfce7;color:#166534;">emit-routing-debug="true"</span>
-      <br><span style="font-size:12px;color:#6b7280;">Implizite Defaults: <code>ai-content-enabled="true"</code>, <code>persist-session="true"</code>, <code>auto-context="true"</code>, <code>show-debug-button="true"</code>, <code>show-language-buttons="true"</code>. Layout-Steuerung (Gruppen-Boxen, Limits, Schriftgrößen) liegt im Studio-Tab <strong>🎨 Anzeige</strong>.</span>
+      <br><span style="font-size:12px;color:#6b7280;">Implizite Defaults: <code>persist-session="true"</code>, <code>auto-context="true"</code>, <code>show-debug-button="true"</code>, <code>show-language-buttons="true"</code>. KI-generierte Inhalte sind immer aktiv. Layout-Steuerung (Gruppen-Boxen, Limits, Schriftgrößen) liegt im Studio-Tab <strong>🎨 Anzeige</strong>.</span>
     </p>
   </div>
 
@@ -656,14 +656,14 @@ _DEMO_HTML = """<!doctype html>
         <td>🔍 Debug-Toggle im Header anzeigen. <code>false</code> = Button ausgeblendet (für Produktiv-Embeddings sinnvoll, da Endnutzer das Debug-Panel meist nicht brauchen).</td></tr>
     <tr><td><code>show-language-buttons</code></td><td>boolean</td><td><code>true</code></td>
         <td>🔊 Text-to-Speech und 🎤 Mic-Aufnahme anzeigen. <code>false</code> = beide Buttons aus, kein Sprach-Feature. <span class="tag tag-note">Tipp</span> verhindert auch den Browser-Mikrofon-Permission-Prompt beim ersten Laden.</td></tr>
-    <tr><td><code>ai-content-enabled</code></td><td>boolean</td><td><code>true</code></td>
-        <td>KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix) ein/aus. <code>false</code> lehnt Erstell-Anfragen mit der Alt-Antwort aus <code>widget-modes.yaml</code> freundlich ab. Studio-Default kann via <code>display-rules.yaml</code> bzw. Pattern-Gates ebenfalls gesetzt werden — Host-Attribut hat Vorrang als Embed-spezifische Härtung.</td></tr>
     <tr><td colspan="4" style="background:#fff8e1;padding:8px 12px;font-size:12.5px;">
-      <strong>Welle E (2026-05-23) — entfernt:</strong>
+      <strong>Entfernt:</strong>
       <code>cards-enabled</code>, <code>canvas-enabled</code>,
       <code>inline-result-grouping</code>, <code>quick-replies-enabled</code>,
-      <code>show-guide-button</code>, <code>guide-mode-default</code> existieren
-      nicht mehr. Layout (Gruppen-Boxen, Limits, Schriftgröße, Quick-Reply-
+      <code>show-guide-button</code>, <code>guide-mode-default</code> (Welle E,
+      2026-05-23) sowie <code>ai-content-enabled</code> (2026-06-10 — KI-
+      generierte Inhalte sind immer aktiv; ein gesendetes Attribut wird
+      ignoriert) existieren nicht mehr. Layout (Gruppen-Boxen, Limits, Schriftgröße, Quick-Reply-
       Anzahl, KI-Material-als-Box) liegt zentral im Studio-Tab
       <strong>🎨 Anzeige</strong> (<code>01-base/display-rules.yaml</code>).
       Canvas-Pane wurde durch InlineDocument-Box ersetzt. Lotsen-Modus ist
@@ -717,13 +717,6 @@ el.setAttribute('initial-state', 'collapsed');  // entspricht closeChatbot()</pr
 
   <p><strong>Default-Embed (alles aus dem Studio gesteuert):</strong></p>
   <pre>&lt;boerdi-chat api-url="https://api.wlo.de"&gt;&lt;/boerdi-chat&gt;</pre>
-
-  <p><strong>KI-Erstellung pro Host abschalten</strong> — z.B. auf einer
-  Plattform die selbst KI-Content anbietet:</p>
-  <pre>&lt;boerdi-chat
-  api-url="https://api.wlo.de"
-  ai-content-enabled="false"&gt;
-&lt;/boerdi-chat&gt;</pre>
 
   <p><strong>UI-Buttons im Header verstecken</strong>:</p>
   <pre>&lt;boerdi-chat

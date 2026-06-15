@@ -23,10 +23,10 @@ trigger_phrases:
 discriminators:
   - vs: M04
     rule: Akute Krise (Ich-Form, Gegenwart) → M01. Wissens-/Aufklärungs-Frage → M04.
-    example: "Wie erkenne ich Depression? → M04 (keine eigene Krise). Ich habe Suizidgedanken → M01."
+    example: Wie erkenne ich Depression? → M04 (keine eigene Krise). Ich habe Suizidgedanken → M01.
   - vs: M02
     rule: Selbst-Gefährdung → M01 (Empathie). Dritt-Gefährdung/Bedrohung anderer → M02 (Refusal).
-    example: "Ich will mich verletzen → M01. Ich will jemand anderem schaden → M02."
+    example: Ich will mich verletzen → M01. Ich will jemand anderem schaden → M02.
 ---
 
 # M01 — Krisen-Empathie

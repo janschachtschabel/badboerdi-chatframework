@@ -1,6 +1,6 @@
 import {
   Component, Input, Output, EventEmitter, ViewChild, ElementRef, OnInit, AfterViewInit, OnDestroy, OnChanges, SimpleChanges,
-  NgZone, signal, computed, ChangeDetectorRef, HostBinding,
+  NgZone, signal, ChangeDetectorRef, HostBinding,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatComponent } from '../chat/chat.component';
@@ -161,7 +161,6 @@ interface HeaderNavButton {
               [greeting]="greeting"
               [showDebugButton]="showDebugButton"
               [showLanguageButtons]="showLanguageButtons"
-              [aiContentEnabled]="aiContentEnabled"
               [trustedHosts]="parsedTrustedHostList"
               [emitGuideSuggestion]="emitGuideSuggestion"
               [emitRoutingDebug]="emitRoutingDebug"
@@ -686,27 +685,10 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
   // Canvas-Pane existiert nicht mehr — KI-Material/Lernpfade landen als
   // gerahmte InlineDocument-Box direkt im Chat-Verlauf.
   //
-  // Übrig bleibt aiContentEnabled als einziger Host-überschreibbarer Mode,
-  // damit Hosts mit eigener KI-Content-Pipeline die Generierung abschalten
-  // können.
-  // HTML-Attribute werden in Angular Custom Elements als Strings übergeben,
-  // daher akzeptieren wir auch ``"false"``/``"true"`` neben den Booleans.
-  /** KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad, Remix)
-   *  deaktivieren. Bei ``false`` lehnt der Bot Erstell-Anfragen mit der
-   *  Alt-Response aus ``widget-modes.yaml`` freundlich ab.
-   *
-   *  Bleibt als Embed-Attribut bestehen, weil Hosts es pro Embed
-   *  überschreiben können sollen (z.B. eine WLO-Themenseite, die selbst
-   *  KI-Content-Tools anbietet und keine Doppel-Generierung will). */
-  @Input() aiContentEnabled: boolean | string = true;
-
-  /** Boolean-Coercion für HTML-Attribute (kommen als String rein). */
-  private modeFlag(v: boolean | string): boolean {
-    if (typeof v === 'boolean') return v;
-    if (typeof v === 'string') return v.toLowerCase() !== 'false';
-    return true;
-  }
-  get aiContentEnabledBool(): boolean { return this.modeFlag(this.aiContentEnabled); }
+  // 2026-06-10: auch das letzte Embed-Flag ``ai-content-enabled`` wurde
+  // entfernt — KI-generierte Inhalte sind immer zugelassen. Ein von Alt-
+  // Embeds noch gesendetes HTML-Attribut wird schlicht ignoriert
+  // (unbekannte Attribute sind bei Custom Elements wirkungslos).
   /** When true, link clicks are intercepted: navigation is suppressed and
    *  `linkClicked` is emitted with the path+search (e.g.
    *  `/components/collections?id=…`). Default false = navigate normally. */

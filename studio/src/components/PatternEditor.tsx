@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { Elements, PatternData } from '@/app/page';
+import { StringListField } from './shared/ListFields';
 
 // ── YAML helpers ─────────────────────────────────────────────────────
 function serializeYamlValue(value: any, indent: number = 0): string {
@@ -267,52 +268,16 @@ function PatternDiscriminators({ values, onChange }: {
 
 
 // ── String-Liste (Add/Remove) — für forbidden_phrases / anti_patterns ──
-function PatternStringList({ label, hint, values, onChange, placeholder }: {
+// Dedup 2026-06-10: lebt jetzt geteilt in ./shared/ListFields.tsx;
+// variant="pattern" rendert exakt das bisherige form-group-Styling.
+function PatternStringList(props: {
   label: string;
   hint?: string;
   values: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
 }) {
-  const items = values || [];
-  const update = (idx: number, v: string) => {
-    const next = [...items];
-    next[idx] = v;
-    onChange(next);
-  };
-  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx));
-  const add = () => onChange([...items, '']);
-  return (
-    <div className="form-group">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <label className="form-label" style={{ margin: 0 }}>
-          {label} <span style={{ color: '#9CA3AF', fontWeight: 400 }}>({items.length})</span>
-        </label>
-        <button type="button" className="btn btn-sm" onClick={add}
-          style={{ fontSize: '.7rem', padding: '2px 8px' }}>+ hinzufügen</button>
-      </div>
-      {hint && <div className="form-hint" style={{ fontSize: '.8rem', marginBottom: 6 }}>{hint}</div>}
-      {items.length === 0 && (
-        <div style={{ fontSize: 11, color: '#9CA3AF', fontStyle: 'italic', padding: '4px 0' }}>
-          (keine Einträge)
-        </div>
-      )}
-      {items.map((v, idx) => (
-        <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 3 }}>
-          <input
-            className="form-input form-input-sm"
-            value={v}
-            placeholder={placeholder}
-            onChange={e => update(idx, e.target.value)}
-            style={{ flex: 1, fontSize: 12 }}
-          />
-          <button type="button" className="btn btn-danger btn-sm btn-icon"
-            onClick={() => remove(idx)} title="Entfernen"
-            style={{ padding: '2px 6px', fontSize: '.7rem' }}>✕</button>
-        </div>
-      ))}
-    </div>
-  );
+  return <StringListField {...props} variant="pattern" />;
 }
 
 
@@ -447,6 +412,9 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
   const [body, setBody] = useState('');
   const [originalRaw, setOriginalRaw] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // Fix 2026-06-10: Dirty-Tracking — Pattern-Wechsel verwarf ungespeicherte
+  // Edits vorher kommentarlos.
+  const [dirty, setDirty] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newPatternId, setNewPatternId] = useState('');
   const [newPatternLabel, setNewPatternLabel] = useState('');
@@ -476,24 +444,59 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
   const patterns = elements.patterns || [];
   const selected = patterns.find(p => p.id === selectedId);
 
-  // Load pattern file when selection changes
+  // Load pattern file when selection changes.
+  // Fix 2026-06-10: cancelled-Flag — bei zwei schnellen Wechseln konnte
+  // die langsamere alte Antwort die neuere überschreiben (stale Daten
+  // unter falscher Auswahl).
   useEffect(() => {
     if (!selected?.file) { setEditData(null); setBody(''); return; }
+    let cancelled = false;
     (async () => {
+      // Fix 2026-06-10: editData primär aus dem STRUKTURIERTEN GET laden —
+      // der lokale Mini-YAML-Parser kann verschachtelte Listen (z.B.
+      // discriminators mit vs/rule/example) nur als flache Strings lesen;
+      // damit scheiterte jeder Save eines Patterns mit Discriminators an
+      // der Pydantic-Validierung (dict erwartet, String geliefert).
+      // Der Datei-Parser bleibt als Fallback für alte Backends.
+      let structured: PatternData | undefined;
+      try {
+        const r = await fetch('/api/config/patterns');
+        if (r.ok) {
+          structured = (((await r.json()).patterns ?? []) as PatternData[])
+            .find(p => p.id === selected.id);
+        }
+      } catch { /* Fallback unten */ }
       const raw = await loadFile(selected.file!);
+      if (cancelled) return;
       setOriginalRaw(raw);
-      const { meta, body: b } = parseFrontmatterAndBody(raw);
-      // Merge loaded meta with element data (element data has parsed arrays)
-      setEditData({ ...selected, ...meta });
-      setBody(b);
+      if (structured) {
+        const { body_md, ...metaStruct } = structured as PatternData & { body_md?: string };
+        setEditData({ ...selected, ...metaStruct });
+        setBody(body_md ?? parseFrontmatterAndBody(raw).body);
+      } else {
+        const { meta, body: b } = parseFrontmatterAndBody(raw);
+        // Merge loaded meta with element data (element data has parsed arrays)
+        setEditData({ ...selected, ...meta });
+        setBody(b);
+      }
       setStatus('idle');
+      setDirty(false);
     })();
+    return () => { cancelled = true; };
   }, [selectedId, selected?.file, loadFile]);
 
   // Update a field in editData
   const update = (field: string, value: any) => {
     if (!editData) return;
     setEditData({ ...editData, [field]: value });
+    setDirty(true);
+  };
+
+  // Auswahl-Wechsel mit Dirty-Guard (analog ConfigTextEditor).
+  const selectPattern = (id: string) => {
+    if (id === selectedId) return;
+    if (dirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return;
+    setSelectedId(id);
   };
 
   // Save — Welle E v3 (2026-05-25): bevorzugt den strukturierten Backend-
@@ -504,14 +507,21 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
     if (!editData) return;
     setStatus('saving');
 
-    // Build full payload — keep ALL patterns intact, only patch the edited one.
-    const payload = patterns.map(p =>
-      p.id === editData.id
-        ? { ...editData, body_md: body }
-        : p
-    );
-
     try {
+      // KRITISCH (Fix 2026-06-10): Payload-Basis sind die VOLLEN Patterns
+      // vom strukturierten GET — nicht ``elements.patterns``, das nur
+      // Rumpf-Objekte (id/label/file) enthält. Mit der Rumpf-Basis hätte
+      // jeder Save die 15 NICHT-editierten Pattern-MDs auf id/label
+      // reduziert (so ging mutmaßlich das M09-Flag
+      // ``card_text_link_required`` in der Welle-E-Phase verloren).
+      const r0 = await fetch('/api/config/patterns');
+      if (!r0.ok) throw new Error(`GET patterns: HTTP ${r0.status}`);
+      const fullPatterns: PatternData[] = (await r0.json()).patterns ?? [];
+      const payload = fullPatterns.map(p =>
+        p.id === editData.id
+          ? { ...p, ...editData, body_md: body }
+          : p
+      );
       const r = await fetch('/api/config/patterns', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -519,6 +529,7 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
       });
       if (r.ok) {
         setStatus('saved');
+        setDirty(false);
         await onReload();
         setTimeout(() => setStatus('idle'), 2000);
         return;
@@ -531,6 +542,7 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
         if (ok) {
           setOriginalRaw(content);
           setStatus('saved');
+          setDirty(false);
           setTimeout(() => setStatus('idle'), 2000);
           return;
         }
@@ -619,7 +631,7 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
             <div
               key={p.id}
               className={`pattern-item ${selectedId === p.id ? 'selected' : ''}`}
-              onClick={() => setSelectedId(p.id)}
+              onClick={() => selectPattern(p.id)}
             >
               <span className="pattern-id">{p.id}</span>
               <span className="pattern-label">{p.label}</span>
@@ -740,12 +752,16 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                     colorClass="tag-purple"
                   />
                   <div className="form-hint" style={{ marginTop: 6, fontSize: '.85rem' }}>
-                    Wenn nicht alle Slots gefüllt sind, setzt phase3_modulate ein{' '}
-                    <code>degradation=true</code> Flag und meldet die fehlenden Slots
-                    — der Antwort-Builder kann darauf reagieren (z. B. mit einer
-                    Klärungs-Rückfrage). Anders als früher wird das Pattern NICHT mehr
-                    eliminiert, der LLM-Hint bleibt der Selektor. Leer lassen, wenn
-                    keine Slots erforderlich sind.
+                    Fehlt einer der gewählten Slots in der Klassifikation, wird die
+                    Suche geblockt, Tool-Aufrufe gesperrt und der Bot stellt zuerst
+                    die Rückfrage nach den fehlenden Angaben (generisch für jeden
+                    Slot). Das Pattern wird dabei NICHT abgewählt — der LLM-Hint
+                    bleibt der Selektor. <strong>Nur Entity-IDs aus Dimensionen →
+                    Entities wirken</strong> (z. B. <code>thema</code>,{' '}
+                    <code>fach</code>, <code>stufe</code>) — frei erfundene Namen
+                    laufen ins Leere. Leer lassen, wenn keine Slots erforderlich
+                    sind; die Erst-Absicherung bleibt ohnehin das Routing
+                    (<em>NICHT einsetzen wenn → M03</em> im Anweisungen-Tab).
                   </div>
                 </div>
                 <div className="card" style={{
@@ -811,6 +827,43 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                       onChange={e => update('card_text_mode', e.target.value)}>
                       {CARD_TEXT_MODE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
+                  </div>
+                </div>
+                {/* QR-Policy (2026-06-10): Modus + Anzahl pro Pattern */}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Quick-Replies-Modus</label>
+                    <select className="form-select"
+                      value={editData.quick_replies_mode ?? 'exact'}
+                      onChange={e => update('quick_replies_mode', e.target.value)}>
+                      <option value="exact">Genau — nach der Antwort (Standard)</option>
+                      <option value="speculative">Spekulativ — parallel zur Antwort (schneller)</option>
+                      <option value="none">Keine generierten Vorschläge</option>
+                    </select>
+                    <div className="form-hint" style={{ fontSize: '.8rem' }}>
+                      <strong>Spekulativ</strong> startet den Vorschlags-Generator parallel zum
+                      Antwort-LLM (kennt Pattern, Entities + gefundene Treffer statt des
+                      Antworttexts) und spart ~1–3 s am Turn-Ende; ein Konsistenz-Gate fällt
+                      bei unerwarteten Rückfragen auf „Genau" zurück. Empfohlen für Such-/
+                      Slot-Patterns (M03/M05/M06); bei Antworten, die selbst Anschlüsse
+                      anbieten (z.B. M15), ist „Genau" treffsicherer. <strong>Keine</strong>{' '}
+                      unterdrückt Generator + Auto-Followup — System-Buttons (Slot-Optionen,
+                      Tour, Lotse) bleiben aktiv.
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Quick-Replies-Anzahl</label>
+                    <input className="form-input" type="number" min={1} max={6}
+                      value={editData.quick_replies_max ?? ''}
+                      placeholder="global"
+                      onChange={e => update(
+                        'quick_replies_max',
+                        e.target.value === '' ? null : Math.max(1, Math.min(6, parseInt(e.target.value, 10) || 1)),
+                      )} />
+                    <div className="form-hint" style={{ fontSize: '.8rem' }}>
+                      Leer = globaler Wert aus <em>Anzeige → Quick-Replies</em>. Steuert
+                      Generator-Zielzahl UND Anzeige-Deckel für dieses Pattern (1–6).
+                    </div>
                   </div>
                 </div>
               </div>
@@ -969,7 +1022,7 @@ export default function PatternEditor({ elements, loadFile, saveFile, onReload, 
                   <textarea
                     className="form-textarea form-textarea-lg"
                     value={body}
-                    onChange={e => setBody(e.target.value)}
+                    onChange={e => { setBody(e.target.value); setDirty(true); }}
                     placeholder="Pflicht-Antwort-Schema, Tabellen, Beispiele — pattern-spezifische Inhalte als freier Markdown."
                     spellCheck={false}
                     style={{ minHeight: 320, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: '.9rem' }}

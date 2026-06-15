@@ -10,8 +10,8 @@ output_mode: knowledge
 sources:
   - rag
 rag_areas:
-  - wlo-plattform-wissen
-  - domain-rules
+  - Plattformwissen
+  - WissenLebtOnline
 core_rule: |
   2–4 Sätze ODER 3–5-Bullet-Liste aus RAG. Keine MCP-Suche, keine
   Card-Liste, keine Such-CTA.
@@ -40,21 +40,22 @@ trigger_phrases:
 discriminators:
   - vs: M10
     rule: Was-/Wie-Frage ohne Create-Verb → M04. Create-Verb + Material-Typ → M10.
-    example: "Was ist Photosynthese? → M04. Erstell ein Quiz zu Photosynthese → M10."
+    example: Was ist Photosynthese? → M04. Erstell ein Quiz zu Photosynthese → M10.
   - vs: M06
     rule: Wissens-Frage (Bot erklärt selbst) → M04. Material-Wunsch (Bot sucht) → M06.
-    example: "Was ist Bruchrechnung? → M04. Material zu Bruchrechnung → M06."
+    example: Was ist Bruchrechnung? → M04. Material zu Bruchrechnung → M06.
   - vs: M14
     rule: Wissensfrage zur Welt/Plattform → M04. Bot-Bedienungs-/Feedback-Frage → M14.
-    example: "Wie funktioniert OER? → M04. Wie kann ich Feedback geben? → M14."
+    example: Wie funktioniert OER? → M04. Wie kann ich Feedback geben? → M14.
 ---
 
 # M04 — Wissens-Antwort
 
 ## Pflicht-Antwort-Schema
 
-Schritt 1 — RAG-Inhalt aus `wlo-plattform-wissen` + `domain-rules`
-abrufen.
+Schritt 1 — RAG-Inhalt aus `Plattformwissen` + `WissenLebtOnline`
+abrufen (die „always"-Bereiche werden zudem beim Turn-Start automatisch
+vorab durchsucht).
 
 Schritt 2 — Antwort-Form:
 - **Definitionsfrage** („Was ist OER?"): 2–3 Sätze, einfach, **ohne**

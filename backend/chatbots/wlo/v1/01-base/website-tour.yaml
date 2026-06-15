@@ -63,6 +63,8 @@ website_tour:
   trigger_phrases:
     - "web-tour"
     - "webtour"
+    - "Web-tour"
+    - "Webtour"
     - "web tour"
     - "tour starten"
     - "starte die tour"
@@ -133,6 +135,16 @@ website_tour:
         - { label: "Redaktionelle Arbeiten", path: "/angebote/redaktionelle-arbeiten/" }
         - { label: "Metadaten verbessern lassen", path: "/angebote/metadaten-verbessern-lassen/" }
 
+    # Presse/Journalist:innen (zweite Hälfte von P-RED) — wollen Hintergrund,
+    # Zahlen, Kontakt; NICHT die Redaktionssoftware. Eigener Button → "Über WLO".
+    - id: presse
+      label: "Presse"
+      synonyms: ["presse", "journalist", "journalistin", "journalist:in", "pressevertreter", "pressevertreterin", "medien", "medienvertreter", "pressekontakt", "pressemitteilung", "berichterstattung"]
+      page: "/mitmachen/ueber-wlo/"
+      angebote:
+        - { label: "Über WLO", path: "/mitmachen/ueber-wlo/" }
+        - { label: "FAQ", path: "/mitmachen/faq/" }
+
     - id: contentanbieter
       label: "Contentanbieter"
       synonyms: ["content anbieter", "contentanbieter", "anbieter", "verlag", "produzent", "material anbieten", "inhalte anbieten", "inhalte bereitstellen"]
@@ -144,12 +156,47 @@ website_tour:
 
     - id: abnehmer
       label: "Content-Abnehmer"
-      synonyms: ["abnehmer", "content abnehmer", "inhalte nutzen", "inhalte beziehen", "lernplattform", "schule", "lehrkraft", "nutze inhalte"]
+      # "lehrkraft" bewusst NICHT mehr hier — einzelne Lehrkräfte haben eine
+      # eigene Gruppe (lehrkraft). "Content-Abnehmer" = Institutionen/Plattformen,
+      # die WLO-Inhalte technisch beziehen. "schule" bleibt (Schule als Träger).
+      synonyms: ["abnehmer", "content abnehmer", "inhalte nutzen", "inhalte beziehen", "lernplattform", "schule", "nutze inhalte"]
       page: "/home/abnehmer-bildungs-und-wissensinhalte/"
       angebote:
         - { label: "Integrationen für Lernplattformen & Web-CMS", path: "/angebote/integrationen-fuer-lernplattformen-und-web-cms/" }
         - { label: "Bildungs-API", path: "/angebote/bildungs-api/" }
         - { label: "WLO-Inhalte für deine Suchmaschine", path: "/angebote/wlo-inhalte-fuer-deine-suchmaschine/" }
+
+    # ── Direkt-Nutzer:innen (Chatbot-Kernzielgruppen) ─────────────────
+    # Lehrkräfte und Lernende sind auf der Website KEINE eigene Funnel-
+    # Sektion — sie gehören inhaltlich zur OER-Community und landen daher
+    # auf deren Seite. Eigene Buttons machen sie aber sichtbar wählbar und
+    # erlauben gezieltere Angebote (Inhalte entdecken statt B2B-Produkte).
+    - id: lehrkraft
+      label: "Lehrkraft"
+      synonyms: ["lehrkraft", "lehrer", "lehrerin", "lehrer:in", "lehrende", "lehrende:r", "ich unterrichte", "unterrichte", "für meinen unterricht", "für meine klasse", "unterrichtsmaterial", "als lehrer", "als lehrerin", "als lehrkraft"]
+      page: "/home/oer-community/"
+      angebote:
+        - { label: "Fachportale", path: "/fachportale/" }
+        - { label: "Bildungsinhalte entdecken", path: "/bildungsinhalte/" }
+        - { label: "Was ist OER?", path: "/bildungsinhalte/oer/" }
+
+    - id: lernende
+      label: "Lernende"
+      synonyms: ["lernende", "lernende:r", "lernender", "lernend", "schüler", "schülerin", "schüler:in", "schueler", "student", "studentin", "studierende", "ich lerne", "fürs lernen", "für die schule lernen", "azubi"]
+      page: "/home/oer-community/"
+      angebote:
+        - { label: "Fachportale", path: "/fachportale/" }
+        - { label: "Bildungsinhalte entdecken", path: "/bildungsinhalte/" }
+        - { label: "Was ist OER?", path: "/bildungsinhalte/oer/" }
+
+    - id: eltern
+      label: "Eltern"
+      synonyms: ["eltern", "elternteil", "mutter", "vater", "mein kind", "meine tochter", "mein sohn", "für mein kind", "erziehungsberechtigt", "zuhause lernen", "hausaufgaben", "nachhilfe"]
+      page: "/home/oer-community/"
+      angebote:
+        - { label: "Fachportale", path: "/fachportale/" }
+        - { label: "Bildungsinhalte entdecken", path: "/bildungsinhalte/" }
+        - { label: "Was ist OER?", path: "/bildungsinhalte/oer/" }
 
     - id: oer-community
       label: "OER-Community"
@@ -160,8 +207,8 @@ website_tour:
         - { label: "Think Tank", path: "/angebote/think-tank/" }
 
     - id: software-betreiber
-      label: "Software-Betreiber"
-      synonyms: ["software betreiber", "betreiber", "plattform betreiben", "hosting", "betrieb", "betreibe software"]
+      label: "Infrastruktur-Betreiber"
+      synonyms: ["infrastruktur-betreiber", "infrastrukturbetreiber", "infrastruktur betreiben", "betreibe infrastruktur", "software betreiber", "betreiber", "plattform betreiben", "hosting", "betrieb", "betreibe software"]
       page: "/home/software-betreiber/"
       angebote:
         - { label: "Integrationen für Lernplattformen & Web-CMS", path: "/angebote/integrationen-fuer-lernplattformen-und-web-cms/" }
@@ -169,8 +216,8 @@ website_tour:
         - { label: "Souveränes KI-Ökosystem", path: "/angebote/souveraenes-ki-oekosystem/" }
 
     - id: software-hersteller
-      label: "Software-Hersteller"
-      synonyms: ["software hersteller", "hersteller", "entwickler", "entwicklerin", "software entwickeln", "infrastruktur", "bildungsinfrastruktur", "entwickle software"]
+      label: "Entwickler"
+      synonyms: ["entwickler", "entwicklerin", "entwickler:in", "developer", "software entwickeln", "entwickle software", "programmierer", "programmiererin", "services", "ki für bildung", "bildungsinfrastruktur mitgestalten", "software hersteller", "hersteller"]
       page: "/home/bildungsinfrastruktur-mitgestalten/"
       angebote:
         - { label: "Bildungs-API", path: "/angebote/bildungs-api/" }
@@ -179,7 +226,7 @@ website_tour:
 
     - id: politik
       label: "Politik / Rahmensetzer"
-      synonyms: ["politik", "rahmensetzer", "ministerium", "verwaltung", "rahmen setzen", "bildungspolitik", "förderung", "entscheider"]
+      synonyms: ["politik", "rahmensetzer", "ministerium", "verwaltung", "rahmen setzen", "bildungspolitik", "förderung", "entscheider", "schulträger", "schulleitung", "schulamt", "kommune", "landkreis", "träger"]
       page: "/home/wlo-fuer-politik/"
       angebote:
         - { label: "Souveränes KI-Ökosystem", path: "/angebote/souveraenes-ki-oekosystem/" }
@@ -207,10 +254,10 @@ website_tour:
 
     group:
       text: |
-        Du bist auf der **Startseite**. 👇 Scroll einmal in Ruhe nach unten —
-        dort stellen wir die verschiedenen Besucher-Gruppen vor. Damit ich dir
-        die passenden Lösungen zeigen kann: In welche Gruppe ordnest du dich
-        am ehesten ein?
+        Du bist auf der **Startseite**. 👇 Weiter unten stellen wir die
+        verschiedenen Besucher-Gruppen vor — du kannst dich aber auch direkt
+        hier einordnen. Damit ich dir die passenden Angebote zeigen kann:
+        Als was bist du gerade unterwegs?
       unsure_label: "Bin mir nicht sicher"
       unsure_text: |
         Kein Problem! Sag mir einfach grob, was dich zu WLO führt — zum

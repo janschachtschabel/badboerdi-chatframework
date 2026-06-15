@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 from pathlib import Path
@@ -22,6 +23,45 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     except yaml.YAMLError:
         meta = {}
     return meta, match.group(2)
+
+
+# ── B6 (2026-06-10): mtime-Caches für die Markdown-Loader ─────────────
+# Die YAML-Loader haben ihr mtime-Cache-Pattern (_load_yaml) längst — die
+# MD-Loader (Personas/Patterns/Domain/Base/Guardrails) lasen + parsten
+# dagegen bei JEDEM Aufruf alle Dateien neu, und das mehrfach pro Turn
+# (Classify-Prompt, Response-Prompt, Tone-Modifier, Eval-Judge).
+# Datei-Ebene: (mtime → Text). Verzeichnis-Ebene: Snapshot aller
+# (Name, mtime) als Key → geparstes Ergebnis; mutierbare Ergebnisse
+# werden als deepcopy herausgegeben, damit Aufrufer den Cache nicht
+# versehentlich verändern. Studio-Edits bleiben live (mtime ändert sich).
+
+_FILE_TEXT_CACHE: dict[str, tuple[float, str]] = {}
+
+
+def _read_text_cached(path: Path) -> str:
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return ""
+    key = str(path)
+    hit = _FILE_TEXT_CACHE.get(key)
+    if hit is not None and hit[0] == mtime:
+        return hit[1]
+    text = path.read_text(encoding="utf-8")
+    _FILE_TEXT_CACHE[key] = (mtime, text)
+    return text
+
+
+_DIR_RESULT_CACHE: dict[str, tuple[tuple[tuple[str, float], ...], Any]] = {}
+
+
+def _dir_snapshot(dir_path: Path, pattern: str = "*.md") -> tuple[tuple[str, float], ...]:
+    try:
+        return tuple(sorted(
+            (p.name, p.stat().st_mtime) for p in dir_path.glob(pattern)
+        ))
+    except OSError:
+        return ()
 
 
 def load_persona_prompt(persona_id: str) -> str:
@@ -106,29 +146,35 @@ def load_persona_prompt(persona_id: str) -> str:
 
 
 def load_domain_rules() -> str:
-    """Load all domain files (rules + knowledge)."""
+    """Load all domain files (rules + knowledge). mtime-gecacht (B6)."""
     domain_dir = CHATBOT_DIR / "02-domain"
     if not domain_dir.exists():
         return ""
+    snap = _dir_snapshot(domain_dir)
+    hit = _DIR_RESULT_CACHE.get("domain_rules")
+    if hit is not None and hit[0] == snap:
+        return hit[1]
     parts = []
     for path in sorted(domain_dir.glob("*.md")):
-        parts.append(path.read_text(encoding="utf-8"))
-    return "\n\n".join(parts) if parts else ""
+        parts.append(_read_text_cached(path))
+    result = "\n\n".join(parts) if parts else ""
+    _DIR_RESULT_CACHE["domain_rules"] = (snap, result)
+    return result
 
 
 def load_base_persona() -> str:
-    """Load the base persona (Layer 1)."""
+    """Load the base persona (Layer 1). mtime-gecacht (B6)."""
     path = CHATBOT_DIR / "01-base" / "base-persona.md"
     if path.exists():
-        return path.read_text(encoding="utf-8")
+        return _read_text_cached(path)
     return ""
 
 
 def load_guardrails() -> str:
-    """Load guardrails."""
+    """Load guardrails. mtime-gecacht (B6)."""
     path = CHATBOT_DIR / "01-base" / "guardrails.md"
     if path.exists():
-        return path.read_text(encoding="utf-8")
+        return _read_text_cached(path)
     return ""
 
 
@@ -211,6 +257,38 @@ def invalidate_yaml_cache(rel_path: str | None = None) -> None:
         _YAML_CACHE.clear()
     else:
         _YAML_CACHE.pop(rel_path, None)
+
+
+def load_gold_flows() -> list[dict[str, Any]]:
+    """Load the deterministic Gold-Standard conversation flows for the
+    Golden-Flow eval mode (``eval/gold-flows.yaml``).
+
+    Anders als die generative Eval (LLM-Simulator erzeugt die Turns) sind
+    diese Flows FEST und mit expliziten Soll-Werten pro Turn versehen —
+    damit ist ein Lauf reproduzierbar und A/B-vergleichbar (Modell-/Config-
+    Wechsel). Schema pro Flow:
+
+        id: GS-1
+        persona: P-LEH            # Soll-Persona des Flows
+        title: "…"               # menschenlesbarer Titel
+        intents: [I03, I05]       # die 2 wichtigsten Intents dieses Flows
+        turns:
+          - message: "…"          # exakte Nutzer-Eingabe
+            expect:
+              persona: P-LEH       # Soll-Persona (oder "*" = beliebig)
+              intent: I03          # Soll-Intent
+              register: sie        # sie | du | any  (Tonalitaets-Check)
+              structure: idoc      # idoc | cards | none  (optional)
+              must_offer: "…"      # optionaler Soft-Check fuers Judge
+
+    Returns [] wenn die Datei fehlt oder kaputt ist. mtime-gecacht via
+    ``_load_yaml`` — Studio-Edits sind sofort sichtbar.
+    """
+    data = _load_yaml("eval/gold-flows.yaml")
+    flows = data.get("flows") if isinstance(data, dict) else None
+    if not isinstance(flows, list):
+        return []
+    return [f for f in flows if isinstance(f, dict) and f.get("turns")]
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -555,6 +633,24 @@ def _extract_section_lines(section_body: str) -> list[str]:
 
 
 def load_persona_definitions() -> list[dict[str, Any]]:
+    """mtime-gecachte Hülle um den Persona-Loader (B6, 2026-06-10).
+
+    Vorher wurde bei JEDEM Aufruf (mehrfach pro Turn) jede Persona-MD
+    gelesen + frontmatter-geparst. Cache-Key = Snapshot aller (Datei,
+    mtime); Treffer liefern eine deepcopy, damit Aufrufer die gecachte
+    Struktur nicht mutieren. Studio-Edits bleiben live (mtime ändert sich).
+    """
+    personas_dir = CHATBOT_DIR / "04-personas"
+    snap = _dir_snapshot(personas_dir)
+    hit = _DIR_RESULT_CACHE.get("personas")
+    if hit is not None and hit[0] == snap:
+        return copy.deepcopy(hit[1])
+    result = _load_persona_definitions_uncached()
+    _DIR_RESULT_CACHE["personas"] = (snap, copy.deepcopy(result))
+    return result
+
+
+def _load_persona_definitions_uncached() -> list[dict[str, Any]]:
     """Load persona definitions from 04-personas/*.md files.
 
     Welle E v2 (2026-05-25): Alle strukturierten Daten leben jetzt im
@@ -1089,8 +1185,12 @@ def get_enabled_mcp_servers() -> list[dict[str, Any]]:
 
 
 def load_policy_config() -> dict[str, Any]:
-    """Load policy rules (Triple-Schema v2 — T-13/14) from 02-domain/policy.yaml."""
-    return _load_yaml("02-domain/policy.yaml")
+    """Load policy rules (Triple-Schema v2 — T-13/14) from 01-base/policy.yaml.
+
+    Welle E (2026-06-08): von 02-domain/ nach 01-base/ verschoben — Policy ist
+    eine Schutz-/Compliance-Ebene und wird im Studio unter "Identität & Schutz"
+    neben Guardrails + Safety gepflegt."""
+    return _load_yaml("01-base/policy.yaml")
 
 
 def load_safety_config() -> dict[str, Any]:
@@ -1220,10 +1320,9 @@ def load_widget_modes_config() -> dict[str, Any]:
     """Load Widget-Embed-Modi configuration.
 
     Returns the parsed ``widget_modes`` block from 01-base/widget-modes.yaml
-    with safe defaults. The four host-side flags (cards-enabled, canvas-
-    enabled, ai-content-enabled, quick-replies-enabled) come from the
-    embedded widget via the Environment block — this file just specifies
-    the *consequences* (link limits, fallback texts).
+    with safe defaults. Host-seitige Feature-Flags gibt es nicht mehr
+    (2026-06-10: ``ai-content-enabled`` entfernt, KI-Inhalte immer aktiv) —
+    diese Datei steuert nur noch Link-Limits fürs Inline-Rendering.
 
     Limits are clamped to sane bounds so a misconfigured YAML can't break
     the response shape.
@@ -1247,21 +1346,9 @@ def load_widget_modes_config() -> dict[str, Any]:
         title_max = 70
     title_max = max(30, min(200, title_max))
 
-    alt = cfg.get("ai_disabled_alt_response") or {}
-    alt_text = str(alt.get("text") or
-                   "Auf dieser Seite kann ich gerade kein neues Material "
-                   "für dich erstellen. Magst du dir stattdessen bestehende "
-                   "Inhalte zeigen lassen?").strip()
-    alt_qrs = [str(q).strip() for q in (alt.get("quick_replies") or [])
-               if str(q).strip()]
-
     return {
         "cards_inline_link_limit": limit,
         "cards_inline_link_title_max": title_max,
-        "ai_disabled_alt_response": {
-            "text": alt_text,
-            "quick_replies": alt_qrs,
-        },
     }
 
 
@@ -1359,6 +1446,10 @@ def load_display_rules_config() -> dict[str, Any]:
         "themenseiten_max": _grp_int("themenseiten_max", 3, 1, 20),
         "sammlungen_max":   _grp_int("sammlungen_max",   3, 1, 20),
         "materialien_max":  _grp_int("materialien_max",  3, 1, 8),
+        # Lernpfad-Ausnahme (2026-06-10): M09 verlinkt seine Materialien im
+        # Text — die Box darunter soll alle VERWENDETEN Inhalte abdecken
+        # (Prompt↔Anzeige-Konsistenz), daher großzügigerer eigener Deckel.
+        "materialien_max_lernpfad": _grp_int("materialien_max_lernpfad", 5, 1, 8),
         "webseiten_max":    _grp_int("webseiten_max",    3, 1, 30),
     }
 
@@ -1795,6 +1886,22 @@ def load_privacy_config() -> dict[str, bool]:
 
 
 def load_pattern_definitions() -> list[dict[str, Any]]:
+    """mtime-gecachte Hülle um den Pattern-Loader (B6, 2026-06-10).
+
+    Gleiches Muster wie load_persona_definitions: Snapshot aller (Datei,
+    mtime) als Key, deepcopy bei Treffer. Spart das wiederholte Lesen +
+    Regex-Parsen aller 16 Pattern-MDs pro Turn."""
+    patterns_dir = CHATBOT_DIR / "03-patterns"
+    snap = _dir_snapshot(patterns_dir)
+    hit = _DIR_RESULT_CACHE.get("patterns")
+    if hit is not None and hit[0] == snap:
+        return copy.deepcopy(hit[1])
+    result = _load_pattern_definitions_uncached()
+    _DIR_RESULT_CACHE["patterns"] = (snap, copy.deepcopy(result))
+    return result
+
+
+def _load_pattern_definitions_uncached() -> list[dict[str, Any]]:
     """Load all pattern definitions from 03-patterns/*.md files.
 
     Each file has YAML frontmatter with pattern fields. Returns a list of

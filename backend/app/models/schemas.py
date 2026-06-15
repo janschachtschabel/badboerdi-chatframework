@@ -71,13 +71,11 @@ class Environment(BaseModel):
     # Welle E (2026-05-23): einziger verbleibender Widget-Embed-Mode.
     # ``cards_enabled``, ``canvas_enabled``, ``quick_replies_enabled``
     # und ``inline_result_grouping`` sind ersatzlos entfernt — Layout
-    # liegt jetzt zentral im Studio (display-rules.yaml). Hosts können
-    # nur noch KI-Material-Generierung pro Embed abschalten, falls die
-    # Host-Plattform selbst KI-Content-Tools bereitstellt.
-    # None bedeutet "Host hat das Feld nicht gesetzt" → Backend behält
-    # Default-Verhalten (KI-Content an). Nur explizites ``False`` schaltet
-    # die Erstellung ab; M10/M11 antworten dann mit der Alt-Response aus
-    # widget-modes.yaml.
+    # liegt jetzt zentral im Studio (display-rules.yaml).
+    # DEPRECATED (2026-06-10): ``ai_content_enabled`` hat keine Wirkung
+    # mehr — KI-generierte Inhalte sind immer zugelassen. Das Feld bleibt
+    # nur toleriert, damit ältere Embeds, die es noch senden, keinen
+    # Validierungsfehler bekommen.
     ai_content_enabled: bool | None = None
 
     # Webseiten-Tour (geführte Besucherführung). Explizites UI-Signal:

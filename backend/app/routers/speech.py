@@ -18,16 +18,18 @@ router = APIRouter()
 
 
 def _ensure_speech_enabled() -> None:
-    """Welle E v4+13: Bei B-API-Anbindung ist Speech deaktiviert (Audio-
-    Passthrough defekt). 503 mit klarer Begründung statt eines kryptischen
-    406/415/500 vom B-API-Proxy."""
+    """Gate VOR jedem Upstream-Call: ist Speech aus (Default bei B-API ohne
+    ``B_API_AUDIO=1``), antwortet der Endpunkt 503 mit Begründung — es
+    entsteht garantiert kein Audio-API-Aufruf und damit keine Kosten."""
     if not speech_enabled():
         raise HTTPException(status_code=503, detail=speech_disabled_reason())
 
-# Speech always talks directly to an OpenAI-compatible endpoint (STT/TTS
-# are OpenAI-native features; the B-API proxies don't forward them). The
-# base URL can be overridden via OPENAI_BASE_URL for Azure/LiteLLM/LocalAI,
-# which must provide /v1/audio/{transcriptions,speech} too.
+# 2026-06-10: Speech läuft Provider-bewusst.
+#   * LLM_PROVIDER=openai  → nativer OpenAI-Client (wie bisher).
+#   * LLM_PROVIDER=b-api-* + B_API_AUDIO=1 → der B-API-Chat-Client; die
+#     B-API leitet /v1/audio/{transcriptions,speech} jetzt durch — gleicher
+#     Vertrag/Key wie der Chat, kein separater OpenAI-Key nötig.
+# OPENAI_BASE_URL bleibt als Override für Azure/LiteLLM/LocalAI.
 #
 # Empty ``OPENAI_BASE_URL=`` (common in Docker setups using ``${VAR:-}``
 # substitution) must NOT reach the SDK — the OpenAI client reads the
@@ -39,10 +41,18 @@ _openai_base = (
     (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
     or "https://api.openai.com/v1"
 )
-client = AsyncOpenAI(
+_native_client = AsyncOpenAI(
     api_key=_openai_key,
     base_url=_openai_base,
 )
+
+
+def _speech_client() -> AsyncOpenAI:
+    """Audio-Client passend zum aktiven Provider (siehe Kommentar oben)."""
+    from app.services.llm_provider import get_provider, get_client
+    if get_provider().startswith("b-api"):
+        return get_client()
+    return _native_client
 
 # ── Speech-to-text configuration ────────────────────────────────────
 # Primary model: gpt-4o-mini-transcribe (OpenAI 2025) — notably better than
@@ -110,7 +120,7 @@ async def transcribe(
         for model in [STT_MODEL, *STT_FALLBACKS]:
             try:
                 with open(tmp_path, "rb") as f:
-                    transcript = await client.audio.transcriptions.create(
+                    transcript = await _speech_client().audio.transcriptions.create(
                         model=model,
                         file=f,
                         language=language,
@@ -140,7 +150,7 @@ async def synthesize(
     """Synthesize text to speech using OpenAI TTS."""
     _ensure_speech_enabled()
     try:
-        response = await client.audio.speech.create(
+        response = await _speech_client().audio.speech.create(
             model=TTS_MODEL,
             voice=voice,
             input=text,

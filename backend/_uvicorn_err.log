@@ -1,0 +1,74 @@
+INFO:     Started server process [27348]
+INFO:     Waiting for application startup.
+14:03:34 WARNING startup: \u26a0 STUDIO_API_KEY ist nicht gesetzt (oder noch der Platzhalter) — alle Studio-/Admin-/Eval-Endpunkte sind UNGESCHÜTZT. Für Staging/Produktion einen langen Zufallswert in STUDIO_API_KEY setzen.
+14:03:34 WARNING startup: \u26a0 CORS_ORIGINS='*' (offen für alle Ursprünge). Für Produktion eine Allow-Liste der einbettenden Domains in CORS_ORIGINS setzen.
+14:03:34 INFO app.services.database: DB not empty (rag=906 sessions=666 messages=2003) — factory skipped
+14:03:34 INFO app.services.database: Seed version 2026-06-08 already imported, skipping
+14:03:34 INFO app.services.database: RAG area check OK — 8 area(s) aligned between config and DB.
+14:03:35 INFO startup: Config warmup done in 125ms
+INFO:     Application startup complete.
+14:03:35 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'lrt'}
+14:03:35 INFO app.services.rag_service: Loading ONNX reranker from: C:\Users\jan\staging\Windsurf\wlo-suche\badboerdi\backend\models\cross-encoder__mmarco-mMiniLMv2-L12-H384-v1-int8
+14:03:35 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+14:03:35 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'educationalContext'}
+14:03:35 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'userRole'}
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+14:03:35 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:35 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:03:35 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:35 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:36 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:36 INFO app.services.mcp_client: MCP server @ https://wlo-mcp-server-staging.vercel.app/mcp: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:03:36 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:03:36 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:03:36 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 202 Accepted"
+14:03:36 INFO app.services.mcp_client: MCP handshake complete @ https://wlo-mcp-server-staging.vercel.app/mcp
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:36 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 1878 chars in 604 ms
+14:03:36 INFO app.services.mcp_client: educationalContext label\u2192URI cache loaded: 48 entries
+14:03:36 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:36 INFO startup: LLM warmup done in 1238ms
+14:03:36 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars in 629 ms
+14:03:36 INFO app.services.mcp_client: discipline label\u2192URI cache loaded: 190 entries
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:36 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 943 chars in 629 ms
+14:03:36 INFO app.services.mcp_client: userRole label\u2192URI cache loaded: 31 entries
+14:03:36 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:36 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 5656 chars in 1299 ms
+14:03:36 INFO app.services.mcp_client: lrt label\u2192URI cache loaded: 100 entries
+14:03:36 INFO app.services.mcp_client: vocabulary prewarm: 4/4 geladen
+C:\Users\jan\miniconda3\Lib\site-packages\torch\cuda\__init__.py:61: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+14:03:43 INFO numexpr.utils: NumExpr defaulting to 16 threads.
+14:03:45 INFO app.services.rag_service: Reranker warmup done in 10462ms
+14:03:56 INFO app.services.llm_service: system_prompt[classify] tokens=18651 (was=0, cache-eligible=True)
+14:03:56 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/moderations "HTTP/1.1 200 "
+14:03:56 INFO app.services.safety_service: safety stages=openai level=standard took 893ms
+14:03:58 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:03:58 INFO app.routers.chat: LP topic switch \u2192 fresh search for 'Photosynthese'
+14:03:58 INFO app.routers.chat: LP search: topic='Photosynthese' skip=0
+14:03:58 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Photosynthese', 'maxItems': 5, 'skipCount': 0}
+14:03:59 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:59 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 7238 chars in 1101 ms
+14:03:59 INFO app.routers.chat: LP found 5 collections
+14:03:59 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '02edf941-de62-4e08-8711-f1b1f1e4b7eb', 'maxItems': 16, 'skipCount': 0}
+14:03:59 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:03:59 INFO app.services.mcp_client: MCP tool get_collection_contents returned 47 chars in 361 ms
+14:03:59 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '501e0bc8-3996-4363-b431-e174e36c6f01', 'maxItems': 16, 'skipCount': 0}
+14:04:00 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:04:00 INFO app.services.mcp_client: MCP tool get_collection_contents returned 47 chars in 385 ms
+14:04:00 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': '6829fde5-208c-4648-b7ec-e17b440b3d56', 'maxItems': 16, 'skipCount': 0}
+14:04:00 INFO httpx: HTTP Request: POST https://wlo-mcp-server-staging.vercel.app/mcp "HTTP/1.1 200 OK"
+14:04:00 INFO app.services.mcp_client: MCP tool get_collection_contents returned 29949 chars in 858 ms
+14:04:00 INFO app.routers.chat: LP contents: 2433 chars, topic='Photosynthese'
+14:04:09 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:04:11 INFO httpx: HTTP Request: POST https://b-api.staging.openeduhub.net/api/v1/llm/openai/chat/completions "HTTP/1.1 200 "
+14:04:11 INFO app.routers.chat: off-topic-filter: 8 \u2192 3 cards (signal-tokens=['einen', 'erstelle', 'lernpfad', 'photosynthese'], dropped=['Wasser & Strom: Spannung im Hofmann-Appa', 'Abbildung - Wasserhaltiges Kupfersulfat', 'Abbildung - Kupfersulfat mit Wasser', 'Abbildung - Erhitzen von Kupfersulfat', 'Wasserstoffperoxid mit Platin, Kupfer un'])
+14:04:11 INFO app.routers.chat: quick_replies.max_count: trimmed 4 \u2192 2

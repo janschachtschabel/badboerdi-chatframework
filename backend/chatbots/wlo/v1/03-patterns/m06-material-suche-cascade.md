@@ -13,6 +13,7 @@ tools:
   - search_wlo_collections
   - search_wlo_content
   - lookup_wlo_vocabulary
+quick_replies_mode: speculative
 core_rule: |
   Kuratiertes vor Algorithmischem. Pipeline durchläuft drei Stufen, bis
   Treffer da sind.
@@ -38,13 +39,14 @@ trigger_phrases:
 discriminators:
   - vs: M05
     rule: Nur Thema → M06 (Cascade). Thema + Filter (Stufe/Medientyp) → M05 (gefiltert).
-    example: "Material zu Bruchrechnung → M06. Videos zu Bruchrechnung Klasse 5 → M05."
+    example: Material zu Bruchrechnung → M06. Videos zu Bruchrechnung Klasse 5 → M05.
   - vs: M09
-    rule: 'Hauptverb entscheidet. Such-Verb als Hauptverb (suche/finde/zeig/hast du) → M06 — auch wenn ein um-zu-planen oder Unterrichtseinheit-Nebensatz folgt. Plan-Verb als Hauptverb (plane/stelle zusammen/Stundenentwurf) → M09.'
-    example: 'Material zur Unterrichtseinheit Bruchrechnung → M06. Plane Unterrichtsreihe Bruchrechnung → M09. Ich suche Material, um meine Unterrichtseinheit zu planen → M06 (Hauptverb=suche).'
+    rule: Hauptverb entscheidet. Such-Verb als Hauptverb (suche/finde/zeig/hast du) → M06 — auch wenn ein um-zu-planen oder Unterrichtseinheit-Nebensatz folgt. Plan-Verb als Hauptverb (plane/stelle 
+      zusammen/Stundenentwurf) → M09.
+    example: Material zur Unterrichtseinheit Bruchrechnung → M06. Plane Unterrichtsreihe Bruchrechnung → M09. Ich suche Material, um meine Unterrichtseinheit zu planen → M06 (Hauptverb=suche).
   - vs: M10
     rule: Such-Verb (zeig/finde/hast du) → M06. Create-Verb (erstell/generiere) → M10.
-    example: "Such mir Quiz zu X → M06. Erstell mir Quiz zu X → M10."
+    example: Such mir Quiz zu X → M06. Erstell mir Quiz zu X → M10.
 ---
 
 # M06 — Material-Suche Cascade

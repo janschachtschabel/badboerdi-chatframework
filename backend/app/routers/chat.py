@@ -54,7 +54,7 @@ def _collection_matches_topic(cards: list[WloCard], topic: str) -> bool:
                 return True
     return False
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import ChatRequest, ChatResponse, ClassificationResult, DebugInfo, PaginationInfo, WloCard
@@ -86,25 +86,21 @@ from app.services.llm_service import (
     classify_input, generate_response, generate_quick_replies, generate_learning_path_text,
 )
 from app.services.canvas_service import (
-    generate_canvas_content, generate_canvas_remix,
-    edit_canvas_content, resolve_material_type, extract_material_type_from_message,
-    looks_like_create_intent, material_type_quick_replies,
-    material_type_quick_replies_for_persona, get_material_type_category,
-    infer_material_type_from_lrt,
+    generate_canvas_content, resolve_material_type, extract_material_type_from_message,
+    named_artifact_label,
+    looks_like_create_intent,
+    material_type_quick_replies_for_persona,
     # Live-reload-freundliche Getter statt Modul-Konstanten:
-    get_material_types, get_type_aliases, get_search_verbs, get_create_triggers,
+    get_material_types, get_type_aliases,
 )
-from app.services.text_extraction_service import extract_text_from_url
 from app.services.mcp_client import (
     call_mcp_tool, parse_wlo_cards, parse_wlo_topic_page_cards,
     parse_total_count, resolve_discipline_labels,
     reset_query_metas, get_query_metas,
 )
 from app.services.pattern_engine import select_pattern, get_patterns
-from app.services.rag_service import get_rag_context, get_always_on_rag_context
 from app.services.config_loader import (
     card_pipeline_v2_enabled,
-    get_on_demand_rag_areas,
     get_repo_base_url,
 )
 
@@ -326,24 +322,48 @@ async def _topic_pages_with_warmup(
     return primary
 
 
+def _retrieve_task_exception(task: "asyncio.Task") -> None:
+    """Done-Callback für fire-and-forget-/Spekulativ-Tasks (B1, 2026-06-10).
+
+    Ruft die Exception ab, damit asyncio kein "Task exception was never
+    retrieved" loggt, wenn ein Task verworfen wird (z.B. Spekulativ-Suche
+    auf LP-/Canvas-Routen oder Exception vor dem Konsum)."""
+    try:
+        exc = task.exception()
+        if exc is not None:
+            logger.debug("background task ended with %s: %s", type(exc).__name__, exc)
+    except (asyncio.CancelledError, asyncio.InvalidStateError):
+        pass
+
+
+# Starke Referenzen auf fire-and-forget-Tasks: der Event-Loop hält nur
+# Weak-Refs — ohne dieses Set kann ein create_task()-Task vor seiner
+# Ausführung garbage-collected werden (Quality-Log ginge still verloren).
+_BG_TASKS: set["asyncio.Task"] = set()
+
+
+def _spawn_background(coro: Any) -> None:
+    """create_task + starke Referenz + Exception-Retrieval (B1/Robustheit)."""
+    t = asyncio.create_task(coro)
+    _BG_TASKS.add(t)
+    t.add_done_callback(lambda task: (_BG_TASKS.discard(task),
+                                      _retrieve_task_exception(task)))
+
+
 def _widget_modes(req: "ChatRequest") -> dict[str, bool]:
     """Welle E (2026-05-23) — Widget-Embed-Modi auf das Minimum reduziert.
 
-    Layout-Steuerung (Cards/Canvas/Grouping/Quick-Replies) liegt jetzt
-    zentral im Studio (display-rules.yaml). Pro Embed kann nur noch
-    ``ai_content_enabled`` überschrieben werden, damit Hosts mit eigener
-    KI-Content-Pipeline die Generierung abschalten können.
+    Layout-Steuerung (Cards/Canvas/Grouping/Quick-Replies) liegt zentral
+    im Studio (display-rules.yaml). 2026-06-10: auch das letzte Embed-
+    Flag ``ai_content_enabled`` wurde entfernt — KI-generierte Inhalte
+    sind immer zugelassen (ein gesendetes Attribut wird ignoriert).
 
     Backward-Compat-Echo: cards/canvas/quick_replies/inline_result_grouping
     werden im Rückgabe-Dict immer als ``True`` mitgeliefert, damit alter
     Postprocess-/Routing-Code, der diese Keys noch liest, weiter
     funktioniert ohne explizit aufgeräumt werden zu müssen.
     """
-    env = req.environment
-    ai_v = getattr(env, "ai_content_enabled", None)
     return {
-        # ACTIVE — pro Embed überschreibbar.
-        "ai_content_enabled": True if ai_v is None else bool(ai_v),
         # Compat-Echo (Welle E entfernt). Alle deprecaten Modi sind immer
         # an aus Sicht des Backends. Nachgelagerter Code, der noch diese
         # Keys liest, verhält sich damit wie das neue Default-Layout.
@@ -853,11 +873,89 @@ def _sort_cards_for_inline(cards: list[Any], prefer_content: bool) -> list[Any]:
     return topic + coll + content
 
 
+def _qr_policy(pattern_id: str) -> tuple[str, int | None]:
+    """QR-Policy ``(mode, max)`` eines Patterns aus den Pattern-MDs
+    (Studio-steuerbar, 2026-06-10).
+
+    mode: ``exact`` (QR-Call nach der Antwort, heutiges Verhalten) |
+    ``speculative`` (parallel zum Antwort-LLM, Konsistenz-Gate +
+    exact-Fallback) | ``none`` (kein Generator-Call, kein Auto-Followup —
+    deterministische System-QRs wie Slot-Optionen/Tour/Lotse bleiben).
+    max: 1–6 oder None (= globaler display-rules-Wert beim Anzeige-Trim).
+
+    Akzeptiert auch Debug-Labels wie ``"M09 (Lernpfad)"`` (nimmt das
+    erste Token); unbekannte IDs → Default. Loader ist mtime-gecacht.
+    """
+    pid = (pattern_id or "").split(" ")[0].strip()
+    if pid:
+        try:
+            from app.services.config_loader import load_pattern_definitions
+            for p in load_pattern_definitions():
+                if p.get("id") == pid:
+                    mode = str(p.get("quick_replies_mode") or "exact").strip().lower()
+                    if mode not in ("exact", "speculative", "none"):
+                        mode = "exact"
+                    qmax = None
+                    raw_max = p.get("quick_replies_max")
+                    if raw_max is not None:
+                        try:
+                            qmax = max(1, min(6, int(raw_max)))
+                        except (TypeError, ValueError):
+                            qmax = None
+                    return mode, qmax
+        except Exception:  # pragma: no cover — Policy darf nie einen Turn killen
+            pass
+    return "exact", None
+
+
+def _qr_default_count() -> int:
+    """Globale QR-Zielzahl aus ``display-rules.quick_replies.max_count``
+    (Studio: Anzeige → Quick-Replies). Seit 2026-06-10 erzeugt der
+    Generator direkt diese Anzahl, statt 4 zu generieren und auf den
+    Deckel zu trimmen (Token-Ersparnis + konsistenter Prompt).
+    ``0`` = global keine generierten QRs (Aufrufer überspringt den Call).
+    Pattern-``quick_replies_max`` überschreibt diesen Wert.
+    """
+    try:
+        v = int(((_display_rules() or {}).get("quick_replies") or {})
+                .get("max_count", 4) or 0)
+        return max(0, min(6, v))
+    except Exception:  # pragma: no cover
+        return 4
+
+
+def _spec_qr_response_block(
+    pattern_id: str, short_purpose: str, titles: list[str],
+) -> str:
+    """Antizipations-Block für spekulative QRs (QR-Policy speculative).
+
+    Ersetzt den ``Bot-Antwort:``-Inhalt im QR-Prompt, wenn der QR-Call
+    parallel zum Antwort-LLM läuft: bekannt sind dann Pattern (mit
+    ``short_purpose`` aus der Pattern-Config als Form-Beschreibung),
+    Entities (via classification im Prompt-Kontext) und die bereits
+    gegateten Prefetch-Treffer — nicht aber der Antworttext.
+    """
+    lines = [
+        "(Die Bot-Antwort wird gerade parallel generiert — sie liegt noch "
+        "nicht vor. Stütze die Vorschläge auf die folgenden Fakten:)",
+        f"Gewähltes Antwort-Pattern: {pattern_id}"
+        + (f" — {short_purpose}" if short_purpose else ""),
+    ]
+    clean_titles = [t for t in (titles or []) if (t or "").strip()][:5]
+    if clean_titles:
+        lines.append("Treffer, die unter der Antwort angezeigt werden:")
+        lines.extend(f"- {t}" for t in clean_titles)
+    else:
+        lines.append("Es sind vorab keine Treffer-Karten bekannt.")
+    return "\n".join(lines)
+
+
 def _extract_web_links_from_text(
     text: str,
     cards: list[Any] | None = None,
     *,
     max_links: int = 5,
+    keep_bullet_labels: bool = False,
 ) -> tuple[str, list[dict[str, str]]]:
     """Zieht Markdown-Links ``[label](url)`` aus dem Bot-Antwort-Text raus,
     sofern sie nicht bereits zu einer Card gehören. Rückgabe:
@@ -1053,13 +1151,20 @@ def _extract_web_links_from_text(
     # nicht durch die Markdown-Regex fälschlich gematcht würde.
     out_lines: list[str] = []
     for line in raw.split("\n"):
-        m_md = bullet_link_re.match(line)
-        if m_md and _record(m_md.group(1), m_md.group(2)):
-            continue
-        m_html = bullet_html_link_re.match(line)
-        if m_html and _record(m_html.group(2), m_html.group(1)):
-            # HTML: group(1) = url, group(2) = label (Reihenfolge anders als MD)
-            continue
+        # keep_bullet_labels (2026-06-10, Lernpfad/M09): Bullet-Zeilen mit
+        # Link NICHT komplett löschen — Pass 2 ersetzt den Link durch sein
+        # Label, sodass „- Material: Titel" als Erwähnung im Pfad-Text
+        # stehen bleibt (der klickbare Link lebt dedupliziert in der
+        # Materialien-Box darunter). Vorher zerstörte Pass 1 genau die
+        # Schritt→Material-Zuordnung, die der LP-Prompt verlangt.
+        if not keep_bullet_labels:
+            m_md = bullet_link_re.match(line)
+            if m_md and _record(m_md.group(1), m_md.group(2)):
+                continue
+            m_html = bullet_html_link_re.match(line)
+            if m_html and _record(m_html.group(2), m_html.group(1)):
+                # HTML: group(1) = url, group(2) = label (Reihenfolge anders als MD)
+                continue
         out_lines.append(line)
     stripped = "\n".join(out_lines)
 
@@ -1838,7 +1943,11 @@ def _filter_cards_used_in_text(cards_raw: list[dict], response_text: str) -> lis
     LLM rewrites/truncates the URL.
 
     De-duplicates by node_id AND url (the same resource can appear under
-    multiple collections with distinct node_ids) and preserves original order.
+    multiple collections with distinct node_ids). Ordering (2026-06-10):
+    by FIRST OCCURRENCE in the response text, not by pool order — die Box
+    spiegelt so die Schritt-Reihenfolge des Lernpfads, und der spätere
+    ``materialien_max_lernpfad``-Trim schneidet Zusatz-Links (z.B. aus
+    einem Differenzierungs-Absatz) statt der Schritt-Materialien ab.
 
     Fallback: if *nothing* matches (e.g. LLM error or non-standard formatting),
     return the original list — it's safer to show too many cards than none.
@@ -1846,7 +1955,7 @@ def _filter_cards_used_in_text(cards_raw: list[dict], response_text: str) -> lis
     if not cards_raw or not response_text:
         return cards_raw
     text_lower = response_text.lower()
-    used: list[dict] = []
+    used: list[tuple[int, dict]] = []
     seen_ids: set[str] = set()
     seen_urls: set[str] = set()
     for c in cards_raw:
@@ -1858,13 +1967,17 @@ def _filter_cards_used_in_text(cards_raw: list[dict], response_text: str) -> lis
             continue
         wlo = (c.get("wlo_url") or "").strip()
         matched = False
+        match_pos = len(response_text)
         # 1. URL / wlo_url / node_id — exact substring match (primary)
         if url and url in response_text:
             matched = True
+            match_pos = response_text.find(url)
         elif wlo and wlo in response_text:
             matched = True
+            match_pos = response_text.find(wlo)
         elif nid and nid in response_text:
             matched = True
+            match_pos = response_text.find(nid)
         else:
             # 2. Title fallback — only for multi-word titles (≥ 3 words after
             #    stripping common provider suffixes). A single-word match like
@@ -1880,13 +1993,16 @@ def _filter_cards_used_in_text(cards_raw: list[dict], response_text: str) -> lis
                 words = [w for w in primary.split() if len(w) >= 3]
                 if len(words) >= 3 and len(primary) >= 15 and primary.lower() in text_lower:
                     matched = True
+                    match_pos = text_lower.find(primary.lower())
         if matched:
-            used.append(c)
+            used.append((match_pos, c))
             if nid:
                 seen_ids.add(nid)
             if url:
                 seen_urls.add(url)
-    return used if used else cards_raw
+    # Stabil nach Text-Position sortieren (Ties behalten Pool-Reihenfolge).
+    used.sort(key=lambda t: t[0])
+    return [c for _, c in used] if used else cards_raw
 
 
 def _filter_unused_cards(cards_raw: list[dict], used: set[str]) -> tuple[list[dict], bool]:
@@ -1978,6 +2094,8 @@ async def _handle_browse_collection(
                 "entities": session_state.get("entities", {}),
             },
             session_state=session_state,
+            # Globale QR-Zielzahl (Anzeige-Tab) — kein Pattern-Kontext hier.
+            count=_qr_default_count() or 2,
         )
     except Exception as _qr_err:
         logger.warning("browse_collection quick_replies failed: %s", _qr_err)
@@ -2321,8 +2439,39 @@ async def _handle_generate_learning_path(
         # Show only the items the LLM actually referenced in the path.
         cards_raw = _filter_cards_used_in_text(cards_raw, response_text)
 
+        # keep_bullet_labels-Pendant zum Hauptpfad (2026-06-10): Die
+        # ``- Material: [Titel](URL)``-Zeilen (HARTE REGEL 4 des LP-
+        # Prompts) als Erwähnung behalten, den Markdown-Link aber durch
+        # sein Label ersetzen — die URLs stecken bereits in der
+        # Materialien-Box (``cards``), sonst kämen Links doppelt
+        # (LP-Box + Materialien-Box). Erst NACH
+        # ``_filter_cards_used_in_text`` (das matcht primär über URLs);
+        # extrahierte web_links verwerfen wie im Hauptpfad bei M09.
+        if response_text:
+            response_text, _ = _extract_web_links_from_text(
+                response_text, cards=cards_raw, keep_bullet_labels=True,
+            )
+
         persona = session_state.get("persona_id", "")
         cards = _build_cards(cards_raw, persona)
+
+        # Box-Deckel wie im Hauptpfad (2026-06-10): Studio-Key
+        # groups.materialien_max_lernpfad (Default 5, Clamp 1–8). Der
+        # zentrale Gruppen-Trim in _chat_impl greift für Direct-Action-
+        # Returns nicht — ohne Deckel zeigte die Box ALLE referenzierten
+        # Karten (bis 16). cards sind nach Text-Position sortiert
+        # (_filter_cards_used_in_text) → die ersten N = Schritt-Reihenfolge.
+        try:
+            _lp_grp = (_display_rules().get("groups") or {})
+            _lp_max = max(1, min(8, int(_lp_grp.get("materialien_max_lernpfad") or 5)))
+        except Exception:
+            _lp_max = 5
+        if len(cards) > _lp_max:
+            logger.info(
+                "direct-action LP: cards trimmed %d → %d (materialien_max_lernpfad)",
+                len(cards), _lp_max,
+            )
+            cards = cards[:_lp_max]
 
     except Exception as e:
         logger.error("generate_learning_path error: %s", e)
@@ -2331,21 +2480,31 @@ async def _handle_generate_learning_path(
         tools_called.append("error")
 
     # Generate quick replies (best-effort — never block a finished LP on QR).
-    try:
-        quick_replies = await generate_quick_replies(
-            message=req.message,
-            response_text=response_text,
-            classification={
-                "persona_id": session_state.get("persona_id", "P-AND"),
-                "intent_id": "I04",
-                "next_state": "S3",
-                "entities": session_state.get("entities", {}),
-            },
-            session_state=session_state,
-        )
-    except Exception as _qr_err:
-        logger.warning("learning_path quick_replies failed: %s", _qr_err)
+    # QR-Policy (2026-06-10): respektiert mode/max des M09-Patterns; bei
+    # ``none`` entfällt der Generator-Call (Lotsen-QR via _attach_guide_qr
+    # bleibt als System-Funktion aktiv). ``speculative`` hat im Direct-
+    # Action-Pfad kein Parallel-Fenster → verhält sich wie exact.
+    _lp_qr_mode, _lp_qr_max = _qr_policy("M09")
+    _lp_qr_count = _lp_qr_max if _lp_qr_max is not None else _qr_default_count()
+    if _lp_qr_mode == "none" or _lp_qr_count <= 0:
         quick_replies = []
+    else:
+        try:
+            quick_replies = await generate_quick_replies(
+                message=req.message,
+                response_text=response_text,
+                classification={
+                    "persona_id": session_state.get("persona_id", "P-AND"),
+                    "intent_id": "I04",
+                    "next_state": "S3",
+                    "entities": session_state.get("entities", {}),
+                },
+                session_state=session_state,
+                count=_lp_qr_count,
+            )
+        except Exception as _qr_err:
+            logger.warning("learning_path quick_replies failed: %s", _qr_err)
+            quick_replies = []
     quick_replies = _attach_guide_qr(req, quick_replies, session_state, response_text=response_text)
 
     debug = DebugInfo(
@@ -2715,9 +2874,12 @@ async def _postprocess_response_for_widget_modes(
                 "leere Cards" if not cards_for_postprocess else "LLM-IDs matchen 0 Cards",
                 (req.message or "")[:60],
             )
+            # Fix 2026-06-10: kein Aufrufer übergibt classification_entities —
+            # Fallback auf die Turn-Entities aus resp.debug, damit die
+            # fach/stufe-Filter der Fallback-Suche wie designed greifen.
             fb_cards = await _fallback_inline_search(
                 req.message or "",
-                classification_entities or {},
+                classification_entities or _debug_entities or {},
             )
             if fb_cards:
                 logger.info("safety-net (%s): %d Cards aus Fallback",
@@ -3088,7 +3250,11 @@ async def _postprocess_response_for_widget_modes(
             # Thema isoliert hat. Verhindert dass die Browse-URL die ganze
             # User-Frage als Filter trägt ("Welche Materialien hast du zu
             # Klimawandel?") — was praktisch kein Repo-Match liefert.
-            _sq_topic = (session_state.get("entities") or {}).get("thema") or ""
+            # Fix 2026-06-10: ``session_state`` existiert in dieser Funktion
+            # nicht (NameError wurde vom except still geschluckt → die
+            # thema-basierte q=-Annotation lief nie). Entities kommen hier
+            # aus resp.debug (_debug_entities, oben aus dem Turn extrahiert).
+            _sq_topic = (_debug_entities or {}).get("thema") or ""
             _v2_attach_link(
                 cards_for_postprocess or [],
                 guide_mode=guide_mode_on,
@@ -3197,6 +3363,20 @@ async def _postprocess_response_for_widget_modes(
             from app.services.config_loader import load_display_rules_config as _ldr
             _qr_max = int((_ldr().get("quick_replies") or {}).get("max_count", 4) or 0)
             _qr_max = max(0, min(6, _qr_max))
+            # QR-Policy (2026-06-10): per-Pattern-Anzahl überschreibt den
+            # globalen Deckel. Pattern-ID aus dem Debug-Label ("M09 (…)").
+            try:
+                _dbg = resp.debug
+                _dbg_pattern = (
+                    getattr(_dbg, "pattern", None)
+                    or (_dbg.get("pattern") if isinstance(_dbg, dict) else "")
+                    or ""
+                )
+                _, _p_qr_max = _qr_policy(_dbg_pattern)
+                if _p_qr_max is not None:
+                    _qr_max = _p_qr_max
+            except Exception:
+                pass
             if qrs and len(qrs) > _qr_max:
                 qrs = qrs[:_qr_max]
         except Exception:
@@ -3216,8 +3396,23 @@ async def _postprocess_response_for_widget_modes(
         return resp
 
 
+def _peer_ip(request: Request) -> str:
+    """Echte Verbindungs-IP für Rate-Limit + Logs. ``X-Forwarded-For`` wird
+    NUR berücksichtigt, wenn ``TRUST_FORWARDED_FOR`` gesetzt ist (eigener
+    Reverse-Proxy) — sonst wäre der Header client-spoofbar."""
+    import os as _os
+    if (_os.getenv("TRUST_FORWARDED_FOR") or "").strip().lower() in ("1", "true", "yes"):
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff.strip():
+            return xff.split(",")[0].strip()
+    try:
+        return (request.client.host if request.client else "") or ""
+    except Exception:
+        return ""
+
+
 @router.post("", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     """Process a chat message through the 3-phase pattern engine.
 
     Serialized per session_id via an asyncio.Lock so that two concurrent
@@ -3228,7 +3423,7 @@ async def chat(req: ChatRequest):
     try:
         async with lock:
             try:
-                _resp = await _chat_impl(req)
+                _resp = await _chat_impl(req, peer_ip=_peer_ip(request))
                 return await _postprocess_response_for_widget_modes(req, _resp)
             except Exception as _impl_err:
                 # Top-level safety net: any unhandled exception in _chat_impl
@@ -3430,206 +3625,14 @@ async def _handle_tour(
     )
 
 
-async def _chat_impl(
-    req: ChatRequest,
-    tracer_listener: Any = None,
-    on_token: Any = None,
-) -> ChatResponse:
-    """Core chat pipeline.
-
-    ``tracer_listener`` is an optional callback used by the streaming
-    endpoint (POST /api/chat/stream) to receive ``phase`` events live as
-    the Tracer fires them.
-
-    ``on_token`` (Phase-2) is forwarded to ``generate_response`` so the
-    final-answer LLM call can stream tokens back. The streaming endpoint
-    wraps both into the SSE event queue. Default ``None`` for both keeps
-    the regular non-streaming POST /api/chat unchanged.
-    """
-    # Clear per-request MCP query-meta accumulator so each turn starts fresh.
-    reset_query_metas()
-
-    # 1. Load/create session
-    session = await get_or_create_session(req.session_id)
-    history = await get_messages(req.session_id, limit=20)
-
-    # Parse stored session state
-    session_state = {
-        "persona_id": session.get("persona_id", ""),
-        "state_id": session.get("state_id", "S1"),
-        "entities": json.loads(session.get("entities", "{}")),
-        "signal_history": json.loads(session.get("signal_history", "[]")),
-        "turn_count": session.get("turn_count", 0),
-    }
-
-    env = req.environment.model_dump()
-
-    # ── Webseiten-Tour (geführte Besucherführung) ────────────────────
-    # Deterministische, seiten-stateful State Machine. Greift VOR
-    # Klassifikator/Pattern-Engine/LLM und VOR dem page_context-MCP-Resolve
-    # (spart Latenz bei Ticks). Baut die Antwort aus website-tour.yaml selbst.
-    try:
-        _tour_resp = await _handle_tour(req, env, session)
-    except Exception as _tour_err:
-        logger.warning("tour handler failed: %s", _tour_err)
-        _tour_resp = None
-    if _tour_resp is not None:
-        return _tour_resp
-
-    # Inject page_context entities (node_id, collection_id, search_query,
-    # topic_page_slug, subject_slug, document_title)
-    page_ctx = env.get("page_context", {})
-    for key in (
-        "node_id", "collection_id", "search_query",
-        "topic_page_slug", "subject_slug", "document_title", "page_type",
-    ):
-        if page_ctx.get(key):
-            session_state["entities"][key] = page_ctx[key]
-
-    # ── Resolve page context → structured metadata ────────────────
-    # If the widget was embedded on a theme page (or edu-sharing node
-    # render URL), turn the raw node_id / slug into title/description/
-    # disciplines/stufen via MCP. Cached per-session, TTL 30 min.
-    try:
-        from app.services import page_context_service
-        await page_context_service.resolve_page_context(page_ctx, session_state)
-    except Exception as _pc_err:
-        logger.warning("page_context auto-resolve skipped: %s", _pc_err)
-
-    # Save user message
-    await save_message(req.session_id, "user", req.message)
-
-    # ── 0. Rate limiting (vor allem anderen) ─────────────────────
-    _client_ip = (env.get("page_context") or {}).get("ip", "") or ""
-    _rl = check_rate_limit(req.session_id, _client_ip)
-    if not _rl["allowed"]:
-        await log_safety_event(
-            req.session_id, req.message, decision=None,
-            ip=_client_ip, rate_limited=True,
-        )
-        return ChatResponse(
-            session_id=req.session_id,
-            content=_rl["blocked_message"],
-            quick_replies=[],
-        )
-
-    # NB: Card-Pipeline v2 wird NICHT mehr hier per fire-and-forget
-    # geloggt — der Hauptpfad-Switch sitzt jetzt in
-    # ``_postprocess_response_for_widget_modes`` (Option C). Damit hat der
-    # v2-Pfad Zugriff auf die LLM-Auswahl (selected_card_ids) und kann sie
-    # als Re-Rank-Hint nutzen. Der A/B-Log entsteht dort ebenfalls.
-
-    # ── Handle direct actions (bypass classification) ─────────
-    # IMPORTANT: direct actions skip the pattern engine but MUST still go
-    # through the same safety gate the standard flow runs.
-    # Welle E v4+ (2026-05-25): canvas_* Direkt-Actions entfernt — Material-
-    # Generierung läuft jetzt durch den Hint-Primary-Pfad (M10/M11), nicht
-    # mehr durch einen separaten Canvas-Handler.
-    _direct_actions = {
-        "browse_collection",
-        "generate_learning_path",
-    }
-    if req.action in _direct_actions:
-        from app.services.safety_service import (
-            assess_safety as _da_assess_safety,
-            _regex_gate as _da_regex_gate,
-        )
-        _safety_text = _direct_action_safety_text(req)
-        _signals = session_state.get("signal_history", [])
-        # ``assess_safety`` runs ``_regex_gate`` first internally and short-
-        # circuits on a hard regex hit, so a single call here gives us the
-        # full multi-stage gate with the LLM stages too.
-        try:
-            _da_safety = await _da_assess_safety(_safety_text, _signals)
-        except Exception as _da_err:
-            logger.warning("direct-action safety assess failed: %s", _da_err)
-            _da_safety = _da_regex_gate(_safety_text, _signals)
-        if _da_safety.risk_level == "high":
-            await log_safety_event(
-                req.session_id, _safety_text, decision=_da_safety.model_dump(),
-                ip=_client_ip,
-            )
-            _block_msg = (
-                "Diese Anfrage konnte ich nicht bearbeiten — sie verletzt "
-                "Sicherheits- oder Inhaltsregeln. Probier es bitte mit einer "
-                "anderen Formulierung erneut."
-            )
-            err_debug = DebugInfo(
-                pattern="SAFETY: blocked_direct_action",
-                tools_called=[],
-                safety=_da_safety,
-                entities={"action": str(req.action or "")},
-            )
-            try:
-                await save_message(
-                    req.session_id, "assistant", _block_msg,
-                    debug=err_debug.model_dump(),
-                )
-            except Exception:
-                pass
-            return ChatResponse(
-                session_id=req.session_id,
-                content=_block_msg,
-                quick_replies=[],
-                debug=err_debug,
-            )
-        if req.action == "browse_collection":
-            return await _handle_browse_collection(req, session_state)
-        # Host-Flag ai-content-enabled="false" sperrt KI-Material-Actions
-        # vollständig — selbst wenn das Frontend sie direkt anfragt.
-        # Alt-Response statt LLM-Aufruf (kein Token-Verbrauch).
-        _ai_blocked_actions = {
-            "generate_learning_path",
-        }
-        if req.action in _ai_blocked_actions:
-            _modes_act = _widget_modes(req)
-            if not _modes_act["ai_content_enabled"]:
-                from app.services.config_loader import load_widget_modes_config as _lwm
-                _wm = _lwm()
-                _alt = _wm.get("ai_disabled_alt_response") or {}
-                _alt_text = str(_alt.get("text") or
-                                "Ich kann gerade kein neues Material erstellen.").strip()
-                _alt_qrs = list(_alt.get("quick_replies") or []) \
-                    if _modes_act["quick_replies_enabled"] else []
-                await add_message(req.session_id, "user", req.message)
-                await add_message(req.session_id, "assistant", _alt_text)
-                return ChatResponse(
-                    session_id=req.session_id,
-                    content=_alt_text,
-                    cards=[],
-                    quick_replies=_alt_qrs,
-                    page_action=None,
-                )
-        if req.action == "generate_learning_path":
-            return await _handle_generate_learning_path(req, session_state)
-
-    # Phase A2 — Token-Cost-Tracking: ein Accumulator pro Turn, durchgeschleift
-    # an alle LLM-Helper. Sammelt prompt/completion/cached-Tokens je Modell,
-    # landet am Ende in DebugInfo.token_usage.
-    from app.services.llm_service import usage_accumulator_new
-    usage_acc = usage_accumulator_new()
-
-    # 1b. Safety assessment (Triple-Schema T-12/19) — multi-stage gating
-    #     Stage 1: regex (always)
-    #     Stage 2: OpenAI moderation (eskaliert bei Verdacht)
-    #     Stage 3: LLM legal classifier (parallel zu Stage 2)
-    #
-    # Optimization: safety and classify_input are logically independent —
-    # we run both concurrently with asyncio.gather(). Saves ~600 ms per
-    # turn. The fast regex pre-gate runs inline first so a hard CRISIS
-    # match still aborts before we waste an LLM classify call.
+async def _assess_safety_classify_memory(
+    req, history, session_state, env, usage_acc, tracer,
+):
+    """Safety + Classify + Memory als parallele Gruppe (1:1 aus _chat_impl
+    extrahiert). Regex-Pre-Gate kurzschließt bei harter Krise; sonst laufen
+    Safety / Classify / Memory-Fetch nebenläufig. Liefert das Routing-Tripel
+    (safety, classification, memories)."""
     from app.services.safety_service import assess_safety, _regex_gate
-    from app.services.trace_service import Tracer
-    tracer = Tracer(listener=tracer_listener)
-
-    # Safety + classify run as a single parallel block. We measure the
-    # combined wall-clock as one trace entry — splitting them produced a
-    # confusing "0 ms" entry for the parallel-spawned classify call.
-    # Welle E (2026-05-23) — Statt eines monolithischen "safety_classify"
-    # Steps öffnen wir eine Parallel-Gruppe. Die einzelnen Tasks
-    # (Safety, Classify, Memory) werden je nach Pfad einzeln getimet
-    # und am Ende als Gruppe in den Tracer geschrieben. Studio rendert
-    # daraus einen horizontal-stack mit individuellen Bars.
     parallel_grp = tracer.parallel_group(
         "safety_classify_memory",
         "Safety + Classify + Memory (parallel)",
@@ -3724,7 +3727,103 @@ async def _chat_impl(
             "next_state": classification.next_state,
             "memory_count": len(_memories_early) if isinstance(_memories_early, list) else 0,
         })
+    return safety, classification, _memories_early
 
+
+async def _run_preflight_guards(req, env, session_state, _client_ip):
+    """Rate-Limit + Direkt-Action-Dispatch (browse_collection /
+    generate_learning_path), 1:1 aus _chat_impl extrahiert. Liefert eine
+    frühe ChatResponse (Limit/Block/Action-Ergebnis) oder None, wenn der
+    reguläre Pfad weiterlaufen soll."""
+    _rl = check_rate_limit(req.session_id, _client_ip)
+    if not _rl["allowed"]:
+        await log_safety_event(
+            req.session_id, req.message, decision=None,
+            ip=_client_ip, rate_limited=True,
+        )
+        return ChatResponse(
+            session_id=req.session_id,
+            content=_rl["blocked_message"],
+            quick_replies=[],
+        )
+
+    # NB: Card-Pipeline v2 wird NICHT mehr hier per fire-and-forget
+    # geloggt — der Hauptpfad-Switch sitzt jetzt in
+    # ``_postprocess_response_for_widget_modes`` (Option C). Damit hat der
+    # v2-Pfad Zugriff auf die LLM-Auswahl (selected_card_ids) und kann sie
+    # als Re-Rank-Hint nutzen. Der A/B-Log entsteht dort ebenfalls.
+
+    # ── Handle direct actions (bypass classification) ─────────
+    # IMPORTANT: direct actions skip the pattern engine but MUST still go
+    # through the same safety gate the standard flow runs.
+    # Welle E v4+ (2026-05-25): canvas_* Direkt-Actions entfernt — Material-
+    # Generierung läuft jetzt durch den Hint-Primary-Pfad (M10/M11), nicht
+    # mehr durch einen separaten Canvas-Handler.
+    _direct_actions = {
+        "browse_collection",
+        "generate_learning_path",
+    }
+    if req.action in _direct_actions:
+        from app.services.safety_service import (
+            assess_safety as _da_assess_safety,
+            _regex_gate as _da_regex_gate,
+        )
+        _safety_text = _direct_action_safety_text(req)
+        _signals = session_state.get("signal_history", [])
+        # ``assess_safety`` runs ``_regex_gate`` first internally and short-
+        # circuits on a hard regex hit, so a single call here gives us the
+        # full multi-stage gate with the LLM stages too.
+        try:
+            _da_safety = await _da_assess_safety(_safety_text, _signals)
+        except Exception as _da_err:
+            logger.warning("direct-action safety assess failed: %s", _da_err)
+            _da_safety = _da_regex_gate(_safety_text, _signals)
+        if _da_safety.risk_level == "high":
+            await log_safety_event(
+                req.session_id, _safety_text, decision=_da_safety.model_dump(),
+                ip=_client_ip,
+            )
+            _block_msg = (
+                "Diese Anfrage konnte ich nicht bearbeiten — sie verletzt "
+                "Sicherheits- oder Inhaltsregeln. Probier es bitte mit einer "
+                "anderen Formulierung erneut."
+            )
+            err_debug = DebugInfo(
+                pattern="SAFETY: blocked_direct_action",
+                tools_called=[],
+                safety=_da_safety,
+                entities={"action": str(req.action or "")},
+            )
+            try:
+                await save_message(
+                    req.session_id, "assistant", _block_msg,
+                    debug=err_debug.model_dump(),
+                )
+            except Exception:
+                pass
+            return ChatResponse(
+                session_id=req.session_id,
+                content=_block_msg,
+                quick_replies=[],
+                debug=err_debug,
+            )
+        if req.action == "browse_collection":
+            return await _handle_browse_collection(req, session_state)
+        # ai-content-enabled-Host-Flag entfernt (2026-06-10): KI-generierte
+        # Inhalte (Lernpfad/Material) sind immer zugelassen. Der alte
+        # Block-Pfad war zudem nie lauffähig (rief das nicht existierende
+        # ``add_message`` auf) — ein Wiedereinbau bräuchte auch Intent-/
+        # Pattern-Ausschlüsse (I04/I05, M09/M10) und ist bewusst vertagt.
+        if req.action == "generate_learning_path":
+            return await _handle_generate_learning_path(req, session_state)
+    return None
+
+
+async def _launch_speculative_prefetch(req, classification, safety):
+    """Spekulativen MCP-Prefetch starten (C-Aufräumung 2026-06-10 —
+    1:1 aus _chat_impl extrahiert; Stubs, Closures und Start-Bedingung
+    unverändert). Liefert das Spec-Variablen-Tupel; greift die Start-
+    Bedingung nicht, bleiben alle Werte auf ihren Defaults."""
     # ── Speculative MCP prefetch — Variablen-Stubs ────────────────────
     # Welle-A.3 (2026-05): Der eigentliche Spec-Start wurde HINTER die
     # Pre-Route-Engine verschoben. Begründung: Pre-Route kann den Intent
@@ -3747,228 +3846,6 @@ async def _chat_impl(
     # Aus dem search_wlo_all-Envelope gesplittete Extra-Payloads (collections/topic).
     _search_all_extras: list[dict] = []
 
-    # Log every safety decision (filtered by config: log_all_turns)
-    try:
-        from app.services.config_loader import load_safety_config
-        _log_cfg = (load_safety_config().get("logging") or {})
-        if _log_cfg.get("enabled", True):
-            if _log_cfg.get("log_all_turns", False) or safety.risk_level != "low":
-                await log_safety_event(
-                    req.session_id, req.message, safety, ip=_client_ip,
-                )
-    except Exception as _e:
-        logger.warning("safety log failed: %s", _e)
-
-    # ── Placeholder-Topic-Filter ─────────────────────────────────────
-    # Wenn der Classifier "Thema" / "etwas" / "irgendwas" / "was" / "Material"
-    # etc. als thema extrahiert hat, ist das KEIN echtes Thema, sondern ein
-    # Meta-Wort aus der User-Frage ("Ich suche etwas zu einem Thema"). Solche
-    # Platzhalter dürfen nicht zu einer MCP-Suche führen — die Engine soll
-    # dann sauber degradieren ("nenn mir dein konkretes Thema") statt mit
-    # Müll-Treffern ("Wortschatz" / "Startseite Mathematik" für Query="Thema")
-    # die Karten-Liste zu fluten.
-    #
-    # Wortliste + min_length aus 01-base/placeholder-topics.yaml (Studio-
-    # pflegbar). Defaults sind dieselben wie die alte Hardcode-Liste.
-    try:
-        from app.services.config_loader import load_placeholder_topics_config
-        _ph_cfg = load_placeholder_topics_config()
-        _PLACEHOLDER_TOPICS = _ph_cfg["topics"]
-        _PLACEHOLDER_MIN_LEN = _ph_cfg["min_length"]
-    except Exception as _ph_err:
-        logger.debug("placeholder-topics config load failed: %s", _ph_err)
-        _PLACEHOLDER_TOPICS = {
-            "thema", "themen", "ein thema", "einem thema", "irgendwas",
-            "etwas", "was", "irgendetwas", "irgendein thema", "sonstiges",
-            "material", "materialien", "ein material", "ein paar materialien",
-            "sachen", "dinge", "stuff", "topic", "etwas thema",
-            "inhalt", "inhalte", "content",
-        }
-        _PLACEHOLDER_MIN_LEN = 3
-
-    def _is_placeholder_topic(value: str | None) -> bool:
-        s = (value or "").strip().lower()
-        if not s:
-            return False
-        # Längen-Check: zu kurze Themen sind quasi immer Tippfehler oder
-        # nicht-extrahierbarer Rest. "OER"/"DSGVO" (3-4) bleiben gültig.
-        if _PLACEHOLDER_MIN_LEN > 0 and len(s) < _PLACEHOLDER_MIN_LEN:
-            return True
-        return s in _PLACEHOLDER_TOPICS
-
-    if classification.entities and _is_placeholder_topic(
-        classification.entities.get("thema")
-    ):
-        logger.info(
-            "thema='%s' ist Platzhalter — auf leer gesetzt, damit Engine sauber nachfragt",
-            classification.entities.get("thema"),
-        )
-        classification.entities["thema"] = ""
-
-    # Auch stale Platzhalter aus vorherigem Turn aus session_state entfernen
-    _ss_ents = session_state.get("entities") or {}
-    if _is_placeholder_topic(_ss_ents.get("thema")):
-        logger.info(
-            "stale session_state.thema='%s' (Platzhalter) entfernt",
-            _ss_ents.get("thema"),
-        )
-        _ss_ents["thema"] = ""
-
-    # Update entities based on turn type
-    turn_type = classification.turn_type
-    new_entities = classification.entities
-
-    if turn_type == "topic_switch":
-        # Welle C Sprint 6 — Topic-Switch v3 mit Carry-over-Filter.
-        #
-        # Wenn der LLM-Classifier den alten Slot als Carry-over zurückgibt
-        # (z.B. ``thema="Bruchrechnung"`` nach "anderes Thema"), landet das
-        # Pattern fälschlich bei M06/M12 statt M03-Klärung, weil
-        # ``entity.thema`` non-empty ist.
-        #
-        # Fix: Carry-over-Slots aus ``classification.entities`` POPPEN —
-        # das macht den context für die Rule-Engine sauber.
-        _prev_slots_pre = {
-            k: v for k, v in (session_state.get("entities") or {}).items()
-            if not str(k).startswith("_") and v
-        }
-        if classification.entities:
-            _dropped_carry = []
-            for k in list(classification.entities.keys()):
-                if str(k).startswith("_"):
-                    continue
-                v = classification.entities.get(k)
-                if v and _prev_slots_pre.get(k) == v:
-                    classification.entities.pop(k)
-                    _dropped_carry.append(k)
-            if _dropped_carry:
-                logger.info(
-                    "topic_switch carry-over filter: popped %s from classification.entities (matched prev=%s)",
-                    _dropped_carry, _prev_slots_pre,
-                )
-            # new_entities nach dem Reset neu binden, damit die Merge-
-            # Schleife unten den gereinigten Stand sieht.
-            new_entities = classification.entities
-        #
-        # Iterations-Historie:
-        #   v1: nur ``session_state["entities"] = {}``. Bug: classification.
-        #       entities mit alten Werten wurde danach gleich rein-gemerged.
-        #   v2: classification.entities auch leeren. Bug: wenn User ein
-        #       NEUES Thema nennt ("Goethe Faust"), wurde es mit gelöscht.
-        #   v3 (aktuell): Carry-over erkennen — wenn der Classifier einen
-        #       Slot mit DEM SELBEN Wert zurückgibt wie der vorige Turn,
-        #       ist das mit hoher Wahrscheinlichkeit Carry-over (kein
-        #       echter neuer Wert) → ignorieren. Nur Slots, die WIRKLICH
-        #       neu/anders sind, überleben den Reset.
-        #
-        # Beispiele:
-        #   "anderes Thema" + classification.thema="Bruchrechnung" (alt) →
-        #       Carry-over erkannt → thema verworfen → Klärung
-        #   "Goethe Faust" + classification.thema="Goethe Faust" (neu) →
-        #       kein Match mit prev → übernommen
-        #
-        # Private Marker (_canvas_*, _lp_*) bleiben erhalten — sie sind
-        # interner Canvas/Lernpfad-State, kein Such-Slot.
-        _prev_slots = {
-            k: v for k, v in (session_state.get("entities") or {}).items()
-            if not str(k).startswith("_") and v
-        }
-        _preserved = {
-            k: v for k, v in (session_state.get("entities") or {}).items()
-            if str(k).startswith("_")
-        }
-        session_state["entities"] = _preserved
-        _accepted: dict[str, Any] = {}
-        _carry_over_dropped: dict[str, Any] = {}
-        for k, v in (new_entities or {}).items():
-            if not v:
-                continue
-            # Carry-over: Classifier liefert exakt den alten Wert zurück
-            # bei einem topic_switch — höchst unwahrscheinlich, dass der
-            # User genau das alte Thema neu genannt hat. Verwerfen.
-            if _prev_slots.get(k) == v:
-                _carry_over_dropped[k] = v
-                continue
-            session_state["entities"][k] = v
-            _accepted[k] = v
-        logger.info(
-            "topic_switch: kept markers=%s, accepted_new=%s, carry_over_dropped=%s, "
-            "prev_slots=%s",
-            list(_preserved.keys()), _accepted, _carry_over_dropped, _prev_slots,
-        )
-    elif turn_type == "correction":
-        for k, v in new_entities.items():
-            if v:
-                session_state["entities"][k] = v
-    else:  # initial, follow_up, clarification
-        for k, v in new_entities.items():
-            if v:
-                session_state["entities"][k] = v
-
-    # ── Heuristic enrichment for the engine ─────────────────────
-    # The classifier doesn't always extract material_typ from the
-    # message text. Our heuristic alias-lookup catches more cases
-    # (plurals, synonyms). Lift the heuristic value into
-    # classification.entities so R-5 (soft-create) can match.
-    _heuristic_mt = extract_material_type_from_message(req.message)
-    if _heuristic_mt and not (classification.entities or {}).get("material_typ"):
-        if classification.entities is None:
-            classification.entities = {}
-        classification.entities["material_typ"] = _heuristic_mt
-        # Also lift into session_state so downstream code sees it
-        session_state.setdefault("entities", {})["material_typ"] = _heuristic_mt
-
-    # ── Type-Focus-Heuristik (Welle C.5+, 2026-05-22) ─────────────
-    # Wenn der Classifier "nur videos bitte" / "hast du Arbeitsblätter?"
-    # nicht als ``medientyp`` extrahiert hat, fallen wir auf die
-    # ``_resolve_wanted_content_types``-Regex zurück. Setzen den ersten
-    # canonical Treffer als ``classification.entities.medientyp``, damit:
-    #   1. der LLM-Tool-Strip (llm_service.py: medientyp → entferne
-    #      search_wlo_collections + search_wlo_topic_pages aus active_tools)
-    #      sicher greift
-    #   2. die downstream-Suche per ``search_wlo_content`` mit
-    #      learningResourceType-Filter läuft
-    #   3. das Backend den Search-CTA-Link MIT korrektem Typ-Filter
-    #      generiert (User-Anforderung: "Suchanfrage mit Thema +
-    #      inhaltstyp=video")
-    if not (classification.entities or {}).get("medientyp"):
-        _wanted_for_inject = _resolve_wanted_content_types(
-            req.message or "",
-            session_entities=session_state.get("entities") or {},
-            classification_entities=classification.entities or {},
-        )
-        if _wanted_for_inject:
-            _injected_mt = sorted(_wanted_for_inject)[0]
-            if classification.entities is None:
-                classification.entities = {}
-            classification.entities["medientyp"] = _injected_mt
-            session_state.setdefault("entities", {})["medientyp"] = _injected_mt
-            logger.info(
-                "type-focus heuristic injected medientyp=%r (resolved from %r)",
-                _injected_mt, req.message,
-            )
-
-    # ── Pre-Route Rule Engine — entfernt (Welle E v4+12, Sprint K) ────
-    # Die Pre-Route-Rules wurden in eval-355c883 datenbasiert als
-    # überflüssig nachgewiesen: +3.8% avg_score und +20% pattern_match=2
-    # OHNE die Rules. Was übrig blieb (5× Persona-Self-ID) wurde nach
-    # classify-overrides.yaml ``persona_overrides`` migriert und wirkt
-    # als Hint im Classifier-System-Prompt statt als Runtime-Override.
-    # Safety bleibt aktiv über ``safety.enforced_pattern`` direkt in der
-    # select_pattern()-Call-Site weiter unten.
-
-    # ── Speculative MCP prefetch — Tool-Start (post-Classification) ────
-    # Für Such-Style-Intents starten wir die MCP-Suche im Hintergrund,
-    # während Pattern-Selection / Policy / Context laufen. Wenn
-    # generate_response() das Ergebnis braucht, sind die Cards meist
-    # schon da → kein zweiter LLM-Tool-Round-Trip nötig.
-    #
-    # Wichtig: Dieser Block läuft NACH der Pre-Route, damit Intent- und
-    # Pattern-Overrides aus R-15..R-19 berücksichtigt werden (besonders
-    # R-17 Themenseiten-Suche → M06). Ohne die neue Reihenfolge wurde
-    # bei "Themenseite zu Photosynthese" zuerst search_wlo_collections
-    # gefeuert, das den MCP-Session-State für search_wlo_topic_pages
-    # vergiftet hat.
     def _spec_query_from_classification() -> str:
         ents = classification.entities or {}
         for k in ("thema", "fach", "topic", "query", "schlagwort"):
@@ -4008,6 +3885,14 @@ async def _chat_impl(
         # EIGENE gezielte Auflösung (Sammlung → get_topic_page_content). Die
         # generische Spekulativ-Suche wäre hier verworfene MCP-Arbeit → skip.
         and (getattr(classification, "pattern_id_hint", "") or "").strip() != "M16"
+        # B2 (2026-06-10): I04 mit gesetztem thema landet im LP-Fast-Path,
+        # der seine EIGENEN MCP-Calls feuert und das Spekulativ-Ergebnis
+        # immer verwirft (spec_blocked enthält _lp_routed) — die 1-3
+        # Spekulativ-Roundtrips wären reine verworfene Arbeit → skip.
+        and not (
+            classification.intent_id == "I04"
+            and str((classification.entities or {}).get("thema") or "").strip()
+        )
     ):
         try:
             spec_query = _spec_query_from_classification()
@@ -4128,6 +4013,7 @@ async def _chat_impl(
                     spec_task = asyncio.create_task(
                         call_mcp_tool(spec_tool_name, spec_tool_args)
                     )
+                spec_task.add_done_callback(_retrieve_task_exception)
                 logger.info(
                     "speculative primary=%s for intent=%s hint_pattern=%s args=%s",
                     spec_tool_name, classification.intent_id,
@@ -4196,623 +4082,33 @@ async def _chat_impl(
                     else:
                         t = asyncio.create_task(call_mcp_tool(extra_name, extra_args))
 
+                    t.add_done_callback(_retrieve_task_exception)
                     extra_spec_tasks.append((extra_name, t))
                     logger.info("speculative extra=%s args=%s", extra_name, extra_args)
         except Exception as _e:
             logger.warning("speculative tool spawn failed: %s", _e)
             spec_task = None
+    return (spec_task, spec_tool_name, spec_tool_args, spec_query,
+            extra_spec_tasks, spec_is_search_all, _search_all_extras)
 
-    # Update persona — R-06: persist once detected, overwrite on correction or explicit change
-    detected_persona = classification.persona_id
-    if not session_state["persona_id"]:
-        session_state["persona_id"] = detected_persona
-    elif turn_type == "correction":
-        session_state["persona_id"] = detected_persona
-    elif detected_persona != "P-AND" and detected_persona != session_state["persona_id"]:
-        # LLM detected a specific (non-fallback) persona that differs → update
-        session_state["persona_id"] = detected_persona
 
-    # Update signals
-    new_signals = classification.signals
-    signal_history = list(set(session_state["signal_history"] + new_signals))
+async def _try_canvas_create_fast_path(
+    req, classification, session_state, pattern_output,
+    memory_context, _lp_routed, tools_called, new_state,
+):
+    """Canvas-Create-Fast-Path (I05 → M10), 1:1 aus _chat_impl extrahiert
+    (C-Aufräumung 2026-06-10). Topic-/Typ-Auflösung, Garbage-/Phantom-
+    Filter, Generierung inkl. Lösungen-Validator und die beiden
+    Degradations-Zweige — alles unverändert.
 
-    # Update state
-    new_state = classification.next_state
-
-    # Welle C Sprint 6 — Conversation-State-Plausibilität prüfen.
-    # Validator ist Telemetrie-only (auto_correct=False). Implausible
-    # Übergänge werden geloggt + in debug.state_transition_warning
-    # ausgegeben, aber NICHT korrigiert — die Routing-Rules-Engine
-    # (rule_state12_guard etc.) macht weiterhin die harten Korrekturen.
-    try:
-        from app.services.state_machine import validate_transition as _validate_trans
-        _trans_check = _validate_trans(
-            prev=session_state.get("state_id") or "",
-            next_=new_state,
-            intent=classification.intent_id,
-            auto_correct=False,
-        )
-    except Exception as _exc:  # pragma: no cover — never fail the turn
-        _trans_check = {
-            "validated_state": new_state,
-            "plausible": True,
-            "reason": f"validator error: {_exc}",
-            "prev_next_likely": [],
-        }
-
-    # ── Create-Trigger erkennen (für Material-Typ-Slot-Anreicherung) ──
-    # Welle E v4+ (2026-05-25): Canvas-Edit-Auto-Routing entfernt. I06-Edit
-    # läuft jetzt durch den normalen Hint-Primary-Pfad und landet auf M11
-    # (Iterative Nachbearbeitung). M11 generiert die Edit-Antwort als
-    # vollständiges Markdown direkt im Bot-Text, nicht via Canvas-Pane.
-    _wants_create = looks_like_create_intent(req.message)
-    _detected_mt = extract_material_type_from_message(req.message)
-
-    # ── Soft-Create + State-Guard now in Engine ──────────────
-    # R-5 (rule_soft_create) replaces the inline soft-create block.
-    # R-4 (rule_state12_guard) replaces the inline S3 guard.
-    # Both fire as live rules in the pre-route engine pass above.
-    # Heuristic-detected material_typ is lifted into entities before
-    # the engine runs (see "Heuristic enrichment" block above), so R-5
-    # has the full picture.
-    #
-    # Subtle simplifications vs. legacy code:
-    #   * Position-based search-vs-create resolution is dropped — R-5
-    #     fires on any create-verb regex; ambiguous mixed-intent turns
-    #     ("zeig mir X und erstelle Y") fall back to the classifier's
-    #     choice plus any other rules. Edge case, low frequency.
-    #   * `looks_like_create_intent` (broader trigger set) is replaced
-    #     by R-5's regex — covers ~95% of the same triggers.
-
-    if classification.intent_id == "I05":
-        # Priority for material_typ (fixes "stale type" bug):
-        #   1. type detected from THIS turn's user message  (_detected_mt)
-        #   2. classifier's extracted entity for this turn   (_mt_class)
-        #   3. sticky session value (prior turn)             (_mt_session)
-        # If the user explicitly mentions a type NOW, it always wins over
-        # whatever the last turn set — otherwise clicking a new type chip
-        # re-generates the previous type.
-        _mt_session = session_state.get("entities", {}).get("material_typ")
-        _mt_class = (classification.entities or {}).get("material_typ")
-        _chosen = _detected_mt or _mt_class or _mt_session
-        if _chosen and session_state["entities"].get("material_typ") != _chosen:
-            session_state["entities"]["material_typ"] = _chosen
-        # Also lift into classification.entities so the canvas flow reads
-        # the fresh value without re-querying session state.
-        if _chosen:
-            if classification.entities is None:
-                classification.entities = {}
-            classification.entities["material_typ"] = _chosen
-
-    # 2b. Build ContextSnapshot (Triple-Schema T-04/05)
-    from app.services.context_service import build_context
-    context_snapshot = build_context(env, session_state, classification)
-    tracer.record("context", "Context snapshot built", {
-        "page": context_snapshot.page,
-        "device": context_snapshot.device,
-        "turn": context_snapshot.turn_count,
-    })
-
-    # 2c. Policy assessment (Triple-Schema T-13/14)
-    from app.services.policy_service import assess_policy
-    tracer.start("policy", "Policy evaluation")
-    policy = assess_policy(
-        message=req.message,
-        persona_id=session_state["persona_id"],
-        intent_id=classification.intent_id,
-    )
-    tracer.end({
-        "matched": policy.matched_rules,
-        "blocked_tools": policy.blocked_tools,
-        "allowed": policy.allowed,
-    })
-
-    # Merge policy blocks into safety blocked_tools (single enforcement path)
-    for t in policy.blocked_tools:
-        if t not in safety.blocked_tools:
-            safety.blocked_tools.append(t)
-
-    # 3. Pattern selection (Gate → Score → Modulate)
-    #    Safety may enforce a specific pattern (e.g. M01 on self-harm);
-    #    in that case select_pattern() bypasses gating/scoring entirely and
-    #    returns the enforced pattern with its full core_rule + tool config.
-    tracer.start("pattern", "Pattern selection (Safety → Hint → Fallback)")
-    # Pattern enforcement priority (Welle E v4+12, Sprint K — Rules entfernt):
-    #   1. Safety layer (M01, M02) wins immer (siehe safety_service)
-    #   2. LLM-Hint (pattern_id_hint aus classification)
-    #   3. Fallback (M15)
-    _enforced_for_select = safety.enforced_pattern or None
-    winner, pattern_output, scores, eliminated = select_pattern(
-        persona_id=session_state["persona_id"],
-        state_id=new_state,
-        intent_id=classification.intent_id,
-        signals=new_signals,
-        page=env.get("page", "/"),
-        device=env.get("device", "desktop"),
-        entities=session_state["entities"],
-        intent_confidence=classification.intent_confidence,
-        enforced_pattern_id=_enforced_for_select,
-        pattern_id_hint=getattr(classification, "pattern_id_hint", None),
-    )
-    tracer.end({
-        "winner": winner.id,
-        "eliminated": len(eliminated),
-    })
-
-    # Post-Route Rule-Engine — entfernt (Welle E v4+12, Sprint K).
-    # In eval-355c883 datenbasiert nachgewiesen redundant: shadow-Modus
-    # lieferte +3.8% avg_score und +20% pattern_match=2 ggü. Live-Rules.
-    # Was übrig blieb (Persona-Self-ID) wurde nach classify-overrides.yaml
-    # migriert, alles andere ist im Pattern-Hint-Workflow konzentriert.
-
-    # 3b. Safety: strip blocked tools from the chosen pattern
-    if safety.blocked_tools:
-        if "tools" in pattern_output:
-            pattern_output["tools"] = [
-                t for t in pattern_output["tools"] if t not in safety.blocked_tools
-            ]
-        logger.info("Safety blocked tools: %s", safety.blocked_tools)
-    if safety.enforced_pattern and winner.id == safety.enforced_pattern:
-        logger.info("Safety enforced pattern active: %s", winner.id)
-
-    # ── Widget-Embed-Modus: ai-content-enabled=false ─────────────────
-    # Wenn der Host die KI-Material-Generierung abgeschaltet hat und der
-    # User trotzdem nach Lernpfad/Material fragt, antworten wir aus
-    # widget-modes.yaml — kein LLM, kein Canvas, kein Token-Verbrauch.
-    # Die Patterns M09 (Lernpfad) und M10 (Canvas-Create) decken
-    # genau diese Anfragen; Intent I04 / I05 funktioniert als
-    # robuster Backup-Trigger, falls die Pattern-Engine degradiert.
-    _modes_early = _widget_modes(req)
-    if not _modes_early["ai_content_enabled"] and (
-        winner.id in ("M09", "M10")
-        or classification.intent_id in ("I04", "I05")
-    ):
-        from app.services.config_loader import load_widget_modes_config as _lwm
-        _wm = _lwm()
-        _alt = _wm.get("ai_disabled_alt_response") or {}
-        _alt_text = str(_alt.get("text") or
-                        "Ich kann gerade kein neues Material erstellen.").strip()
-        _alt_qrs = list(_alt.get("quick_replies") or []) \
-            if _modes_early["quick_replies_enabled"] else []
-        debug = DebugInfo(
-            persona=session_state.get("persona_id", "P-AND"),
-            intent=classification.intent_id,
-            state=new_state,
-            pattern=f"ACTION: ai_content_disabled (was {winner.id})",
-            tools_called=[],
-            policy=policy,
-            safety=safety,
-        )
-        await update_session(
-            req.session_id,
-            new_state,
-            session_state["persona_id"],
-            classification.intent_id,
-        )
-        await add_message(req.session_id, "user", req.message)
-        await add_message(req.session_id, "assistant", _alt_text)
-        return ChatResponse(
-            session_id=req.session_id,
-            content=_alt_text,
-            cards=[],
-            quick_replies=_alt_qrs,
-            page_action=None,
-            debug=debug,
-        )
-
-    # 4. RAG areas → presented as callable tools alongside MCP tools
-    #
-    # Welle E (2026-05-23) — STRENGE WHITELIST je Pattern:
-    #   * Pattern deklariert ``rag_areas: [a, b]`` → exakt diese Areas, nichts sonst
-    #   * Pattern deklariert ``rag_areas: []`` (explizit leer) → KEIN RAG-Tool
-    #   * Pattern deklariert ``sources`` ohne ``rag`` → KEIN RAG-Tool
-    #   * Pattern hat weder ``rag_areas`` noch ``sources`` (Default) → alle always-on
-    #
-    # Vorher: Pattern-rag_areas wurden zu always-on hinzugefügt (additiv) —
-    # das hat M04/M15 zwar ihre 1-2 Spezial-Areas gegeben, aber gleichzeitig
-    # die 9 globalen Areas mitgeschleppt. Token-Waste + Halluzinations-Risiko.
-    rag_context = ""  # No longer blindly injected — LLM calls knowledge tools instead
-
-    from app.services.config_loader import load_rag_config
-    rag_config = load_rag_config()
-
-    pattern_sources = pattern_output.get("sources")
-    pattern_rag_areas = pattern_output.get("rag_areas")
-
-    # 1) Explicit pattern whitelist (frontmatter ``rag_areas:`` is set,
-    #    even as empty list — that's an explicit "no RAG").
-    if pattern_rag_areas is not None:
-        # Filter against rag_config so we never expose an area that doesn't
-        # exist (typo protection). Empty list stays empty.
-        available_rag_areas = [a for a in pattern_rag_areas if a in rag_config]
-
-    # 2) Pattern declared sources without "rag" → kill RAG entirely.
-    elif pattern_sources is not None and "rag" not in pattern_sources:
-        available_rag_areas = []
-
-    # 3) Default: always-on areas (+ on-demand when sources include "rag").
-    else:
-        available_rag_areas = [
-            area for area, cfg in rag_config.items() if cfg.get("mode") == "always"
-        ]
-        if pattern_sources is not None and "rag" in pattern_sources:
-            for area, cfg in rag_config.items():
-                if cfg.get("mode") == "on-demand" and area not in available_rag_areas:
-                    available_rag_areas.append(area)
-
-    # 5. Memory context — Welle E (2026-05-23): bereits parallel zu
-    #    Safety/Classify gefetcht (siehe asyncio.gather oben). Hier nur noch
-    #    der Render-Schritt, kein zusätzliches await.
-    memories = _memories_early or []
-    memory_context = ""
-    if memories:
-        mem_parts = [f"- {m['key']}: {m['value']}" for m in memories[:10]]
-        memory_context = "\nErinnerungen:\n" + "\n".join(mem_parts)
-
-    # 6. Generate response
-    #    Check if this is a learning path / lesson prep request with prior results
-    classification_dict = classification.model_dump()
-    _lp_keywords = {"lernpfad", "unterrichtsvorbereitung", "unterrichtsstunde", "unterrichtsplanung",
-                     "unterricht vorbereiten", "unterrichtseinheit", "stundenentwurf"}
-    _msg_lower = req.message.lower()
-    # LP-Fast-Path darf NICHT feuern wenn der Classifier einen non-create
-    # Intent gewählt hat. Der User will dann z.B. einen bestehenden Lernpfad
-    # bearbeiten (I06), bewerten (I02) oder Feedback geben
-    # (I07) — nicht einen neuen erstellen.
-    # Welle C Sprint 4: I03 ist in I03 gemerged (Download =
-    # Repo-Link-Output von Search-Pattern, kein Backend-File-Stream).
-    _lp_blocking_intents = {
-        "I07", "I08", "I02", "I02", "I06",
-    }
-    # Persona-Block: bestimmte Personas profitieren NICHT von einem
-    # didaktisch strukturierten Lernpfad. P-RED/P-ENT erwarten
-    # Recherche-Material für Artikel/Positionspapiere — nicht eine
-    # Stunden-Strukturierung mit Lernzielen. Eval-Befund: für diese
-    # Personas führt LP-Generierung zu unnatürlichen Antworten.
-    _persona_blocks_lp = session_state.get("persona_id") in (
-        "P-RED", "P-ENT",
-    )
-    # Host-Flag ai-content-enabled="false" sperrt LP-Erzeugung komplett —
-    # die Alt-Response unten greift (siehe _ai_content_alt_response).
-    _modes_main = _widget_modes(req)
-    _has_lp_intent = (
-        _modes_main["ai_content_enabled"]
-        and classification.intent_id not in _lp_blocking_intents
-        and not _persona_blocks_lp
-        and (
-            any(kw in _msg_lower for kw in _lp_keywords)
-            or classification.intent_id == "I04"
-        )
-    )
-    _last_contents_json = session_state.get("entities", {}).get("_last_contents", "")
-    _last_collections_json = session_state.get("entities", {}).get("_last_collections", "")
-    _lp_routed = False
-
-    # Only route to LP builder if a concrete topic is known — fach alone is not enough
-    _thema = session_state.get("entities", {}).get("thema", "")
-    _lp_cards_collected: list[dict] = []  # cards found during LP content gathering
-
-    # Plausibilitätscheck auf _thema, bevor wir einen Lernpfad generieren.
-    # Dieselbe Logik wie beim Canvas-Fast-Path: wenn der Classifier einen
-    # substring der Nachricht als thema fehlinterpretiert hat, lieber
-    # degradieren statt einen unsinnigen Lernpfad zu bauen.
-    def _thema_plausible(t: str) -> bool:
-        if not t:
-            return False
-        import re as _rex
-        _tl = t.lower().strip(" .,:;?!")
-        if len(_tl) < 3:
-            return False
-        # Starts with pronoun/article → Satzrest
-        if _rex.match(r"^(das|dieses|diese|dieser|der|die|den|dem|des|ein|eine|einen|einem|einer|eines|"
-                      r"ihm|ihr|ihn|ihnen|mir|mich|dir|dich|uns|euch|es|sie|er)\b", _tl):
-            return False
-        # Starts with question/meta word
-        if _rex.match(r"^(wie|was|wo|wann|warum|wer|wieso|wieviel|kannst|kann|könnte|könntest|"
-                      r"hast|habt|gibt|gibts|ideen|vorschläge|tipps|möglichkeiten|"
-                      r"eine frage|frage|ne frage|irgendwas|bitte|mal|gerne|gern|"
-                      r"also|so|mal eben)\b", _tl):
-            return False
-        if t.rstrip().endswith("?"):
-            return False
-        # Query/meta verbs → existierendes Material, nicht LP-Thema
-        if _rex.search(r"\b(runterladen|herunterladen|bewerten|bewertung|prüfen|"
-                       r"ansehen|anschauen|kopieren|teilen|löschen|exportieren|"
-                       r"ausdrucken|drucken|speichern|öffnen|schließen|abbrechen|"
-                       r"bereitstellen|bereitstellung|schicken|senden|zusenden|"
-                       r"weiterleiten|feedback|meinung|bewerte|review)\b", _tl):
-            return False
-        # Fragment-Rest nach Material-Typ-Strip: "e der aktuellen..."
-        if _rex.match(r"^(e|er|es|en|em|n|s)\s", _tl):
-            return False
-        return True
-
-    if _thema and not _thema_plausible(_thema):
-        logger.info("LP fast-path: thema %r rejected as garbage, forcing degradation", _thema)
-        _thema = ""
-        session_state.setdefault("entities", {})["thema"] = ""
-
-    # Force degradation when LP keywords detected but thema missing
-    if _has_lp_intent and not _thema:
-        _missing = [s for s in ["thema", "stufe"] if not session_state.get("entities", {}).get(s)]
-        if _missing:
-            pattern_output["degradation"] = True
-            pattern_output["missing_slots"] = list(set(
-                pattern_output.get("missing_slots", []) + _missing
-            ))
-
-    if _has_lp_intent and _thema:
-        from app.services.llm_service import generate_learning_path_text
-        contents_text = ""
-        topic = _thema
-        tools_called = []
-        _lp_used = _get_used_lp_ids(session_state)
-        _lp_new_ids: list[str] = []
-        _lp_reset = False
-
-        # Topic-switch detection: if classification gave us a NEW thema that
-        # doesn't appear in any cached content/collection title, force a fresh
-        # search (Priority 3) instead of reusing stale session items.
-        _new_thema = (classification.entities or {}).get("thema", "").strip()
-        _force_fresh_search = False
-        if _new_thema:
-            _haystack = (_last_contents_json + _last_collections_json).lower()
-            if _new_thema.lower() not in _haystack:
-                _force_fresh_search = True
-                _last_contents_json = ""
-                _last_collections_json = ""
-                topic = _new_thema
-                logger.info("LP topic switch → fresh search for '%s'", topic)
-
-        try:
-            # Priority 1: Use individual content items from session
-            if _last_contents_json:
-                _contents = json.loads(_last_contents_json)
-                if _contents:
-                    # Diversity: skip already-used items
-                    _filtered = [c for c in _contents if c.get("node_id") and c["node_id"] not in _lp_used]
-                    if not _filtered:
-                        _filtered = _contents
-                        _lp_reset = True
-                    _contents = _filtered
-                    _lp_new_ids.extend(c.get("node_id", "") for c in _contents)
-                    _lp_cards_collected.extend(_contents)
-                    contents_lines = []
-                    for c in _contents:
-                        types = ", ".join(c.get("learning_resource_types", [])) or "Material"
-                        line = f"- **{c['title']}** ({types})"
-                        if c.get("description"):
-                            line += f"\n  {c['description'][:200]}"
-                        if c.get("url"):
-                            line += f"\n  URL: {c['url']}"
-                        contents_lines.append(line)
-                    contents_text = "\n".join(contents_lines)
-                    tools_called = ["generate_learning_path (aus Einzelinhalten)"]
-
-            # Priority 2: Fetch contents FROM session collections (not the collections themselves!)
-            if not contents_text and _last_collections_json:
-                _collections = json.loads(_last_collections_json)
-                if _collections:
-                    all_collection_contents = []
-                    tools_called = []
-                    for col in _collections[:5]:  # Max 5 collections
-                        try:
-                            col_contents = await call_mcp_tool("get_collection_contents", {
-                                "nodeId": col["node_id"],
-                                "maxItems": 8,
-                                "skipCount": 0,
-                            })
-                            if col_contents:
-                                all_collection_contents.append(
-                                    f"### Aus Sammlung: {col.get('title', 'Unbekannt')}\n{col_contents}"
-                                )
-                                _col_cards_parsed = parse_wlo_cards(col_contents)
-                                await resolve_discipline_labels(_col_cards_parsed)
-                                _lp_cards_collected.extend(_col_cards_parsed)
-                                tools_called.append(f"get_collection_contents ({col.get('title', '')[:30]})")
-                        except Exception as e:
-                            logger.warning("Failed to fetch contents for collection %s: %s", col.get("title"), e)
-                    if all_collection_contents:
-                        contents_text = "\n\n".join(all_collection_contents)
-                        tools_called.append("generate_learning_path")
-
-            # Priority 3: No session data — search for collections, fetch THEIR contents
-            if not contents_text:
-                import re as _re
-                # Use entity 'thema' if available (from LLM classification)
-                _topic_from_entities = session_state.get("entities", {}).get("thema", "")
-                _topic_msg = ""
-                if _topic_from_entities:
-                    topic = _topic_from_entities
-                else:
-                    # Extract topic by removing LP/command keywords
-                    _topic_msg = _msg_lower
-                    # Remove whole phrases first
-                    for phrase in ["aus der sammlung", "erstelle mir", "erstelle bitte", "bitte einen", "bitte ein"]:
-                        _topic_msg = _topic_msg.replace(phrase, "")
-                    # Then individual keywords
-                    for kw in list(_lp_keywords) + ["erstelle", "erstell", "daraus", "einen", "ein", "bitte", "mir",
-                                                      "wie sieht", "aus", "zum thema", "zur", "zu", "für", "fuer"]:
-                        _topic_msg = _topic_msg.replace(kw, " ")
-                    _topic_msg = _re.sub(r"\s+", " ", _topic_msg).strip()
-                if _topic_msg:
-                    topic = _topic_msg
-                # Per-topic skipCount so repeated LP requests for the same topic
-                # page through different search results.
-                _topic_key = f"_lp_skip_{topic.lower()[:40]}"
-                _search_skip = int(session_state.get("entities", {}).get(_topic_key, 0) or 0)
-                logger.info("LP search: topic='%s' skip=%d", topic, _search_skip)
-                try:
-                    search_result = await call_mcp_tool("search_wlo_collections", {
-                        "query": topic, "maxItems": 5, "skipCount": _search_skip,
-                    })
-                    search_cards = parse_wlo_cards(search_result)
-                    await resolve_discipline_labels(search_cards)
-                    logger.info("LP found %d collections", len(search_cards))
-                    if not search_cards and _search_skip > 0:
-                        # Pagination exhausted → reset and refetch
-                        _search_skip = 0
-                        _lp_reset = True
-                        search_result = await call_mcp_tool("search_wlo_collections", {
-                            "query": topic, "maxItems": 5, "skipCount": 0,
-                        })
-                        search_cards = parse_wlo_cards(search_result)
-                        await resolve_discipline_labels(search_cards)
-                    # Helper: how many unique items do we have so far?
-                    def _unique_count(cards_list: list[dict]) -> int:
-                        return len({c.get("node_id", "") for c in cards_list if c.get("node_id")})
-
-                    all_lines: list[str] = []
-                    tools_called = [f"search_wlo_collections ({topic[:30]})"]
-                    # NOTE: topic must stay as the user asked for it (e.g.
-                    # "Eiszeit"). We deliberately do NOT overwrite it with the
-                    # first collection's title — doing so would rebrand the
-                    # whole learning path to the collection's theme
-                    # ("Formen der Erdoberfläche") instead of the user's
-                    # actual topic, silently hijacking the request.
-                    if search_cards:
-                        for sc in search_cards[:3]:
-                            col_id = sc.get("node_id")
-                            col_title = sc.get("title", "")
-                            if not col_id:
-                                continue
-                            try:
-                                col_contents_text = await call_mcp_tool("get_collection_contents", {
-                                    "nodeId": col_id, "maxItems": 16, "skipCount": 0,
-                                })
-                                col_cards = parse_wlo_cards(col_contents_text)
-                                await resolve_discipline_labels(col_cards)
-                                # Diversity filter: drop already-used items
-                                fresh_cards = [c for c in col_cards
-                                               if c.get("node_id") and c["node_id"] not in _lp_used]
-                                if not fresh_cards and col_cards:
-                                    fresh_cards = col_cards  # exhausted → use all, will reset later
-                                    _lp_reset = True
-                                if fresh_cards:
-                                    _lp_cards_collected.extend(fresh_cards[:8])
-                                    all_lines.append(f"### Aus Sammlung: {col_title}")
-                                    for c in fresh_cards[:8]:
-                                        types = ", ".join(c.get("learning_resource_types", [])) or "Material"
-                                        line = f"- **{c.get('title','')}** ({types})"
-                                        if c.get("description"):
-                                            line += f"\n  {c['description'][:200]}"
-                                        if c.get("url"):
-                                            line += f"\n  URL: {c['url']}"
-                                        all_lines.append(line)
-                                        if c.get("node_id"):
-                                            _lp_new_ids.append(c["node_id"])
-                                    tools_called.append(f"get_collection_contents ({col_title[:30]})")
-                            except Exception as e:
-                                logger.warning("LP fetch failed for '%s': %s", col_title, e)
-
-                    # ── Thin-candidates fallback ─────────────────────────
-                    # For specific topics (e.g. "Eiszeit") search_wlo_collections
-                    # sometimes returns only 1 weakly-related collection with
-                    # a single item. A useful learning path needs at least a
-                    # handful of distinct materials. If the collection-based
-                    # search produced fewer than 4 unique candidates, pull in
-                    # direct content-level hits via search_wlo_content.
-                    if _unique_count(_lp_cards_collected) < 4:
-                        try:
-                            content_res = await call_mcp_tool("search_wlo_content", {
-                                "query": topic, "maxItems": 10, "skipCount": 0,
-                            })
-                            content_cards = parse_wlo_cards(content_res)
-                            await resolve_discipline_labels(content_cards)
-                            # Drop items already present + previously used
-                            _seen_ids = {c.get("node_id") for c in _lp_cards_collected}
-                            fresh_content = [
-                                c for c in content_cards
-                                if c.get("node_id")
-                                and c["node_id"] not in _seen_ids
-                                and c["node_id"] not in _lp_used
-                            ]
-                            if fresh_content:
-                                _lp_cards_collected.extend(fresh_content[:8])
-                                all_lines.append(f"### Direkte Treffer zu \"{topic}\"")
-                                for c in fresh_content[:8]:
-                                    types = ", ".join(c.get("learning_resource_types", [])) or "Material"
-                                    line = f"- **{c.get('title','')}** ({types})"
-                                    if c.get("description"):
-                                        line += f"\n  {c['description'][:200]}"
-                                    if c.get("url"):
-                                        line += f"\n  URL: {c['url']}"
-                                    all_lines.append(line)
-                                    if c.get("node_id"):
-                                        _lp_new_ids.append(c["node_id"])
-                                tools_called.append(f"search_wlo_content ({topic[:30]})")
-                                logger.info(
-                                    "LP thin-candidates fallback: added %d content items",
-                                    len(fresh_content[:8]),
-                                )
-                        except Exception as e:
-                            logger.warning("LP content fallback failed: %s", e)
-
-                    if all_lines:
-                        contents_text = "\n".join(all_lines)
-                        tools_called.append("generate_learning_path")
-                        # Advance skipCount for next LP request on same topic
-                        session_state.setdefault("entities", {})[_topic_key] = _search_skip + 3
-                except Exception as e:
-                    logger.warning("Failed to search+fetch collections for LP: %s", e)
-
-            logger.info("LP contents: %d chars, topic='%s'", len(contents_text) if contents_text else 0, topic)
-            if contents_text:
-                response_text = await generate_learning_path_text(
-                    collection_title=topic,
-                    contents_text=contents_text[:6000],
-                    session_state=session_state,
-                )
-                if _lp_reset:
-                    response_text = (response_text or "") + (
-                        "\n\n_Hinweis: Es waren keine neuen Inhalte verfügbar, "
-                        "deshalb wird die Auswahl jetzt wiederholt._"
-                    )
-                    session_state.setdefault("entities", {})["_lp_used_node_ids"] = "[]"
-                _add_used_lp_ids(session_state, _lp_new_ids)
-                # Welle B.5 (2026-05): Filter on cards mentioned in text is
-                # now Pattern-driven (`card_text_link_required` flag). M09
-                # has it set to true so the existing LP-tile behaviour is
-                # preserved. Other Patterns that might one day route through
-                # this LP code path can opt out and keep the full card pool.
-                if pattern_output.get("card_text_link_required", False):
-                    wlo_cards_raw = _filter_cards_used_in_text(
-                        _lp_cards_collected, response_text or ""
-                    )
-                else:
-                    wlo_cards_raw = _lp_cards_collected
-                # Welle E (2026-05-24, v2): Material-Links werden später
-                # im InlineDocument-Routing-Block ans response_text
-                # angehängt — dort sind die finalen ``cards`` (mit
-                # Repo-Annotation) verfügbar, die der User auch sieht.
-                _lp_routed = True
-
-                # Also hand the learning-path text to the canvas so the user
-                # can print/download it and edit it via chat commands.
-                _lp_title = f"Lernpfad: {topic}" if topic else "Lernpfad"
-                _lp_first_line = (response_text or "").lstrip().splitlines()[0] if response_text else ""
-                _m = _re_lp_title.search(_lp_first_line)
-                if _m:
-                    _lp_title = _m.group(1).strip() or _lp_title
-                # Mark state so follow-up chat messages are treated as
-                # canvas-edits against this learning path.
-                new_state = "S3"
-                session_state["entities"]["_canvas_material_type"] = "lernpfad"
-                session_state["entities"]["_canvas_topic"] = topic or ""
-                # Welle E (2026-05-23) — Lernpfad-Markdown bleibt im
-                # response_text, kein page_action canvas_open mehr. Das
-                # InlineDocument-Routing am Hauptpfad-Ende packt es in die
-                # ``inline_documents``-Box. Vorher wurde es ins canvas_open
-                # payload verschoben und ein kurzer Intro-Text in
-                # response_text — bei entfernter Canvas-Pane war das Material
-                # damit für den User unsichtbar.
-                _canvas_payload_out_lp = None
-                # response_text bleibt unverändert (enthält bereits den
-                # vollständigen Lernpfad-Markdown von generate_learning_path_text).
-
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.warning("Learning path from history failed: %s", e)
-
+    Rückgabe-Tupel; ``response_text``/``wlo_cards_raw`` haben hier nur
+    Helfer-Defaults — der Aufrufer übernimmt sie AUSSCHLIESSLICH wenn
+    ``_canvas_routed`` True ist (im Original blieben die Namen sonst
+    ungebunden). ``tools_called``/``new_state`` werden durchgereicht und
+    unverändert zurückgegeben, wenn kein Zweig sie setzt.
+    """
+    response_text = ""
+    wlo_cards_raw: list[dict] = []
     # ── Canvas-Create via natural text (I05 + M10) ────────
     # User tippt z.B. "Erstelle ein Arbeitsblatt zur Photosynthese"
     # → Classifier setzt I05, Pattern-Engine waehlt M10
@@ -4820,22 +4116,12 @@ async def _chat_impl(
     _canvas_routed = False
     _canvas_payload_out: dict | None = None
     _canvas_forced_quick_replies: list[str] = []
-    # Ensure tools_called exists when we take the canvas fast-path. If the LP
-    # block already set it, we leave that value intact.
-    try:
-        tools_called  # type: ignore[used-before-assignment]  # noqa: F821
-    except NameError:
-        tools_called = []
     # Trigger canvas flow whenever I05 is the winning intent — even if
     # the pattern engine eliminated M10 (e.g. precondition_slots missing).
     # In that case we want to show the material-type degradation, not fall
     # through to a generic M03 Clarification response.
-    # Canvas-Create-Flow nur, wenn der Host ai-content-enabled NICHT auf
-    # false gesetzt hat. Bei abgeschaltetem KI-Content liefert die
-    # Alt-Response unten den freundlichen Hinweis.
     if (not _lp_routed
-            and classification.intent_id == "I05"
-            and _modes_main["ai_content_enabled"]):
+            and classification.intent_id == "I05"):
         # Topic priority (fixes "stale topic" bug, same logic as material_typ):
         # 1. classifier extraction from THIS turn
         # 2. sticky session value (prior turn) — only when classifier is silent
@@ -5096,9 +4382,30 @@ async def _chat_impl(
                 )
                 _c_topic = ""
 
+        # ── Robust-Fallback (eval-1eda, GS-4.3): Topic vorhanden, aber der
+        # genannte Artefakt-Typ ist (noch) kein bekannter Alias (z.B.
+        # "Argumentationshilfe"). Statt in M03 ("Welcher Typ?") zu fallen,
+        # generieren wir mit 'auto' und reichen den genannten Begriff durch —
+        # das LLM wählt das beste ECHTE Format aus dem Material-Vokabular.
+        # Greift NUR bei klar benanntem Artefakt; "mach mir was/ein Material"
+        # liefert named_artifact_label() == "" → bleibt M03 (nichts verschlechtert).
+        _requested_label = ""
+        if _c_topic and not _mt_key:
+            _named = named_artifact_label(
+                req.message,
+                (classification.entities or {}).get("material_typ", ""),
+            )
+            if _named:
+                _mt_key = "auto"
+                _requested_label = _named
+                logger.info(
+                    "M10 robust-fallback: ungelistetes Artefakt %r -> auto (topic=%r)",
+                    _named, _c_topic[:60],
+                )
+
         if _c_topic and _mt_key:
             _mts_flow = get_material_types()
-            _label = _mts_flow[_mt_key]["label"]
+            _label = _requested_label or _mts_flow[_mt_key]["label"]
             _emoji = _mts_flow[_mt_key]["emoji"]
             try:
                 # Welle E v4++ (2026-05-26): formality aus pattern_output
@@ -5111,6 +4418,7 @@ async def _chat_impl(
                     session_state=session_state,
                     memory_context=memory_context,
                     formality=_formality_for_material,
+                    requested_label=_requested_label,
                 )
                 # Welle E v4+5 (2026-05-26, eval-185e): Lösungen-Pflicht
                 # bei aufgabenbasiertem Material. Bei Arbeitsblatt/Quiz/
@@ -5221,6 +4529,1110 @@ async def _chat_impl(
             tools_called = []
             wlo_cards_raw = []
             _canvas_routed = True
+    return (_canvas_routed, _canvas_payload_out, _canvas_forced_quick_replies,
+            response_text, tools_called, wlo_cards_raw, new_state)
+
+
+async def _resolve_m16_topic_page_view(
+    req, classification, winner, spec_query, tracer, cards, _final_text,
+):
+    """M16-Resolver (Themenseiten-Inhalt → Swimlane-Boxen), 1:1 aus
+    _chat_impl extrahiert (C-Aufräumung 2026-06-10). Greift nur bei
+    winner.id == "M16"; sonst kommen ``cards``/``_final_text`` unverändert
+    zurück und ``_topic_page_view`` bleibt None."""
+    # ── M16: Themenseiten-Inhalt — Schwimmlinien-Boxen statt normaler Boxen ──
+    # Beste Themenseite zum Thema finden (Cross-Encoder-gegatet) → ihre
+    # Schwimmlinien-Inhalte holen (Top-3 je Box) → als Swimlane-Boxen anzeigen.
+    # Die normalen Sammlungs-/Inhalts-Boxen werden dabei unterdrückt (cards=[]).
+    _topic_page_view = None
+    if winner.id == "M16":
+        # Sichtbarer Status während des (mehrere MCP-Calls umfassenden) Ladens —
+        # macht die Wartezeit transparent statt eines stummen Spinners.
+        tracer.start("topic_content", "Lade Themenseiten-Inhalte")
+        try:
+            from app.services.mcp_client import (
+                parse_wlo_cards as _m16_pc,
+                parse_topic_page_swimlanes as _m16_psl,
+            )
+            from app.models.schemas import (
+                TopicPageView as _M16View, SwimlaneBox as _M16Box, WloCard as _M16Card,
+            )
+            _m16_thema = str(
+                (classification.entities or {}).get("thema")
+                or (classification.entities or {}).get("topic")
+                or spec_query or req.message or ""
+            ).strip()[:120]
+            # Themenseite über die zuverlässige Sammlungs-Suche finden. KEIN
+            # CE-Gate hier: der Nutzer hat die Themenseite NAMENTLICH genannt —
+            # sie soll gefunden werden, auch bei mäßigem CE-Score (sonst wurde
+            # z.B. „TestBenedikt" weggefiltert → leere Antwort). Ranking:
+            # Titel-Match + Themenseiten-Flag (topic_page_url) zuerst, sonst
+            # MCP-Reihenfolge.
+            _m16_raw_col = await call_mcp_tool(
+                "search_wlo_collections", {"query": _m16_thema, "maxResults": 8},
+            )
+            _m16_cards = _m16_pc(_m16_raw_col) or []
+            _m16_thl = _m16_thema.lower()
+
+            def _m16_rank(_c: dict) -> int:
+                _t = (_c.get("title") or "").lower()
+                _tm = bool(_m16_thl) and (_m16_thl in _t or _t in _m16_thl)
+                _tp = bool(_c.get("topic_page_url"))
+                return 0 if (_tm and _tp) else (1 if _tp else (2 if _tm else 3))
+
+            _m16_cands = sorted(_m16_cards, key=_m16_rank)
+            _m16_fields = _M16Card.model_fields
+            # Top-Kandidaten (CE-sortiert) durchprobieren; erste Sammlung mit
+            # echter Schwimmlinien-Struktur gewinnt (max. 3 Versuche).
+            for _m16_cand in _m16_cands[:3]:
+                _cid = _m16_cand.get("node_id")
+                if not _cid:
+                    continue
+                _m16_raw_tc = await call_mcp_tool(
+                    "get_topic_page_content",
+                    {"collectionId": _cid, "maxPerSwimlane": 3},
+                )
+                _m16_parsed = _m16_psl(_m16_raw_tc)
+                _m16_boxes = []
+                for _m16_sl in _m16_parsed.get("swimlanes", []):
+                    _m16_cc = _m16_sl.get("cards") or []
+                    if not _m16_cc:
+                        continue
+                    _m16_boxes.append(_M16Box(
+                        heading=_m16_sl.get("heading") or "",
+                        type=_m16_sl.get("type") or "",
+                        has_more=bool(_m16_sl.get("has_more")),
+                        cards=[
+                            _M16Card(**{k: v for k, v in c.items() if k in _m16_fields})
+                            for c in _m16_cc
+                        ],
+                    ))
+                if _m16_boxes:
+                    _topic_page_view = _M16View(
+                        variant_title=(_m16_cand.get("title")
+                                       or _m16_parsed.get("variant_title") or _m16_thema),
+                        topic_page_url=(_m16_parsed.get("topic_page_url")
+                                        or _m16_cand.get("topic_page_url") or ""),
+                        swimlanes=_m16_boxes,
+                    )
+                    break
+        except Exception as _m16_err:
+            logger.warning("M16 topic-content resolve failed: %s", _m16_err)
+            _topic_page_view = None
+        if _topic_page_view is not None:
+            cards = []  # normale Boxen unterdrücken — nur Schwimmlinien zeigen
+            _final_text = (
+                "Hier ein Auszug der Inhalte der Themenseite "
+                f"»{_topic_page_view.variant_title}« — gegliedert nach "
+                f"{len(_topic_page_view.swimlanes)} Abschnitt(en). Den vollständigen "
+                "Stand findest du über den Themenseiten-Link unter den Inhalten."
+            )
+            logger.info(
+                "M16 topic-content: %d Swimlanes für '%s'",
+                len(_topic_page_view.swimlanes), _m16_thema,
+            )
+        else:
+            # generate_response wurde für M16 übersprungen → hier MUSS ein
+            # Antworttext gesetzt werden, sonst bleibt die Antwort leer
+            # (beobachtet bei „TestBenedikt" ohne anzeigbare Inhalte).
+            _m16_label = str(
+                (classification.entities or {}).get("thema")
+                or (classification.entities or {}).get("topic")
+                or spec_query or ""
+            ).strip()
+            cards = []
+            if _m16_label:
+                _final_text = (
+                    f"Zur Themenseite »{_m16_label}« konnte ich gerade keine anzeigbaren "
+                    "Inhalte laden — sie ist eventuell noch leer oder nicht vollständig "
+                    "freigegeben. Magst du es über die normale Suche zum Thema versuchen?"
+                )
+            else:
+                _final_text = (
+                    "Ich konnte gerade keine anzeigbaren Themenseiten-Inhalte laden. "
+                    "Magst du es über die normale Suche versuchen?"
+                )
+            logger.info("M16: keine Inhalte -> Fallback-Text gesetzt (label=%r)", _m16_label)
+        tracer.end({"swimlanes": len(_topic_page_view.swimlanes) if _topic_page_view else 0})
+    return _topic_page_view, cards, _final_text
+
+
+async def _chat_impl(
+    req: ChatRequest,
+    tracer_listener: Any = None,
+    on_token: Any = None,
+    peer_ip: str = "",
+) -> ChatResponse:
+    """Core chat pipeline.
+
+    ``tracer_listener`` is an optional callback used by the streaming
+    endpoint (POST /api/chat/stream) to receive ``phase`` events live as
+    the Tracer fires them.
+
+    ``on_token`` (Phase-2) is forwarded to ``generate_response`` so the
+    final-answer LLM call can stream tokens back. The streaming endpoint
+    wraps both into the SSE event queue. Default ``None`` for both keeps
+    the regular non-streaming POST /api/chat unchanged.
+    """
+    # Clear per-request MCP query-meta accumulator so each turn starts fresh.
+    reset_query_metas()
+
+    # 1. Load/create session
+    session = await get_or_create_session(req.session_id)
+    history = await get_messages(req.session_id, limit=20)
+
+    # Parse stored session state
+    session_state = {
+        "persona_id": session.get("persona_id", ""),
+        "state_id": session.get("state_id", "S1"),
+        "entities": json.loads(session.get("entities", "{}")),
+        "signal_history": json.loads(session.get("signal_history", "[]")),
+        "turn_count": session.get("turn_count", 0),
+    }
+
+    env = req.environment.model_dump()
+
+    # ── Webseiten-Tour (geführte Besucherführung) ────────────────────
+    # Deterministische, seiten-stateful State Machine. Greift VOR
+    # Klassifikator/Pattern-Engine/LLM und VOR dem page_context-MCP-Resolve
+    # (spart Latenz bei Ticks). Baut die Antwort aus website-tour.yaml selbst.
+    try:
+        _tour_resp = await _handle_tour(req, env, session)
+    except Exception as _tour_err:
+        logger.warning("tour handler failed: %s", _tour_err)
+        _tour_resp = None
+    if _tour_resp is not None:
+        return _tour_resp
+
+    # Inject page_context entities (node_id, collection_id, search_query,
+    # topic_page_slug, subject_slug, document_title)
+    page_ctx = env.get("page_context", {})
+    for key in (
+        "node_id", "collection_id", "search_query",
+        "topic_page_slug", "subject_slug", "document_title", "page_type",
+    ):
+        if page_ctx.get(key):
+            session_state["entities"][key] = page_ctx[key]
+
+    # ── Resolve page context → structured metadata ────────────────
+    # If the widget was embedded on a theme page (or edu-sharing node
+    # render URL), turn the raw node_id / slug into title/description/
+    # disciplines/stufen via MCP. Cached per-session, TTL 30 min.
+    try:
+        from app.services import page_context_service
+        await page_context_service.resolve_page_context(page_ctx, session_state)
+    except Exception as _pc_err:
+        logger.warning("page_context auto-resolve skipped: %s", _pc_err)
+
+    # Save user message
+    await save_message(req.session_id, "user", req.message)
+
+    # ── 0. Rate limiting (vor allem anderen) ─────────────────────
+    # Echte Verbindungs-IP (server-seitig) bevorzugen; die client-gelieferte
+    # page_context.ip nur als Fallback (z.B. Tests) — sie ist spoofbar und darf
+    # weder Rate-Limit noch Safety-Log-IP bestimmen.
+    _client_ip = peer_ip or (env.get("page_context") or {}).get("ip", "") or ""
+    _pre = await _run_preflight_guards(req, env, session_state, _client_ip)
+    if _pre is not None:
+        return _pre
+
+    # Phase A2 — Token-Cost-Tracking: ein Accumulator pro Turn, durchgeschleift
+    # an alle LLM-Helper. Sammelt prompt/completion/cached-Tokens je Modell,
+    # landet am Ende in DebugInfo.token_usage.
+    from app.services.llm_service import usage_accumulator_new
+    usage_acc = usage_accumulator_new()
+
+    # 1b. Safety assessment (Triple-Schema T-12/19) — multi-stage gating
+    #     Stage 1: regex (always)
+    #     Stage 2: OpenAI moderation (eskaliert bei Verdacht)
+    #     Stage 3: LLM legal classifier (parallel zu Stage 2)
+    #
+    # Optimization: safety and classify_input are logically independent —
+    # we run both concurrently with asyncio.gather(). Saves ~600 ms per
+    # turn. The fast regex pre-gate runs inline first so a hard CRISIS
+    # match still aborts before we waste an LLM classify call.
+    from app.services.trace_service import Tracer
+    tracer = Tracer(listener=tracer_listener)
+
+    # Safety + classify run as a single parallel block. We measure the
+    # combined wall-clock as one trace entry — splitting them produced a
+    # confusing "0 ms" entry for the parallel-spawned classify call.
+    # Welle E (2026-05-23) — Statt eines monolithischen "safety_classify"
+    # Steps öffnen wir eine Parallel-Gruppe. Die einzelnen Tasks
+    # (Safety, Classify, Memory) werden je nach Pfad einzeln getimet
+    # und am Ende als Gruppe in den Tracer geschrieben. Studio rendert
+    # daraus einen horizontal-stack mit individuellen Bars.
+    safety, classification, _memories_early = await _assess_safety_classify_memory(
+        req, history, session_state, env, usage_acc, tracer,
+    )
+
+
+    # Log every safety decision (filtered by config: log_all_turns)
+    try:
+        from app.services.config_loader import load_safety_config
+        _log_cfg = (load_safety_config().get("logging") or {})
+        if _log_cfg.get("enabled", True):
+            if _log_cfg.get("log_all_turns", False) or safety.risk_level != "low":
+                await log_safety_event(
+                    req.session_id, req.message, safety, ip=_client_ip,
+                )
+    except Exception as _e:
+        logger.warning("safety log failed: %s", _e)
+
+    # ── Placeholder-Topic-Filter ─────────────────────────────────────
+    # Wenn der Classifier "Thema" / "etwas" / "irgendwas" / "was" / "Material"
+    # etc. als thema extrahiert hat, ist das KEIN echtes Thema, sondern ein
+    # Meta-Wort aus der User-Frage ("Ich suche etwas zu einem Thema"). Solche
+    # Platzhalter dürfen nicht zu einer MCP-Suche führen — die Engine soll
+    # dann sauber degradieren ("nenn mir dein konkretes Thema") statt mit
+    # Müll-Treffern ("Wortschatz" / "Startseite Mathematik" für Query="Thema")
+    # die Karten-Liste zu fluten.
+    #
+    # Wortliste + min_length aus 01-base/placeholder-topics.yaml (Studio-
+    # pflegbar). Defaults sind dieselben wie die alte Hardcode-Liste.
+    try:
+        from app.services.config_loader import load_placeholder_topics_config
+        _ph_cfg = load_placeholder_topics_config()
+        _PLACEHOLDER_TOPICS = _ph_cfg["topics"]
+        _PLACEHOLDER_MIN_LEN = _ph_cfg["min_length"]
+    except Exception as _ph_err:
+        logger.debug("placeholder-topics config load failed: %s", _ph_err)
+        _PLACEHOLDER_TOPICS = {
+            "thema", "themen", "ein thema", "einem thema", "irgendwas",
+            "etwas", "was", "irgendetwas", "irgendein thema", "sonstiges",
+            "material", "materialien", "ein material", "ein paar materialien",
+            "sachen", "dinge", "stuff", "topic", "etwas thema",
+            "inhalt", "inhalte", "content",
+        }
+        _PLACEHOLDER_MIN_LEN = 3
+
+    def _is_placeholder_topic(value: str | None) -> bool:
+        s = (value or "").strip().lower()
+        if not s:
+            return False
+        # Längen-Check: zu kurze Themen sind quasi immer Tippfehler oder
+        # nicht-extrahierbarer Rest. "OER"/"DSGVO" (3-4) bleiben gültig.
+        if _PLACEHOLDER_MIN_LEN > 0 and len(s) < _PLACEHOLDER_MIN_LEN:
+            return True
+        return s in _PLACEHOLDER_TOPICS
+
+    if classification.entities and _is_placeholder_topic(
+        classification.entities.get("thema")
+    ):
+        logger.info(
+            "thema='%s' ist Platzhalter — auf leer gesetzt, damit Engine sauber nachfragt",
+            classification.entities.get("thema"),
+        )
+        classification.entities["thema"] = ""
+
+    # Auch stale Platzhalter aus vorherigem Turn aus session_state entfernen
+    _ss_ents = session_state.get("entities") or {}
+    if _is_placeholder_topic(_ss_ents.get("thema")):
+        logger.info(
+            "stale session_state.thema='%s' (Platzhalter) entfernt",
+            _ss_ents.get("thema"),
+        )
+        _ss_ents["thema"] = ""
+
+    # Update entities based on turn type
+    turn_type = classification.turn_type
+    new_entities = classification.entities
+
+    if turn_type == "topic_switch":
+        # Welle C Sprint 6 — Topic-Switch v3 mit Carry-over-Filter.
+        #
+        # Wenn der LLM-Classifier den alten Slot als Carry-over zurückgibt
+        # (z.B. ``thema="Bruchrechnung"`` nach "anderes Thema"), landet das
+        # Pattern fälschlich bei M06/M12 statt M03-Klärung, weil
+        # ``entity.thema`` non-empty ist.
+        #
+        # Fix: Carry-over-Slots aus ``classification.entities`` POPPEN —
+        # das macht den context für die Rule-Engine sauber.
+        _prev_slots_pre = {
+            k: v for k, v in (session_state.get("entities") or {}).items()
+            if not str(k).startswith("_") and v
+        }
+        if classification.entities:
+            _dropped_carry = []
+            for k in list(classification.entities.keys()):
+                if str(k).startswith("_"):
+                    continue
+                v = classification.entities.get(k)
+                if v and _prev_slots_pre.get(k) == v:
+                    classification.entities.pop(k)
+                    _dropped_carry.append(k)
+            if _dropped_carry:
+                logger.info(
+                    "topic_switch carry-over filter: popped %s from classification.entities (matched prev=%s)",
+                    _dropped_carry, _prev_slots_pre,
+                )
+            # new_entities nach dem Reset neu binden, damit die Merge-
+            # Schleife unten den gereinigten Stand sieht.
+            new_entities = classification.entities
+        #
+        # Iterations-Historie:
+        #   v1: nur ``session_state["entities"] = {}``. Bug: classification.
+        #       entities mit alten Werten wurde danach gleich rein-gemerged.
+        #   v2: classification.entities auch leeren. Bug: wenn User ein
+        #       NEUES Thema nennt ("Goethe Faust"), wurde es mit gelöscht.
+        #   v3 (aktuell): Carry-over erkennen — wenn der Classifier einen
+        #       Slot mit DEM SELBEN Wert zurückgibt wie der vorige Turn,
+        #       ist das mit hoher Wahrscheinlichkeit Carry-over (kein
+        #       echter neuer Wert) → ignorieren. Nur Slots, die WIRKLICH
+        #       neu/anders sind, überleben den Reset.
+        #
+        # Beispiele:
+        #   "anderes Thema" + classification.thema="Bruchrechnung" (alt) →
+        #       Carry-over erkannt → thema verworfen → Klärung
+        #   "Goethe Faust" + classification.thema="Goethe Faust" (neu) →
+        #       kein Match mit prev → übernommen
+        #
+        # Private Marker (_canvas_*, _lp_*) bleiben erhalten — sie sind
+        # interner Canvas/Lernpfad-State, kein Such-Slot.
+        _prev_slots = {
+            k: v for k, v in (session_state.get("entities") or {}).items()
+            if not str(k).startswith("_") and v
+        }
+        _preserved = {
+            k: v for k, v in (session_state.get("entities") or {}).items()
+            if str(k).startswith("_")
+        }
+        session_state["entities"] = _preserved
+        _accepted: dict[str, Any] = {}
+        _carry_over_dropped: dict[str, Any] = {}
+        for k, v in (new_entities or {}).items():
+            if not v:
+                continue
+            # Carry-over: Classifier liefert exakt den alten Wert zurück
+            # bei einem topic_switch — höchst unwahrscheinlich, dass der
+            # User genau das alte Thema neu genannt hat. Verwerfen.
+            if _prev_slots.get(k) == v:
+                _carry_over_dropped[k] = v
+                continue
+            session_state["entities"][k] = v
+            _accepted[k] = v
+        logger.info(
+            "topic_switch: kept markers=%s, accepted_new=%s, carry_over_dropped=%s, "
+            "prev_slots=%s",
+            list(_preserved.keys()), _accepted, _carry_over_dropped, _prev_slots,
+        )
+    elif turn_type == "correction":
+        for k, v in new_entities.items():
+            if v:
+                session_state["entities"][k] = v
+    else:  # initial, follow_up, clarification
+        for k, v in new_entities.items():
+            if v:
+                session_state["entities"][k] = v
+
+    # ── Heuristic enrichment for the engine ─────────────────────
+    # The classifier doesn't always extract material_typ from the
+    # message text. Our heuristic alias-lookup catches more cases
+    # (plurals, synonyms). Lift the heuristic value into
+    # classification.entities so R-5 (soft-create) can match.
+    _heuristic_mt = extract_material_type_from_message(req.message)
+    if _heuristic_mt and not (classification.entities or {}).get("material_typ"):
+        if classification.entities is None:
+            classification.entities = {}
+        classification.entities["material_typ"] = _heuristic_mt
+        # Also lift into session_state so downstream code sees it
+        session_state.setdefault("entities", {})["material_typ"] = _heuristic_mt
+
+    # ── Type-Focus-Heuristik (Welle C.5+, 2026-05-22) ─────────────
+    # Wenn der Classifier "nur videos bitte" / "hast du Arbeitsblätter?"
+    # nicht als ``medientyp`` extrahiert hat, fallen wir auf die
+    # ``_resolve_wanted_content_types``-Regex zurück. Setzen den ersten
+    # canonical Treffer als ``classification.entities.medientyp``, damit:
+    #   1. der LLM-Tool-Strip (llm_service.py: medientyp → entferne
+    #      search_wlo_collections + search_wlo_topic_pages aus active_tools)
+    #      sicher greift
+    #   2. die downstream-Suche per ``search_wlo_content`` mit
+    #      learningResourceType-Filter läuft
+    #   3. das Backend den Search-CTA-Link MIT korrektem Typ-Filter
+    #      generiert (User-Anforderung: "Suchanfrage mit Thema +
+    #      inhaltstyp=video")
+    if not (classification.entities or {}).get("medientyp"):
+        _wanted_for_inject = _resolve_wanted_content_types(
+            req.message or "",
+            session_entities=session_state.get("entities") or {},
+            classification_entities=classification.entities or {},
+        )
+        if _wanted_for_inject:
+            _injected_mt = sorted(_wanted_for_inject)[0]
+            if classification.entities is None:
+                classification.entities = {}
+            classification.entities["medientyp"] = _injected_mt
+            session_state.setdefault("entities", {})["medientyp"] = _injected_mt
+            logger.info(
+                "type-focus heuristic injected medientyp=%r (resolved from %r)",
+                _injected_mt, req.message,
+            )
+
+    # ── Pre-Route Rule Engine — entfernt (Welle E v4+12, Sprint K) ────
+    # Die Pre-Route-Rules wurden in eval-355c883 datenbasiert als
+    # überflüssig nachgewiesen: +3.8% avg_score und +20% pattern_match=2
+    # OHNE die Rules. Was übrig blieb (5× Persona-Self-ID) wurde nach
+    # classify-overrides.yaml ``persona_overrides`` migriert und wirkt
+    # als Hint im Classifier-System-Prompt statt als Runtime-Override.
+    # Safety bleibt aktiv über ``safety.enforced_pattern`` direkt in der
+    # select_pattern()-Call-Site weiter unten.
+
+    # ── Speculative MCP prefetch — Tool-Start (post-Classification) ────
+    # Für Such-Style-Intents starten wir die MCP-Suche im Hintergrund,
+    # während Pattern-Selection / Policy / Context laufen. Wenn
+    # generate_response() das Ergebnis braucht, sind die Cards meist
+    # schon da → kein zweiter LLM-Tool-Round-Trip nötig.
+    #
+    # Wichtig: Dieser Block läuft NACH der Pre-Route, damit Intent- und
+    # Pattern-Overrides aus R-15..R-19 berücksichtigt werden (besonders
+    # R-17 Themenseiten-Suche → M06). Ohne die neue Reihenfolge wurde
+    # bei "Themenseite zu Photosynthese" zuerst search_wlo_collections
+    # gefeuert, das den MCP-Session-State für search_wlo_topic_pages
+    # vergiftet hat.
+    # ── Speculative MCP prefetch (Launcher extrahiert, 2026-06-10) ────
+    (spec_task, spec_tool_name, spec_tool_args, spec_query,
+     extra_spec_tasks, spec_is_search_all,
+     _search_all_extras) = await _launch_speculative_prefetch(
+        req, classification, safety,
+    )
+
+    # QR-Policy-Stubs (2026-06-10): mode/max werden nach der
+    # Pattern-Entscheidung am EFFEKTIVEN Pattern gesetzt; der LP-Fast-Path
+    # setzt sie selbst (M09), bevor er den spekulativen Task startet.
+    _qr_mode: str = "exact"
+    _qr_max: int | None = None
+    _qr_spec_task: asyncio.Task | None = None
+
+    # Update persona — R-06: persist once detected, overwrite on correction or explicit change
+    detected_persona = classification.persona_id
+    if not session_state["persona_id"]:
+        session_state["persona_id"] = detected_persona
+    elif turn_type == "correction":
+        session_state["persona_id"] = detected_persona
+    elif detected_persona != "P-AND" and detected_persona != session_state["persona_id"]:
+        # LLM detected a specific (non-fallback) persona that differs → update
+        session_state["persona_id"] = detected_persona
+
+    # Update signals
+    new_signals = classification.signals
+    signal_history = list(set(session_state["signal_history"] + new_signals))
+
+    # Update state
+    new_state = classification.next_state
+
+    # Welle C Sprint 6 — Conversation-State-Plausibilität prüfen.
+    # Validator ist Telemetrie-only (auto_correct=False). Implausible
+    # Übergänge werden geloggt + in debug.state_transition_warning
+    # ausgegeben, aber NICHT korrigiert — die Routing-Rules-Engine
+    # (rule_state12_guard etc.) macht weiterhin die harten Korrekturen.
+    try:
+        from app.services.state_machine import validate_transition as _validate_trans
+        _trans_check = _validate_trans(
+            prev=session_state.get("state_id") or "",
+            next_=new_state,
+            intent=classification.intent_id,
+            auto_correct=False,
+        )
+    except Exception as _exc:  # pragma: no cover — never fail the turn
+        _trans_check = {
+            "validated_state": new_state,
+            "plausible": True,
+            "reason": f"validator error: {_exc}",
+            "prev_next_likely": [],
+        }
+
+    # ── Create-Trigger erkennen (für Material-Typ-Slot-Anreicherung) ──
+    # Welle E v4+ (2026-05-25): Canvas-Edit-Auto-Routing entfernt. I06-Edit
+    # läuft jetzt durch den normalen Hint-Primary-Pfad und landet auf M11
+    # (Iterative Nachbearbeitung). M11 generiert die Edit-Antwort als
+    # vollständiges Markdown direkt im Bot-Text, nicht via Canvas-Pane.
+    _detected_mt = extract_material_type_from_message(req.message)
+
+    # ── Soft-Create + State-Guard now in Engine ──────────────
+    # R-5 (rule_soft_create) replaces the inline soft-create block.
+    # R-4 (rule_state12_guard) replaces the inline S3 guard.
+    # Both fire as live rules in the pre-route engine pass above.
+    # Heuristic-detected material_typ is lifted into entities before
+    # the engine runs (see "Heuristic enrichment" block above), so R-5
+    # has the full picture.
+    #
+    # Subtle simplifications vs. legacy code:
+    #   * Position-based search-vs-create resolution is dropped — R-5
+    #     fires on any create-verb regex; ambiguous mixed-intent turns
+    #     ("zeig mir X und erstelle Y") fall back to the classifier's
+    #     choice plus any other rules. Edge case, low frequency.
+    #   * `looks_like_create_intent` (broader trigger set) is replaced
+    #     by R-5's regex — covers ~95% of the same triggers.
+
+    if classification.intent_id == "I05":
+        # Priority for material_typ (fixes "stale type" bug):
+        #   1. type detected from THIS turn's user message  (_detected_mt)
+        #   2. classifier's extracted entity for this turn   (_mt_class)
+        #   3. sticky session value (prior turn)             (_mt_session)
+        # If the user explicitly mentions a type NOW, it always wins over
+        # whatever the last turn set — otherwise clicking a new type chip
+        # re-generates the previous type.
+        _mt_session = session_state.get("entities", {}).get("material_typ")
+        _mt_class = (classification.entities or {}).get("material_typ")
+        _chosen = _detected_mt or _mt_class or _mt_session
+        if _chosen and session_state["entities"].get("material_typ") != _chosen:
+            session_state["entities"]["material_typ"] = _chosen
+        # Also lift into classification.entities so the canvas flow reads
+        # the fresh value without re-querying session state.
+        if _chosen:
+            if classification.entities is None:
+                classification.entities = {}
+            classification.entities["material_typ"] = _chosen
+
+    # 2b. Build ContextSnapshot (Triple-Schema T-04/05)
+    from app.services.context_service import build_context
+    context_snapshot = build_context(env, session_state, classification)
+    tracer.record("context", "Context snapshot built", {
+        "page": context_snapshot.page,
+        "device": context_snapshot.device,
+        "turn": context_snapshot.turn_count,
+    })
+
+    # 2c. Policy assessment (Triple-Schema T-13/14)
+    from app.services.policy_service import assess_policy
+    tracer.start("policy", "Policy evaluation")
+    policy = assess_policy(
+        message=req.message,
+        persona_id=session_state["persona_id"],
+        intent_id=classification.intent_id,
+    )
+    tracer.end({
+        "matched": policy.matched_rules,
+        "blocked_tools": policy.blocked_tools,
+    })
+
+    # Merge policy blocks into safety blocked_tools (single enforcement path)
+    for t in policy.blocked_tools:
+        if t not in safety.blocked_tools:
+            safety.blocked_tools.append(t)
+
+    # 3. Pattern selection (Gate → Score → Modulate)
+    #    Safety may enforce a specific pattern (e.g. M01 on self-harm);
+    #    in that case select_pattern() bypasses gating/scoring entirely and
+    #    returns the enforced pattern with its full core_rule + tool config.
+    tracer.start("pattern", "Pattern selection (Safety → Hint → Fallback)")
+    # Pattern enforcement priority (Welle E v4+12, Sprint K — Rules entfernt):
+    #   1. Safety layer (M01, M02) wins immer (siehe safety_service)
+    #   2. LLM-Hint (pattern_id_hint aus classification)
+    #   3. Fallback (M15)
+    _enforced_for_select = safety.enforced_pattern or None
+    winner, pattern_output, scores, eliminated = select_pattern(
+        persona_id=session_state["persona_id"],
+        state_id=new_state,
+        intent_id=classification.intent_id,
+        signals=new_signals,
+        page=env.get("page", "/"),
+        device=env.get("device", "desktop"),
+        entities=session_state["entities"],
+        intent_confidence=classification.intent_confidence,
+        enforced_pattern_id=_enforced_for_select,
+        pattern_id_hint=getattr(classification, "pattern_id_hint", None),
+    )
+    tracer.end({
+        "winner": winner.id,
+        "eliminated": len(eliminated),
+    })
+
+    # Post-Route Rule-Engine — entfernt (Welle E v4+12, Sprint K).
+    # In eval-355c883 datenbasiert nachgewiesen redundant: shadow-Modus
+    # lieferte +3.8% avg_score und +20% pattern_match=2 ggü. Live-Rules.
+    # Was übrig blieb (Persona-Self-ID) wurde nach classify-overrides.yaml
+    # migriert, alles andere ist im Pattern-Hint-Workflow konzentriert.
+
+    # 3b. Safety: strip blocked tools from the chosen pattern
+    if safety.blocked_tools:
+        if "tools" in pattern_output:
+            pattern_output["tools"] = [
+                t for t in pattern_output["tools"] if t not in safety.blocked_tools
+            ]
+        logger.info("Safety blocked tools: %s", safety.blocked_tools)
+    if safety.enforced_pattern and winner.id == safety.enforced_pattern:
+        logger.info("Safety enforced pattern active: %s", winner.id)
+
+    # ai-content-enabled-Embed-Modus entfernt (2026-06-10): KI-Material-
+    # Generierung ist immer zugelassen (Option war nie lauffähig, siehe
+    # Preflight-Kommentar).
+
+    # 4. RAG areas → presented as callable tools alongside MCP tools
+    #
+    # Welle E (2026-05-23) — STRENGE WHITELIST je Pattern:
+    #   * Pattern deklariert ``rag_areas: [a, b]`` → exakt diese Areas, nichts sonst
+    #   * Pattern deklariert ``rag_areas: []`` (explizit leer) → KEIN RAG-Tool
+    #   * Pattern deklariert ``sources`` ohne ``rag`` → KEIN RAG-Tool
+    #   * Pattern hat weder ``rag_areas`` noch ``sources`` (Default) → alle always-on
+    #
+    # Vorher: Pattern-rag_areas wurden zu always-on hinzugefügt (additiv) —
+    # das hat M04/M15 zwar ihre 1-2 Spezial-Areas gegeben, aber gleichzeitig
+    # die 9 globalen Areas mitgeschleppt. Token-Waste + Halluzinations-Risiko.
+    rag_context = ""  # No longer blindly injected — LLM calls knowledge tools instead
+
+    from app.services.config_loader import load_rag_config
+    rag_config = load_rag_config()
+
+    pattern_sources = pattern_output.get("sources")
+    pattern_rag_areas = pattern_output.get("rag_areas")
+
+    # 1) Explicit pattern whitelist (frontmatter ``rag_areas:`` is set,
+    #    even as empty list — that's an explicit "no RAG").
+    if pattern_rag_areas is not None:
+        # Filter against rag_config so we never expose an area that doesn't
+        # exist (typo protection). Empty list stays empty.
+        available_rag_areas = [a for a in pattern_rag_areas if a in rag_config]
+
+    # 2) Pattern declared sources without "rag" → kill RAG entirely.
+    elif pattern_sources is not None and "rag" not in pattern_sources:
+        available_rag_areas = []
+
+    # 3) Default: always-on areas (+ on-demand when sources include "rag").
+    else:
+        available_rag_areas = [
+            area for area, cfg in rag_config.items() if cfg.get("mode") == "always"
+        ]
+        if pattern_sources is not None and "rag" in pattern_sources:
+            for area, cfg in rag_config.items():
+                if cfg.get("mode") == "on-demand" and area not in available_rag_areas:
+                    available_rag_areas.append(area)
+
+    # 5. Memory context — Welle E (2026-05-23): bereits parallel zu
+    #    Safety/Classify gefetcht (siehe asyncio.gather oben). Hier nur noch
+    #    der Render-Schritt, kein zusätzliches await.
+    memories = _memories_early or []
+    memory_context = ""
+    if memories:
+        mem_parts = [f"- {m['key']}: {m['value']}" for m in memories[:10]]
+        memory_context = "\nErinnerungen:\n" + "\n".join(mem_parts)
+
+    # 6. Generate response
+    #    Check if this is a learning path / lesson prep request with prior results
+    classification_dict = classification.model_dump()
+    _lp_keywords = {"lernpfad", "unterrichtsvorbereitung", "unterrichtsstunde", "unterrichtsplanung",
+                     "unterricht vorbereiten", "unterrichtseinheit", "stundenentwurf"}
+    _msg_lower = req.message.lower()
+    # LP-Fast-Path darf NICHT feuern wenn der Classifier einen non-create
+    # Intent gewählt hat. Der User will dann z.B. einen bestehenden Lernpfad
+    # bearbeiten (I06), bewerten (I02) oder Feedback geben
+    # (I07) — nicht einen neuen erstellen.
+    # Welle C Sprint 4: I03 ist in I03 gemerged (Download =
+    # Repo-Link-Output von Search-Pattern, kein Backend-File-Stream).
+    _lp_blocking_intents = {
+        "I07", "I08", "I02", "I02", "I06",
+    }
+    # Persona-Block: bestimmte Personas profitieren NICHT von einem
+    # didaktisch strukturierten Lernpfad. P-RED/P-ENT erwarten
+    # Recherche-Material für Artikel/Positionspapiere — nicht eine
+    # Stunden-Strukturierung mit Lernzielen. Eval-Befund: für diese
+    # Personas führt LP-Generierung zu unnatürlichen Antworten.
+    _persona_blocks_lp = session_state.get("persona_id") in (
+        "P-RED", "P-ENT",
+    )
+    _has_lp_intent = (
+        classification.intent_id not in _lp_blocking_intents
+        and not _persona_blocks_lp
+        and (
+            any(kw in _msg_lower for kw in _lp_keywords)
+            or classification.intent_id == "I04"
+        )
+    )
+    _last_contents_json = session_state.get("entities", {}).get("_last_contents", "")
+    _last_collections_json = session_state.get("entities", {}).get("_last_collections", "")
+    _lp_routed = False
+
+    # Only route to LP builder if a concrete topic is known — fach alone is not enough
+    _thema = session_state.get("entities", {}).get("thema", "")
+    _lp_cards_collected: list[dict] = []  # cards found during LP content gathering
+
+    # Plausibilitätscheck auf _thema, bevor wir einen Lernpfad generieren.
+    # Dieselbe Logik wie beim Canvas-Fast-Path: wenn der Classifier einen
+    # substring der Nachricht als thema fehlinterpretiert hat, lieber
+    # degradieren statt einen unsinnigen Lernpfad zu bauen.
+    def _thema_plausible(t: str) -> bool:
+        if not t:
+            return False
+        import re as _rex
+        _tl = t.lower().strip(" .,:;?!")
+        if len(_tl) < 3:
+            return False
+        # Starts with pronoun/article → Satzrest
+        if _rex.match(r"^(das|dieses|diese|dieser|der|die|den|dem|des|ein|eine|einen|einem|einer|eines|"
+                      r"ihm|ihr|ihn|ihnen|mir|mich|dir|dich|uns|euch|es|sie|er)\b", _tl):
+            return False
+        # Starts with question/meta word
+        if _rex.match(r"^(wie|was|wo|wann|warum|wer|wieso|wieviel|kannst|kann|könnte|könntest|"
+                      r"hast|habt|gibt|gibts|ideen|vorschläge|tipps|möglichkeiten|"
+                      r"eine frage|frage|ne frage|irgendwas|bitte|mal|gerne|gern|"
+                      r"also|so|mal eben)\b", _tl):
+            return False
+        if t.rstrip().endswith("?"):
+            return False
+        # Query/meta verbs → existierendes Material, nicht LP-Thema
+        if _rex.search(r"\b(runterladen|herunterladen|bewerten|bewertung|prüfen|"
+                       r"ansehen|anschauen|kopieren|teilen|löschen|exportieren|"
+                       r"ausdrucken|drucken|speichern|öffnen|schließen|abbrechen|"
+                       r"bereitstellen|bereitstellung|schicken|senden|zusenden|"
+                       r"weiterleiten|feedback|meinung|bewerte|review)\b", _tl):
+            return False
+        # Fragment-Rest nach Material-Typ-Strip: "e der aktuellen..."
+        if _rex.match(r"^(e|er|es|en|em|n|s)\s", _tl):
+            return False
+        return True
+
+    if _thema and not _thema_plausible(_thema):
+        logger.info("LP fast-path: thema %r rejected as garbage, forcing degradation", _thema)
+        _thema = ""
+        session_state.setdefault("entities", {})["thema"] = ""
+
+    # Force degradation when LP keywords detected but thema missing
+    if _has_lp_intent and not _thema:
+        _missing = [s for s in ["thema", "stufe"] if not session_state.get("entities", {}).get(s)]
+        if _missing:
+            pattern_output["degradation"] = True
+            pattern_output["missing_slots"] = list(set(
+                pattern_output.get("missing_slots", []) + _missing
+            ))
+
+    if _has_lp_intent and _thema:
+        from app.services.llm_service import generate_learning_path_text
+        contents_text = ""
+        topic = _thema
+        tools_called = []
+        _lp_used = _get_used_lp_ids(session_state)
+        _lp_new_ids: list[str] = []
+        _lp_reset = False
+
+        # Topic-switch detection: if classification gave us a NEW thema that
+        # doesn't appear in any cached content/collection title, force a fresh
+        # search (Priority 3) instead of reusing stale session items.
+        _new_thema = (classification.entities or {}).get("thema", "").strip()
+        _force_fresh_search = False
+        if _new_thema:
+            _haystack = (_last_contents_json + _last_collections_json).lower()
+            if _new_thema.lower() not in _haystack:
+                _force_fresh_search = True
+                _last_contents_json = ""
+                _last_collections_json = ""
+                topic = _new_thema
+                logger.info("LP topic switch → fresh search for '%s'", topic)
+
+        try:
+            # Priority 1: Use individual content items from session
+            if _last_contents_json:
+                _contents = json.loads(_last_contents_json)
+                if _contents:
+                    # Diversity: skip already-used items
+                    _filtered = [c for c in _contents if c.get("node_id") and c["node_id"] not in _lp_used]
+                    if not _filtered:
+                        _filtered = _contents
+                        _lp_reset = True
+                    _contents = _filtered
+                    _lp_new_ids.extend(c.get("node_id", "") for c in _contents)
+                    _lp_cards_collected.extend(_contents)
+                    contents_lines = []
+                    for c in _contents:
+                        types = ", ".join(c.get("learning_resource_types", [])) or "Material"
+                        line = f"- **{c['title']}** ({types})"
+                        if c.get("description"):
+                            line += f"\n  {c['description'][:200]}"
+                        if c.get("url"):
+                            line += f"\n  URL: {c['url']}"
+                        contents_lines.append(line)
+                    contents_text = "\n".join(contents_lines)
+                    tools_called = ["generate_learning_path (aus Einzelinhalten)"]
+
+            # Priority 2: Fetch contents FROM session collections (not the collections themselves!)
+            if not contents_text and _last_collections_json:
+                _collections = json.loads(_last_collections_json)
+                if _collections:
+                    all_collection_contents = []
+                    tools_called = []
+                    for col in _collections[:5]:  # Max 5 collections
+                        try:
+                            col_contents = await call_mcp_tool("get_collection_contents", {
+                                "nodeId": col["node_id"],
+                                "maxItems": 8,
+                                "skipCount": 0,
+                            })
+                            if col_contents:
+                                all_collection_contents.append(
+                                    f"### Aus Sammlung: {col.get('title', 'Unbekannt')}\n{col_contents}"
+                                )
+                                _col_cards_parsed = parse_wlo_cards(col_contents)
+                                await resolve_discipline_labels(_col_cards_parsed)
+                                _lp_cards_collected.extend(_col_cards_parsed)
+                                tools_called.append(f"get_collection_contents ({col.get('title', '')[:30]})")
+                        except Exception as e:
+                            logger.warning("Failed to fetch contents for collection %s: %s", col.get("title"), e)
+                    if all_collection_contents:
+                        contents_text = "\n\n".join(all_collection_contents)
+                        tools_called.append("generate_learning_path")
+
+            # Priority 3: No session data — search for collections, fetch THEIR contents
+            if not contents_text:
+                import re as _re
+                # Use entity 'thema' if available (from LLM classification)
+                _topic_from_entities = session_state.get("entities", {}).get("thema", "")
+                _topic_msg = ""
+                if _topic_from_entities:
+                    topic = _topic_from_entities
+                else:
+                    # Extract topic by removing LP/command keywords
+                    _topic_msg = _msg_lower
+                    # Remove whole phrases first
+                    for phrase in ["aus der sammlung", "erstelle mir", "erstelle bitte", "bitte einen", "bitte ein"]:
+                        _topic_msg = _topic_msg.replace(phrase, "")
+                    # Then individual keywords
+                    for kw in list(_lp_keywords) + ["erstelle", "erstell", "daraus", "einen", "ein", "bitte", "mir",
+                                                      "wie sieht", "aus", "zum thema", "zur", "zu", "für", "fuer"]:
+                        _topic_msg = _topic_msg.replace(kw, " ")
+                    _topic_msg = _re.sub(r"\s+", " ", _topic_msg).strip()
+                if _topic_msg:
+                    topic = _topic_msg
+                # Per-topic skipCount so repeated LP requests for the same topic
+                # page through different search results.
+                _topic_key = f"_lp_skip_{topic.lower()[:40]}"
+                _search_skip = int(session_state.get("entities", {}).get(_topic_key, 0) or 0)
+                logger.info("LP search: topic='%s' skip=%d", topic, _search_skip)
+                try:
+                    search_result = await call_mcp_tool("search_wlo_collections", {
+                        "query": topic, "maxItems": 5, "skipCount": _search_skip,
+                    })
+                    search_cards = parse_wlo_cards(search_result)
+                    await resolve_discipline_labels(search_cards)
+                    logger.info("LP found %d collections", len(search_cards))
+                    if not search_cards and _search_skip > 0:
+                        # Pagination exhausted → reset and refetch
+                        _search_skip = 0
+                        _lp_reset = True
+                        search_result = await call_mcp_tool("search_wlo_collections", {
+                            "query": topic, "maxItems": 5, "skipCount": 0,
+                        })
+                        search_cards = parse_wlo_cards(search_result)
+                        await resolve_discipline_labels(search_cards)
+                    # Helper: how many unique items do we have so far?
+                    def _unique_count(cards_list: list[dict]) -> int:
+                        return len({c.get("node_id", "") for c in cards_list if c.get("node_id")})
+
+                    all_lines: list[str] = []
+                    tools_called = [f"search_wlo_collections ({topic[:30]})"]
+                    # NOTE: topic must stay as the user asked for it (e.g.
+                    # "Eiszeit"). We deliberately do NOT overwrite it with the
+                    # first collection's title — doing so would rebrand the
+                    # whole learning path to the collection's theme
+                    # ("Formen der Erdoberfläche") instead of the user's
+                    # actual topic, silently hijacking the request.
+                    if search_cards:
+                        # Latenz (2026-06-10): Die bis zu 3 Sammlungs-Abrufe
+                        # liefen vorher SERIELL (~0,5–1,5 s pro MCP-Call) —
+                        # jetzt parallel via gather. Fetch+Parse+Label je
+                        # Sammlung im Helper; Exceptions werden zurückgegeben
+                        # statt geworfen (Behandlung wie vorher: warning +
+                        # skip). Die NACHverarbeitung (Diversity-Filter,
+                        # all_lines, tools_called) bleibt sequenziell in
+                        # search_cards-Reihenfolge → Ergebnis deterministisch
+                        # identisch zum alten Code, nur schneller.
+                        async def _fetch_collection(sc: dict):
+                            try:
+                                _txt = await call_mcp_tool("get_collection_contents", {
+                                    "nodeId": sc.get("node_id"), "maxItems": 16, "skipCount": 0,
+                                })
+                                _cards = parse_wlo_cards(_txt)
+                                await resolve_discipline_labels(_cards)
+                                return _cards
+                            except Exception as e:
+                                return e
+
+                        _col_targets = [sc for sc in search_cards[:3] if sc.get("node_id")]
+                        _col_results = await asyncio.gather(
+                            *[_fetch_collection(sc) for sc in _col_targets]
+                        )
+                        for sc, _col_res in zip(_col_targets, _col_results):
+                            col_title = sc.get("title", "")
+                            if isinstance(_col_res, Exception):
+                                logger.warning("LP fetch failed for '%s': %s", col_title, _col_res)
+                                continue
+                            col_cards = _col_res
+                            # Diversity filter: drop already-used items
+                            fresh_cards = [c for c in col_cards
+                                           if c.get("node_id") and c["node_id"] not in _lp_used]
+                            if not fresh_cards and col_cards:
+                                fresh_cards = col_cards  # exhausted → use all, will reset later
+                                _lp_reset = True
+                            if fresh_cards:
+                                _lp_cards_collected.extend(fresh_cards[:8])
+                                all_lines.append(f"### Aus Sammlung: {col_title}")
+                                for c in fresh_cards[:8]:
+                                    types = ", ".join(c.get("learning_resource_types", [])) or "Material"
+                                    line = f"- **{c.get('title','')}** ({types})"
+                                    if c.get("description"):
+                                        line += f"\n  {c['description'][:200]}"
+                                    if c.get("url"):
+                                        line += f"\n  URL: {c['url']}"
+                                    all_lines.append(line)
+                                    if c.get("node_id"):
+                                        _lp_new_ids.append(c["node_id"])
+                                tools_called.append(f"get_collection_contents ({col_title[:30]})")
+
+                    # ── Thin-candidates fallback ─────────────────────────
+                    # For specific topics (e.g. "Eiszeit") search_wlo_collections
+                    # sometimes returns only 1 weakly-related collection with
+                    # a single item. A useful learning path needs at least a
+                    # handful of distinct materials. If the collection-based
+                    # search produced fewer than 4 unique candidates, pull in
+                    # direct content-level hits via search_wlo_content.
+                    if _unique_count(_lp_cards_collected) < 4:
+                        try:
+                            content_res = await call_mcp_tool("search_wlo_content", {
+                                "query": topic, "maxItems": 10, "skipCount": 0,
+                            })
+                            content_cards = parse_wlo_cards(content_res)
+                            await resolve_discipline_labels(content_cards)
+                            # Drop items already present + previously used
+                            _seen_ids = {c.get("node_id") for c in _lp_cards_collected}
+                            fresh_content = [
+                                c for c in content_cards
+                                if c.get("node_id")
+                                and c["node_id"] not in _seen_ids
+                                and c["node_id"] not in _lp_used
+                            ]
+                            if fresh_content:
+                                _lp_cards_collected.extend(fresh_content[:8])
+                                all_lines.append(f"### Direkte Treffer zu \"{topic}\"")
+                                for c in fresh_content[:8]:
+                                    types = ", ".join(c.get("learning_resource_types", [])) or "Material"
+                                    line = f"- **{c.get('title','')}** ({types})"
+                                    if c.get("description"):
+                                        line += f"\n  {c['description'][:200]}"
+                                    if c.get("url"):
+                                        line += f"\n  URL: {c['url']}"
+                                    all_lines.append(line)
+                                    if c.get("node_id"):
+                                        _lp_new_ids.append(c["node_id"])
+                                tools_called.append(f"search_wlo_content ({topic[:30]})")
+                                logger.info(
+                                    "LP thin-candidates fallback: added %d content items",
+                                    len(fresh_content[:8]),
+                                )
+                        except Exception as e:
+                            logger.warning("LP content fallback failed: %s", e)
+
+                    if all_lines:
+                        contents_text = "\n".join(all_lines)
+                        tools_called.append("generate_learning_path")
+                        # Advance skipCount for next LP request on same topic
+                        session_state.setdefault("entities", {})[_topic_key] = _search_skip + 3
+                except Exception as e:
+                    logger.warning("Failed to search+fetch collections for LP: %s", e)
+
+            logger.info("LP contents: %d chars, topic='%s'", len(contents_text) if contents_text else 0, topic)
+            if contents_text:
+                # QR-Policy speculative (M09): QR-Generator parallel zum
+                # LP-Generator starten — die Kandidaten-Titel sind hier
+                # schon bekannt. Eingaben als Kopien, damit spätere
+                # Mutationen des Hauptpfads den Prompt nicht verändern.
+                _qr_mode, _qr_max = _qr_policy("M09")
+                _lp_qr_count = _qr_max if _qr_max is not None else _qr_default_count()
+                if _qr_mode == "speculative" and _lp_qr_count > 0:
+                    try:
+                        _lp_spec_titles = [
+                            (c.get("title") or "").strip()
+                            for c in _lp_cards_collected[:5]
+                        ]
+                        _qr_spec_task = asyncio.create_task(generate_quick_replies(
+                            message=req.message,
+                            response_text=_spec_qr_response_block(
+                                "M09",
+                                pattern_output.get("short_purpose") or "",
+                                _lp_spec_titles,
+                            ),
+                            classification={
+                                **classification_dict,
+                                "entities": dict(classification_dict.get("entities") or {}),
+                            },
+                            session_state={
+                                **session_state,
+                                "entities": dict(session_state.get("entities") or {}),
+                            },
+                            usage_acc=usage_acc,
+                            count=_lp_qr_count,
+                        ))
+                    except Exception as _sqr_err:
+                        logger.warning("speculative QR start (M09) failed: %s", _sqr_err)
+                        _qr_spec_task = None
+                response_text = await generate_learning_path_text(
+                    collection_title=topic,
+                    contents_text=contents_text[:6000],
+                    session_state=session_state,
+                )
+                if _lp_reset:
+                    response_text = (response_text or "") + (
+                        "\n\n_Hinweis: Es waren keine neuen Inhalte verfügbar, "
+                        "deshalb wird die Auswahl jetzt wiederholt._"
+                    )
+                    session_state.setdefault("entities", {})["_lp_used_node_ids"] = "[]"
+                _add_used_lp_ids(session_state, _lp_new_ids)
+                # Welle B.5 (2026-05): Filter on cards mentioned in text is
+                # now Pattern-driven (`card_text_link_required` flag). M09
+                # has it set to true so the existing LP-tile behaviour is
+                # preserved. Other Patterns that might one day route through
+                # this LP code path can opt out and keep the full card pool.
+                if pattern_output.get("card_text_link_required", False):
+                    wlo_cards_raw = _filter_cards_used_in_text(
+                        _lp_cards_collected, response_text or ""
+                    )
+                else:
+                    wlo_cards_raw = _lp_cards_collected
+                # Welle E (2026-05-24, v2): Material-Links werden später
+                # im InlineDocument-Routing-Block ans response_text
+                # angehängt — dort sind die finalen ``cards`` (mit
+                # Repo-Annotation) verfügbar, die der User auch sieht.
+                _lp_routed = True
+
+                # Also hand the learning-path text to the canvas so the user
+                # can print/download it and edit it via chat commands.
+                _lp_title = f"Lernpfad: {topic}" if topic else "Lernpfad"
+                _lp_first_line = (response_text or "").lstrip().splitlines()[0] if response_text else ""
+                _m = _re_lp_title.search(_lp_first_line)
+                if _m:
+                    _lp_title = _m.group(1).strip() or _lp_title
+                # Mark state so follow-up chat messages are treated as
+                # canvas-edits against this learning path.
+                new_state = "S3"
+                session_state["entities"]["_canvas_material_type"] = "lernpfad"
+                session_state["entities"]["_canvas_topic"] = topic or ""
+                # Welle E (2026-05-23) — Lernpfad-Markdown bleibt im
+                # response_text, kein page_action canvas_open mehr. Das
+                # InlineDocument-Routing am Hauptpfad-Ende packt es in die
+                # ``inline_documents``-Box; response_text enthält bereits
+                # den vollständigen Markdown von generate_learning_path_text.
+
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("Learning path from history failed: %s", e)
+
+    # ── Canvas-Create-Fast-Path (extrahiert 2026-06-10) ──────────────
+    # Logik lebt 1:1 in _try_canvas_create_fast_path. Hier bleiben der
+    # tools_called-Erhalt (LP-Block kann ihn gesetzt haben) und das
+    # konditionale Rebinding: nicht geroutet → response_text/wlo_cards_raw
+    # bleiben wie im Original ungebunden (Downstream setzt sie selbst).
+    # Ensure tools_called exists when we take the canvas fast-path. If the LP
+    # block already set it, we leave that value intact.
+    try:
+        tools_called  # type: ignore[used-before-assignment]  # noqa: F821
+    except NameError:
+        tools_called = []
+    (_canvas_routed, _canvas_payload_out, _canvas_forced_quick_replies,
+     _cv_response_text, tools_called, _cv_wlo_cards_raw,
+     _cv_new_state) = await _try_canvas_create_fast_path(
+        req, classification, session_state, pattern_output,
+        memory_context, _lp_routed, tools_called, new_state,
+    )
+    if _canvas_routed:
+        response_text = _cv_response_text
+        wlo_cards_raw = _cv_wlo_cards_raw
+        new_state = _cv_new_state
 
     # ── Effective-Pattern-Reconciliation (Welle E v4+12) ─────────────
     # Die Fast-Paths LP (_lp_routed=True) und Canvas-Create (_canvas_routed
@@ -5240,6 +5652,8 @@ async def _chat_impl(
     if _lp_routed:
         _effective_pattern_id = "M09"
         _effective_pattern_label = "Lernpfad-Erstellung"
+        # _qr_mode/_qr_max wurden im LP-Fast-Path bereits auf die
+        # M09-Policy gesetzt (inkl. evtl. laufendem Spec-Task).
     elif _canvas_routed:
         # _canvas_routed=True kann zwei Dinge bedeuten:
         # (a) Echter Canvas-Inhalt wurde generiert (tools_called enthält
@@ -5262,6 +5676,13 @@ async def _chat_impl(
             "(lp_routed=%s canvas_routed=%s)",
             winner.id, _effective_pattern_id, _lp_routed, _canvas_routed,
         )
+
+    # QR-Policy am EFFEKTIVEN Pattern auflösen (LP hat sie bereits im
+    # Fast-Path gesetzt und ggf. den Spec-Task gestartet). Für Canvas-/
+    # M16-Pfade gibt es kein Parallel-Fenster mehr → speculative verhält
+    # sich dort wie exact (Task wird schlicht nie gestartet).
+    if not _lp_routed:
+        _qr_mode, _qr_max = _qr_policy(_effective_pattern_id)
 
     response_outcomes: list = []
 
@@ -5287,9 +5708,13 @@ async def _chat_impl(
         _pat_wants_no_tools = (
             "tools" in pattern_output and not pattern_output["tools"]
         ) and not (_pat_sources and "mcp" in _pat_sources)
-        _degradation_blocks = (
+        # Generisch (2026-06-10): JEDER fehlende Pflicht-Slot blockt die
+        # Suche (vorher hartkodiert nur "thema"). Pflicht-Slots sind die
+        # precondition_slots des Patterns — Studio: Slots & Degradation;
+        # gültige Namen = Entity-IDs aus 04-entities/entities.yaml.
+        _degradation_blocks = bool(
             pattern_output.get("degradation")
-            and "thema" in pattern_output.get("missing_slots", [])
+            and pattern_output.get("missing_slots")
         )
 
         # Welle-A.1 (2026-05): Der frühere Override-Block
@@ -5306,7 +5731,7 @@ async def _chat_impl(
             or _pat_wants_no_tools        # pattern.tools = [] + sources kein MCP
             or _lp_routed                 # LP path ran its own MCP logic, discard spec
             or _canvas_routed             # Canvas-create doesn't need search results
-            or _degradation_blocks        # Missing thema → ask first, don't search
+            or _degradation_blocks        # Pflicht-Slot fehlt → ask first, don't search
         )
         if spec_blocked:
             spec_task.cancel()
@@ -5393,6 +5818,21 @@ async def _chat_impl(
     # O1: bei search_wlo_all sind collections/topicPages bereits als Extras
     # aus dem Envelope gesplittet (extra_spec_tasks ist dann leer → die Schleife
     # unten ist ein No-op und überschreibt nichts).
+    # B1 (2026-06-10): Auf LP-/Canvas-Routen werden die Extra-Spec-Tasks
+    # nie konsumiert (beide Konsum-Stellen unten sind auf den Standard-
+    # Pfad gegated) — vorher liefen sie unbeobachtet weiter (verworfene
+    # MCP-Arbeit). Jetzt: explizit canceln, symmetrisch zu spec_task.
+    if extra_spec_tasks and (_lp_routed or _canvas_routed):
+        for _ex_name, _ex_task in extra_spec_tasks:
+            _ex_task.cancel()
+            try:
+                await _ex_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        logger.info("speculative extras discarded (lp/canvas route): %d",
+                    len(extra_spec_tasks))
+        extra_spec_tasks = []
+
     prefetched_extras_payload: list[dict] = list(_search_all_extras)
     if extra_spec_tasks and not _lp_routed and not _canvas_routed:
         for _ex_name, _ex_task in extra_spec_tasks:
@@ -5444,6 +5884,7 @@ async def _chat_impl(
         # bei „Klimawandel"). ONNX ist synchron → im Thread-Executor.
         try:
             from app.services.card_reranker import rerank_gate_envelope as _ce_gate
+            from app.services.rag_service import run_in_rerank_pool as _rerank_pool
             _ce_targets: list[dict] = []
             if prefetched_tool_payload and prefetched_tool_payload.get("result_text"):
                 _ce_targets.append(prefetched_tool_payload)
@@ -5459,11 +5900,15 @@ async def _chat_impl(
                 (req.message or "") + " " + (spec_query or "")
             ).lower()
             for _p in _ce_targets:
-                _nt, _ = await asyncio.to_thread(
-                    _ce_gate, spec_query, _p["result_text"],
-                    tool_name=_p.get("name", ""),
-                    allow_soft_fallback=_wants_tp,
-                )
+                # Über den gedeckelten Rerank-Pool statt default-to_thread
+                # (2026-06-15): begrenzt gleichzeitige ONNX-Inferenzen und
+                # verhindert CPU-Oversubscription unter paralleler Last.
+                def _gate_call(rt=_p["result_text"], nm=_p.get("name", "")):
+                    return _ce_gate(
+                        spec_query, rt,
+                        tool_name=nm, allow_soft_fallback=_wants_tp,
+                    )
+                _nt, _ = await _rerank_pool(_gate_call)
                 _p["result_text"] = _nt
         except Exception as _ce_err:
             logger.warning("CE card-gate failed: %s", _ce_err)
@@ -5490,6 +5935,53 @@ async def _chat_impl(
             tracer.end({"prefetch": bool(prefetched_tool_payload),
                         "extras": len(prefetched_extras_payload or [])})
             _wlo_search_traced = False
+
+        # QR-Policy speculative (2026-06-10): QR-Generator PARALLEL zum
+        # Antwort-LLM starten. Er kennt Pattern (short_purpose als Form-
+        # Beschreibung), Entities und die CE-gegateten Prefetch-Treffer —
+        # nicht den Antworttext. Beim Einsammeln unten entscheidet ein
+        # deterministisches Konsistenz-Gate; bei Divergenz fällt der
+        # Pfad auf den exakten Nach-Call zurück. Eingaben als Kopien,
+        # damit spätere Mutationen den parallelen Prompt nicht verändern.
+        _qr_count_eff = _qr_max if _qr_max is not None else _qr_default_count()
+        if _qr_mode == "speculative" and _qr_spec_task is None and _qr_count_eff > 0:
+            try:
+                _spec_titles: list[str] = []
+                _spec_payloads = (
+                    [prefetched_tool_payload] if prefetched_tool_payload else []
+                ) + list(prefetched_extras_payload or [])
+                for _p in _spec_payloads:
+                    if len(_spec_titles) >= 5:
+                        break
+                    if _p and _p.get("result_text"):
+                        for _c in parse_wlo_cards(_p["result_text"]):
+                            _t = (_c.get("title") or "").strip()
+                            if _t and _t not in _spec_titles:
+                                _spec_titles.append(_t)
+                            if len(_spec_titles) >= 5:
+                                break
+                _qr_spec_task = asyncio.create_task(generate_quick_replies(
+                    message=req.message,
+                    response_text=_spec_qr_response_block(
+                        _effective_pattern_id,
+                        pattern_output.get("short_purpose") or "",
+                        _spec_titles,
+                    ),
+                    classification={
+                        **classification_dict,
+                        "entities": dict(classification_dict.get("entities") or {}),
+                    },
+                    session_state={
+                        **session_state,
+                        "entities": dict(session_state.get("entities") or {}),
+                    },
+                    usage_acc=usage_acc,
+                    count=_qr_count_eff,
+                ))
+            except Exception as _sqr_err:
+                logger.warning("speculative QR start failed: %s", _sqr_err)
+                _qr_spec_task = None
+
         tracer.start("response", "LLM response generation")
         try:
             response_text, wlo_cards_raw, tools_called, response_outcomes = await generate_response(
@@ -5754,26 +6246,89 @@ async def _chat_impl(
         session_state.pop("_inline_quick_replies", None)
     else:
         _inline_qr = None
+    _qr_spec_consumed = False
     if _canvas_forced_quick_replies:
         quick_replies = _canvas_forced_quick_replies
     elif _inline_qr is not None:
         quick_replies = _inline_qr
+    elif _qr_mode == "none":
+        # QR-Policy none: kein Generator-Call (und unten kein Auto-
+        # Followup). Deterministische System-QRs — forced Slot-Optionen
+        # oben, Tour-Navigation, Lotsen-Button via _attach_guide_qr —
+        # bleiben bewusst aktiv.
+        logger.info(
+            "quick_replies: mode=none (pattern %s) — Generator übersprungen",
+            _effective_pattern_id,
+        )
+        quick_replies = []
     elif follow_up_mode != "none":
-        try:
-            quick_replies = await generate_quick_replies(
-                message=req.message,
-                response_text=response_text,
-                classification=classification_dict,
-                session_state=session_state,
-                usage_acc=usage_acc,
+        _qr_result: list[str] | None = None
+        if _qr_spec_task is not None:
+            # Konsistenz-Gate (deterministisch): Die spekulativen QRs
+            # wurden für eine inhaltliche Antwort gebaut. Wird die
+            # Antwort unerwartet zur Rückfrage (außer bei M03, wo der
+            # Spec-Prompt genau dafür Slot-Optionen liefert) oder ist
+            # sie leer/Fehler, fällt der Pfad auf den exakten Call.
+            _spec_gate_ok = bool((response_text or "").strip()) and not (
+                (response_text or "").rstrip().endswith("?")
+                and _effective_pattern_id not in ("M03",)
             )
-        except Exception as _qr_err:
-            # Quick replies are optional UX — never crash a successful main
-            # response on a B-API/LLM blip in the QR call. Degrade to none.
-            logger.warning("main flow quick_replies failed: %s", _qr_err)
-            quick_replies = []
+            if _spec_gate_ok:
+                try:
+                    _spec_qrs = await _qr_spec_task
+                    _qr_spec_consumed = True
+                    if _spec_qrs:
+                        _qr_result = _spec_qrs
+                        logger.info(
+                            "quick_replies: speculative angenommen "
+                            "(pattern %s, %d Vorschläge — kein Nach-Call)",
+                            _effective_pattern_id, len(_spec_qrs),
+                        )
+                except Exception as _sq_err:
+                    logger.warning("speculative QR await failed: %s", _sq_err)
+                    _qr_spec_consumed = True
+            if _qr_result is None:
+                logger.info(
+                    "quick_replies: speculative verworfen (Gate/leer) — "
+                    "exakter Nach-Call (pattern %s)", _effective_pattern_id,
+                )
+        if _qr_result is None:
+            _qr_call_count = _qr_max if _qr_max is not None else _qr_default_count()
+            if _qr_call_count <= 0:
+                # Globale Anzahl 0 = keine generierten QRs (Anzeige-Tab).
+                _qr_result = []
+            else:
+                try:
+                    _qr_result = await generate_quick_replies(
+                        message=req.message,
+                        response_text=response_text,
+                        classification=classification_dict,
+                        session_state=session_state,
+                        usage_acc=usage_acc,
+                        count=_qr_call_count,
+                    )
+                except Exception as _qr_err:
+                    # Quick replies are optional UX — never crash a successful main
+                    # response on a B-API/LLM blip in the QR call. Degrade to none.
+                    logger.warning("main flow quick_replies failed: %s", _qr_err)
+                    _qr_result = []
+        quick_replies = _qr_result
     else:
         quick_replies = []
+
+    # Verwaisten Spec-Task aufräumen (forced/inline/none/Gate-Fail-Pfade):
+    # canceln + Exception einsammeln, damit kein "never retrieved" entsteht.
+    if _qr_spec_task is not None and not _qr_spec_consumed:
+        logger.info(
+            "quick_replies: speculative Task gecancelt — QRs kamen aus %s "
+            "(pattern %s)",
+            "forced-Liste" if _canvas_forced_quick_replies
+            else "Inline-Antwort" if _inline_qr is not None
+            else "Policy/Gate",
+            _effective_pattern_id,
+        )
+        _qr_spec_task.cancel()
+        _qr_spec_task.add_done_callback(_retrieve_task_exception)
 
     # Webseiten-Lotse: deterministisch einen Bring-mich-hin-QR an Position
     # 0 setzen, wenn die User-Frage zu einer bekannten WLO-Seite passt
@@ -5816,12 +6371,8 @@ async def _chat_impl(
     #     2. Host-page integration (/suche etc.) — legacy show_results
     #     3. Widget-context with cards — canvas_show_cards (Phase 1: move tiles to canvas)
     page_action = None
-    # LP-derived canvas payload (set inside the LP block when _lp_routed=True)
-    _lp_canvas = locals().get("_canvas_payload_out_lp")
     if _canvas_payload_out:
         page_action = _canvas_payload_out
-    elif _lp_canvas:
-        page_action = _lp_canvas
     elif cards:
         # Sicherheitsfilter: wenn die Suche ohne konkretes Thema/Fach lief,
         # sind die "Treffer" in aller Regel Müll (z.B. "Wortschatz" oder
@@ -6103,8 +6654,17 @@ async def _chat_impl(
     # ersetzt → völlig sinnfreie Antwort.
     _winner_id = getattr(winner, "id", "") if "winner" in dir() else ""
     _is_search_pattern_active = _winner_id in {"M05", "M06"}
+    # Degradation (Pflicht-Slot fehlt): Die Antwort IST die Rueckfrage —
+    # es wurde nicht gesucht, es gibt keine "gefilterten Treffer unten".
+    # Beide Rewriter (Type-Focus + Anti-Hallu) muessen aussetzen, sonst
+    # ersetzen sie die Rueckfrage durch eine faktisch falsche Such-CTA.
+    _po_for_rewriters = pattern_output if "pattern_output" in dir() else {}
+    _rewriters_degraded = bool(
+        _po_for_rewriters.get("degradation")
+        and _po_for_rewriters.get("missing_slots")
+    )
     _type_focus_label = ""
-    if _grouping_on_impl and _is_search_pattern_active:
+    if _grouping_on_impl and _is_search_pattern_active and not _rewriters_degraded:
         try:
             _classif_e = classification_dict.get("entities", {}) or {}
             _session_e = session_state.get("entities", {}) or {}
@@ -6212,7 +6772,7 @@ async def _chat_impl(
     # M14 Feedback-Echo, M15 Orientierung etc.) mit „Für [Typ] zum Thema
     # schau in die Suche unten" — würde Bug-Fix-Ziel zerschießen.
     if (_grouping_on_impl and response_text and cards is not None
-            and _is_search_pattern_active):
+            and _is_search_pattern_active and not _rewriters_degraded):
         try:
             _n_themen = sum(
                 1 for c in cards
@@ -6418,6 +6978,8 @@ async def _chat_impl(
     if _grouping_on_impl:
         _final_text, _web_links = _extract_web_links_from_text(
             response_text, cards=cards,
+            # Lernpfad: Material-Erwähnungen als Text behalten (s. Helper).
+            keep_bullet_labels=(_effective_pattern_id == "M09"),
         )
     else:
         _final_text, _web_links = response_text, []
@@ -6776,7 +7338,10 @@ async def _chat_impl(
         _privacy = load_privacy_config()
         if _ql_cfg.get("enabled", True) and _privacy.get("quality", True):
             from app.services.database import log_quality_event
-            asyncio.create_task(log_quality_event(
+            # Robustheit (2026-06-10): starke Task-Referenz statt nacktem
+            # create_task — sonst kann der Quality-Log-Task vor Ausführung
+            # GC'd werden (Loop hält nur Weak-Refs).
+            _spawn_background(log_quality_event(
                 session_id=req.session_id,
                 message=req.message,
                 turn_count=session_state["turn_count"],
@@ -6804,11 +7369,14 @@ async def _chat_impl(
     # eine "Hat das geholfen?"-QR an (statt sich darauf zu verlassen,
     # dass der LLM-QR-Generator es trifft). Nur wenn cards präsentiert
     # wurden und keine vergleichbare Refinement-QR schon dabei ist.
-    quick_replies = _apply_state_auto_followup(
-        state_id=new_state,
-        quick_replies=quick_replies,
-        has_cards=bool(cards),
-    )
+    # QR-Policy none unterdrückt auch das deterministische Auto-Followup —
+    # sonst erschiene trotz "keine Quick-Replies" ein Button.
+    if _qr_mode != "none":
+        quick_replies = _apply_state_auto_followup(
+            state_id=new_state,
+            quick_replies=quick_replies,
+            has_cards=bool(cards),
+        )
 
     # Type-Focus QR-Filter (Welle C.5+, 2026-05-22): wenn der User
     # explizit Material-Typ wollte, sind „Welche Sammlungen gibt es noch
@@ -6878,6 +7446,15 @@ async def _chat_impl(
                         len(_materialien),
                     )
                 _materialien = []
+            elif _effective_pattern_id == "M09":
+                # Lernpfad (2026-06-10): Die Box zeigt nur Materialien, die
+                # der Pfad-Text tatsächlich verlinkt (_filter_cards_used_in_
+                # text). Der Standard-Deckel 3 schnitt bei 4-5 verwendeten
+                # Materialien ab → Text↔Box-Inkonsistenz. Eigener Studio-Key,
+                # Default 5, damit der Pfad vollständig abgedeckt ist.
+                _materialien = _trim(
+                    _materialien, "materialien_max_lernpfad", 5, 1, 8,
+                )
             else:
                 _materialien = _trim(_materialien, "materialien_max", 3, 1, 8)
 
@@ -6908,14 +7485,19 @@ async def _chat_impl(
     # Jetzt: hartes Trimmen am Ende. max_count: 0 → keine Pillen.
     try:
         _dr_qr = (_display_rules() or {}).get("quick_replies") or {}
-        _qr_max = int(_dr_qr.get("max_count", 4) or 0)
-        _qr_max = max(0, min(6, _qr_max))
-        if quick_replies and len(quick_replies) > _qr_max:
+        _qr_trim_max = int(_dr_qr.get("max_count", 4) or 0)
+        _qr_trim_max = max(0, min(6, _qr_trim_max))
+        # QR-Policy (2026-06-10): per-Pattern-Anzahl überschreibt den
+        # globalen Deckel (gilt auch für Inline-QRs aus respond_to_user).
+        # Eigener Variablenname — ``_qr_max`` ist die Policy-Variable.
+        if _qr_max is not None:
+            _qr_trim_max = _qr_max
+        if quick_replies and len(quick_replies) > _qr_trim_max:
             logger.info(
                 "quick_replies.max_count: trimmed %d → %d",
-                len(quick_replies), _qr_max,
+                len(quick_replies), _qr_trim_max,
             )
-            quick_replies = quick_replies[:_qr_max]
+            quick_replies = quick_replies[:_qr_trim_max]
     except Exception as _e:
         logger.warning("quick_replies trim failed: %s", _e)
 
@@ -6944,30 +7526,12 @@ async def _chat_impl(
     except Exception:
         _winner_id = ""
 
-    # Welle E (2026-05-24) — generisches last_pattern-Persisting.
-    # Vorher wurde ``session_state["last_pattern"]`` nur in M09/M10-Direct-
-    # Action-Handlern gesetzt UND nur in-memory pro Request — beim
-    # nächsten Turn war es weg (sessions-Tabelle hat keine last_pattern-
-    # Spalte). Jetzt: in entities._last_pattern speichern, damit es via
-    # ``update_session(entities=json.dumps(...))`` DB-persistiert wird
-    # und R2/R2b/R2c im nächsten Turn korrekt greifen.
-    #
-    # Welle E v4+5 (2026-05-26): zusätzlich _last_intent persistieren,
-    # damit R2c (Create-Followup) zwischen Such-Klärung (I03) und Create-
-    # Klärung (I05) unterscheiden kann.
-    if _winner_id:
-        session_state["last_pattern"] = _winner_id  # in-memory für intra-turn
-        session_state.setdefault("entities", {})["_last_pattern"] = _winner_id
-    try:
-        _current_intent_id = (
-            getattr(classification, "intent_id", "")
-            or (classification.dict() if hasattr(classification, "dict") else {}).get("intent_id", "")
-            or ""
-        )
-        if _current_intent_id:
-            session_state.setdefault("entities", {})["_last_intent"] = str(_current_intent_id)
-    except Exception:
-        pass
+    # Hinweis (Aufräumung 2026-06-10): das frühere zweite
+    # last_pattern-/_last_intent-Setzen an dieser Stelle war wirkungslos —
+    # es lief NACH dem einzigen update_session-DB-Write dieses Turns.
+    # Die persistierende Setzung passiert oben (``_winner_id_for_persist``
+    # → entities._last_pattern, vor update_session); ``_last_intent``
+    # hatte zudem keinerlei Leser.
     if (
         _winner_id in {"M09", "M10", "M11"}
         and _final_text
@@ -7027,120 +7591,10 @@ async def _chat_impl(
         except Exception as _e:
             logger.warning("inline-document routing failed: %s", _e)
 
-    # ── M16: Themenseiten-Inhalt — Schwimmlinien-Boxen statt normaler Boxen ──
-    # Beste Themenseite zum Thema finden (Cross-Encoder-gegatet) → ihre
-    # Schwimmlinien-Inhalte holen (Top-3 je Box) → als Swimlane-Boxen anzeigen.
-    # Die normalen Sammlungs-/Inhalts-Boxen werden dabei unterdrückt (cards=[]).
-    _topic_page_view = None
-    if winner.id == "M16":
-        # Sichtbarer Status während des (mehrere MCP-Calls umfassenden) Ladens —
-        # macht die Wartezeit transparent statt eines stummen Spinners.
-        tracer.start("topic_content", "Lade Themenseiten-Inhalte")
-        try:
-            from app.services.mcp_client import (
-                parse_wlo_cards as _m16_pc,
-                parse_topic_page_swimlanes as _m16_psl,
-            )
-            from app.models.schemas import (
-                TopicPageView as _M16View, SwimlaneBox as _M16Box, WloCard as _M16Card,
-            )
-            _m16_thema = str(
-                (classification.entities or {}).get("thema")
-                or (classification.entities or {}).get("topic")
-                or spec_query or req.message or ""
-            ).strip()[:120]
-            # Themenseite über die zuverlässige Sammlungs-Suche finden. KEIN
-            # CE-Gate hier: der Nutzer hat die Themenseite NAMENTLICH genannt —
-            # sie soll gefunden werden, auch bei mäßigem CE-Score (sonst wurde
-            # z.B. „TestBenedikt" weggefiltert → leere Antwort). Ranking:
-            # Titel-Match + Themenseiten-Flag (topic_page_url) zuerst, sonst
-            # MCP-Reihenfolge.
-            _m16_raw_col = await call_mcp_tool(
-                "search_wlo_collections", {"query": _m16_thema, "maxResults": 8},
-            )
-            _m16_cards = _m16_pc(_m16_raw_col) or []
-            _m16_thl = _m16_thema.lower()
-
-            def _m16_rank(_c: dict) -> int:
-                _t = (_c.get("title") or "").lower()
-                _tm = bool(_m16_thl) and (_m16_thl in _t or _t in _m16_thl)
-                _tp = bool(_c.get("topic_page_url"))
-                return 0 if (_tm and _tp) else (1 if _tp else (2 if _tm else 3))
-
-            _m16_cands = sorted(_m16_cards, key=_m16_rank)
-            _m16_fields = _M16Card.model_fields
-            # Top-Kandidaten (CE-sortiert) durchprobieren; erste Sammlung mit
-            # echter Schwimmlinien-Struktur gewinnt (max. 3 Versuche).
-            for _m16_cand in _m16_cands[:3]:
-                _cid = _m16_cand.get("node_id")
-                if not _cid:
-                    continue
-                _m16_raw_tc = await call_mcp_tool(
-                    "get_topic_page_content",
-                    {"collectionId": _cid, "maxPerSwimlane": 3},
-                )
-                _m16_parsed = _m16_psl(_m16_raw_tc)
-                _m16_boxes = []
-                for _m16_sl in _m16_parsed.get("swimlanes", []):
-                    _m16_cc = _m16_sl.get("cards") or []
-                    if not _m16_cc:
-                        continue
-                    _m16_boxes.append(_M16Box(
-                        heading=_m16_sl.get("heading") or "",
-                        type=_m16_sl.get("type") or "",
-                        has_more=bool(_m16_sl.get("has_more")),
-                        cards=[
-                            _M16Card(**{k: v for k, v in c.items() if k in _m16_fields})
-                            for c in _m16_cc
-                        ],
-                    ))
-                if _m16_boxes:
-                    _topic_page_view = _M16View(
-                        variant_title=(_m16_cand.get("title")
-                                       or _m16_parsed.get("variant_title") or _m16_thema),
-                        topic_page_url=(_m16_parsed.get("topic_page_url")
-                                        or _m16_cand.get("topic_page_url") or ""),
-                        swimlanes=_m16_boxes,
-                    )
-                    break
-        except Exception as _m16_err:
-            logger.warning("M16 topic-content resolve failed: %s", _m16_err)
-            _topic_page_view = None
-        if _topic_page_view is not None:
-            cards = []  # normale Boxen unterdrücken — nur Schwimmlinien zeigen
-            _final_text = (
-                "Hier ein Auszug der Inhalte der Themenseite "
-                f"»{_topic_page_view.variant_title}« — gegliedert nach "
-                f"{len(_topic_page_view.swimlanes)} Abschnitt(en). Den vollständigen "
-                "Stand findest du über den Themenseiten-Link unter den Inhalten."
-            )
-            logger.info(
-                "M16 topic-content: %d Swimlanes für '%s'",
-                len(_topic_page_view.swimlanes), _m16_thema,
-            )
-        else:
-            # generate_response wurde für M16 übersprungen → hier MUSS ein
-            # Antworttext gesetzt werden, sonst bleibt die Antwort leer
-            # (beobachtet bei „TestBenedikt" ohne anzeigbare Inhalte).
-            _m16_label = str(
-                (classification.entities or {}).get("thema")
-                or (classification.entities or {}).get("topic")
-                or spec_query or ""
-            ).strip()
-            cards = []
-            if _m16_label:
-                _final_text = (
-                    f"Zur Themenseite »{_m16_label}« konnte ich gerade keine anzeigbaren "
-                    "Inhalte laden — sie ist eventuell noch leer oder nicht vollständig "
-                    "freigegeben. Magst du es über die normale Suche zum Thema versuchen?"
-                )
-            else:
-                _final_text = (
-                    "Ich konnte gerade keine anzeigbaren Themenseiten-Inhalte laden. "
-                    "Magst du es über die normale Suche versuchen?"
-                )
-            logger.info("M16: keine Inhalte -> Fallback-Text gesetzt (label=%r)", _m16_label)
-        tracer.end({"swimlanes": len(_topic_page_view.swimlanes) if _topic_page_view else 0})
+    # ── M16-Resolver (extrahiert 2026-06-10) — Logik 1:1 im Helfer ───
+    _topic_page_view, cards, _final_text = await _resolve_m16_topic_page_view(
+        req, classification, winner, spec_query, tracer, cards, _final_text,
+    )
 
     return ChatResponse(
         session_id=req.session_id,
@@ -7199,7 +7653,7 @@ def _apply_state_auto_followup(
 
 
 @router.post("/stream")
-async def chat_stream(req: ChatRequest):
+async def chat_stream(req: ChatRequest, request: Request):
     """Streaming chat endpoint (Phase-1 SSE).
 
     Same body as POST /api/chat, but the response is a Server-Sent-Event
@@ -7261,6 +7715,7 @@ async def chat_stream(req: ChatRequest):
                     return await _chat_impl(
                         req,
                         tracer_listener=_listener,
+                        peer_ip=_peer_ip(request),
                     )
                 except Exception as e:
                     logger.exception("chat_stream impl failed: %s", e)

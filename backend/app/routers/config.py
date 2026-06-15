@@ -204,10 +204,16 @@ async def put_tone_modifiers_route(payload: ToneModifiersPayload):
         if not ok:
             failed.append(pid)
     if failed:
-        # Nicht hart abbrechen — andere Personas wurden schon geschrieben.
-        # Studio sieht es im Response (geänderte Werte fehlen für diese IDs).
-        # Frontend kann darauf reagieren, Backend bleibt konsistent.
-        pass
+        # C (2026-06-10): vorher wurde hier still 200 geliefert — der
+        # Studio-Nutzer sah "gespeichert", obwohl Personas fehlschlugen.
+        # Erfolgreiche Writes bleiben bestehen (kein Rollback nötig, jede
+        # Persona-Datei ist unabhängig); der Fehler macht die Teilmenge
+        # sichtbar, das Studio zeigt seinen Fehler-Status.
+        raise HTTPException(
+            500,
+            "Tone-Modifier teilweise gespeichert — fehlgeschlagen für: "
+            + ", ".join(sorted(failed)),
+        )
 
     # Default-Modifier bleibt in der historischen YAML (nicht Persona-
     # spezifisch). Wir schreiben sie minimal — nur default_modifier.
@@ -793,6 +799,13 @@ class PatternEntry(BaseModel):
     tools: list[str] = []
     output_mode: str | None = None
     precondition_slots: list[str] = []
+    # Welle B.5-Flag (M09): Cards-Box auf im Text verlinkte Materialien
+    # filtern. Muss durch den GET→PUT-Roundtrip erhalten bleiben — der
+    # Serializer unten baut das Frontmatter aus diesem Schema neu auf.
+    card_text_link_required: bool | None = None
+    # QR-Policy (2026-06-10): exact | speculative | none + Anzahl-Override.
+    quick_replies_mode: str | None = None
+    quick_replies_max: int | None = None
     core_rule: str | None = None
     forbidden_phrases: list[str] = []
     anti_patterns: list[str] = []
@@ -876,6 +889,18 @@ async def put_patterns_route(payload: dict):
             v = getattr(e, k)
             if v:
                 fm[k] = list(v)
+        if e.card_text_link_required:
+            fm["card_text_link_required"] = True
+        # QR-Policy: nur serialisieren wenn vom Default abweichend, damit
+        # unkonfigurierte Patterns schlank bleiben (Default = exact/global).
+        if e.quick_replies_mode and e.quick_replies_mode != "exact":
+            if e.quick_replies_mode not in ("speculative", "none"):
+                raise HTTPException(
+                    400, f"quick_replies_mode ungültig: {e.quick_replies_mode!r}",
+                )
+            fm["quick_replies_mode"] = e.quick_replies_mode
+        if e.quick_replies_max is not None:
+            fm["quick_replies_max"] = max(1, min(6, int(e.quick_replies_max)))
         if e.core_rule:
             cr = e.core_rule.strip()
             fm["core_rule"] = LiteralScalarString(cr + "\n") if "\n" in cr else cr

@@ -10,7 +10,7 @@ output_mode: orient
 sources:
   - rag
 rag_areas:
-  - wlo-plattform-wissen
+  - Plattformwissen
 core_rule: |
   3–5 Sätze + 3 Quick-Replies. Begrüßung + persona-passender
   Angebots-Überblick + konkrete Hilfsfrage. KEINE Such-Treffer auflisten,
@@ -34,6 +34,7 @@ when_to_use:
 when_not_to_use:
   - Konkrete Anfrage mit Topic + Intent vorhanden → entsprechendes Sach-Pattern
   - Wissensfrage „Was ist X?" → M04
+  - Substantielle Funktions-/Rollenfrage zu WLO („welche Rolle spielt WLO in X", „welche Möglichkeiten bietet WLO um Y zu integrieren") → M04 (inhaltliche Antwort), NICHT Orientierung
   - Fachportale-Übersicht (Plural-Fächer-Frage) → M07
   - Bot-Bedienungs-/Feedback-Frage → M14
 trigger_phrases:
@@ -45,13 +46,13 @@ trigger_phrases:
 discriminators:
   - vs: M04
     rule: M15 = Plattform-Orientierung (Was bietet WLO?). M04 = Wissensfrage zu Bildungsthemen.
-    example: "Was kann ich hier? → M15. Was bedeutet OER? → M04."
+    example: Was kann ich hier? → M15. Was bedeutet OER? → M04.
   - vs: M07
     rule: M15 = ALLGEMEINE Orientierung mit 3 Quick-Replies. M07 = explizite Fachportale-Liste verlangt.
-    example: "Was kann ich hier? → M15. Welche Fächer gibt es? → M07."
+    example: Was kann ich hier? → M15. Welche Fächer gibt es? → M07.
   - vs: M03
     rule: M15 = User hat NOCH KEIN konkretes Anliegen. M03 = User hat Anliegen aber Pflicht-Slot fehlt.
-    example: "Hi was kann ich hier? → M15. Erstell mir ein Arbeitsblatt (ohne Topic) → M03."
+    example: Hi was kann ich hier? → M15. Erstell mir ein Arbeitsblatt (ohne Topic) → M03.
 ---
 
 # M15 — Orientierung

@@ -57,6 +57,34 @@ MCP_URL = ((os.getenv("MCP_SERVER_URL") or "").strip().rstrip("/") or _DEFAULT_M
 _sessions: dict[str, dict[str, Any]] = {}
 _request_id: int = 0
 
+# B5 (2026-06-10): EIN wiederverwendeter AsyncClient statt einem frischen
+# Client pro Request — vorher zahlte jeder Tool-Call einen vollen TCP+TLS-
+# Handshake zum Vercel-Host (~100-300 ms), bei 3 parallelen Suchen pro
+# Turn entsprechend multipliziert. Keep-Alive-Pool macht Folge-Calls warm.
+_HTTP_CLIENT: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None or _HTTP_CLIENT.is_closed:
+        # Skalierung (2026-06-10): Pool-Deckel von 20 → 50 angehoben und
+        # per Env steuerbar. Bei 16+ parallelen Such-Turns (je 1–3 MCP-
+        # Calls) serialisierte der 20er-Pool die Suche clientseitig,
+        # bevor der WLO-Dienst überhaupt limitierte.
+        import os as _os
+        try:
+            _max = max(5, int(_os.getenv("MCP_MAX_CONNECTIONS") or 50))
+        except ValueError:
+            _max = 50
+        _HTTP_CLIENT = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(
+                max_connections=_max,
+                max_keepalive_connections=max(10, _max // 2),
+            ),
+        )
+    return _HTTP_CLIENT
+
 
 def _next_id() -> int:
     global _request_id
@@ -163,12 +191,11 @@ async def _json_rpc(
 
     headers = _build_headers(target_url, include_session=(method != "initialize"))
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            target_url,
-            json=body,
-            headers=headers,
-        )
+    resp = await _get_http_client().post(
+        target_url,
+        json=body,
+        headers=headers,
+    )
 
     # Session-ID aus der Antwort einfangen und im Per-URL-Slot persistieren.
     sid = resp.headers.get("mcp-session-id") or resp.headers.get("Mcp-Session-Id")
@@ -241,8 +268,7 @@ async def _ensure_initialized_with_session(url: str | None = None):
         "Accept": "application/json, text/event-stream",
     }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(target_url, json=body, headers=headers)
+    resp = await _get_http_client().post(target_url, json=body, headers=headers)
 
     if resp.status_code not in (200, 202):
         logger.error("MCP initialize HTTP %d @ %s: %s", resp.status_code, target_url, resp.text[:300])
@@ -267,8 +293,7 @@ async def _ensure_initialized_with_session(url: str | None = None):
     if slot.get("session_id"):
         notif_headers["Mcp-Session-Id"] = slot["session_id"]
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        await client.post(target_url, json=notif_body, headers=notif_headers)
+    await _get_http_client().post(target_url, json=notif_body, headers=notif_headers)
 
     slot["initialized"] = True
     logger.info("MCP handshake complete @ %s", target_url)
@@ -690,7 +715,11 @@ def _cache_set(key: tuple[str, str], value: str) -> None:
     _TOOL_CACHE[key] = (_time.time(), stored)
     _TOOL_CACHE.move_to_end(key)
     while len(_TOOL_CACHE) > _TOOL_CACHE_MAX_ENTRIES:
-        _TOOL_CACHE.popitem(last=False)  # drop oldest
+        # B5 (2026-06-10): Meta-Cache-Eintrag MIT evicten — vorher wuchs
+        # _TOOL_META_CACHE unbegrenzt (jede einzigartige (tool,args)-Kombi
+        # blieb prozesslebenslang im RAM).
+        _old_key, _ = _TOOL_CACHE.popitem(last=False)  # drop oldest
+        _TOOL_META_CACHE.pop(_old_key, None)
 
 
 def get_tool_cache_stats() -> dict[str, Any]:
@@ -714,6 +743,7 @@ def clear_tool_cache() -> int:
     global _TOOL_CACHE_HITS, _TOOL_CACHE_MISSES, _TOOL_CACHE_NEG_HITS
     n = len(_TOOL_CACHE)
     _TOOL_CACHE.clear()
+    _TOOL_META_CACHE.clear()  # B5: Meta-Cache mit leeren (lief sonst voll)
     _TOOL_CACHE_HITS = 0
     _TOOL_CACHE_MISSES = 0
     _TOOL_CACHE_NEG_HITS = 0
@@ -1644,8 +1674,12 @@ async def _ensure_label_cache(vocab: str) -> None:
     try:
         raw = await call_mcp_tool("lookup_wlo_vocabulary", {"vocabulary": vocab})
     except Exception as e:  # pragma: no cover — network failure
-        logger.warning("%s vocabulary preload failed: %s", vocab, e)
-        _label_cache_loaded[vocab] = True
+        # B5 (2026-06-10): NICHT als geladen markieren — vorher latchte ein
+        # einziger Netzwerkfehler beim Start den Cache permanent leer
+        # (Filter-Auflösung degradiert bis zum Neustart). Ohne Latch
+        # versucht der nächste Bedarfs-Aufruf es einfach erneut.
+        logger.warning("%s vocabulary preload failed (retry on next use): %s",
+                       vocab, e)
         return
 
     # Output format (from real MCP response):
@@ -1951,8 +1985,8 @@ async def discover_server_tools(url: str) -> list[dict[str, Any]]:
         "id": 1,
     }
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(url, json=init_body, headers=headers)
+    resp = await _get_http_client().post(
+        url, json=init_body, headers=headers, timeout=15.0)
 
     if resp.status_code not in (200, 202):
         raise ConnectionError(f"HTTP {resp.status_code}: {resp.text[:200]}")
@@ -1965,8 +1999,8 @@ async def discover_server_tools(url: str) -> list[dict[str, Any]]:
         notif_headers["Mcp-Session-Id"] = session_id
 
     notif_body = {"jsonrpc": "2.0", "method": "notifications/initialized"}
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        await client.post(url, json=notif_body, headers=notif_headers)
+    await _get_http_client().post(
+        url, json=notif_body, headers=notif_headers, timeout=10.0)
 
     # Step 3: List tools
     list_body = {
@@ -1978,8 +2012,8 @@ async def discover_server_tools(url: str) -> list[dict[str, Any]]:
     if session_id:
         list_headers["Mcp-Session-Id"] = session_id
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(url, json=list_body, headers=list_headers)
+    resp = await _get_http_client().post(
+        url, json=list_body, headers=list_headers, timeout=15.0)
 
     if resp.status_code not in (200, 202):
         raise ConnectionError(f"tools/list failed: HTTP {resp.status_code}")

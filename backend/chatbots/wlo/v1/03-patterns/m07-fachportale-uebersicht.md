@@ -10,6 +10,7 @@ sources:
   - mcp
 tools:
   - get_subject_portals
+quick_replies_mode: speculative
 core_rule: Top-Level-Fachportale als Cards rendern (max. 12). Kein Drilldown.
 anti_patterns:
   - Keine Material-Treffer rendern (das ist M05/M06)
@@ -31,10 +32,10 @@ trigger_phrases:
 discriminators:
   - vs: M08
     rule: PLURAL/Übersicht aller Fächer → M07. Singular-Fach mit Drilldown → M08.
-    example: "Welche Fächer gibt es? → M07. Welche Bereiche hat Mathematik? → M08."
+    example: Welche Fächer gibt es? → M07. Welche Bereiche hat Mathematik? → M08.
   - vs: M04
     rule: Liste der Fachportale (kuratierter MCP-Output) → M07. Wissensfrage „Was sind Fachportale?" → M04.
-    example: "Liste Fachportale → M07. Was bedeutet Fachportal? → M04."
+    example: Liste Fachportale → M07. Was bedeutet Fachportal? → M04.
 ---
 
 # M07 — Fachportale-Übersicht

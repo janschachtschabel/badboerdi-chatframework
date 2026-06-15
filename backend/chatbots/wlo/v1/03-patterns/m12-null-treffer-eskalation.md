@@ -34,10 +34,10 @@ trigger_phrases:
 discriminators:
   - vs: M06
     rule: M06 vor Such-Versuch. M12 erst NACH leerem Suchergebnis (Eskalation).
-    example: "Material zu X → M06. M06 liefert leer → M12-Eskalation."
+    example: Material zu X → M06. M06 liefert leer → M12-Eskalation.
   - vs: M03
     rule: Such-Treffer leer wegen unbekanntem Begriff → M12 (Synonym-Lookup). Slot fehlt → M03 (Klärung).
-    example: "Suche zu Phantasie-Begriff → M12. Suche zu (kein Topic) → M03."
+    example: Suche zu Phantasie-Begriff → M12. Suche zu (kein Topic) → M03.
 ---
 
 # M12 — Null-Treffer-Eskalation

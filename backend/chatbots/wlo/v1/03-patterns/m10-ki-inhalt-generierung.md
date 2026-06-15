@@ -10,8 +10,7 @@ output_mode: generate
 sources:
   - llm
 precondition_slots:
-  - material_type
-  - topic
+  - thema
 core_rule: |
   Slots gefüllt → die Bot-Antwort IST der vollständige Markdown-Inhalt
   mit kurzem inhaltsspezifischem 1-Satz-Lead VOR dem ersten H1 (NICHT
@@ -27,7 +26,7 @@ core_rule: |
 forbidden_phrases:
   - „Hier ist dein Material — sag Bescheid" (Generic-Bubble ohne Inhalt)
   - „So sieht es nach der Anpassung aus" (Generic-Bestätigung ohne Inhalt)
-  - „Ich habe dir … erstellt — siehst du im Canvas" (Canvas existiert nicht)
+  - „Ich habe dir … erstellt — siehst du im Canvas" (kein separates Canvas-Pane — Material erscheint als Inline-Dokument)
   - Quiz/Arbeitsblatt ohne `## Lösungen`-Block (unfertige Aufgabe)
   - Für [X] zum Thema schau in die Suche unten
   - Hier sind passende Sammlungen
@@ -36,7 +35,7 @@ forbidden_phrases:
   - 'Bei Bericht/Factsheet: KEINE Zahlen ohne `query_knowledge`-Beleg'
 when_to_use:
   - Intent I05 (Inhalt-Generieren) UND Topic UND Material-Typ vorhanden
-  - 'Create-Verben — erstelle / generiere / mach mir / bau / schreib / entwirf'
+  - Create-Verben — erstelle / generiere / mach mir / bau / schreib / entwirf
   - SINGULÄRES neues Material — KEINE Sequenz/Reihe (das wäre M09)
   - User möchte explizit KI-generierten Inhalt, kein Suchen im Repo
 when_not_to_use:
@@ -56,19 +55,19 @@ trigger_phrases:
 discriminators:
   - vs: M04
     rule: Create-Verb + Material-Typ-Substantiv → M10. Was-/Wie-Frage ohne Material-Typ → M04.
-    example: "Erstell mir ein Quiz zu Photosynthese → M10 (auch wenn Photosynthese Wissens-Thema). Was ist Photosynthese? → M04."
+    example: Erstell mir ein Quiz zu Photosynthese → M10 (auch wenn Photosynthese Wissens-Thema). Was ist Photosynthese? → M04.
   - vs: M03
     rule: I05 mit Topic+Material-Typ → M10. I05 ohne einen davon (oder Phantom) → M03.
-    example: "Erstell Arbeitsblatt zu Brüchen → M10. Erstell Arbeitsblatt zu einem Thema → M03."
+    example: Erstell Arbeitsblatt zu Brüchen → M10. Erstell Arbeitsblatt zu einem Thema → M03.
   - vs: M09
     rule: SINGULÄRES Material → M10. Sequenz/Reihe/mehrere Stunden → M09.
-    example: "Erstell ein Arbeitsblatt zu X → M10. Plane Reihe zu X → M09."
+    example: Erstell ein Arbeitsblatt zu X → M10. Plane Reihe zu X → M09.
   - vs: M06
     rule: Create-Verb → M10. Such-Verb („ich suche / hast du") → M06.
-    example: "Erstell mir ein Quiz zu X → M10. Such mir Quiz zu X → M06."
+    example: Erstell mir ein Quiz zu X → M10. Such mir Quiz zu X → M06.
   - vs: M11
     rule: Erste Generierung / kein Vor-Inhalt → M10. Edit-Anfrage auf vorherigen Bot-Output → M11.
-    example: "Erstell Arbeitsblatt zu X → M10. Mach das Arbeitsblatt kürzer → M11."
+    example: Erstell Arbeitsblatt zu X → M10. Mach das Arbeitsblatt kürzer → M11.
 ---
 
 # M10 — KI-Inhalt-Generierung
@@ -78,7 +77,7 @@ discriminators:
 | Spielart | Trigger (material_type) | Tool-Calls |
 |---|---|---|
 | **Lern-Material** | arbeitsblatt, quiz, infoblatt, uebung, lerngeschichte, versuch, präsentation, glossar, checkliste, struktur, diskussion, rollenspiel | KEINE — direkt aus LLM-Wissen |
-| **Bericht / Statistik** | bericht, factsheet, kennzahlen, steckbrief, vergleich, pressemitteilung | **PFLICHT**: `query_knowledge(area="wlo-plattform-wissen")` für belastbare Zahlen |
+| **Bericht / Statistik** | bericht, factsheet, kennzahlen, steckbrief, vergleich, pressemitteilung | **PFLICHT**: `query_knowledge(area="Plattformwissen")` für belastbare Zahlen |
 | **Remix** | beliebig + `source_node_id` im Slot | **PFLICHT**: `get_node_details(node_id)` für Quelle |
 
 ## Pflicht-Antwort-Schema
@@ -86,7 +85,7 @@ discriminators:
 ### Schritt 1 — Tool-Aufruf nur wenn nötig
 ```
 if material_type ∈ {bericht, factsheet, kennzahlen, steckbrief, vergleich, pressemitteilung}:
-    query_knowledge(area="wlo-plattform-wissen")   # PFLICHT
+    query_knowledge(area="Plattformwissen")   # PFLICHT
 elif source_node_id gesetzt:
     get_node_details(source_node_id)              # PFLICHT
 else:

@@ -11,7 +11,7 @@ sources:
 tools:
   - search_wlo_topic_pages
   - get_topic_page_content
-core_rule: 'Inhalte EINER bestimmten Themenseite, nach Schwimmlinien gruppiert (max. 3 je Box, „(Auszug)") + Absprung-Button auf die Themenseite. KEINE normalen Sammlungs-/Inhalts-Boxen.'
+core_rule: Inhalte EINER bestimmten Themenseite, nach Schwimmlinien gruppiert (max. 3 je Box, „(Auszug)") + Absprung-Button auf die Themenseite. KEINE normalen Sammlungs-/Inhalts-Boxen.
 anti_patterns:
   - Liste von Themenseiten zu einem Thema → M06
   - Allgemeine Materialsuche zu einem Thema → M05/M06
@@ -33,10 +33,10 @@ trigger_phrases:
 discriminators:
   - vs: M06
     rule: Inhalte EINER bestimmten Themenseite anzeigen → M16. Themenseiten zu einem Thema SUCHEN (Liste) → M06.
-    example: "Was ist auf der Themenseite Nachhaltigkeit? → M16. Gibt es Themenseiten zu Nachhaltigkeit? → M06."
+    example: Was ist auf der Themenseite Nachhaltigkeit? → M16. Gibt es Themenseiten zu Nachhaltigkeit? → M06.
   - vs: M08
     rule: Schwimmlinien-Inhalte einer Themenseite → M16. Sub-Sammlungen/Aufbau einer normalen Sammlung → M08.
-    example: "Inhalte der Themenseite Klimawandel → M16. Wie ist die Mathematik-Sammlung gegliedert? → M08."
+    example: Inhalte der Themenseite Klimawandel → M16. Wie ist die Mathematik-Sammlung gegliedert? → M08.
 ---
 
 # M16 — Themenseiten-Inhalt

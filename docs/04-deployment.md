@@ -177,8 +177,17 @@ volumes:
 - Ports binden an `127.0.0.1` (nicht von aussen erreichbar — Reverse-Proxy davor!)
 - `STUDIO_API_KEY` und `STUDIO_PASSWORD` sind gesetzt (fehlt `STUDIO_API_KEY`, loggt das Backend eine Warnung beim Start). Schuetzt `/api/config`, `/api/rag`, `/api/safety`, `/api/quality`
 - `CORS_ORIGINS` auf spezifische Domains beschraenkt (nicht `*`)
+- `TRUST_FORWARDED_FOR=1` (hinter dem eigenen Reverse-Proxy) — sonst zaehlt das per-IP-Rate-Limit alle Besucher als die Proxy-IP. NIE ohne vertrauenswuerdigen Proxy setzen (Header sonst spoofbar)
+- Backup-Cron fuer `badboerdi.db` (Sessions/Logs) — die Studio-Snapshots sichern nur die `chatbots/`-Config, nicht die Datenbank
 - `chatbots/` als Bind-Mount (Config-Aenderungen ueber Studio bleiben bei Container-Updates erhalten)
 - Watchtower fuer automatische Image-Updates
+
+> **Skalierung & Kapazitaet:** Turn-Ablauf/Parallelitaet und die
+> Rate-Limiter-Optionen fuer Multi-Worker (Reverse-Proxy- oder
+> SQLite-Variante statt Redis) stehen in
+> [06-request-pipeline.md](06-request-pipeline.md). Die empirische Kurve
+> "stabil bis N gleichzeitige Nutzer" liefert der Studio-Lasttest
+> (Auswertung → Lasttest; feuert echte LLM-Requests).
 
 ### Schritt 3 — .env (Produktion)
 
@@ -436,7 +445,6 @@ Das Widget wird in einen festen Container auf der Seite eingebettet, ohne schweb
 | `trusted-domains` | String | `""` | Komma-separierte Hostnamen fuer Cross-TLD-Session-Handoff (`?bsid=`). Additiv zur Backend-Allow-Liste. |
 | `page-context` | JSON-String | `""` | Zusaetzlicher Kontext (z.B. `'{"thema":"eiszeit"}'`) |
 | `auto-context` | Boolean | `true` | Automatisch URL, Titel, Referrer erfassen |
-| `ai-content-enabled` | Boolean | `true` | KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad). `false` lehnt Erstell-Anfragen freundlich ab. |
 | `show-debug-button` | Boolean | `true` | Debug-Toggle im Header. `false` fuer Produktiv-Embeddings. |
 | `show-language-buttons` | Boolean | `true` | TTS- und STT-Buttons. `false` = keine Sprach-Features. |
 | `emit-guide-suggestion` | Boolean | `false` | Passive Top-Result-Emission als `badboerdi:guide-suggestion`-CustomEvent. |
@@ -480,12 +488,11 @@ Optionale gefuehrte Tour durch die wichtigsten WLO-Seiten (Startseite → Zielgr
 
 Das Widget rendert Treffer immer als kompakte **Gruppen-Boxen** (Themenseiten / Sammlungen / Materialien) im Chat-Verlauf — es gibt **kein** separates Canvas-Pane und keine Flat-Card-/Grouping-Umschaltung mehr (in Welle E entfernt). KI-generierte Inhalte (Arbeitsblatt, Quiz, Lernpfad) erscheinen als **InlineDocument-Box** direkt im Verlauf.
 
-Die einzige verbliebene Feature-Umschaltung ist **`ai-content-enabled`**: Wo der Host selbst Material-Erstellungs-Tools anbietet, lehnt der Bot konkurrierende KI-Generierungs-Anfragen freundlich ab.
+Es gibt keine Feature-Umschaltung pro Embed mehr (`ai-content-enabled` wurde am 2026-06-10 entfernt — KI-Inhalte sind immer aktiv).
 
 ```html
 <boerdi-chat
   api-url="https://api.meinedomain.de"
-  ai-content-enabled="false"
   position="bottom-right">
 </boerdi-chat>
 ```

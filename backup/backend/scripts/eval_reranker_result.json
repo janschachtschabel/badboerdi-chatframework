@@ -1,0 +1,148 @@
+{
+  "total": 10,
+  "rerank_wins": 8,
+  "baseline_wins": 0,
+  "ties": 2,
+  "per_query": [
+    {
+      "query": "Was ist WissenLebtOnline?",
+      "verdict": "RERANK",
+      "top_baseline": "011-bildungsinhalte-fachportale.md",
+      "top_rerank": "014-faq.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Ranking B enthält in Top-1 eine präzise und direkte Antwort auf die Frage, während Ranking A in Top-1 eine weniger klare Antwort bietet."
+      },
+      "j2": {
+        "winner": "A",
+        "reason": "Ranking A enthält in Top-1 eine direkte Antwort auf die Frage, während Ranking B in Top-1 eine weniger präzise Antwort bietet."
+      }
+    },
+    {
+      "query": "Wer betreibt WLO?",
+      "verdict": "RERANK",
+      "top_baseline": "005-plattform-info.md",
+      "top_rerank": "005-plattform-info.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Ranking B enthält im Top-1 die direkte Antwort auf die Frage, wer WLO betreibt, während Ranking A dies nicht tut."
+      },
+      "j2": {
+        "winner": "A",
+        "reason": "Ranking A enthält in Top-1 die direkte Antwort auf die Frage, wer WLO betreibt, während Ranking B dies nicht tut."
+      }
+    },
+    {
+      "query": "Wie viele OER gibt es in Deutschland?",
+      "verdict": "TIE",
+      "top_baseline": "002-oer-wissen.md",
+      "top_rerank": "002-oer-wissen.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Ranking B enthält im Top-1 die direkte Antwort auf die Frage zur Anzahl der OER in Deutschland, während Ranking A dies nicht bietet."
+      },
+      "j2": {
+        "winner": "B",
+        "reason": "Ranking B enthält in der Top-1 eine direkte Antwort auf die Frage nach der Anzahl der OER in Deutschland, während Ranking A dies nicht tut."
+      }
+    },
+    {
+      "query": "Was macht die Redaktion?",
+      "verdict": "RERANK",
+      "top_baseline": "002-redaktionen.md",
+      "top_rerank": "027-fachportale.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Ranking B enthält in Top-1 eine direkte Antwort auf die Frage, während Ranking A dies nicht tut."
+      },
+      "j2": {
+        "winner": "A",
+        "reason": "Ranking A enthält in Top-1 eine direkte Antwort auf die Frage, während Ranking B dies nicht tut."
+      }
+    },
+    {
+      "query": "Welche Lizenzen haben die Materialien?",
+      "verdict": "RERANK",
+      "top_baseline": "012-oer-kombinieren-bearbeiten-remixen.md",
+      "top_rerank": "014-oer-gemischte-materialien.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Ranking B enthält im Top-1 eine direkte Antwort auf die Frage nach den Lizenzen der Materialien und bietet thematisch relevantere Informationen."
+      },
+      "j2": {
+        "winner": "A",
+        "reason": "Ranking A enthält im Top-1 eine direkte Antwort auf die Frage nach den Lizenzen der Materialien."
+      }
+    },
+    {
+      "query": "Was ist der Unterschied zwischen OER und freien Inhalten?",
+      "verdict": "RERANK",
+      "top_baseline": "012-oer-statistik.md",
+      "top_rerank": "012-oer-statistik.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Ranking B enthält im Top-1 eine prägnante Definition von OER und hebt den Unterschied zu freien Inhalten hervor, während Ranking A dies nicht direkt tut."
+      },
+      "j2": {
+        "winner": "A",
+        "reason": "Das Top-1 von Ranking A enthält eine direkte Antwort auf die Frage, während das Top-1 von Ranking B dies nicht tut."
+      }
+    },
+    {
+      "query": "Wie kann ich als Lehrkraft eigene Materialien einreichen?",
+      "verdict": "RERANK",
+      "top_baseline": "005-produkt-features.md",
+      "top_rerank": "004-schuelerinnen.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Das Top-1 von Ranking B enthält die direkte Antwort auf die Frage, während das Top-1 von Ranking A dies nicht tut."
+      },
+      "j2": {
+        "winner": "A",
+        "reason": "Ranking A enthält im Top-1 eine direkte Antwort auf die Frage, während Ranking B dies nicht tut."
+      }
+    },
+    {
+      "query": "Welche Rolle spielt edu-sharing fuer WLO?",
+      "verdict": "RERANK",
+      "top_baseline": "023-home-aktuell.md",
+      "top_rerank": "023-home-aktuell.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Ranking B enthält im Top-1 die direkte Antwort auf die Rolle von edu-sharing für WLO und bietet thematisch relevantere Treffer in den oberen Positionen."
+      },
+      "j2": {
+        "winner": "A",
+        "reason": "Ranking A enthält in Top-1 eine direkte Antwort auf die Rolle von edu-sharing für WLO, während Ranking B dies nicht tut."
+      }
+    },
+    {
+      "query": "Was macht die GWDG bei diesem Projekt?",
+      "verdict": "RERANK",
+      "top_baseline": "005-plattform-info.md",
+      "top_rerank": "023-home-aktuell.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Das Top-1 von Ranking B enthält die direkte Antwort auf die Frage und ist thematisch relevanter."
+      },
+      "j2": {
+        "winner": "A",
+        "reason": "Ranking A enthält im Top-1 eine direkte Antwort auf die Frage, während Ranking B im Top-1 eine ähnliche, aber weniger prägnante Antwort bietet."
+      }
+    },
+    {
+      "query": "Gibt es Materialien fuer Grundschule?",
+      "verdict": "TIE",
+      "top_baseline": "001-lehrende-und-lernende.md",
+      "top_rerank": "014-faq.md",
+      "j1": {
+        "winner": "B",
+        "reason": "Ranking B enthält im Top-1 eine direkte Antwort auf die Frage nach Materialien für die Grundschule, während Ranking A dies nicht tut."
+      },
+      "j2": {
+        "winner": "B",
+        "reason": "Das Top-1 von Ranking B enthält eine direkte Antwort auf die Frage, indem es erklärt, wie man nach Materialien für die Grundschule filtern kann."
+      }
+    }
+  ]
+}

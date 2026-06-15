@@ -1,17 +1,7 @@
-# Widget-Embed-Modi — Limits + Texte für Host-Konfigurationen.
-# Host setzt Flags per HTML-Attribut (cards-enabled, canvas-enabled,
-# ai-content-enabled, quick-replies-enabled), Backend leitet daraus
-# Display-Verhalten ab.
+# Widget-Embed-Modi — Limits fürs Inline-Rendering.
+# Host-seitige Feature-Flags gibt es nicht mehr (2026-06-10:
+# ai-content-enabled entfernt — KI-generierte Inhalte sind immer aktiv).
 
 widget_modes:
   cards_inline_link_limit: 5         # max. Inline-Links wenn cards=off [1..6]
   cards_inline_link_title_max: 70    # Titel-Länge mit Word-Boundary-Cut
-
-  ai_disabled_alt_response:
-    text: |
-      Auf dieser Seite kann ich gerade kein neues Material für dich
-      erstellen. Magst du dir stattdessen bestehende Inhalte zeigen
-      lassen?
-    quick_replies:
-      - Zeig mir Material zum Thema
-      - Was kannst du sonst?

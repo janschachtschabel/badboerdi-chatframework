@@ -254,6 +254,49 @@ def is_openai_native() -> bool:
 
 
 @lru_cache(maxsize=1)
+def _shared_llm_http_client():
+    """Gemeinsamer httpx-Pool für ALLE LLM-Clients (Chat/Moderation/
+    Embedding) — wirkt als Bulkhead (Skalierung, 2026-06-10).
+
+    ``max_connections`` deckelt, wie viele LLM-Requests gleichzeitig zur
+    B-API/OpenAI rausgehen; überzählige warten im Pool statt beim
+    Provider eine 429-Lawine auszulösen. Unter Burst-Last glättet das
+    die p95-Latenz. Default 20, per ``LLM_MAX_CONCURRENCY`` steuerbar.
+
+    WICHTIG — der optimale Wert hängt von der konkreten
+    Provider-/Modell-Kombination ab (B-API-Staging, B-API-Prod, native
+    OpenAI … jeweils eigene Concurrency-/Rate-Limits). Zu hoch =
+    429/504-Lawine beim Provider (Retries verstärken die Last), zu
+    niedrig = unnötige Client-seitige Queue-Latenz. Empirisch ermitteln
+    mit ``scripts/probe_b_api_ratelimit.py`` (höchste Stufe mit 100 % OK)
+    und für Lasttests >= Test-Concurrency setzen, sonst misst man den
+    eigenen Bulkhead statt des Providers.
+    """
+    import httpx
+    try:
+        max_conc = max(2, int(os.getenv("LLM_MAX_CONCURRENCY") or 20))
+    except ValueError:
+        max_conc = 20
+    try:
+        read_timeout = max(15.0, float(os.getenv("LLM_READ_TIMEOUT") or 75.0))
+    except ValueError:
+        read_timeout = 75.0
+    return httpx.AsyncClient(
+        # Read-Timeout default 75 s (LLM_READ_TIMEOUT): das Staging-Gateway
+        # kappt haengende LLM-Calls erst nach ~120 s mit 504 — mit 75 s
+        # bricht unser Client frueher ab und der OpenAI-SDK-Retry trifft
+        # i. d. R. einen gesunden Knoten (beobachtet 2026-06-11: 116 s
+        # Haenger → 504 → Retry ok). Normale Calls liegen bei 2–30 s;
+        # per-Request-Timeouts (with_options) ueberschreiben das.
+        timeout=httpx.Timeout(read_timeout, connect=10.0),
+        limits=httpx.Limits(
+            max_connections=max_conc,
+            max_keepalive_connections=max_conc,
+        ),
+    )
+
+
+@lru_cache(maxsize=1)
 def get_client() -> AsyncOpenAI:
     """Build a single shared AsyncOpenAI client for the active provider.
 
@@ -271,12 +314,14 @@ def get_client() -> AsyncOpenAI:
             api_key=b_key or "unused",
             base_url=f"{base}/openai",
             default_headers={"X-API-KEY": b_key} if b_key else None,
+            http_client=_shared_llm_http_client(),
         )
     if provider == "b-api-academiccloud":
         return AsyncOpenAI(
             api_key=b_key or "unused",
             base_url=f"{base}/academiccloud",
             default_headers={"X-API-KEY": b_key} if b_key else None,
+            http_client=_shared_llm_http_client(),
         )
     # native openai (or any OpenAI-compatible endpoint via OPENAI_BASE_URL)
     #
@@ -293,6 +338,7 @@ def get_client() -> AsyncOpenAI:
     return AsyncOpenAI(
         api_key=os.getenv("OPENAI_API_KEY"),
         base_url=openai_base,
+        http_client=_shared_llm_http_client(),
     )
 
 
@@ -301,6 +347,9 @@ def reset_client_cache() -> None:
     get_client.cache_clear()
     get_moderation_client.cache_clear()
     get_embedding_client.cache_clear()
+    # Bulkhead-Pool mit verwerfen — der alte AsyncClient wird nicht
+    # explizit geschlossen (nur Test-/Reload-Pfad; Prozessende räumt).
+    _shared_llm_http_client.cache_clear()
 
 
 # ── Native-OpenAI side-channel for moderation / speech ────────────────
@@ -357,7 +406,10 @@ def get_moderation_client() -> AsyncOpenAI | None:
             (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
             or "https://api.openai.com/v1"
         )
-        return AsyncOpenAI(api_key=api_key, base_url=base)
+        return AsyncOpenAI(
+            api_key=api_key, base_url=base,
+            http_client=_shared_llm_http_client(),
+        )
 
     # B-API → AcademicCloud: kein Moderations-Endpunkt upstream → nativer
     # OpenAI-Seitenkanal, falls ein Key vorhanden ist.
@@ -368,7 +420,10 @@ def get_moderation_client() -> AsyncOpenAI | None:
         (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
         or "https://api.openai.com/v1"
     )
-    return AsyncOpenAI(api_key=api_key, base_url=base)
+    return AsyncOpenAI(
+        api_key=api_key, base_url=base,
+        http_client=_shared_llm_http_client(),
+    )
 
 
 def has_moderation() -> bool:
@@ -378,32 +433,34 @@ def has_moderation() -> bool:
 
 # ── Speech (STT/TTS) availability gate ───────────────────────────────
 #
-# Welle E v4+13 (2026-05-27): Die B-API-Audio-Endpunkte (/audio/speech,
-# /audio/transcriptions) sind defekt — der Spring/Kotlin-Proxy reicht weder
-# binäre Audio-Responses (TTS → 406/500) noch multipart/form-data-Requests
-# (STT → 415) durch (siehe docs/b-api-audio-bug-report.md). Solange das nicht
-# gefixt ist, deaktivieren wir die Sprachfunktion bei B-API-Nutzung KOMPLETT
-# — bewusst auch dann, wenn ein nativer OPENAI_API_KEY vorhanden wäre. So ist
-# das Verhalten deterministisch an den Provider gekoppelt; sobald die B-API
-# repariert ist, fällt dieser Gate weg und Speech läuft wieder.
+# 2026-06-10: Die B-API leitet die OpenAI-Audio-Endpunkte (/audio/speech,
+# /audio/transcriptions) jetzt durch — der frühere Hard-Gate (defekter
+# Passthrough, siehe docs/b-api-audio-bug-report.md) ist damit obsolet.
+# Speech auf B-API bleibt aber OPT-IN: erst ``B_API_AUDIO=1`` schaltet es
+# frei. Default = aus → das Widget blendet Mikro/Lautsprecher aus, die
+# Endpunkte antworten 503 VOR jedem Upstream-Call — es entstehen also
+# garantiert keine Audio-Kosten, solange das Flag nicht gesetzt ist.
 
 def speech_enabled() -> bool:
     """Whether STT/TTS endpoints are available for the active provider.
 
     * ``LLM_PROVIDER=openai`` → True, sofern ein OpenAI-Key vorhanden ist
       (Speech spricht direkt mit api.openai.com).
-    * ``LLM_PROVIDER=b-api-*`` → **False** (Audio-Passthrough defekt; siehe
-      Bug-Report). Bewusster Hard-Gate bis zum B-API-Fix.
+    * ``LLM_PROVIDER=b-api-*`` → True nur mit explizitem Opt-in
+      ``B_API_AUDIO=1`` (+ gesetztem ``B_API_KEY``). Audio läuft dann über
+      die B-API (gleicher Client/Vertrag wie der Chat). Ohne Flag: aus.
 
-    Override: ``SPEECH_FORCE_ENABLE=1`` erzwingt True (Debug/Übergang, falls
-    der B-API-Audio-Fix da ist, bevor der Code-Gate entfernt wird).
+    Override: ``SPEECH_FORCE_ENABLE=1`` erzwingt True (Debug/Übergang).
     """
     if (os.getenv("SPEECH_FORCE_ENABLE") or "").strip() in ("1", "true", "True"):
         return True
     provider = get_provider()
-    if provider != "openai":
-        return False
-    return bool((os.getenv("OPENAI_API_KEY") or "").strip())
+    if provider == "openai":
+        return bool((os.getenv("OPENAI_API_KEY") or "").strip())
+    if provider.startswith("b-api"):
+        opt_in = (os.getenv("B_API_AUDIO") or "").strip() in ("1", "true", "True")
+        return opt_in and bool((os.getenv("B_API_KEY") or "").strip())
+    return False
 
 
 def speech_disabled_reason() -> str:
@@ -412,8 +469,9 @@ def speech_disabled_reason() -> str:
         return ""
     if get_provider() != "openai":
         return (
-            "Sprachfunktion bei B-API-Anbindung vorübergehend deaktiviert "
-            "(Audio-Endpunkte werden noch nicht durchgeleitet)."
+            "Sprachfunktion ist bei B-API-Anbindung standardmäßig "
+            "deaktiviert (Kostenschutz). Aktivierung: B_API_AUDIO=1 setzen "
+            "— die B-API unterstützt jetzt OpenAI-Audio (STT/TTS)."
         )
     return "Sprachfunktion nicht verfügbar (kein OpenAI-Key konfiguriert)."
 
@@ -456,7 +514,10 @@ def get_embedding_client() -> AsyncOpenAI:
             (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
             or "https://api.openai.com/v1"
         )
-        return AsyncOpenAI(api_key=api_key, base_url=base)
+        return AsyncOpenAI(
+            api_key=api_key, base_url=base,
+            http_client=_shared_llm_http_client(),
+        )
     return get_client()
 
 

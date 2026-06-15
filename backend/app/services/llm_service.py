@@ -1903,6 +1903,16 @@ Rolle in dieser Phase: {_resp_state_meta.get('role', '—')}
     # die Suche unten" antworten. Bug-Fix aus Eval eval-b2cd4e274be9.
     _pattern_id = ((pattern_label or "").strip().split(" ")[0] or "").upper()
     _is_search_pattern = _pattern_id in {"M05", "M06", "M07", "M08"}
+
+    # Degradation (Pflicht-Slot fehlt, precondition_slots im Pattern):
+    # Tools werden gesperrt, der Bot stellt zuerst die Rueckfrage. Frueh
+    # berechnet, weil auch die Such-Prompt-Bloecke unten davon abhaengen —
+    # deren Muster-CTAs ("schau in die Suche unten") wuerden die Rueckfrage
+    # sonst verdraengen, obwohl gar nicht gesucht wird.
+    _degradation_no_tools = bool(
+        pattern_output.get("degradation")
+        and pattern_output.get("missing_slots")
+    )
     if _card_mode == "minimal":
         system_parts.append("""
 ## Darstellungsregel: Materialien als Kacheln (Modus: minimal)
@@ -1966,7 +1976,10 @@ Disciplines). Bei Klärungs-Turn / leeren Tool-Results: NICHT aufrufen.""")
     # Rueckfrage am Ende fuehlt sich dann wie eine Sackgasse an
     # ("der Bot fragt schon wieder?") statt wie ein hilfreicher Folge-Schritt.
     # In diesem Modus sollst du direkt liefern, nicht zurueckfragen.
-    if _inline_grouping_mode and _is_search_pattern:
+    # AUSSER bei Degradation: dann wird gar nicht gesucht — die Such-CTA-
+    # Musterantworten waeren faktisch falsch und wuerden die Pflicht-
+    # Rueckfrage verdraengen.
+    if _inline_grouping_mode and _is_search_pattern and not _degradation_no_tools:
         system_parts.append("""
 ## Inline-Result-Grouping-Mode (Host-Setting inline-result-grouping=true, Default seit Welle C.5)
 Die Treffer werden in DREI nach Typ getrennten Boxen angezeigt:
@@ -2302,12 +2315,9 @@ liefert, übergib sie NICHT als Text — das System verlinkt die Kachel.
     # Guardrails (from config file, always last — not overridable)
     system_parts.append(guardrails)
 
-    # Check if pattern explicitly has NO tools — or degradation blocks tool use
-    _degradation_no_tools = bool(
-        pattern_output.get("degradation")
-        and pattern_output.get("missing_slots")
-        and "thema" in pattern_output.get("missing_slots", [])
-    )
+    # Check if pattern explicitly has NO tools — or degradation blocks tool
+    # use (_degradation_no_tools, oben frueh berechnet — generisch fuer
+    # JEDEN fehlenden Pflicht-Slot, vorher hartkodiert nur "thema").
     has_explicit_empty_tools = ("tools" in pattern_output and not pattern_output["tools"])
     pattern_wants_no_tools = _degradation_no_tools or (
         has_explicit_empty_tools and not (
@@ -2428,8 +2438,8 @@ SCHRITT 1 — RICHTIGES WERKZEUG WAEHLEN (IN DIESER REIHENFOLGE PRUEFEN!):
 
 1. ZUERST pruefen: Passt die Frage zu einem Wissensbereich in query_knowledge?
    Wenn ja → query_knowledge aufrufen! Beispiele:
-   - "Was ist WirLernenOnline?" → query_knowledge(area="wirlernenonline.de-webseite", ...)
-   - "Was macht edu-sharing?" → query_knowledge(area="edu-sharing-com-webseite", ...)
+   - "Was ist WirLernenOnline?" → query_knowledge(area="WirLernenOnline", ...)
+   - "Was macht edu-sharing?" → query_knowledge(area="Edu-Sharing-Metaventis", ...)
    - Jede Frage zu internen Prozessen, Konzepten, Dokumenten → query_knowledge
    WICHTIG: Die "always"-Bereiche werden beim Start AUTOMATISCH vorab durchsucht.
    Wenn du ein query_knowledge-Ergebnis mit "[Bereits durchsuchte Bereiche: ...]"
@@ -2752,6 +2762,20 @@ lange Antwort vorhanden wäre.
             "select_top_cards via CHAT_DISABLE_SELECT_TOP_CARDS deaktiviert — "
             "Backend nutzt deterministische Karten-Auswahl (MCP-Ranking)."
         )
+
+    # Degradation (Pflicht-Slot fehlt): Tool-Liste wirklich leeren statt nur
+    # per Prompt-Regel zu bitten — gegen einen Pattern-Body mit
+    # "Pflicht-Pipeline: rufe search_*" verliert die Regel sonst, und
+    # force_tool_use koennte die Suche sogar erzwingen. Nur respond_to_user
+    # (unten) bleibt als Antwortkanal erlaubt.
+    if _degradation_no_tools and active_tools:
+        _logger.info(
+            "degradation: %d aktive Tools entfernt (fehlende Slots: %s) — "
+            "Bot stellt zuerst die Rueckfrage",
+            len(active_tools),
+            pattern_output.get("missing_slots"),
+        )
+        active_tools = []
 
     # Combined-output tool (opt-in) — see env CHAT_INLINE_QUICK_REPLIES.
     # When enabled, the model is instructed to call ``respond_to_user`` for
@@ -3353,7 +3377,24 @@ lange Antwort vorhanden wäre.
             })
             for tc in choice.message.tool_calls:
                 tool_name = tc.function.name
-                tool_args = json.loads(tc.function.arguments)
+                # B8 (2026-06-10): malformed Tool-Args (Token-Limit-Abbruch,
+                # Streaming-Reassembly) warfen vorher den GANZEN Turn auf den
+                # generischen Fehlerpfad. Stattdessen: als Tool-Fehler zurück-
+                # melden und weiterlaufen — das LLM wiederholt den Call dann
+                # mit korrektem JSON oder antwortet ohne Tool.
+                try:
+                    tool_args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError) as _ja_err:
+                    _logger.warning("tool-call %s: malformed arguments (%s)",
+                                    tool_name, _ja_err)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": ("Fehler: Die Tool-Argumente waren kein "
+                                    "gültiges JSON. Bitte denselben Aufruf "
+                                    "mit korrektem JSON wiederholen."),
+                    })
+                    continue
                 tools_called.append(tool_name)
 
                 # ── Inline-Mode-Curation: select_top_cards ────────────
@@ -3857,14 +3898,20 @@ async def generate_quick_replies(
     classification: dict[str, Any],
     session_state: dict,
     usage_acc: dict[str, Any] | None = None,
+    count: int = 4,
 ) -> list[str]:
-    """Generate 4 context-aware quick reply suggestions using LLM.
+    """Generate ``count`` context-aware quick reply suggestions using LLM.
 
     ``usage_acc`` is optional — when threaded through, the LLM call's
     tokens are accounted under phase ``"quick_replies"`` (A2.1) so the
     eval aggregator can break out QR cost separately from classify /
     response.
+
+    ``count`` (QR-Policy 2026-06-10): gewünschte Vorschlagszahl 1–6 —
+    per Pattern-Frontmatter ``quick_replies_max`` überschreibbar,
+    Default 4 (bisheriges Verhalten).
     """
+    count = max(1, min(6, int(count or 4)))
     persona_id = classification.get("persona_id", "P-AND")
     intent_id = classification.get("intent_id", "")
     state_id = classification.get("next_state", session_state.get("state_id", "S1"))
@@ -3902,9 +3949,12 @@ async def generate_quick_replies(
     except Exception:
         _page_line = ""
 
-    persona_salute = "Sie" if persona_id in {
-        "P-LEH", "P-ELT", "P-ENT", "P-ENT", "P-ENT", "P-RED", "P-RED",
-    } else "du"
+    # B8 (2026-06-10): Quick-Replies sprechen mit der STIMME DES NUTZERS
+    # zum Bot — und der Nutzer duzt BOERDi immer (Produktregel; identisch
+    # zur "NIE Sie-Form in Quick-Replies"-Regel im Response-Prompt und im
+    # respond_to_user-Tool). Die frühere Sie-Weiche je Persona erzeugte je
+    # nach Pfad widersprüchliche QR-Anreden (und enthielt Set-Duplikate).
+    persona_salute = "du"
 
     # Welle C Sprint 6: State-spezifische QR-Direktive ergänzen.
     # bot_directive aus 04-states/states.yaml — der LLM-QR-Generator
@@ -3913,7 +3963,7 @@ async def generate_quick_replies(
     _qr_state_label = _qr_state_meta.get("label", "")
     _qr_state_directive = _qr_state_meta.get("bot_directive", "")
 
-    system = f"""Du generierst genau 4 kurze Antwortvorschlaege fuer einen Chatbot-Nutzer.
+    system = f"""Du generierst genau {count} kurze Antwortvorschlaege fuer einen Chatbot-Nutzer.
 Der Nutzer interagiert gerade mit BOERDi, dem Chatbot der Bildungsplattform
 WirLernenOnline (WLO).
 
@@ -3925,7 +3975,7 @@ WirLernenOnline (WLO).
 
 ## Phase-Direktive für die Quick-Reply-Auswahl
 {_qr_state_directive or '— keine spezifische Direktive für diese Phase, biete generische Folgeschritte an.'}
-Die 4 Vorschläge müssen zu dieser Phase passen — z.B. in der Ergebnis-Kuratierung Refinement-Optionen,
+Die {count} Vorschläge müssen zu dieser Phase passen — z.B. in der Ergebnis-Kuratierung Refinement-Optionen,
 in der Bewertung & Feedback eine Probing-Frage, in der Slot-Erfassung wahrscheinliche Slot-Werte.
 
 ## Was BOERDi kann (die Vorschlaege MUESSEN sich daraus bedienen)
@@ -3976,8 +4026,8 @@ Deshalb:
       BESSER:   "Mehr zu Photosynthese zeigen"
   - KEINE Vorschlaege die ein ungesagtes Subjekt voraussetzen.
 
-## Struktur (4 verschiedene Typen — KEIN Duplikat)
-Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien):
+## Struktur ({count} verschiedene Typen — KEIN Duplikat)
+Waehle {count} aus den folgenden Kategorien (mindestens {min(3, count)} unterschiedliche Kategorien):
   (a) **Vertiefung / Material-Typ-Filter** — mehr zum aktuellen Thema/Treffer,
       gerne mit konkretem Material-Typ-Filter (Video, Arbeitsblatt, Uebung,
       Audio, Praesentation, Interaktiv, Quiz, Bild, Text). Diese Filter sind
@@ -4012,7 +4062,7 @@ Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien)
       z.B. bei Mathe-Frage: "Bruchrechnung Klasse 6", "Geometrie Sek I".
 
 ## Regeln
-1. Genau 4 Vorschlaege, einer pro Zeile, KEINE Nummerierung, KEINE Bullets.
+1. Genau {count} Vorschlaege, einer pro Zeile, KEINE Nummerierung, KEINE Bullets.
 2. Jeder Vorschlag max 6-8 Woerter.
 3. Anrede strikt {persona_salute}.
 4. Wenn Canvas aktiv (S3) ist: mindestens EIN Edit-Vorschlag (Kategorie c).
@@ -4063,15 +4113,15 @@ Waehle 4 aus den folgenden Kategorien (mindestens 3 unterschiedliche Kategorien)
 
     REGELN:
     - URL muss vollstaendig sein (https://...), kein relativer Pfad.
-    - Maximal 1 Guide-QR pro Antwort. Insgesamt also 4 Zeilen davon 1 Guide.
+    - Maximal 1 Guide-QR pro Antwort. Insgesamt also {count} Zeilen davon 1 Guide.
     - Wenn KEINE der oben gelisteten Frage-Kategorien passt, KEINEN Guide-QR
-      einbauen — dann 4 normale Vorschlaege.
+      einbauen — dann {count} normale Vorschlaege.
     - Themenseiten-Slugs nur fuer Themen die der User EXPLIZIT genannt hat
       (z.B. „klimawandel", „photosynthese") — keine Slugs erfinden.
     - Anzeigetext kurz, konkret, deutsch. KEINE generische „Bring mich hin"
       ohne Kontext.
 
-Gib NUR die 4 Zeilen zurueck, sonst nichts."""
+Gib NUR die {count} Zeilen zurueck, sonst nichts."""
 
     messages = [
         {"role": "system", "content": system},
@@ -4084,7 +4134,7 @@ Gib NUR die 4 Zeilen zurueck, sonst nichts."""
                 model=MODEL,
                 messages=messages,
                 temperature=0.6,
-                max_tokens=150,
+                max_tokens=max(80, 40 * count),
             )
         )
         if usage_acc is not None:
@@ -4099,7 +4149,7 @@ Gib NUR die 4 Zeilen zurueck, sonst nichts."""
             if k and k not in seen:
                 seen.add(k)
                 unique.append(r)
-        return unique[:4]
+        return unique[:count]
     except Exception:
         return []
 
@@ -4178,6 +4228,11 @@ Bringe die Materialien in eine didaktisch sinnvolle Reihenfolge (vom Einfachen z
    am Rand passen, weise darauf explizit hin (z.B. \"Ein direkt zu '{collection_title}'
    passendes Material war nicht verfuegbar — die folgenden Inhalte streifen das
    Thema.\"). Kapere das Thema nicht.
+4. **Jeder Schritt MUSS sein Material beim Namen nennen** — als eigene Zeile
+   exakt im Format \"- Material: [exakter Titel](URL)\". Ein Schritt ohne diese
+   Zeile ist unvollstaendig. Verwende den Titel WOERTLICH aus der Liste oben
+   (nicht umformulieren oder kuerzen), damit die Lernenden jeden Schritt dem
+   passenden Inhalt in der Material-Box darunter zuordnen koennen.
 
 **Format (Markdown, auf Deutsch):**
 
@@ -4189,7 +4244,7 @@ Beginne mit einem kurzen Ueberblick:
 Dann die einzelnen Schritte als nummerierte Abschnitte:
 ### Schritt 1: Einstieg (ca. X Min.)
 - *Lernziel: ...*
-- Verlinkter Inhalt: [Titel](URL)
+- Material: [exakter Titel aus der Liste](URL)
 - Aktivitaet: Was sollen die Lernenden konkret tun?
 - Begruendung warum dieser Inhalt hier passt
 

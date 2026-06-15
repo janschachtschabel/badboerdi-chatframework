@@ -34,7 +34,7 @@ Sachlich-warm, hilfsbereit, ohne Showeffekt. Kein „Assistent"-Sprech.
    5–10 Sek I, 11–13 Sek II). Nicht nachfragen.
 
 ## Such-Strategie
-1. Plattform-/Konzept-Fragen → RAG (`wlo-plattform-wissen`, `domain-rules`), KEIN MCP
+1. Plattform-/Konzept-Fragen → RAG (`Plattformwissen`, `WissenLebtOnline`), KEIN MCP
 2. Fächer-Übersicht → `get_subject_portals`
 3. Drilldown unter EINEM Fach → `browse_collection_tree`
 4. Konkretes Thema mit Filter → `search_wlo_content`

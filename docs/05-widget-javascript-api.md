@@ -11,7 +11,7 @@
 > `primary-color`, `initial-state`, `greeting`, `auto-context`,
 > `page-context`, `persist-session`, `session-key`,
 > `session-cookie-domain`, `session-cookie-max-age`, `trusted-domains`,
-> `show-debug-button`, `show-language-buttons`, `ai-content-enabled`,
+> `show-debug-button`, `show-language-buttons`,
 > `emit-guide-suggestion`, `emit-routing-debug`,
 > `intercept-edu-sharing-links`.
 
@@ -49,7 +49,6 @@ Beide Kanäle sind gleichwertig — wähle den, der zur Host-Integration passt.
 | | `session-cookie-domain` | Input | `''` |
 | | `session-cookie-max-age` | Input | `2592000` (30 Tage) |
 | | `trusted-domains` | Input | `''` |
-| **Embed-Modi (Welle E)** | `ai-content-enabled` | Input | `true` — KI-Content (M10/M11) pro Embed deaktivierbar |
 | **UI-Toggles** | `show-debug-button` | Input | `true` |
 | | `show-language-buttons` | Input | `true` |
 | | `emit-guide-suggestion` | Input | `false` |
@@ -200,21 +199,7 @@ Backend-`trusted_domains`-Liste aus `guide-mode.yaml` gemerged.
 
 ### Embed-Modi (Welle E — auf das Minimum reduziert)
 
-#### `ai-content-enabled`
-
-* `true` (Default): Material-/Lernpfad-Erzeugungs-Pattern (M09 / M10 / M11) sind aktiv.
-* `false`: Backend lehnt Erzeugungs-Anfragen freundlich ab
-  (Standard-Text aus `widget-modes.yaml`) und bietet stattdessen
-  Bestandsmaterialien an.
-
-Studio-Default + Pattern-Gates können denselben Effekt erzielen; das
-Host-Attribut hat Vorrang als embed-spezifische Härtung — z.B. wenn
-eine Plattform selbst KI-Content-Tools mitbringt und Doppel-Generierung
-verhindern will.
-
-```html
-<boerdi-chat ai-content-enabled="false"></boerdi-chat>
-```
+> **Entfernt (2026-06-10):** `ai-content-enabled` existiert nicht mehr — KI-generierte Inhalte sind immer aktiv; ein noch gesendetes Attribut wird ignoriert.
 
 > **Entfernt in Welle E (2026-05-23)** — die folgenden Attribute
 > existieren **nicht mehr**:
@@ -524,8 +509,7 @@ Anwendungsbeispiel — externes "Frag den Bot"-CTA:
 Treffer erscheinen als kompakte Gruppen-Boxen; nur die KI-Erzeugung wird deaktiviert:
 
 ```html
-<boerdi-chat
-  ai-content-enabled="false">
+<boerdi-chat>
 </boerdi-chat>
 ```
 
@@ -577,8 +561,7 @@ Schlanke UI ohne Debug-/Sprach-Buttons, KI-Erzeugung aus:
 ```html
 <boerdi-chat
   show-debug-button="false"
-  show-language-buttons="false"
-  ai-content-enabled="false">
+  show-language-buttons="false">
 </boerdi-chat>
 ```
 
@@ -673,7 +656,6 @@ Alternativ als HTML-Attribut: `<boerdi-chat primary-color="#b91c1c">`.
 
 | API-Element | Stabilität |
 |---|---|
-| Feature-Toggle (`ai-content-enabled`) | **stable** |
 | Grundkonfig-Inputs (`api-url`, `position`, `primary-color`, `greeting`, `auto-context`) | **stable** |
 | Session-Inputs (`persist-session`, `session-key`, `session-cookie-domain`, `trusted-domains`) | **stable** |
 | UI-Toggles (`show-debug-button`, `show-language-buttons`) | **stable** |

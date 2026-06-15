@@ -1,0 +1,1132 @@
+// ── Design-Tokens (Boerdi Original) ─────────────────────────────────────────
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+// Akzentfarbe + abgeleitete Tönungen kommen alle aus der CSS-Custom-Property
+// ``--boerdi-primary`` (gesetzt vom Embedder via ``primary-color``-Attribut,
+// oder per CSS-Regel ``boerdi-chat { --boerdi-primary: red }``, sonst
+// Default ``#1c4587``). User-Bubble-BG, Footer-BG, Hover-/Border-Varianten
+// werden zur Laufzeit per ``color-mix()`` aus diesem einen Wert berechnet —
+// damit ist jede vom Embedder gesetzte Farbe konsistent ohne dass wir pro
+// Variante einen Wert pflegen müssen.
+$bot-bg:     #FFFFFF;
+$text:       #1A1A2E;
+$text-link:  #2563EB;
+$text-muted: #777;
+$border:     rgba(0,0,0,.10);
+$radius:     14px;
+
+// ── Material-Symbols-SVG-Wrapper ─────────────────────────────────────
+// Universeller Helper für Inline-SVGs (Icons aus `shared/icons.ts`),
+// die via `<span class="bb-icon" [innerHTML]="ICONS.xxx | safeSvg">`
+// gerendert werden. Sorgt für sauberes Inline-Alignment und 1em-Skalierung.
+.bb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  vertical-align: -0.18em;
+  flex-shrink: 0;
+}
+.bb-icon > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+  display: block;
+}
+
+// ── Wrapper ─────────────────────────────────────────────────────────────────
+.chat-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  max-width: 520px;
+  margin: 0 auto;
+  background: #FFFFFF;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: $text;
+  border-left: 1px solid $border;
+  border-right: 1px solid $border;
+}
+
+// ── Header ───────────────────────────────────────────────────────────────────
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--boerdi-primary, #1c4587);
+  color: #fff;
+}
+
+.header-bot   { display: flex; align-items: center; gap: 10px; }
+.header-avatar {
+  width: 44px;
+  height: 44px;
+  display: block;
+  object-fit: contain;
+  // Weißer Kreis-Hof, damit das blaue Logo auf Brand-Blue Header sichtbar wird
+  background: #fff;
+  border-radius: 50%;
+  padding: 4px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  // Sanftes Atmen, immer-an
+  animation: boerdi-breathe 4.5s ease-in-out infinite;
+  transition: transform .25s ease;
+}
+
+// "Denkt nach" — Boerdi wackelt sanft
+.header-avatar.is-thinking {
+  animation: boerdi-thinking 1.4s ease-in-out infinite;
+}
+
+// "Spricht" — flotteres Bobbing
+.header-avatar.is-speaking {
+  animation: boerdi-bob 0.5s ease-in-out infinite;
+}
+
+@keyframes boerdi-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.06); }
+}
+
+@keyframes boerdi-thinking {
+  0%, 100%  { transform: rotate(0deg) translateY(0); }
+  25%       { transform: rotate(-5deg) translateY(-2px); }
+  75%       { transform: rotate(5deg) translateY(-2px); }
+}
+
+@keyframes boerdi-bob {
+  0%, 100% { transform: translateY(0) scale(1.0); }
+  50%      { transform: translateY(-3px) scale(1.05); }
+}
+
+.header-status {
+  font-size: .68rem;
+  color: rgba(255,255,255,.85);
+  font-weight: 500;
+  margin-top: 1px;
+  letter-spacing: .02em;
+  animation: boerdi-status-fade .25s ease-in;
+}
+@keyframes boerdi-status-fade {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.header-text   { display: flex; flex-direction: column; }
+.header-name   { font-weight: 700; font-size: 1.45rem; color: #fff; letter-spacing: -.01em; }
+.header-tagline { font-size: .78rem; color: rgba(255,255,255,.75); }
+.header-actions { display: flex; gap: 6px; }
+
+.btn-icon {
+  background: rgba(255,255,255,.15);
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 6px;
+  padding: 5px 9px;
+  cursor: pointer;
+  font-size: .9rem;
+  color: #fff;
+  position: relative;
+  &:hover { background: rgba(255,255,255,.28); }
+  // Red diagonal strikethrough when toggled off (like 🔇)
+  &.debug-off::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 70%;
+    height: 2px;
+    background: #e53e3e;
+    transform: translate(-50%, -50%) rotate(-45deg);
+    pointer-events: none;
+  }
+}
+
+// ── Messages Area ────────────────────────────────────────────────────────────
+.messages-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+
+  &::-webkit-scrollbar { width: 5px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb { background: rgba(0,0,0,.18); border-radius: 3px; }
+}
+
+// ── Message Rows ─────────────────────────────────────────────────────────────
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  animation: fadeSlide .2s ease;
+}
+
+.bot-row  { justify-content: flex-start; }
+.user-row { justify-content: flex-end; }
+
+@keyframes fadeSlide {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.msg-avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  object-fit: contain;
+  display: block;
+}
+
+.msg-bubble {
+  max-width: 80%;
+  padding: 14px 18px;
+  border-radius: $radius;
+  font-size: .875rem;
+  line-height: 1.65;
+  position: relative;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.bot-bubble {
+  background: $bot-bg;
+  color: $text;
+  border: 1px solid $border;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  border-bottom-left-radius: 4px;
+}
+
+// (Der frühere ``.bot-bubble.inline-links-mode``-Override ist entfernt:
+//  ``.msg-content a`` rendert jetzt global in Schriftfarbe — die Inline-
+//  Demo und die Standard-Demo verhalten sich gleich.)
+
+.user-bubble {
+  // 10% Primary auf Weiß — heller Tönungs-Pendant zum Bot-Weiß, der mit der
+  // gesetzten Akzentfarbe (``--boerdi-primary``) automatisch harmoniert.
+  // Bewusst identisch zum ``.qr-btn``-Hintergrund, damit User-Nachrichten und
+  // Quick-Reply-Vorschläge visuell als eine Familie wirken.
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
+  color: $text;
+  border-bottom-right-radius: 4px;
+}
+
+.msg-content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+
+  // Inline-Links im Bot-Text fügen sich in die Schriftfarbe ein
+  // (statt blau hervorzustechen) — Material- und Lotsen-Links sollen
+  // sich als normale Text-Referenzen lesen, nicht als CTA-Buttons.
+  // Kacheln + Card-Buttons übernehmen die "klickbare CTA"-Rolle.
+  //
+  // ``::ng-deep`` ist nötig, weil die ``<a>``-Tags via ``[innerHTML]`` aus
+  // dem Markdown-Renderer kommen und kein ``_ngcontent-...``-Attribut
+  // bekommen — Component-Encapsulation-Selektoren würden sie sonst nicht
+  // matchen und der Browser-Default (blau-unterstrichen) bleibt aktiv.
+  ::ng-deep a {
+    color: inherit !important;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    word-break: break-all;
+    &:hover { text-decoration-thickness: 2px; }
+    &:visited { color: inherit !important; }
+  }
+
+  // Material-Symbol-Icon vor Inline-Treffer-Links (Lotsen/Inline-Modus).
+  // Backend emittiert ``@@ICON:NAME@@`` als Sentinel, ``renderMarkdown``
+  // ersetzt es mit dem Inline-SVG aus ``shared/icons.ts``.
+  // Dezent hellgrau, nicht im Bot-Text-Farbton — damit der Link-Titel
+  // dominant bleibt und das Icon nur als Typ-Hinweis dient. Nicht
+  // unterstrichen, leicht angehoben für visuelle Balance neben Text.
+  ::ng-deep .bb-inline-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+    vertical-align: -0.18em;
+    margin-right: 6px;
+    color: #94a3b8;   // slate-400 — dezent, kein Schreischrei
+  }
+  ::ng-deep .bb-inline-icon > svg {
+    width: 1em;
+    height: 1em;
+    fill: currentColor;
+    display: block;
+  }
+  // Inline-Card-Link (= ``<a>`` mit ``.bb-inline-icon``-Child):
+  // Underline NICHT aufs ``<a>`` sondern nur auf den Title-Span legen,
+  // damit der ``margin-right``-Gap zwischen Icon und Titel KEINEN
+  // Underline-Strich bekommt (sah hässlich aus weil der Strich vor
+  // dem Titel-Text anfing).
+  ::ng-deep a:has(> .bb-inline-icon) {
+    text-decoration: none !important;
+  }
+  ::ng-deep .bb-link-title {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  ::ng-deep a:hover .bb-link-title {
+    text-decoration-thickness: 2px;
+  }
+
+  // Native lists (fallback)
+  ul, ol { margin: 6px 0; padding: 0 0 0 1.4em; }
+  li { margin-bottom: 4px; }
+
+  // Inline-Treffer-Listen (Lotsen/Inline-Modus): wenn die ``<li>``-Items
+  // einen Link mit Material-Symbol-Icon enthalten, übernimmt das Icon die
+  // visuelle Rolle des Bullet-Markers — also kein zusätzliches • mehr,
+  // keine Einrückung. Spart Platz nach links + visueller Doppelung.
+  // ``:has()`` Selektor — supportiert in Chrome 105+, Safari 15.4+,
+  // Firefox 121+ (Dez 2023). Bei älteren Browsern fällt's auf die obigen
+  // Default-List-Styles zurück (visuell sub-optimal, funktional OK).
+  ::ng-deep ul:has(> li > a > .bb-inline-icon) {
+    list-style: none;
+    padding-left: 0;
+    margin: 8px 0;
+  }
+  ::ng-deep ul:has(> li > a > .bb-inline-icon) > li {
+    margin-bottom: 2px;   // dichter zusammen — Icons geben sowieso visuelle Struktur
+  }
+
+  // Inline-Link-Bullet-Listen (Material/Lotsen-Treffer im Inline-Mode):
+  // Wenn ein ``<li>`` nur einen einzigen Link enthält, expandieren wir die
+  // Klick-Fläche auf die ganze Zeile. Vorher trafen Klicks oberhalb/unter-
+  // halb/rechts vom Link-Text das ``<li>`` statt das ``<a>``, weil das
+  // ``<li>`` breiter ist als der Link-Text. Browser navigiert dann nicht,
+  // User klickt nochmal — das ist die "ich muss 2x klicken"-Story.
+  //
+  // ``display: block`` macht den Link zum Block-Element und füllt damit
+  // die volle Breite des ``<li>``-Content-Bereichs (rechts der Bullet).
+  // ``padding: 1px 0`` schließt den vertikalen Mini-Gap (~1.6 px) zwischen
+  // ``<li>``-Top und Link-Top, sodass auch leichte Vertikal-Verfehler den
+  // Link treffen.
+  ::ng-deep li > a:only-child {
+    display: block;
+    padding: 1px 0;
+  }
+
+  // Headings (rendered by marked) — compact for chat bubbles
+  h1, h2, h3, h4, h5, h6 {
+    margin: 10px 0 4px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  h1 { font-size: 1.05rem; }
+  h2 { font-size: 1.02rem; }
+  h3, h4, h5, h6 { font-size: 1rem; }
+
+  // Blockquote (rendered by marked)
+  blockquote {
+    border-left: 3px solid #c5cbd6;
+    padding: 2px 0 2px 10px;
+    margin: 2px 0;
+    color: #3a4252;
+  }
+
+  // Custom list items (rendered by renderMarkdown)
+  .md-li {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 4px;
+    padding-left: .15em;
+  }
+  .md-bullet {
+    flex-shrink: 0;
+    display: inline-block;
+    min-width: 10px;
+    margin-right: 6px;
+  }
+  .md-li-text {
+    flex: 1;
+  }
+  strong { font-weight: 600; }
+  code { background: rgba(0,0,0,.05); padding: 1px 4px; border-radius: 3px; font-size: .82rem; }
+
+  // marked wraps every chunk in <p>; with default 6px bottom-margin this
+  // makes one-liner user bubbles visibly taller than they used to be (the
+  // old regex renderer emitted plain text+<br>). Zero the outer margins
+  // and put the gap on adjacent paragraphs only.
+  p { margin: 0; }
+  p + p { margin-top: 6px; }
+}
+
+// ── Typing dots ──────────────────────────────────────────────────────────────
+.typing-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.typing-dots {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+
+  span {
+    width: 7px;
+    height: 7px;
+    background: var(--boerdi-primary, #1c4587);
+    border-radius: 50%;
+    animation: blink 1.2s infinite both;
+    &:nth-child(2) { animation-delay: .2s; }
+    &:nth-child(3) { animation-delay: .4s; }
+  }
+}
+
+// Live phase label from POST /api/chat/stream — appears next to the
+// dots while the backend works through classify → tools → generate.
+// Kept tiny + dimmed so it doesn't compete with the eventual answer.
+.typing-phase {
+  font-size: .82rem;
+  color: rgba(0, 0, 0, .55);
+  font-style: italic;
+  // Subtle fade-in when the label changes between phases
+  animation: phase-fade .25s ease-in;
+}
+
+@keyframes phase-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes blink {
+  0%, 80%, 100% { opacity: .25; }
+  40% { opacity: 1; }
+}
+
+// ── Cards List (Boerdi-Style — modernes Tile-Design) ──────────────────────
+$card-radius: 12px;
+$card-radius-inner: 10px;
+$brand-blue: #1c4587;
+$brand-blue-dark: #0E4A92;
+$brand-blue-light: #9FB7D3;
+$accent-yellow: #FFC600;
+$accent-orange: #E79800;
+
+.cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.wlo-card-wrapper {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  // When ANY dropdown menu inside the card is open, lift the wrapper's
+  // stacking context above sibling cards so the menu doesn't disappear
+  // behind the next card. Default z-index 1, dropdown-open: 100.
+  &:has(.tp-dropdown) { z-index: 100; }
+}
+
+// "Sammlung" hatte früher eine Stack-Optik via Pseudo-Elemente, die wie
+// gestapelte Karten aussahen — das verursachte aber den Eindruck einer
+// doppelten Umrandung (User-Feedback). Jetzt nur noch der lila Linker-
+// Streifen (.is-sammlung .wlo-card) als Diskriminator, kein Stack mehr.
+
+.wlo-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid $border;
+  border-radius: $card-radius;
+  background: #fff;
+  text-decoration: none;
+  color: $text;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .04);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(28, 69, 135, .12);
+    border-color: rgba($brand-blue, .25);
+  }
+
+  &:visited { color: $text; }
+}
+
+// Themenseite: leicht prominenterer Schatten als visueller Akzent —
+// Differenzierung ansonsten über das graue Kind-Badge oben rechts.
+// (Linker Streifen wurde entfernt, sah optisch nicht überzeugend aus.)
+.is-themenseite .wlo-card {
+  border-color: rgba($brand-blue, .3);
+  box-shadow: 0 2px 6px rgba(28, 69, 135, .08);
+  &:hover {
+    box-shadow: 0 8px 28px rgba(28, 69, 135, .18);
+  }
+}
+
+// ── Card Header: Inhaltstyp links, Themenseite/Sammlung/Inhalt-Badge rechts
+//   Kompakt — referenziert Card_klein_Inhalt-Layout
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.card-content-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .68rem;
+  font-weight: 600;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.card-content-icon {
+  font-size: .95rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -0.15em;
+}
+.card-content-icon > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+}
+.card-content-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+// (Das frühere ``.card-kind-badge`` rechts oben in der Card ist entfernt:
+//  der Inhaltstyp links oben — "🌐 Themenseite", "📚 Sammlung", "🎬 Video"
+//  etc. — sagt das gleiche aus, das zusätzliche Badge war redundant.)
+
+// ── Card Body ──────────────────────────────────────────────────────────
+//   Layout: Titel volle Breite oben, dann Desc + kleines Thumb nebeneinander
+.card-body {
+  padding: 8px 10px 6px;
+  flex: 1;
+}
+.card-title {
+  font-weight: 700;
+  font-size: .88rem;
+  line-height: 1.25;
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: $brand-blue;
+}
+.card-body-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.card-desc-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.card-desc {
+  font-size: .72rem;
+  color: $text-muted;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+// Kleines Thumb rechts neben Beschreibung (referenziert Card_klein_Inhalt)
+.card-thumb-side {
+  position: relative;
+  flex: 0 0 92px;
+  width: 92px;
+  height: 72px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: linear-gradient(135deg, $brand-blue 0%, #3E6EA8 100%);
+}
+.card-img-side {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .35s ease;
+}
+.wlo-card:hover .card-img-side { transform: scale(1.06); }
+
+// OER-Badge unten rechts auf kleinem Thumb (kompakt)
+.card-license-badge-side {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  background: rgba(255, 255, 255, .95);
+  color: $brand-blue;
+  font-size: .56rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  letter-spacing: .02em;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  &::before { content: '✓'; font-size: .8em; }
+}
+
+// ── Card Footer: Bildungsstufe + Fach (NICHT Zielgruppe) ──────────────
+.card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px 7px;
+  border-top: 1px solid #F1F5F9;
+  background: #FAFBFD;
+  min-height: 26px;
+}
+.footer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .68rem;
+  color: #475569;
+  font-weight: 500;
+}
+.footer-icon {
+  font-size: .8rem;
+  opacity: .85;
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+  vertical-align: -0.18em;
+}
+.footer-icon > svg {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+}
+
+// ── Card Actions (für Sammlungs-/Themenseiten-Karten) ──────────────────
+.card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid $border;
+  border-top: none;
+  border-bottom-left-radius: $card-radius;
+  border-bottom-right-radius: $card-radius;
+  margin-top: -1px; // align with card border
+  position: relative;
+  z-index: 1;
+}
+
+.card-btn {
+  font-size: .72rem;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  // ─── Hierarchie ──────────────────────────────────────────────────
+  // ``--guide``  = Primary (gefüllt dunkelblau) — wichtigste CTA der Card,
+  //                "Bring mich hin" im Lotsen-Modus.
+  // Alle anderen = Secondary (outlined dunkelblau) — sekundäre Aktionen,
+  //                visuell ruhiger, damit pro Card eine klare Aktion
+  //                heraussticht.
+  //
+  // Bei mehreren Aktionen sieht die Card so aus:
+  //   [▮ Bring mich hin]  [▢ Inhalte]  [▢ Lernpfad]  [▢ Themenseite]
+  // ohne Lotsen:
+  //   [▢ Inhalte]  [▢ Lernpfad]  [▢ Themenseite]
+
+  &--guide {
+    background: var(--boerdi-primary, #1c4587);
+    color: #ffffff;
+    border: 1px solid var(--boerdi-primary, #1c4587);
+    &:hover {
+      background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 88%, black);
+      border-color: color-mix(in srgb, var(--boerdi-primary, #1c4587) 88%, black);
+    }
+  }
+
+  &--primary,
+  &--secondary,
+  &--tertiary,
+  &--remix {
+    background: transparent;
+    color: var(--boerdi-primary, #1c4587);
+    border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 35%, transparent);
+    &:hover {
+      background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 8%, transparent);
+      border-color: var(--boerdi-primary, #1c4587);
+    }
+  }
+
+  &:disabled {
+    opacity: .45;
+    cursor: default;
+    &:hover { background: inherit; border-color: inherit; }
+  }
+}
+
+// Topic page smart button + dropdown — einheitlich hellblau
+.tp-wrapper {
+  display: inline-flex;
+  align-items: stretch;
+  position: relative;
+
+  .card-btn--tertiary {
+    border-radius: 8px 0 0 8px;
+  }
+
+  // When no dropdown toggle, keep full rounded corners
+  &:not(:has(.tp-dropdown-wrap)) .card-btn--tertiary {
+    border-radius: 8px;
+  }
+}
+
+.tp-toggle {
+  font-size: .85rem;
+  padding: 5px 7px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--boerdi-primary, #1c4587);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 35%, transparent);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  line-height: 1;
+  margin-left: -1px;  // overlap mit angrenzendem Themenseite-Button
+  &:hover {
+    background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 8%, transparent);
+    border-color: var(--boerdi-primary, #1c4587);
+  }
+}
+
+.tp-dropdown-wrap {
+  position: relative;
+}
+
+.tp-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  margin-top: 2px;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
+  min-width: 130px;
+  overflow: hidden;
+}
+
+.tp-dropdown-item {
+  display: block;
+  padding: 6px 12px;
+  font-size: .7rem;
+  color: var(--boerdi-primary, #1c4587);
+  text-decoration: none;
+  white-space: nowrap;
+  &:hover { background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, transparent); }
+  &.tp-active { font-weight: 700; }
+}
+
+// Adjust card border-radius when actions are present
+.wlo-card-wrapper .wlo-card {
+  border-radius: 10px 10px 0 0;
+}
+.wlo-card-wrapper:not(:has(.card-actions)) .wlo-card {
+  border-radius: 10px;
+}
+
+.chip {
+  font-size: .6rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.chip-fach      { background: #EBF5FF; color: #1A56DB; }
+.chip-stufe     { background: #F0FDF4; color: #166534; }
+.chip-typ       { background: #FFF7ED; color: #9A3412; }
+.chip-lizenz    { background: #FEF3C7; color: #92400E; }
+.chip-sammlung  { background: #EDE9FE; color: #6D28D9; }
+
+/* Type-pille: always shown first, marks node kind */
+.chip-typpille {
+  font-weight: 600;
+  padding: 1px 7px;
+  border: 1px solid transparent;
+}
+.chip-tp-sammlung  { background: #EDE9FE; color: #6D28D9; border-color: #DDD6FE; }
+.chip-tp-topicpage { background: #CFFAFE; color: #155E75; border-color: #A5F3FC; }
+.chip-tp-inhalt    { background: #F3F4F6; color: #374151; border-color: #E5E7EB; }
+
+/* ── Collection-action shortcuts (compact row shown when canvas owns cards) ── */
+.collection-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 4px;
+}
+
+.coll-row {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.coll-row-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #111827;
+}
+.coll-row-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.coll-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+// ── Pagination Bar ──────────────────────────────────────────────────────────
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin-top: 6px;
+  background: #F8FAFC;
+  border-radius: 8px;
+  border: 1px solid $border;
+}
+
+.pagination-info {
+  font-size: .75rem;
+  color: $text-muted;
+  font-weight: 500;
+}
+
+.btn-load-more {
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
+  color: var(--boerdi-primary, #1c4587);
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 25%, transparent);
+  border-radius: 16px;
+  padding: 5px 16px;
+  font-size: .78rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background .15s, color .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  &:hover:not(:disabled) {
+    background: var(--boerdi-primary, #1c4587);
+    color: #fff;
+  }
+
+  &:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+  }
+}
+
+// ── Quick Replies ────────────────────────────────────────────────────────────
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.qr-btn {
+  // Bewusst identisch zur ``.user-bubble``-Hintergrundfarbe — beide gehören
+  // visuell zusammen (User-Aktion-Familie).
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
+  color: var(--boerdi-primary, #1c4587);
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 25%, transparent);
+  border-radius: 16px;
+  padding: 5px 14px;
+  font-size: .78rem;
+  text-align: left;          // multi-line replies bleiben linksbündig
+  line-height: 1.3;
+  cursor: pointer;
+  transition: background .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+
+  &:hover {
+    background: var(--boerdi-primary, #1c4587);
+    color: #fff;
+  }
+}
+
+// "Bring mich hin"-Quick-Reply: vom Bot vorgeschlagene Same-Tab-Navigation.
+// Voll-eingefärbt im Header-Dunkelblau, damit sich die Aktion klar von den
+// hellblauen Standard-QRs abhebt — ohne Orange.
+.qr-btn--guide {
+  background: var(--boerdi-primary, #1c4587);
+  color: #fff;
+  border-color: var(--boerdi-primary, #1c4587);
+  font-weight: 600;
+
+  &:hover {
+    filter: brightness(1.1);
+    background: var(--boerdi-primary, #1c4587);     // Override: don't dim the bg on hover
+    color: #fff;
+  }
+}
+
+// ── Message action buttons (speak, print) ────────────────────────────────────
+.msg-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+}
+
+.btn-speak {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--boerdi-primary, #1c4587);
+  opacity: .55;
+  transition: opacity .15s;
+  padding: 2px 4px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  &:hover { opacity: 1; }
+}
+
+.btn-print {
+  font-size: .85rem;
+}
+
+// ── Lernpfad inline print button (prominent, at the end of the LP text) ──
+.lp-print-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 10px 0 4px;
+}
+
+.btn-lp-print {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: .82rem;
+  font-weight: 500;
+  // Akzentfarbe vom Embedder (``--boerdi-primary``): das Widget erbt z.B.
+  // auf der Themenseite-Demo den dortigen Rotton (#8b0000), in der Default-
+  // Variante das Blau. Vorher waren die Farben hier hardgecodet und sahen
+  // im roten Theme fehl am Platz aus.
+  color: var(--boerdi-primary, #1c4587);
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 30%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+
+  &:hover {
+    background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 18%, white);
+    border-color: color-mix(in srgb, var(--boerdi-primary, #1c4587) 50%, transparent);
+  }
+
+  &:active {
+    background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 26%, white);
+  }
+}
+
+// ── Debug Panel (Welle C Sprint 6 — neu sortiert mit Phasen-Sections) ──
+.debug-panel {
+  background: #F8FAFC;
+  border-top: 1px solid $border;
+  padding: 10px 14px;
+  font-size: .72rem;
+  font-family: monospace;
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  line-height: 1.5;
+  word-break: break-all;
+  overflow-wrap: break-word;
+}
+
+.debug-row { margin-bottom: 2px; max-width: 100%; }
+.debug-label { font-weight: 600; color: var(--boerdi-primary, #1c4587); }
+
+// Section-Header zwischen den 6 Debug-Phasen-Gruppen (State / Klassifikation
+// / Pattern / Modulation / Tools / Safety). Erste Section hat keinen Trenner.
+.debug-section-title {
+  font-weight: 700;
+  font-size: .72rem;
+  color: #1F2937;
+  margin: 8px 0 4px;
+  padding-top: 6px;
+  border-top: 1px dashed #D1D5DB;
+  letter-spacing: .02em;
+
+  &:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+}
+
+// State-Übergang: plausibel / implausibel
+.debug-warn { color: #B45309; font-weight: 600; }
+.debug-ok { color: #047857; font-weight: 500; margin-left: 4px; }
+
+// ── Input Footer ─────────────────────────────────────────────────────────────
+.chat-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  // 10% Primary auf Weiß — sehr dezenter Tönungs-Untergrund, der den
+  // Eingabe-Bereich vom Chat-Body absetzt und mit der Akzentfarbe harmoniert.
+  background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, white);
+  border-top: 1px solid $border;
+}
+
+.btn-mic {
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--boerdi-primary, #1c4587) 30%, transparent);
+  border-radius: 18px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all .2s;
+  white-space: nowrap;
+
+  &:hover { background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 10%, transparent); }
+  &.recording {
+    background: #FEE2E2;
+    border-color: #EF4444;
+    color: #DC2626;
+    font-size: .75rem;
+    font-weight: 600;
+    min-width: 64px;
+    animation: pulse-border 1.5s infinite;
+  }
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  background: #EF4444;
+  border-radius: 50%;
+  animation: blink-rec .8s infinite;
+}
+
+@keyframes blink-rec {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .2; }
+}
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, .4); }
+  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, .1); }
+}
+
+.chat-input {
+  flex: 1;
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 20px;
+  padding: 9px 16px;
+  font-size: .875rem;
+  outline: none;
+  background: #fff;
+  color: $text;
+  font-family: inherit;
+
+  &:focus { border-color: var(--boerdi-primary, #1c4587); box-shadow: 0 0 0 2px color-mix(in srgb, var(--boerdi-primary, #1c4587) 15%, transparent); }
+  &:disabled { opacity: .6; }
+  &::placeholder { color: $text-muted; }
+}
+
+.btn-send {
+  background: var(--boerdi-primary, #1c4587);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+
+  &:hover { background: color-mix(in srgb, var(--boerdi-primary, #1c4587) 88%, black); }
+  &:disabled { opacity: .4; cursor: default; }
+}
+
+// ── Responsive ───────────────────────────────────────────────────────────────
+@media (max-width: 540px) {
+  .chat-wrapper { max-width: 100%; border: none; }
+  .cards-grid { grid-template-columns: 1fr; }
+}

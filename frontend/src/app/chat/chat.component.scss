@@ -1184,9 +1184,9 @@ $accent-orange: #E79800;
   &:hover { opacity: 1; }
 }
 
-.btn-print {
-  font-size: .85rem;
-}
+// .btn-print entfernt (2026-06-10): die Bubble-Print-Buttons in msg-actions
+// existieren nicht mehr — Drucken läuft über den Button in der
+// InlineDocument-Box bzw. die Legacy-Print-Bars (.btn-lp-print).
 
 // ── Lernpfad inline print button (prominent, at the end of the LP text) ──
 .lp-print-bar {

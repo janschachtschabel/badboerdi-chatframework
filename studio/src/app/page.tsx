@@ -11,6 +11,7 @@ import HomeOverview from '@/components/HomeOverview';
 import SecurityLevelPicker from '@/components/SecurityLevelPicker';
 import QualityView from '@/components/QualityView';
 import EvaluationView from '@/components/EvaluationView';
+import LoadTestView from '@/components/LoadTestView';
 import InfoView from '@/components/InfoView';
 import PrivacyView from '@/components/PrivacyView';
 import CanvasFormatsEditor from '@/components/CanvasFormatsEditor';
@@ -19,7 +20,7 @@ import HeaderNavView from '@/components/HeaderNavView';
 import { SnapshotsModal } from '@/components/SnapshotsModal';
 
 // ── Types ────────────────────────────────────────────────────────────
-type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'canvas' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'evaluation' | 'privacy' | 'info' | 'display';
+type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'canvas' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'evaluation' | 'loadtest' | 'privacy' | 'info' | 'display';
 
 export interface Elements {
   patterns: PatternData[];
@@ -51,6 +52,9 @@ export interface PatternData {
   format_primary?: string;
   format_follow_up?: string;
   card_text_mode?: string;
+  // QR-Policy (2026-06-10): exact | speculative | none + Anzahl (null = global)
+  quick_replies_mode?: string;
+  quick_replies_max?: number | null;
   tools?: string[];
   output_mode?: string;
   // Welle E v3 (2026-05-25): strukturierte Frontmatter-Felder
@@ -222,6 +226,7 @@ const NAV_ICONS: Record<string, ReactNode> = {
   quality:     navSvg(<><path d="M4 20V4" /><rect x="7" y="11" width="3" height="7" /><rect x="12" y="7" width="3" height="11" /><rect x="17" y="14" width="3" height="4" /></>),
   evaluation:  navSvg(<><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4h6v3H9zM9 14l2 2 4-4" /></>),
   safety_logs: navSvg(<><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" /><path d="M12 9v3M12 16h.01" /></>),
+  loadtest:    navSvg(<><circle cx="12" cy="13" r="8" /><path d="M12 13l4-4M9 3h6" /></>),
   privacy:     navSvg(<><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>),
   info:        navSvg(<><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>),
 };
@@ -231,8 +236,8 @@ const NAV_SECTIONS: { title?: string; items: { id: Layer; label: string; desc?: 
   {
     title: 'Konfiguration',
     items: [
-      { id: 'identity',   label: 'Identität & Schutz', desc: 'Persona, Guardrails, Safety, Geräte' },
-      { id: 'domain',     label: 'Domain-Wissen',      desc: 'Plattform-Wissen, Policy, Web-Tour' },
+      { id: 'identity',   label: 'Identität & Schutz', desc: 'Persona, Guardrails, Safety, Policy, Geräte' },
+      { id: 'domain',     label: 'Domain-Wissen',      desc: 'Plattform-Wissen, Web-Tour' },
       { id: 'patterns',   label: 'Patterns',           desc: 'Gesprächsmuster' },
       { id: 'dimensions', label: 'Dimensionen',        desc: 'Personas, Intents, States, Entities' },
       { id: 'canvas',     label: 'Material-Formate',   desc: 'Material-Typen, Aliase, Trigger' },
@@ -244,7 +249,8 @@ const NAV_SECTIONS: { title?: string; items: { id: Layer; label: string; desc?: 
     items: [
       { id: 'sessions',    label: 'Sessions',    desc: 'Gesprächsverläufe' },
       { id: 'quality',     label: 'Analyse',     desc: 'Pattern-/Intent-Verteilung, Diagnose' },
-      { id: 'evaluation',  label: 'Evaluation',  desc: 'Persona-Dialoge automatisch testen' },
+      { id: 'evaluation',  label: 'Evaluation',  desc: 'Persona-Dialoge & Gold-Flows' },
+      { id: 'loadtest',    label: 'Lasttest',    desc: 'Skalierbarkeit & Ressourcen' },
       { id: 'safety_logs', label: 'Safety-Logs', desc: 'Risiko-Events & Rate-Limits' },
     ],
   },
@@ -374,20 +380,26 @@ export default function StudioPage() {
                 const params = new URLSearchParams();
                 params.set('wipe', wipe ? 'true' : 'false');
                 params.set('include_db', includeDb ? 'true' : 'false');
-                const resp = await fetch(`/api/config/restore?${params}`, {
-                  method: 'POST',
-                  body: fd,
-                });
-                if (resp.ok) {
-                  const data = await resp.json();
-                  alert(
-                    `Restore OK:\n` +
-                    `  ${data.config_files ?? 0} Config-Dateien\n` +
-                    `  Datenbank: ${data.db_restored ? 'wiederhergestellt' : (data.db_in_archive ? 'vorhanden, aber übersprungen' : 'nicht im Archiv')}`,
-                  );
-                  await loadElements();
-                } else {
-                  alert(`Restore fehlgeschlagen: ${resp.status}`);
+                // Fix 2026-06-10: try/catch — bei Netzwerkfehler gab es
+                // vorher eine unhandled rejection und keinerlei Feedback.
+                try {
+                  const resp = await fetch(`/api/config/restore?${params}`, {
+                    method: 'POST',
+                    body: fd,
+                  });
+                  if (resp.ok) {
+                    const data = await resp.json();
+                    alert(
+                      `Restore OK:\n` +
+                      `  ${data.config_files ?? 0} Config-Dateien\n` +
+                      `  Datenbank: ${data.db_restored ? 'wiederhergestellt' : (data.db_in_archive ? 'vorhanden, aber übersprungen' : 'nicht im Archiv')}`,
+                    );
+                    await loadElements();
+                  } else {
+                    alert(`Restore fehlgeschlagen: ${resp.status}`);
+                  }
+                } catch (e) {
+                  alert(`Restore fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
                 }
               };
               input.click();
@@ -464,11 +476,12 @@ export default function StudioPage() {
           <SecurityLevelPicker />
           <ConfigTextEditor
             title="Identität & Schutz"
-            subtitle="Schicht 1: Wer ist BOERDi und was tut er NIE? Diese Ebene gilt unbedingt und kann von keiner anderen Schicht überschrieben werden — sowohl als Anweisung im System-Prompt (Guardrails) als auch als Code-Gate vor jedem LLM-Call (Safety)."
+            subtitle="Wer ist BOERDi und was tut er NIE? Guardrails (System-Prompt) und Safety (Code-Gate vor jedem LLM-Call) gelten UNBEDINGT und sind von keiner anderen Schicht überschreibbar. Policy-Regeln ergänzen das als konditionale Compliance-Ebene (Tool-Sperren/Disclaimer je Match)."
             files={[
               { label: 'BOERDi Persona', desc: 'Persönlichkeit, Stimme, Verhalten', path: '01-base/base-persona.md' },
-              { label: 'Guardrails (Prompt-Ebene)', desc: 'Unveränderliche Regeln R-01..R-10, gehen in jeden System-Prompt', path: '01-base/guardrails.md' },
+              { label: 'Guardrails (Prompt-Ebene)', desc: 'Unveränderliche Regeln R-01..R-15, gehen in jeden System-Prompt', path: '01-base/guardrails.md' },
               { label: 'Safety-Konfiguration (Code-Ebene)', desc: 'Risiko-Gating vor dem LLM: Crisis-Erkennung, blockierte Tools, Confidence-Anpassung', path: '01-base/safety-config.yaml' },
+              { label: 'Policy-Regeln (Compliance)', desc: 'Konditionale Match/Effect-Regeln: Tool-Sperren & Pflicht-Disclaimer je Persona/Intent — greifen NUR bei passendem Match', path: '01-base/policy.yaml' },
             ]}
             loadFile={loadFile}
             saveFile={saveFile}
@@ -483,7 +496,6 @@ export default function StudioPage() {
             files={[
               { label: 'Domain-Regeln', desc: 'Such-Strategie, Persona-Routing, Tool-Priorisierung', path: '02-domain/domain-rules.md' },
               { label: 'Plattform-Wissen', desc: 'WLO-Fakten, Statistiken, Geschichte, FAQ', path: '02-domain/wlo-plattform-wissen.md' },
-              { label: 'Policy-Regeln', desc: 'Konditionale Compliance-Regeln (Match/Effect): Tool-Sperren, Disclaimer pro Persona/Intent', path: '02-domain/policy.yaml' },
               { label: 'Webseiten-Tour', desc: 'Geführte Besucher-Tour: Begrüßung, Schritt-Texte, Ziel-URLs, die 7 Besucher-Gruppen & das Gruppe→Angebot-Mapping. Verhalten/State-Machine liegt im Code (tour_service.py)', path: '01-base/website-tour.yaml' },
             ]}
             loadFile={loadFile}
@@ -553,6 +565,10 @@ export default function StudioPage() {
 
         {backendOnline && layer === 'evaluation' && (
           <EvaluationView />
+        )}
+
+        {backendOnline && layer === 'loadtest' && (
+          <LoadTestView />
         )}
 
         {backendOnline && layer === 'display' && (

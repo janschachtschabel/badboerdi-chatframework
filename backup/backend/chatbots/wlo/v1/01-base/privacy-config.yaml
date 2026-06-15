@@ -1,0 +1,10 @@
+# Privacy-Konfiguration (Datenschutz)
+# Verwaltet ueber das Studio — Aenderungen wirken live
+# (mtime-Cache-Invalidation auf Write).
+
+logging:
+  messages: true
+  memory: true
+  quality: true
+  # safety is hardcoded ON in code — this value is informative only.
+  safety: true

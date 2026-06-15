@@ -15,10 +15,6 @@ export interface Environment {
    *  ``wirlernenonline.de``). Sent so the backend can verify the host is
    *  on its allow-list before annotating cards. */
   host?: string;
-  /** Welle E (2026-05-23): einziger verbleibender Embed-Mode. Hosts
-   *  können KI-Material/Lernpfad-Generierung pro Embed abschalten, z.B.
-   *  wenn die Host-Plattform selbst KI-Content-Tools mitbringt. */
-  ai_content_enabled?: boolean;
   /** Webseiten-Tour: "start" (Button "Web-Tour starten") | "tick"
    *  (unsichtbarer Page-Load-Ping für die Ankunfts-Erkennung). Nur bei
    *  Tour-Requests gesetzt. */
@@ -303,9 +299,6 @@ export class ApiService {
    *  cards. Defaults are off / empty until ``setGuideEnv`` is called. */
   private guideMode = false;
   private guideHost = '';
-  /** Welle E (2026-05-23): einziger Embed-Mode der pro Host überschreibbar
-   *  bleibt — KI-Content. ``undefined`` = Default-Backend-Verhalten. */
-  private widgetModes: { ai?: boolean } = {};
 
   constructor() {
     // Allow the hosting page to override the backend URL at runtime by
@@ -338,22 +331,8 @@ export class ApiService {
     this.guideHost = (host || '').trim().toLowerCase();
   }
 
-  /** Welle E (2026-05-23): nur noch der ``aiContentEnabled``-Slot ist
-   *  pro Embed steuerbar. Andere ehemalige Embed-Modi (cards / canvas /
-   *  inline-result-grouping / quick-replies) sind ersatzlos entfernt —
-   *  Layout-Settings liegen jetzt im Studio (display-rules.yaml). */
-  setWidgetModes(ai: boolean | undefined): void {
-    this.widgetModes = { ai };
-  }
-
-  /** Build the optional widget-mode fields for the environment block. */
-  private widgetModeEnv(): Partial<Environment> {
-    const out: Partial<Environment> = {};
-    if (typeof this.widgetModes.ai === 'boolean') {
-      out.ai_content_enabled = this.widgetModes.ai;
-    }
-    return out;
-  }
+  // 2026-06-10: Embed-Modi vollständig entfernt (auch ai-content-enabled) —
+  // KI-Inhalte sind immer zugelassen, Layout liegt im Studio.
 
   async sendMessage(
     sessionId: string,
@@ -372,7 +351,6 @@ export class ApiService {
       guide_mode: env?.guide_mode ?? this.guideMode,
       host: env?.host ?? this.guideHost,
       tour_action: env?.tour_action,
-      ...this.widgetModeEnv(),
     };
 
     const body: Record<string, any> = {
@@ -423,7 +401,6 @@ export class ApiService {
       guide_mode: env?.guide_mode ?? this.guideMode,
       host: env?.host ?? this.guideHost,
       tour_action: env?.tour_action,
-      ...this.widgetModeEnv(),
     };
 
     const body: Record<string, any> = {
@@ -434,15 +411,65 @@ export class ApiService {
     if (action) body['action'] = action;
     if (actionParams) body['action_params'] = actionParams;
 
-    const resp = await fetch(`${this.baseUrl}/chat/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream',
-      },
-      body: JSON.stringify(body),
-    });
+    // B9 (2026-06-10): Idle-Watchdog gegen hängende Streams — verbindet
+    // der Server, sendet dann aber nie wieder Bytes, blockierte
+    // reader.read() vorher unbegrenzt und die Loading-Bubble stand für
+    // immer. Abbruch nach 90 s ohne Daten → AbortError → der Aufrufer
+    // fällt auf seinen bestehenden Fehlerpfad (Fehler-Bubble) zurück.
+    //
+    // B10 (2026-06-11): Stale-Timer gegen "Leitung lebt, Server wird aber
+    // nicht fertig" — SSE-Keepalive-Kommentare resetten den Byte-Watchdog,
+    // d.h. ein hängender LLM-Call hinter dem Stream lief unbegrenzt weiter
+    // (beobachtet: 504-Hänger der Staging-B-API, >2 min Spinner). Kommt
+    // 100 s lang kein BENANNTES Event (connected/phase/result/error) mehr,
+    // brechen wir ab und werfen StreamStaleError — der Aufrufer zeigt dann
+    // eine ehrliche Meldung statt still auf POST /chat zu fallen (was die
+    // Wartezeit verdoppeln würde). 100 s = Backend-LLM_READ_TIMEOUT (75 s)
+    // + Puffer für den OpenAI-SDK-Retry, damit gerettete Antworten den
+    // Cut nicht knapp verpassen.
+    const abort = new AbortController();
+    const IDLE_MS = 90_000;
+    const STALE_MS = 100_000;
+    let watchdog: ReturnType<typeof setTimeout> | null = null;
+    let staleTimer: ReturnType<typeof setTimeout> | null = null;
+    let staleFired = false;
+    const armWatchdog = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => abort.abort(), IDLE_MS);
+    };
+    const armStale = () => {
+      if (staleTimer) clearTimeout(staleTimer);
+      staleTimer = setTimeout(() => { staleFired = true; abort.abort(); }, STALE_MS);
+    };
+    const clearTimers = () => {
+      if (watchdog) clearTimeout(watchdog);
+      if (staleTimer) clearTimeout(staleTimer);
+    };
+    const makeStaleError = () => {
+      const err = new Error('Stream stale: keine Server-Events seit 100 s');
+      err.name = 'StreamStaleError';
+      return err;
+    };
+    armWatchdog();
+    armStale();
+
+    let resp: Response;
+    try {
+      resp = await fetch(`${this.baseUrl}/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
+        body: JSON.stringify(body),
+        signal: abort.signal,
+      });
+    } catch (e) {
+      clearTimers();
+      throw staleFired ? makeStaleError() : e;
+    }
     if (!resp.ok || !resp.body) {
+      clearTimers();
       throw new Error(`Chat stream error: ${resp.status}`);
     }
 
@@ -479,20 +506,34 @@ export class ApiService {
         // 'connected' or 'phase' — surface to UI
         try { onEvent({ event: evtName, data: parsed }); } catch { /* never break stream */ }
       }
+      // B10: nur BENANNTE Events zählen als Server-Fortschritt. Blöcke aus
+      // reinen Keepalive-Kommentaren landen hier als 'message' mit leeren
+      // Daten — die halten die Leitung offen, beweisen aber nicht, dass
+      // der Server noch arbeitet.
+      if (evtName !== 'message') armStale();
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      // SSE event boundary is a blank line (\n\n). Process every full
-      // block; keep the (potentially partial) tail in the buffer.
-      let idx;
-      while ((idx = buffer.indexOf('\n\n')) >= 0) {
-        const block = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        if (block.trim()) dispatchBlock(block);
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        armWatchdog();  // B9: jede Daten-Lieferung resettet den Idle-Timer
+        buffer += decoder.decode(value, { stream: true });
+        // SSE event boundary is a blank line (\n\n). Process every full
+        // block; keep the (potentially partial) tail in the buffer.
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+          const block = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          if (block.trim()) dispatchBlock(block);
+        }
       }
+    } catch (e) {
+      // B10: Abort durch den Stale-Timer → als StreamStaleError ausweisen,
+      // damit der Aufrufer NICHT auf POST /chat zurückfällt.
+      throw staleFired ? makeStaleError() : e;
+    } finally {
+      clearTimers();
     }
     // Flush any trailing block (server closed without final \n\n).
     if (buffer.trim()) dispatchBlock(buffer);

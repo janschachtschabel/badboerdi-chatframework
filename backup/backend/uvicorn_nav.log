@@ -1,0 +1,153 @@
+INFO:     Started server process [29156]
+INFO:     Waiting for application startup.
+15:05:57 WARNING startup: \u26a0 STUDIO_API_KEY is not set — all Studio/admin endpoints are UNPROTECTED. Set STUDIO_API_KEY in your environment for production deployments.
+15:05:57 INFO app.services.database: Seed version 2026-04-11 already imported, skipping
+15:05:57 INFO startup: Config warmup done in 32ms
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+15:05:59 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+15:05:59 INFO startup: LLM warmup done in 1755ms
+INFO:     127.0.0.1:56236 - "GET /api/health HTTP/1.1" 200 OK
+15:06:45 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'ac18e9bf-3209-4606-a598-e8e290c9b999', 'maxItems': 6, 'skipCount': 0}
+15:06:47 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:06:47 INFO app.services.mcp_client: MCP server: {"protocolVersion": "2024-11-05", "capabilities": {"tools": {"listChanged": true}}, "serverInfo": {"name": "wlo-mcp", "version": "1.0.0"}}
+15:06:47 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 202 Accepted"
+15:06:47 INFO app.services.mcp_client: MCP handshake complete
+15:06:48 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:06:49 INFO app.services.mcp_client: MCP tool get_collection_contents returned 4312 chars
+15:06:53 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52255 - "POST /api/chat HTTP/1.1" 200 OK
+15:06:53 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'ac18e9bf-3209-4606-a598-e8e290c9b999', 'maxItems': 24, 'skipCount': 0}
+15:06:53 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:06:55 INFO app.services.mcp_client: MCP tool get_collection_contents returned 17316 chars
+15:07:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:07:06 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:64857 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58998 - "GET /widget/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58998 - "GET /widget/boerdi-widget.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58998 - "GET /api/sessions/bb-d5103d66-673f-4fc4-a9b4-5cf71660cb89/messages?limit=20 HTTP/1.1" 200 OK
+15:11:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+15:11:40 INFO app.services.safety_service: safety stages=openai level=standard took 316ms
+15:11:41 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:11:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:11:43 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:11:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:11:44 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:11:44 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12648 chars
+15:11:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:11:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:58998 - "POST /api/chat HTTP/1.1" 200 OK
+15:12:01 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+15:12:01 INFO app.services.safety_service: safety stages=openai level=standard took 529ms
+15:12:02 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:12:02 INFO app.routers.chat: speculative search_wlo_content for intent=INT-W-03b args={'query': 'Mathematik', 'maxResults': 5, 'discipline': 'Mathematik'}
+15:12:02 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Mathematik', 'maxResults': 5, 'discipline': 'Mathematik'}
+15:12:02 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary args: {'vocabulary': 'discipline'}
+15:12:04 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:12:04 INFO app.services.mcp_client: MCP tool lookup_wlo_vocabulary returned 8051 chars
+15:12:04 INFO app.services.mcp_client: discipline label\u2192URI cache loaded: 190 entries
+15:12:04 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+15:12:04 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:12:06 INFO app.services.mcp_client: MCP tool search_wlo_content returned 5431 chars
+15:12:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:12:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:12:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:12:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:12:07 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 12411 chars
+15:12:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:12:08 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Mathematik', 'discipline': 'Mathematik', 'maxResults': 5}
+15:12:08 INFO app.services.mcp_client: resolved discipline='Mathematik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/380
+15:12:09 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:12:10 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 3764 chars
+15:12:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:12:11 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages args: {'collectionId': '281c9bd0-a6e2-46a2-b49a-acd95c95f395', 'targetGroup': 'general', 'maxResults': 3}
+15:12:11 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:12:12 INFO app.services.mcp_client: MCP tool search_wlo_topic_pages returned 28 chars
+15:12:14 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:12:14 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+15:12:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52209 - "POST /api/chat HTTP/1.1" 200 OK
+15:12:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+15:12:46 INFO app.services.safety_service: safety stages=openai level=standard took 651ms
+15:12:46 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:12:48 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:49220 - "POST /api/chat HTTP/1.1" 200 OK
+15:13:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+15:13:19 INFO app.services.safety_service: safety stages=openai level=standard took 480ms
+15:13:19 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:13:19 INFO app.routers.chat: speculative search_wlo_content for intent=INT-W-03b args={'query': 'Optik', 'maxResults': 5, 'discipline': 'Physik'}
+15:13:19 INFO app.services.mcp_client: MCP tool search_wlo_content args: {'query': 'Optik', 'maxResults': 5, 'discipline': 'Physik'}
+15:13:19 INFO app.services.mcp_client: resolved discipline='Physik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/460
+15:13:20 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:13:22 INFO app.services.mcp_client: MCP tool search_wlo_content returned 4167 chars
+15:13:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:13:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:13:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:13:23 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:13:23 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 13772 chars
+15:13:24 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:13:24 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'Optik', 'discipline': 'Physik', 'maxResults': 5}
+15:13:24 INFO app.services.mcp_client: resolved discipline='Physik' \u2192 http://w3id.org/openeduhub/vocabs/discipline/460
+15:13:24 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:13:25 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 2762 chars
+15:13:26 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:13:26 INFO app.routers.chat: Outcome-based state hint: state-5 -> state-6
+15:13:28 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:63099 - "POST /api/chat HTTP/1.1" 200 OK
+15:13:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+15:13:40 INFO app.services.safety_service: safety stages=openai level=standard took 825ms
+15:13:40 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:13:41 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Optik&limit=3 "HTTP/1.1 200 OK"
+15:13:41 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Optik "HTTP/1.1 200 OK"
+15:13:49 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:13:50 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60499 - "POST /api/chat HTTP/1.1" 200 OK
+15:18:59 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'bf729405-18ff-440b-9d5b-dd466ff563c3', 'maxItems': 6, 'skipCount': 0}
+15:19:00 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:19:01 INFO app.services.mcp_client: MCP tool get_collection_contents returned 3612 chars
+15:19:04 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60378 - "POST /api/chat HTTP/1.1" 200 OK
+15:19:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+15:19:11 INFO app.services.safety_service: safety stages=openai level=standard took 549ms
+15:19:11 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:19:12 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Wellenoptik&limit=3 "HTTP/1.1 200 OK"
+15:19:12 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Wellenoptik "HTTP/1.1 200 OK"
+15:19:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:19:20 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52849 - "POST /api/chat HTTP/1.1" 200 OK
+15:20:39 INFO app.services.mcp_client: MCP tool get_collection_contents args: {'nodeId': 'f35c17d1-a29e-4b26-9d22-802682fad43d', 'maxItems': 6, 'skipCount': 0}
+15:20:40 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:20:40 INFO app.services.mcp_client: MCP tool get_collection_contents returned 4522 chars
+15:20:42 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50492 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63426 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63428 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63430 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+15:21:07 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+15:21:07 INFO app.services.safety_service: safety stages=openai level=standard took 495ms
+15:21:08 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:21:08 INFO app.routers.chat: speculative search_wlo_collections for intent=INT-W-03a args={'query': 'suche ob es themenseiten bei wlo gibt - egal zu welchem thema', 'maxResults': 5}
+15:21:08 INFO app.services.mcp_client: MCP tool search_wlo_collections args: {'query': 'suche ob es themenseiten bei wlo gibt - egal zu welchem thema', 'maxResults': 5}
+15:21:08 INFO httpx: HTTP Request: POST https://wlo-mcp-server.vercel.app/mcp "HTTP/1.1 200 OK"
+15:21:16 INFO app.services.mcp_client: MCP tool search_wlo_collections returned 4821 chars
+15:21:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:21:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:21:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:21:16 INFO httpx: HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+15:21:16 INFO app.services.llm_service: RAG pre-fetch for areas ['edu-sharing-com-webseite', 'edu-sharing-net-webseite', 'wirlernenonline.de-webseite', 'wissenlebtonline-webseite']: 14227 chars
+15:21:18 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:21:18 INFO app.routers.chat: Outcome-based state hint: state-4 -> state-6
+15:21:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:57332 - "POST /api/chat HTTP/1.1" 200 OK
+15:28:21 INFO httpx: HTTP Request: POST https://api.openai.com/v1/moderations "HTTP/1.1 200 OK"
+15:28:21 INFO app.services.safety_service: safety stages=openai level=standard took 608ms
+15:28:22 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:28:22 INFO httpx: HTTP Request: GET https://de.wikipedia.org/w/rest.php/v1/search/title?q=Eiszeit&limit=3 "HTTP/1.1 200 OK"
+15:28:22 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Eiszeit "HTTP/1.1 200 OK"
+15:28:22 INFO httpx: HTTP Request: GET https://de.wikipedia.org/api/rest_v1/page/summary/Eiszeitalter "HTTP/1.1 200 OK"
+15:28:29 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+15:28:31 INFO httpx: HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:61137 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50206 - "GET /api/sessions/bb-6a2fc361-a04e-41ea-8eb4-92f1058603ee/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56201 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56203 - "GET /api/sessions/bb-f7afdcf1-d0d4-421f-a050-7c2d3df77e5e/messages?limit=20 HTTP/1.1" 200 OK

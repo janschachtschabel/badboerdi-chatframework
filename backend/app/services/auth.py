@@ -15,6 +15,7 @@ Use as a FastAPI dependency:
 
 from __future__ import annotations
 
+import hmac
 import os
 
 from fastapi import Header, HTTPException, Query, status
@@ -37,7 +38,7 @@ async def require_studio_key(
     if not expected:
         return  # auth disabled
     provided = (x_studio_key or key or "").strip()
-    if provided != expected:
+    if not hmac.compare_digest(provided, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Studio API key required",
