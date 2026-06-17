@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -1369,6 +1368,54 @@ def load_website_tour_config() -> dict[str, Any]:
     return cfg
 
 
+_WELCOME_DEFAULT_GREETING = (
+    "Hey, schön dass du da bist! Ich bin Boerdi, die schlaue Eule von "
+    "WissenLebtOnline.\nIch kann dir zeigen, wie du deine Wissens- oder "
+    "Lerninhalte ins KI-Zeitalter bringst? Oder ich kann dir helfen "
+    "vorhandene Inhalte in unserer Datenbasis zu finden."
+)
+_WELCOME_DEFAULT_REPLIES = [
+    "Wie bringe ich meine Inhalte ins KI-Zeitalter?",
+    "Ich suche Inhalte zu einem Thema.",
+    "Führe mich systematisch durch die Webseite.",
+    "Was ist WissenLebtOnline?",
+]
+
+
+def load_welcome_config() -> dict[str, Any]:
+    """Studio-pflegbare Begrüßung + Start-Quick-Replies aus
+    01-base/welcome-config.yaml.
+
+    Das Widget zeigt damit die Begrüßungsblase + Start-Chips am Chat-Anfang.
+    Wird beim Boot über /api/config/guide-mode (Feld ``welcome``)
+    mitgeliefert; das Studio liest/schreibt über /api/config/welcome.
+    Fehlt/kaputt → sichere Defaults, damit das Widget nie ohne Begrüßung
+    dasteht.
+    """
+    data = _load_yaml("01-base/welcome-config.yaml") or {}
+    cfg = data.get("welcome") or {}
+    greeting = cfg.get("greeting")
+    if not isinstance(greeting, str) or not greeting.strip():
+        greeting = _WELCOME_DEFAULT_GREETING
+    raw_replies = cfg.get("quick_replies")
+    if isinstance(raw_replies, list):
+        replies = [str(r).strip() for r in raw_replies if str(r).strip()]
+    else:
+        replies = []
+    if not replies:
+        replies = list(_WELCOME_DEFAULT_REPLIES)
+    # tour_reply: exakter Text des Chips, der die Web-Tour DIREKT startet
+    # (statt als normale Nachricht gesendet zu werden). Leer = kein Chip
+    # triggert die Tour. Muss einer der quick_replies sein, sonst wirkungslos.
+    tour_reply = cfg.get("tour_reply")
+    tour_reply = tour_reply.strip() if isinstance(tour_reply, str) else ""
+    return {
+        "greeting": greeting.strip(),
+        "quick_replies": replies,
+        "tour_reply": tour_reply,
+    }
+
+
 def load_display_rules_config() -> dict[str, Any]:
     """Studio-pflegbare Display-Regeln aus 01-base/display-rules.yaml.
 
@@ -1781,9 +1828,7 @@ def update_persona_modifier_in_frontmatter(
     # repeated updates don't re-duplicate the header).
     fm_lines = fm_body.split("\n")
     new_lines: list[str] = []
-    skip_next_blank_after_header = False
     for ln in fm_lines:
-        stripped = ln.strip()
         # Match keys at top-level: "key: value" with up to 2 leading spaces
         is_modifier_line = False
         for k in _MODIFIER_KEYS:

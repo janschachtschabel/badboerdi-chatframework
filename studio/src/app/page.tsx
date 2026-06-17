@@ -16,11 +16,12 @@ import InfoView from '@/components/InfoView';
 import PrivacyView from '@/components/PrivacyView';
 import CanvasFormatsEditor from '@/components/CanvasFormatsEditor';
 import DisplayRulesView from '@/components/DisplayRulesView';
+import WelcomeView from '@/components/WelcomeView';
 import HeaderNavView from '@/components/HeaderNavView';
 import { SnapshotsModal } from '@/components/SnapshotsModal';
 
 // ── Types ────────────────────────────────────────────────────────────
-type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'canvas' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'evaluation' | 'loadtest' | 'privacy' | 'info' | 'display';
+type Layer = 'home' | 'identity' | 'domain' | 'patterns' | 'dimensions' | 'canvas' | 'knowledge' | 'sessions' | 'safety_logs' | 'quality' | 'evaluation' | 'loadtest' | 'privacy' | 'info' | 'display' | 'welcome';
 
 export interface Elements {
   patterns: PatternData[];
@@ -215,6 +216,7 @@ const navSvg = (paths: ReactNode): ReactNode => (
 
 const NAV_ICONS: Record<string, ReactNode> = {
   home:        navSvg(<><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>),
+  welcome:     navSvg(<><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z" /><path d="M8.5 11h.01M12 11h.01M15.5 11h.01" /></>),
   identity:    navSvg(<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" />),
   domain:      navSvg(<><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18" /></>),
   patterns:    navSvg(<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>),
@@ -236,6 +238,7 @@ const NAV_SECTIONS: { title?: string; items: { id: Layer; label: string; desc?: 
   {
     title: 'Konfiguration',
     items: [
+      { id: 'welcome',    label: 'Begrüßung',          desc: 'Start-Text & Start-Quick-Replies' },
       { id: 'identity',   label: 'Identität & Schutz', desc: 'Persona, Guardrails, Safety, Policy, Geräte' },
       { id: 'domain',     label: 'Domain-Wissen',      desc: 'Plattform-Wissen, Web-Tour' },
       { id: 'patterns',   label: 'Patterns',           desc: 'Gesprächsmuster' },
@@ -570,6 +573,8 @@ export default function StudioPage() {
         {backendOnline && layer === 'loadtest' && (
           <LoadTestView />
         )}
+
+        {backendOnline && layer === 'welcome' && <WelcomeView />}
 
         {backendOnline && layer === 'display' && (
           <>

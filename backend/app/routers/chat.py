@@ -5899,17 +5899,29 @@ async def _chat_impl(
             _wants_tp = "themenseite" in (
                 (req.message or "") + " " + (spec_query or "")
             ).lower()
-            for _p in _ce_targets:
-                # Über den gedeckelten Rerank-Pool statt default-to_thread
-                # (2026-06-15): begrenzt gleichzeitige ONNX-Inferenzen und
-                # verhindert CPU-Oversubscription unter paralleler Last.
+            # Die (bis zu 3) CE-Gate-Reranks pro Turn PARALLEL über den
+            # gedeckelten Rerank-Pool fahren (2026-06-15): mit intra_op=1
+            # nutzt jeder Call 1 Kern, sequenziell würden sich die Latenzen
+            # addieren (~3×). Parallel überlappen sie (Latenz ≈ max statt
+            # Summe); der Pool-Cap (max_workers) begrenzt die Gesamt-
+            # Parallelität weiterhin, sodass unter Hochlast keine
+            # Oversubscription entsteht. Pro Target gekapselt — ein
+            # fehlgeschlagener Rerank lässt nur DIESES Target ungegatet,
+            # statt den ganzen Block abzubrechen.
+            async def _gate_one(_p):
                 def _gate_call(rt=_p["result_text"], nm=_p.get("name", "")):
                     return _ce_gate(
                         spec_query, rt,
                         tool_name=nm, allow_soft_fallback=_wants_tp,
                     )
-                _nt, _ = await _rerank_pool(_gate_call)
-                _p["result_text"] = _nt
+                try:
+                    _nt, _ = await _rerank_pool(_gate_call)
+                    _p["result_text"] = _nt
+                except Exception as _ge:
+                    logger.warning(
+                        "CE card-gate failed for %s: %s", _p.get("name", ""), _ge
+                    )
+            await asyncio.gather(*[_gate_one(_p) for _p in _ce_targets])
         except Exception as _ce_err:
             logger.warning("CE card-gate failed: %s", _ce_err)
 

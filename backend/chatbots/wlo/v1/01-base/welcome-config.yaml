@@ -1,0 +1,13 @@
+# Begrüßung & Start-Quick-Replies (Studio-pflegbar)
+# Verwaltet über das Studio — Änderungen wirken live (mtime-Cache).
+
+welcome:
+  greeting: |-
+    Hey, schön dass du da bist! Ich bin Boerdi, die schlaue Eule von WissenLebtOnline.
+    Ich kann dir zeigen, wie du deine Wissens- oder Lerninhalte ins KI-Zeitalter bringst? Oder ich kann dir helfen vorhandene Inhalte in unserer Datenbasis zu finden.
+  quick_replies:
+  - Wie bringe ich meine Inhalte ins KI-Zeitalter?
+  - Ich suche Inhalte zu einem Thema.
+  - Führe mich systematisch durch die Webseite.
+  - Was ist WissenLebtOnline?
+  tour_reply: Führe mich systematisch durch die Webseite.

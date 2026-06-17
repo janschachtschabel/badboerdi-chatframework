@@ -158,7 +158,9 @@ interface HeaderNavButton {
               [sessionKey]="sessionKey"
               [sessionCookieDomain]="sessionCookieDomain"
               [sessionCookieMaxAge]="sessionCookieMaxAge"
-              [greeting]="greeting"
+              [greeting]="greeting || configGreeting()"
+              [startReplies]="startReplies()"
+              [tourReply]="tourReply()"
               [showDebugButton]="showDebugButton"
               [showLanguageButtons]="showLanguageButtons"
               [trustedHosts]="parsedTrustedHostList"
@@ -773,6 +775,12 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
    *  Backend ``/api/config/guide-mode`` → ``header_nav`` (Studio-pflegbar via
    *  01-base/header-nav.yaml). Leer = keine Buttons. */
   headerNavButtons = signal<HeaderNavButton[]>([]);
+  /** Begrüßung + Start-Quick-Replies aus der Studio-Config (welcome).
+   *  Beim Boot via /api/config/guide-mode → ``welcome`` geholt und an die
+   *  ChatComponent durchgereicht. Leer → deren hardkodierter Fallback. */
+  configGreeting = signal<string>('');
+  startReplies = signal<string[]>([]);
+  tourReply = signal<string>('');
 
   /** Einmaliger „Hallo"-Hinweis am Owl-Kopf beim ersten Öffnen pro Session:
    *  Kopf wackelt + Sprechblase erscheinen automatisch, nach 3s wieder weg.
@@ -1320,6 +1328,21 @@ export class WidgetComponent implements OnInit, AfterViewInit, OnDestroy, OnChan
                 new_tab: !!b.new_tab,
               })),
           );
+        }
+        // Begrüßung + Start-Quick-Replies (Studio: welcome-config.yaml).
+        const w = data?.welcome;
+        if (w && typeof w === 'object') {
+          if (typeof w.greeting === 'string' && w.greeting.trim()) {
+            this.configGreeting.set(w.greeting);
+          }
+          if (Array.isArray(w.quick_replies)) {
+            this.startReplies.set(
+              w.quick_replies.map((r: unknown) => String(r || '')).filter((r: string) => r.trim()),
+            );
+          }
+          if (typeof w.tour_reply === 'string') {
+            this.tourReply.set(w.tour_reply);
+          }
         }
       }
     } catch {

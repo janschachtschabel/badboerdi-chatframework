@@ -1,0 +1,287 @@
+{
+ "id": "lt-960a4d11bf6c",
+ "status": "completed",
+ "created_at": "2026-06-15T18:19:11.477374+00:00",
+ "finished_at": "2026-06-15T18:19:30.074103+00:00",
+ "profile": {
+  "stages": [
+   16
+  ],
+  "requests_per_stage": 16,
+  "mix": {
+   "wissen": 2,
+   "suche": 2,
+   "orientierung": 1
+  },
+  "p95_threshold_s": 20.0,
+  "total_requests": 16
+ },
+ "stages": [
+  {
+   "concurrency": 16,
+   "requests": 16,
+   "ok": 16,
+   "errors": 0,
+   "error_kinds": [],
+   "p50_s": 5.72,
+   "p95_s": 7.39,
+   "max_s": 18.59,
+   "mean_s": 6.02,
+   "duration_s": 18.6,
+   "rps": 0.86,
+   "by_kind": {
+    "orientierung": {
+     "n": 3,
+     "ok": 3,
+     "p50_s": 7.39,
+     "p95_s": 18.59
+    },
+    "suche": {
+     "n": 6,
+     "ok": 6,
+     "p50_s": 3.89,
+     "p95_s": 6.27
+    },
+    "wissen": {
+     "n": 7,
+     "ok": 7,
+     "p50_s": 5.72,
+     "p95_s": 6.7
+    }
+   }
+  }
+ ],
+ "resource_samples": [
+  {
+   "t": 0.0,
+   "proc_cpu": 0.0,
+   "sys_cpu": 0.0,
+   "rss_mb": 168.7
+  },
+  {
+   "t": 0.49,
+   "proc_cpu": 87.5,
+   "sys_cpu": 29.7,
+   "rss_mb": 174.3
+  },
+  {
+   "t": 1.0,
+   "proc_cpu": 28.1,
+   "sys_cpu": 13.4,
+   "rss_mb": 175.4
+  },
+  {
+   "t": 1.51,
+   "proc_cpu": 25.0,
+   "sys_cpu": 4.1,
+   "rss_mb": 175.8
+  },
+  {
+   "t": 2.02,
+   "proc_cpu": 0.0,
+   "sys_cpu": 1.1,
+   "rss_mb": 175.8
+  },
+  {
+   "t": 2.5,
+   "proc_cpu": 61.2,
+   "sys_cpu": 11.2,
+   "rss_mb": 176.0
+  },
+  {
+   "t": 3.0,
+   "proc_cpu": 46.9,
+   "sys_cpu": 8.5,
+   "rss_mb": 176.0
+  },
+  {
+   "t": 3.51,
+   "proc_cpu": 24.3,
+   "sys_cpu": 8.8,
+   "rss_mb": 176.1
+  },
+  {
+   "t": 4.0,
+   "proc_cpu": 35.4,
+   "sys_cpu": 6.1,
+   "rss_mb": 176.2
+  },
+  {
+   "t": 4.52,
+   "proc_cpu": 18.2,
+   "sys_cpu": 10.2,
+   "rss_mb": 176.2
+  },
+  {
+   "t": 5.0,
+   "proc_cpu": 6.4,
+   "sys_cpu": 6.4,
+   "rss_mb": 176.2
+  },
+  {
+   "t": 5.5,
+   "proc_cpu": 0.0,
+   "sys_cpu": 1.9,
+   "rss_mb": 176.2
+  },
+  {
+   "t": 6.0,
+   "proc_cpu": 6.2,
+   "sys_cpu": 2.7,
+   "rss_mb": 171.2
+  },
+  {
+   "t": 6.52,
+   "proc_cpu": 3.0,
+   "sys_cpu": 7.0,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 7.02,
+   "proc_cpu": 9.1,
+   "sys_cpu": 5.7,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 7.55,
+   "proc_cpu": 6.1,
+   "sys_cpu": 2.0,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 8.05,
+   "proc_cpu": 0.0,
+   "sys_cpu": 3.1,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 8.57,
+   "proc_cpu": 0.0,
+   "sys_cpu": 7.6,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 9.08,
+   "proc_cpu": 0.0,
+   "sys_cpu": 2.3,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 9.6,
+   "proc_cpu": 3.0,
+   "sys_cpu": 7.2,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 10.09,
+   "proc_cpu": 6.2,
+   "sys_cpu": 15.6,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 10.61,
+   "proc_cpu": 3.0,
+   "sys_cpu": 19.5,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 11.11,
+   "proc_cpu": 0.0,
+   "sys_cpu": 11.5,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 11.62,
+   "proc_cpu": 0.0,
+   "sys_cpu": 4.6,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 12.13,
+   "proc_cpu": 0.0,
+   "sys_cpu": 1.9,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 12.65,
+   "proc_cpu": 0.0,
+   "sys_cpu": 8.3,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 13.18,
+   "proc_cpu": 0.0,
+   "sys_cpu": 1.1,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 13.68,
+   "proc_cpu": 0.0,
+   "sys_cpu": 1.0,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 14.18,
+   "proc_cpu": 0.0,
+   "sys_cpu": 1.7,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 14.7,
+   "proc_cpu": 0.0,
+   "sys_cpu": 9.8,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 15.2,
+   "proc_cpu": 0.0,
+   "sys_cpu": 1.6,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 15.71,
+   "proc_cpu": 0.0,
+   "sys_cpu": 0.8,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 16.22,
+   "proc_cpu": 0.0,
+   "sys_cpu": 2.1,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 16.71,
+   "proc_cpu": 0.0,
+   "sys_cpu": 9.0,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 17.22,
+   "proc_cpu": 0.0,
+   "sys_cpu": 1.7,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 17.72,
+   "proc_cpu": 0.0,
+   "sys_cpu": 0.0,
+   "rss_mb": 171.3
+  },
+  {
+   "t": 18.22,
+   "proc_cpu": 0.0,
+   "sys_cpu": 2.7,
+   "rss_mb": 171.3
+  }
+ ],
+ "summary": {
+  "stable_concurrency": 16,
+  "p95_threshold_s": 20.0,
+  "peak_rss_mb": 176.2,
+  "peak_proc_cpu_pct": 87.5,
+  "total_requests": 16,
+  "total_errors": 0
+ },
+ "error": null
+}

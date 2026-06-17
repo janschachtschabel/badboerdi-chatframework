@@ -185,6 +185,13 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   @Input() sessionCookieMaxAge: number | string = 30 * 24 * 60 * 60;
   /** Override the initial greeting. */
   @Input() greeting = '';
+  /** Start-Quick-Replies (Studio-pflegbar via welcome-config). Leer →
+   *  hardkodierter Fallback in showGreeting(). */
+  @Input() startReplies: string[] = [];
+  /** Exakter Text des Start-Chips, der die Web-Tour direkt starten soll
+   *  (statt als Nachricht gesendet zu werden). Studio-pflegbar via
+   *  welcome-config.tour_reply. Leer → kein Chip startet die Tour. */
+  @Input() tourReply = '';
   /** Show the debug-toggle (🔍) button in the header. Default true.
    *  Set to false to hide the developer debug panel toggle in production. */
   @Input() showDebugButton: boolean | string = true;
@@ -378,20 +385,26 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
    *  sieht. Das `greeting`-Input ueberschreibt den Default-Text.
    */
   private showGreeting(): void {
+    // Reihenfolge: HTML-Attribut ``greeting`` > Studio-Config (welcome) >
+    // hardkodierter Fallback. Die Config wird vom Widget via
+    // /api/config/guide-mode → welcome geholt und als Inputs gesetzt.
     const text = this.greeting
       ||
       'Hey, schön dass du da bist! Ich bin Boerdi, die schlaue Eule von '
-      + 'WirLernenOnline. Suchst du etwas Bestimmtes oder willst du erstmal '
-      + 'schauen, was du hier machen kannst?';
+      + 'WissenLebtOnline.\nIch kann dir zeigen, wie du deine Wissens- oder '
+      + 'Lerninhalte ins KI-Zeitalter bringst? Oder ich kann dir helfen '
+      + 'vorhandene Inhalte in unserer Datenbasis zu finden.';
     // Einstiegspunkte: werden bei Klick als normale User-Message gesendet
-    // und vom Classifier in die passenden Intents (INT-W-01, -02, -03, -11)
-    // geroutet — kein extra Backend-Code noetig.
-    const replies = [
-      'Wie kannst du mir helfen?',
-      'Ich suche etwas zu einem Thema.',
-      'Was ist WissenLebtOnline?',
-      ChatComponent.TOUR_START_LABEL,
-    ];
+    // und vom Classifier in die passenden Intents geroutet — kein extra
+    // Backend-Code noetig. Studio-pflegbar via welcome-config.quick_replies.
+    const replies = (this.startReplies && this.startReplies.length)
+      ? this.startReplies
+      : [
+          'Wie bringe ich meine Inhalte ins KI-Zeitalter?',
+          'Ich suche Inhalte zu einem Thema.',
+          'Führe mich systematisch durch die Webseite.',
+          'Was ist WissenLebtOnline?',
+        ];
     this.addBotMessage(text, false, undefined, replies);
   }
 
@@ -620,8 +633,11 @@ export class ChatComponent implements OnInit, OnChanges, AfterViewChecked, OnDes
   }
 
   onQuickReply(reply: string) {
-    // Web-Tour-Startbutton: kein normaler Chat-Turn, sondern Tour-Einstieg.
-    if (reply === ChatComponent.TOUR_START_LABEL) {
+    // Web-Tour-Startbutton ODER der im Studio als Tour-Starter markierte
+    // Start-Chip (welcome-config.tour_reply): kein normaler Chat-Turn,
+    // sondern Tour-Einstieg — zuverlässig, ohne Phrasen-Matching.
+    if (reply === ChatComponent.TOUR_START_LABEL
+        || (this.tourReply && reply === this.tourReply)) {
       this.startTour();
       return;
     }

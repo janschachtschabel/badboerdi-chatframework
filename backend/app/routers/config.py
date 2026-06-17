@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import logging
-import os
 import re
 import sqlite3
 import tempfile
@@ -13,12 +12,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.models.schemas import ConfigFile
-from app.services.auth import require_studio_key
 from app.services.config_loader import (
     CHATBOT_DIR,
     list_config_files,
@@ -253,13 +251,82 @@ async def get_guide_mode_config_route():
     every embedder's browser and doesn't have the Studio API key.
     """
     from app.services.config_loader import (
-        load_guide_mode_config, load_header_nav_config,
+        load_guide_mode_config, load_header_nav_config, load_welcome_config,
     )
     cfg = load_guide_mode_config()
     # Optionale Kopfzeilen-Nav-Buttons (Studio-pflegbar) gleich mitliefern,
     # damit das Widget sie ohne zweiten Boot-Request rendern kann.
     cfg["header_nav"] = load_header_nav_config().get("buttons", [])
+    # Begrüßung + Start-Quick-Replies (Studio-pflegbar) ebenfalls im
+    # Boot-Request mitliefern — das Widget rendert sie als Start-Bubble.
+    cfg["welcome"] = load_welcome_config()
     return cfg
+
+
+class WelcomeConfig(BaseModel):
+    greeting: str
+    quick_replies: list[str]
+    # Exakter Text des Chips, der die Web-Tour direkt startet (statt als
+    # Nachricht gesendet zu werden). Leer = kein Chip startet die Tour.
+    tour_reply: str = ""
+
+
+@router.get("/welcome", response_model=WelcomeConfig)
+async def get_welcome_config():
+    """Begrüßung + Start-Quick-Replies als typisiertes JSON (Studio-Editor)."""
+    from app.services.config_loader import load_welcome_config
+    return WelcomeConfig(**load_welcome_config())
+
+
+@router.put("/welcome", response_model=WelcomeConfig)
+async def update_welcome_config(cfg: WelcomeConfig):
+    """Persistiert Begrüßung + Start-Quick-Replies nach
+    01-base/welcome-config.yaml (yaml.safe_dump → sicheres Escaping von
+    Sonderzeichen/Mehrzeilern). Leere Eingaben werden abgewiesen, damit
+    das Widget nie ohne Begrüßung dasteht."""
+    import yaml as _yaml
+
+    greeting = (cfg.greeting or "").strip()
+    if not greeting:
+        raise HTTPException(status_code=400, detail="greeting darf nicht leer sein")
+    replies = [r.strip() for r in (cfg.quick_replies or []) if r and r.strip()]
+    if not replies:
+        raise HTTPException(status_code=400, detail="mindestens eine Quick-Reply nötig")
+    # tour_reply muss — falls gesetzt — exakt einer der Quick-Replies sein,
+    # sonst würde der Tour-Trigger ins Leere laufen.
+    tour_reply = (cfg.tour_reply or "").strip()
+    if tour_reply and tour_reply not in replies:
+        raise HTTPException(
+            status_code=400,
+            detail="tour_reply muss exakt einer der quick_replies sein",
+        )
+
+    def _str_repr(dumper, data):
+        if "\n" in data:
+            return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+    class _WelcomeDumper(_yaml.SafeDumper):
+        pass
+
+    _WelcomeDumper.add_representer(str, _str_repr)
+    body = (
+        "# Begrüßung & Start-Quick-Replies (Studio-pflegbar)\n"
+        "# Verwaltet über das Studio — Änderungen wirken live (mtime-Cache).\n"
+        "\n"
+        + _yaml.dump(
+            {"welcome": {
+                "greeting": greeting,
+                "quick_replies": replies,
+                "tour_reply": tour_reply,
+            }},
+            Dumper=_WelcomeDumper, allow_unicode=True, sort_keys=False,
+            default_flow_style=False,
+        )
+    )
+    write_config_file("01-base/welcome-config.yaml", body)
+    from app.services.config_loader import load_welcome_config
+    return WelcomeConfig(**load_welcome_config())
 
 
 @router.put("/privacy", response_model=PrivacyConfig)
@@ -700,7 +767,7 @@ async def put_personas_route(payload: dict):
     (personality_text).
     """
     from app.services.config_loader import (
-        _persona_slug, _validate_config_path, invalidate_yaml_cache, CHATBOT_DIR,
+        _persona_slug, _validate_config_path, invalidate_yaml_cache,
     )
     from ruamel.yaml import YAML
     raw = payload.get("personas")
@@ -842,7 +909,6 @@ async def put_patterns_route(payload: dict):
     """
     from app.services.config_loader import (
         load_pattern_definitions, _validate_config_path, invalidate_yaml_cache,
-        CHATBOT_DIR,
     )
     from ruamel.yaml import YAML
     from ruamel.yaml.scalarstring import LiteralScalarString
