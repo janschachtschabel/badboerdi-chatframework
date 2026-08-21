@@ -1,7 +1,7 @@
 ---
 id: wlo-fachportale-027
 title: "WLO-Fachportale und Community-Portale — Themenseiten, Redaktionen, 5-Schritte-Prozess"
-source: "https://wp-test.wirlernenonline.de/fachportale/"
+source: "https://wissenlebtonline.de/fachportale/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [fachportale, themenseiten, oer-fachredaktion, community-portale, redaktion-gruenden, themenbaum, wissenssammlungen, fachgesellschaften, verbände, ki-zeitalter, 5-schritte, zum, oerinfo]

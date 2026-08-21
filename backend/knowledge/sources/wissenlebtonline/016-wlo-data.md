@@ -1,7 +1,7 @@
 ---
 id: wlo-data-016
 title: "WLO Data — Daten für Bildungsanwendungen und KI-Training"
-source: "https://wp-test.wirlernenonline.de/wlo-inhalte-fuer-deine-suchmaschine/"
+source: "https://wissenlebtonline.de/wlo-inhalte-fuer-deine-suchmaschine/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [wlo-data, ki-training, metadaten, themenbaum, sammlungen, kompendialtexte, volltexte, qa-paare, nlp-modelle, knowledge-graph, vokabulare, adaptionsvariablen, refined-data, rag, llm]

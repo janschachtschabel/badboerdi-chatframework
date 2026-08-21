@@ -1,7 +1,7 @@
 ---
 id: faq-lehrende-lernende-001
 title: "FAQ — Lehrkräfte und Lernende"
-source: "https://wp-test.wirlernenonline.de/faq/ + /bildungsinhalte/"
+source: "https://wissenlebtonline.de/faq/ + /bildungsinhalte/"
 updated: 2026-03-27
 license: "CC BY 4.0"
 attribution: "WirLernenOnline / WissenLebtOnline"
@@ -17,19 +17,19 @@ status: active
 
 Bildungsmaterialien, Methoden, Tools, Lernorte, Veranstaltungen und Informationen zu Berufen. Über **316.000 Inhalte** in der Suche, **25.178 geprüfte** in **2.970 Themensammlungen**.
 
-→ Suche: <https://suche.wp-test.wirlernenonline.de/search/de/search>
+→ Suche: <https://suche.wirlernenonline.de/search/de/search>
 
 ## Was sind Fachportale und Themenseiten?
 
 **29 Fachportale** bündeln Inhalte nach Fachgebiet. Jedes hat **50–200 Themenseiten** je Lehrplanthema. Redaktionell geprüfte Materialien — wie Schaufenster zu einem Thema.
 
-→ Fachportale: <https://wp-test.wirlernenonline.de/bildungsinhalte/>
+→ Fachportale: <https://wissenlebtonline.de/bildungsinhalte/>
 
 ## Wie nutze ich die Suchmaschine?
 
 Suchbegriffe eingeben, filtern nach **Fachgebiet, Bildungsumfeld, Medienart und Veröffentlichungsart**.
 
-→ Suche: <https://suche.wp-test.wirlernenonline.de/search/de/search>
+→ Suche: <https://suche.wirlernenonline.de/search/de/search>
 
 ## Kann ich nach Klassenstufe filtern?
 
@@ -55,7 +55,7 @@ Die meisten ja (**OER**). Bei manchen ist Anmeldung auf der Originalseite nötig
 
 **Ja!** Über Redaktionsumgebung oder Schnittstellen.
 
-→ Mitmachen: <https://wp-test.wirlernenonline.de/mitmachen/>
+→ Mitmachen: <https://wissenlebtonline.de/mitmachen/>
 
 ## Was meint „Freie Bildung zum Mitmachen"?
 

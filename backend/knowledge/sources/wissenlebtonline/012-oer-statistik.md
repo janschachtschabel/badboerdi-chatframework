@@ -1,7 +1,7 @@
 ---
 id: wlo-oer-statistik-012
 title: "Deutsche OER-Statistik — Zahlen 2022 bis 2025"
-source: "https://wp-test.wirlernenonline.de/oer-statistik/"
+source: "https://wissenlebtonline.de/oer-statistik/"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [oer-statistik, zahlen, jahresvergleich, hochschule, schule, berufliche-bildung, elementarbereich, pdfs]

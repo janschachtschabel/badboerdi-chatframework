@@ -130,7 +130,7 @@ Der **OERcamp-Goldstandard** definiert Qualitätskriterien:
 - **bpb OER-Lernmodul**: <https://www.bpb.de/lernen/digitale-bildung/oer-material-fuer-alle/>
 - **iRights.info** OER-Artikel: <https://irights.info/>
 - **OERcamp Goldstandard**: <https://www.oercamp.de/>
-- **WLO OER-Statistik**: <https://wp-test.wirlernenonline.de/oer-statistik/>
+- **WLO OER-Statistik**: <https://wissenlebtonline.de/oer-statistik/>
 - **CC License Chooser**: <https://creativecommons.org/choose/>
 
 ## Querverweise

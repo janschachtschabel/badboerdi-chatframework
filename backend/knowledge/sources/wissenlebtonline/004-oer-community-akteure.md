@@ -1,7 +1,7 @@
 ---
 id: wlo-oer-akteure-004
 title: "WissenLebtOnline für OER-Akteure: Lehrende, Lernende, Autor:innen"
-source: "https://wp-test.wirlernenonline.de/oer-community/"
+source: "https://wissenlebtonline.de/oer-community/"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [oer, community, lehrende, lernende, autoren, oer-cockpit, oer-redaktion]

@@ -1,7 +1,7 @@
 ---
 id: wlo-quellen-025
 title: "WLO Quellen und Qualitätssicherung — 657 Quellen, Kriterien und Erschließungswege"
-source: "https://wp-test.wirlernenonline.de/datenquellen/"
+source: "https://wissenlebtonline.de/datenquellen/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [quellen, quellenverzeichnis, qualitaetssicherung, qualitaetskriterien, erschliessung, crawler, oai-pmh, rest, csv, fachredaktionen, oer, datenquellen]

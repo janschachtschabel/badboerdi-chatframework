@@ -1,7 +1,7 @@
 ---
 id: wlo-politik-007
 title: "WissenLebtOnline für Politik und Rahmensetzer"
-source: "https://wp-test.wirlernenonline.de/wlo-fuer-politik/"
+source: "https://wissenlebtonline.de/wlo-fuer-politik/"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [politik, rahmensetzer, foerderung, handlungsempfehlungen, ki-strategie, oekosystem, transfer]

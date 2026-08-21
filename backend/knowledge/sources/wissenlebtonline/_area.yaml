@@ -1,6 +1,6 @@
 # RAG-Bereich: WissenLebtOnline
 # ============================================================================
-# Inhalte der WissenLebtOnline-Webseite (wp-test.wirlernenonline.de) sowie
+# Inhalte der WissenLebtOnline-Webseite (wissenlebtonline.de) sowie
 # allgemeine OER-Grundlagen, die Teil der Plattform-Philosophie sind.
 #
 # Branding-Hinweis: Bis ca. Ende April 2026 lief das Projekt unter
@@ -18,8 +18,8 @@ description: >
   Wird bei jeder Nutzernachricht als Kontext eingeblendet, damit der
   Chatbot Fragen zur Plattform und zu OER souveraen beantworten kann.
 source_urls:
-  - https://wp-test.wirlernenonline.de/
-  - https://wp-test.wirlernenonline.de/bildungsinhalte/oer/
+  - https://wissenlebtonline.de/
+  - https://wissenlebtonline.de/bildungsinhalte/oer/
 brand_note: >
   Branding-Wechsel April/Mai 2026: WirLernenOnline (WLO) ->
   WissenLebtOnline. Der Chatbot soll beide Namen kennen und den neuen

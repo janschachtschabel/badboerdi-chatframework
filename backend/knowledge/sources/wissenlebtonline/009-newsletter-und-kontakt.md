@@ -1,7 +1,7 @@
 ---
 id: wlo-newsletter-009
 title: "Newsletter, Kontakt und Community-Angebote bei WissenLebtOnline"
-source: "https://wp-test.wirlernenonline.de/ (Footer, mehrfach auf allen Zielgruppen-Seiten wiederholt)"
+source: "https://wissenlebtonline.de/ (Footer, mehrfach auf allen Zielgruppen-Seiten wiederholt)"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [newsletter, kontakt, community, transfernewsletter, hackathoern, webinare, code-of-conduct]
@@ -55,7 +55,7 @@ Speziell für Hersteller, die ihre Software ins Ökosystem bringen wollen
 ## Kontakt
 
 - **E-Mail**: info@WissenLebtOnline.de
-- **Web**: https://wp-test.wirlernenonline.de/ (Übergangs-URL, später
+- **Web**: https://wissenlebtonline.de/ (Übergangs-URL, später
   voraussichtlich ohne Subdomain)
 
 ## Community-Grundlagen und Rechtliches

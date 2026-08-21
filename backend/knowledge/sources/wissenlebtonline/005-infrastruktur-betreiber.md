@@ -1,7 +1,7 @@
 ---
 id: wlo-infra-betreiber-005
 title: "WissenLebtOnline für Infrastruktur-Betreiber und Software-Betreiber"
-source: "https://wp-test.wirlernenonline.de/software-betreiber/"
+source: "https://wissenlebtonline.de/software-betreiber/"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [infrastruktur, hosting, gwdg, paas, saas, kubernetes, edu-sharing, bildungs-api, ims-lti, bundeslaender]

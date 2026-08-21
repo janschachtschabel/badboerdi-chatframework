@@ -1,7 +1,7 @@
 ---
 id: wlo-lms-cms-connect-017
 title: "LMS-/CMS-Connect — WLO-Inhalte in eigenen Lernplattformen, WebCMS und Editoren nutzen"
-source: "https://wp-test.wirlernenonline.de/angebote/integrationen-fuer-lernplattformen-und-web-cms/"
+source: "https://wissenlebtonline.de/angebote/integrationen-fuer-lernplattformen-und-web-cms/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [lms, webcms, editoren, ims-lti, oembed, moodle, ilias, openolat, dbildungscloud, wordpress, mediawiki, drupal, onlyoffice, serlo, geogebra, bundeslaender]

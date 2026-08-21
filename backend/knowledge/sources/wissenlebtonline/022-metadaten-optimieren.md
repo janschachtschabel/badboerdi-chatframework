@@ -1,7 +1,7 @@
 ---
 id: wlo-metadaten-022
 title: "Metadaten optimieren und selbst nutzen — Redaktionslösung und KI-Anreicherung"
-source: "https://wp-test.wirlernenonline.de/metadaten-verbessern-lassen/"
+source: "https://wissenlebtonline.de/metadaten-verbessern-lassen/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [metadaten, metadatengenerierung, ki-klassifikation, qualitaetssicherung, metaqs, api-integration, suchmaschinen, empfehlungssysteme, interoperabilitaet, vokabulare, themenbaum]

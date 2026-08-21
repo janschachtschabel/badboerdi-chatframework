@@ -1,7 +1,7 @@
 ---
 id: wlo-module-008
 title: "Plattform-Module von WissenLebtOnline: zentrale Referenz"
-source: "https://wp-test.wirlernenonline.de/ (zusammengeführt aus Redaktionen, Content-Anbieter, OER-Community, Infrastruktur-Betreiber, Entwickler, Politik)"
+source: "https://wissenlebtonline.de/ (zusammengeführt aus Redaktionen, Content-Anbieter, OER-Community, Infrastruktur-Betreiber, Entwickler, Politik)"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [module, referenz, redaktionsumgebung, bildungs-api, themenseiten, automatisierung, monitoring, oekosystem, gwdg, edu-sharing]

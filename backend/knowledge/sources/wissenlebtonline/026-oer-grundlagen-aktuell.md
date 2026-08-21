@@ -1,7 +1,7 @@
 ---
 id: wlo-oer-grundlagen-026
 title: "OER, OER-Redaktion, OER-Community — Grundlagen, Rechtliches, Tools, Ökosystem"
-source: "https://wp-test.wirlernenonline.de/bildungsinhalte/oer/"
+source: "https://wissenlebtonline.de/bildungsinhalte/oer/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [oer, open-educational-resources, cc-lizenz, oer-fachredaktion, oer-community, oer-statistik, remix, cc-mixer, oep, oer-oekosystem, jointly, moerfi, hackathOERn, zum, oerinfo, bündnis-freie-bildung]

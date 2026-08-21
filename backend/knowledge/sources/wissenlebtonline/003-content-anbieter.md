@@ -1,7 +1,7 @@
 ---
 id: wlo-content-anbieter-003
 title: "WissenLebtOnline für Anbieter von Wissens- und Bildungsinhalten"
-source: "https://wp-test.wirlernenonline.de/contentanbieter/"
+source: "https://wissenlebtonline.de/contentanbieter/"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [content-anbieter, zielgruppe, datenbasen, oai-pmh, rest, crawler, metadaten]

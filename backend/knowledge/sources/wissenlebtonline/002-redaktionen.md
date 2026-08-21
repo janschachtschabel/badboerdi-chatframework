@@ -1,7 +1,7 @@
 ---
 id: wlo-redaktionen-002
 title: "WissenLebtOnline für Redaktionen: Bildungs- und Wissensinhalte"
-source: "https://wp-test.wirlernenonline.de/redaktionen/"
+source: "https://wissenlebtonline.de/redaktionen/"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [redaktionen, zielgruppe, paedagogische-zentren, fachgesellschaften, behoerden, forschung, bibliotheken, verlage, oer-initiativen]

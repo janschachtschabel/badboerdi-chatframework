@@ -1,7 +1,7 @@
 ---
 id: wlo-kontakt-oer-red-013
 title: "Kontakt zur OER-Redaktion — Einstieg und Onboarding"
-source: "https://wp-test.wirlernenonline.de/mitmachen/kontakt-oer-redaktion/?servicetyp=OER-Redaktion"
+source: "https://wissenlebtonline.de/mitmachen/kontakt-oer-redaktion/?servicetyp=OER-Redaktion"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [mitmachen, oer-redaktion, onboarding, einstieg, kontaktformular, coach, community]

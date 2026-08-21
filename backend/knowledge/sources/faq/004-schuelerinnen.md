@@ -1,7 +1,7 @@
 ---
 id: faq-schuelerinnen-004
 title: "FAQ — Schüler:innen"
-source: "https://wp-test.wirlernenonline.de/faq/ + /bildungsinhalte/"
+source: "https://wissenlebtonline.de/faq/ + /bildungsinhalte/"
 updated: 2026-03-27
 license: "CC BY 4.0"
 attribution: "WirLernenOnline / WissenLebtOnline"
@@ -17,7 +17,7 @@ status: active
 
 **Nach Lernmaterialien suchen.** Thema eingeben — z. B. „Klimawandel" oder „Bruchrechnung" — und WLO zeigt **Videos, Arbeitsblätter, interaktive Übungen** und mehr.
 
-→ Suche: <https://suche.wp-test.wirlernenonline.de/search/de/search>
+→ Suche: <https://suche.wirlernenonline.de/search/de/search>
 
 ## Muss ich mich anmelden?
 
@@ -31,13 +31,13 @@ Die meisten ja (**OER**). Bei manchen ist Anmeldung auf der Originalseite nötig
 
 **Wie Schaufenster zu einem Thema.** Pro Fach gibt es Themenseiten mit den besten Materialien — **redaktionell geprüft**.
 
-→ Fachportale: <https://wp-test.wirlernenonline.de/bildungsinhalte/>
+→ Fachportale: <https://wissenlebtonline.de/bildungsinhalte/>
 
 ## Kann ich auch eigene Materialien teilen?
 
 **Ja!** Über die Mitmach-Seite.
 
-→ Mitmachen: <https://wp-test.wirlernenonline.de/mitmachen/>
+→ Mitmachen: <https://wissenlebtonline.de/mitmachen/>
 
 ## Querverweise
 

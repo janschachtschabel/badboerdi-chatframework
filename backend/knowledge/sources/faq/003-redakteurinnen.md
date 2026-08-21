@@ -1,7 +1,7 @@
 ---
 id: faq-redakteurinnen-003
 title: "FAQ — Redakteur:innen"
-source: "https://wp-test.wirlernenonline.de/redaktionen/ + /faq/"
+source: "https://wissenlebtonline.de/redaktionen/ + /faq/"
 updated: 2026-03-27
 license: "CC BY 4.0"
 attribution: "WirLernenOnline / WissenLebtOnline"
@@ -17,7 +17,7 @@ status: active
 
 **Systematische Aufbereitung von Inhalten fürs KI-Zeitalter.** Inhalte werden maschinenlesbar, erscheinen in Bildungsplattformen, Suchmaschinen und KI-Anwendungen.
 
-→ Redaktionen: <https://wp-test.wirlernenonline.de/redaktionen/>
+→ Redaktionen: <https://wissenlebtonline.de/redaktionen/>
 
 ## Für wen?
 
@@ -33,7 +33,7 @@ status: active
 
 **Redaktionswissen in Software gegossen.** Integriert Expertise aus **Informationswissenschaft, 30 Fachredaktionen und KI-Fachwissen**.
 
-→ Software: <https://wp-test.wirlernenonline.de/wlo-redaktionssoftware/>
+→ Software: <https://wissenlebtonline.de/wlo-redaktionssoftware/>
 
 ## Welche Werkzeuge?
 
@@ -45,10 +45,10 @@ status: active
 
 **Links**:
 
-- → Automatisierung: <https://wp-test.wirlernenonline.de/wlo-redaktionssoftware/#Themensammlung>
-- → Themenseiten: <https://wp-test.wirlernenonline.de/wlo-redaktionssoftware/#Themenseiten>
-- → LMS: <https://wp-test.wirlernenonline.de/angebote/integrationen-fuer-lernplattformen-und-web-cms/>
-- → KI-Ökosystem: <https://wp-test.wirlernenonline.de/software-service-in-infrastruktur-integrieren/>
+- → Automatisierung: <https://wissenlebtonline.de/wlo-redaktionssoftware/#Themensammlung>
+- → Themenseiten: <https://wissenlebtonline.de/wlo-redaktionssoftware/#Themenseiten>
+- → LMS: <https://wissenlebtonline.de/angebote/integrationen-fuer-lernplattformen-und-web-cms/>
+- → KI-Ökosystem: <https://wissenlebtonline.de/software-service-in-infrastruktur-integrieren/>
 
 ## KI-Assistenten — Datenbasis?
 
@@ -63,8 +63,8 @@ Sammlungen werden **automatisch in eine maschinenlesbare Wissensbasis transformi
 
 Redaktion **gründen** oder an **bestehender teilnehmen**.
 
-- → Mitmachen: <https://wp-test.wirlernenonline.de/mitmachen/>
-- → Login: <https://wp-test.wirlernenonline.de/login-registrierung/>
+- → Mitmachen: <https://wissenlebtonline.de/mitmachen/>
+- → Login: <https://wissenlebtonline.de/login-registrierung/>
 
 ## Querverweise
 

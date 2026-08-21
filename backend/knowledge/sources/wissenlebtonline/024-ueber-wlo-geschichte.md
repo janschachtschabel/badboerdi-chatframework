@@ -1,7 +1,7 @@
 ---
 id: wlo-ueber-024
 title: "WLO, Partner und die Open Education Community — Geschichte und Hintergrund"
-source: "https://wp-test.wirlernenonline.de/ueber-wlo/"
+source: "https://wissenlebtonline.de/ueber-wlo/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [geschichte, partner, oer-community, edu-sharing, gwdg, wikimedia, joeran, jointly, oerinfo, pandemie, wlo-2020, itsjoitly, nvi, umbenennung, wissenlebtonline, blaupausen]

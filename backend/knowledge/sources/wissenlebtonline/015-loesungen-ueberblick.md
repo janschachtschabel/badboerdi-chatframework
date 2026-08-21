@@ -1,7 +1,7 @@
 ---
 id: wlo-loesungen-015
 title: "WLO Lösungen, Produkte, Angebote — Open Source Infrastruktur für Bildungs- und Lerninhalte"
-source: "https://wp-test.wirlernenonline.de/angebote/"
+source: "https://wissenlebtonline.de/angebote/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [loesungen, angebote, ueberblick, erschliessen, pflegen, zeigen, verbreiten, crawler, themenseiten, bildungs-api, ki-assistent, widgets, lernpfad]

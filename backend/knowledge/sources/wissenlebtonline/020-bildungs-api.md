@@ -1,7 +1,7 @@
 ---
 id: wlo-bildungs-api-020
 title: "Bildungs-API — Services und KI-Infrastruktur für Bildungsanwendungen"
-source: "https://wp-test.wirlernenonline.de/angebote/bildungs-api/"
+source: "https://wissenlebtonline.de/angebote/bildungs-api/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [bildungs-api, api-services, volltext-extraktion, bilderzeugung, metadaten-generierung, textstatistiken, rendering, docker, kubernetes, eigene-dienste]

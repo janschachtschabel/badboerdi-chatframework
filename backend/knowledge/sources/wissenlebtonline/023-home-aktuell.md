@@ -1,7 +1,7 @@
 ---
 id: wlo-home-aktuell-023
 title: "WissenLebtOnline — Startseite: Zielgruppen, Geschichte, Team und Newsletter"
-source: "https://wp-test.wirlernenonline.de/home/"
+source: "https://wissenlebtonline.de/home/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [home, startseite, zielgruppen, open-by-default, geschichte, newsletter, team, gwdg, edu-sharing, wissenlebtonline, wirlernenonline, 400k-inhalte, hackathOERn]

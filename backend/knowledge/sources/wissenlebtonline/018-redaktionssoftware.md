@@ -1,7 +1,7 @@
 ---
 id: wlo-redaktionssoftware-018
 title: "WLO-Redaktionssoftware — Open-Source-Redaktionslösung für Bildungs- und Informationsinhalte"
-source: "https://wp-test.wirlernenonline.de/wlo-redaktionssoftware/"
+source: "https://wissenlebtonline.de/wlo-redaktionssoftware/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [redaktionssoftware, edu-sharing, metaventis, gwdg, bildungs-api, ki-infrastruktur, metaqs, buffets, pruefbuffet, suchbuffet, redaktionsbuffet, themensammlung, themenseiten, bildungs-map, widgets, generischer-crawler, kooperationsvertrag, llm-as-a-judge]

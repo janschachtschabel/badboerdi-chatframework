@@ -1,7 +1,7 @@
 ---
 id: wlo-bildungsinhalte-011
 title: "Bildungsinhalte & Fachportale bei WissenLebtOnline"
-source: "https://wp-test.wirlernenonline.de/bildungsinhalte/"
+source: "https://wissenlebtonline.de/bildungsinhalte/"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [fachportale, themenseiten, zahlen, statistik, suche, open-by-default, mitmachen, oer-redaktion]

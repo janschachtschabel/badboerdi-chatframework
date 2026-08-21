@@ -1,7 +1,7 @@
 ---
 id: faq-politik-presse-006
 title: "FAQ — Politik und Presse"
-source: "https://wp-test.wirlernenonline.de/faq/ + /oer-statistik/"
+source: "https://wissenlebtonline.de/faq/ + /oer-statistik/"
 updated: 2026-03-27
 license: "CC BY 4.0"
 attribution: "WirLernenOnline / WissenLebtOnline"
@@ -21,7 +21,7 @@ status: active
 2. **Plattform** (Redaktionssoftware)
 3. **Produkte** (edu-sharing Open Source)
 
-→ FAQ: <https://wp-test.wirlernenonline.de/faq/>
+→ FAQ: <https://wissenlebtonline.de/faq/>
 
 ## Welche Rolle hat WLO im Bildungssystem?
 
@@ -58,7 +58,7 @@ status: active
 - **29 Fachportale**, **3.500 Themenseiten**
 - **edu-sharing** in **10 Bundesländern + Schweiz**
 
-→ OER-Statistik: <https://wp-test.wirlernenonline.de/oer-statistik/>
+→ OER-Statistik: <https://wissenlebtonline.de/oer-statistik/>
 
 ## Gesellschaftliche Wirkung?
 
@@ -70,7 +70,7 @@ status: active
 
 **edu-sharing** in **10 Bundesländern**. **OnPremise oder SaaS**.
 
-→ Lösungen: <https://wp-test.wirlernenonline.de/angebote/>
+→ Lösungen: <https://wissenlebtonline.de/angebote/>
 
 ## Pressekontakt
 

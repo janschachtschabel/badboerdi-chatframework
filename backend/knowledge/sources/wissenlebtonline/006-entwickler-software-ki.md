@@ -1,7 +1,7 @@
 ---
 id: wlo-entwickler-006
 title: "WissenLebtOnline für Entwickler von Software, Services und KI-Anwendungen"
-source: "https://wp-test.wirlernenonline.de/bildungsinfrastruktur-mitgestalten/"
+source: "https://wissenlebtonline.de/bildungsinfrastruktur-mitgestalten/"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [entwickler, software, ki, kubernetes, docker, oekosystem, onboarding, mcp, bildungs-api, gwdg]

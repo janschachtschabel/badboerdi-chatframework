@@ -1,7 +1,7 @@
 ---
 id: wlo-oer-001
 title: "OER — Grundlagen, Community und Rahmenwerk"
-source: "https://wp-test.wirlernenonline.de/bildungsinhalte/oer/"
+source: "https://wissenlebtonline.de/bildungsinhalte/oer/"
 updated: 2026-04-20
 license: "CC BY-SA 4.0"
 tags: [oer, grundlagen, community, redaktion, statistik, lizenzen, oekosystem]

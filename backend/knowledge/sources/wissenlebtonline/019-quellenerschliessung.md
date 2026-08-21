@@ -1,7 +1,7 @@
 ---
 id: wlo-quellenerschliessung-019
 title: "Automatisierte Quellenerschließung — Crawler, Browser-Extension und KI-Ansätze"
-source: "https://wp-test.wirlernenonline.de/automatisierte-quellenerschliessung/"
+source: "https://wissenlebtonline.de/automatisierte-quellenerschliessung/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [quellenerschliessung, crawler, generischer-crawler, browser-extension, ki-metadaten, docker, kubernetes, javascript, spa, edu-sharing, volltext-analyse, metadatengenerierung]

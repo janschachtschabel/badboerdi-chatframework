@@ -201,7 +201,7 @@ STUDIO_API_KEY=LANGER-ZUFALLS-STRING-HIER
 STUDIO_PASSWORD=SICHERES-PASSWORT-HIER
 
 # CORS — nur die tatsaechlich verwendeten Origins erlauben
-CORS_ORIGINS=https://wirlernenonline.de,https://studio.meinedomain.de,https://api.meinedomain.de
+CORS_ORIGINS=https://wissenlebtonline.de,https://wirlernenonline.de,https://studio.meinedomain.de,https://api.meinedomain.de
 ```
 
 **Keys generieren:**

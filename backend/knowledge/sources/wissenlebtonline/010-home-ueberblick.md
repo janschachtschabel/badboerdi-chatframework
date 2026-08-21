@@ -1,7 +1,7 @@
 ---
 id: wlo-home-010
 title: "WissenLebtOnline — Plattform-Überblick, Werdegang und Team"
-source: "https://wp-test.wirlernenonline.de/home/"
+source: "https://wissenlebtonline.de/home/"
 updated: 2026-04-20
 license: "CC BY 4.0"
 tags: [home, ueberblick, geschichte, team, gwdg, edu-sharing, pandemie, werdegang]

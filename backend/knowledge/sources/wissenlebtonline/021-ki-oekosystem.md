@@ -1,7 +1,7 @@
 ---
 id: wlo-ki-oekosystem-021
 title: "Souveränes KI-Ökosystem für Bildung — Infrastruktur, Modelle und Softwareentwicklung"
-source: "https://wp-test.wirlernenonline.de/angebote/souveraenes-ki-oekosystem/"
+source: "https://wissenlebtonline.de/angebote/souveraenes-ki-oekosystem/"
 updated: 2026-04-21
 license: "CC BY 4.0"
 tags: [ki-infrastruktur, gwdg, iso27001, din-iso-9001, lokale-ki-modelle, hackathOERn, softwareentwicklung, kubernetes, docker, compliance, onboarding, souveraen, lernpfad-generator, binnendifferenzierung]

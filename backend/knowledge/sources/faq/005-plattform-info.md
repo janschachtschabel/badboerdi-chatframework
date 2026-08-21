@@ -1,7 +1,7 @@
 ---
 id: faq-plattform-info-005
 title: "Plattform-Info — Was ist WLO?"
-source: "https://wp-test.wirlernenonline.de/"
+source: "https://wissenlebtonline.de/"
 updated: 2026-03-27
 license: "CC BY 4.0"
 attribution: "WirLernenOnline / WissenLebtOnline"
@@ -21,7 +21,7 @@ status: active
 
 WLO ist **kein Produkt und keine klassische Plattform**, sondern ein **Ökosystem**: Infrastruktur, Standards, Datenräume, Services und Community. Die Redaktionssoftware (**edu-sharing**) ist Open Source und in **10 Bundesländern + Schweiz** im Einsatz.
 
-→ Startseite: <https://wp-test.wirlernenonline.de/home/>
+→ Startseite: <https://wissenlebtonline.de/home/>
 
 ## Zahlen und Fakten
 
@@ -35,8 +35,8 @@ WLO ist **kein Produkt und keine klassische Plattform**, sondern ein **Ökosyste
   - **Berufliche Bildung**: 7.820 OER
   - **Elementarbereich**: 915 OER
 
-→ OER-Statistik: <https://wp-test.wirlernenonline.de/oer-statistik/>
-→ Bildungsinhalte: <https://wp-test.wirlernenonline.de/bildungsinhalte/>
+→ OER-Statistik: <https://wissenlebtonline.de/oer-statistik/>
+→ Bildungsinhalte: <https://wissenlebtonline.de/bildungsinhalte/>
 
 ## Geschichte
 
@@ -60,7 +60,7 @@ WLO ist **kein Produkt und keine klassische Plattform**, sondern ein **Ökosyste
 
 **E-Mail**: `info@WissenLebtOnline.de`
 
-→ Kontakt: <https://wp-test.wirlernenonline.de/home/> (Abschnitt Kontakt)
+→ Kontakt: <https://wissenlebtonline.de/home/> (Abschnitt Kontakt)
 
 ## 6 Zielgruppen der Webseite
 
@@ -97,7 +97,7 @@ WLO ist **kein Produkt und keine klassische Plattform**, sondern ein **Ökosyste
 
 ## Suche
 
-→ Suchmaschine: <https://suche.wp-test.wirlernenonline.de/search/de/search>
+→ Suchmaschine: <https://suche.wirlernenonline.de/search/de/search>
 
 ## Open by Default
 
